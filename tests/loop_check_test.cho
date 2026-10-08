@@ -1,0 +1,249 @@
+edition 6;
+
+module loop_check_test;
+
+// The gates for `src/loop_check.cho`, fixed before the driver it judges
+// exists (`docs/design.md` §7.1). Every contract of design §4 has a test
+// here where the stand-in loops forever and the assertion is that the loop
+// stops: the attempt ceiling, the same-signature stop, the plan-defect
+// non-retry, the provider-outage wait, progress-not-activity and the
+// stall-rounds stop.
+//
+// The stand-ins are byte slices from a `region`: the same-signature stop's
+// real signature will be built by the driver from `cancho check --output
+// json` (cancho#401); here it is two equal slices, which is the entire rule.
+//
+// A test answers 0 to pass (`docs/testing.md` §3).
+
+import loop_check;
+import std.bytes;
+import std.test;
+
+
+// Enum equality, by hand: cancho has no `==` on enums, only exhaustive
+// `match`, so the comparison itself cannot forget a case.
+fn decision_is(d: loop_check.Decision, want: loop_check.Decision) -> [] bool {
+    match d {
+        loop_check.Decision::StopIssueVerified => {
+            match want {
+                loop_check.Decision::StopIssueVerified => { return true; }
+                loop_check.Decision::StopIssueDefect => { return false; }
+                loop_check.Decision::StopIssueCeiling => { return false; }
+                loop_check.Decision::StopIssueSignature => { return false; }
+                loop_check.Decision::StopRunProvider => { return false; }
+                loop_check.Decision::Retry => { return false; }
+            }
+        }
+        loop_check.Decision::StopIssueDefect => {
+            match want {
+                loop_check.Decision::StopIssueVerified => { return false; }
+                loop_check.Decision::StopIssueDefect => { return true; }
+                loop_check.Decision::StopIssueCeiling => { return false; }
+                loop_check.Decision::StopIssueSignature => { return false; }
+                loop_check.Decision::StopRunProvider => { return false; }
+                loop_check.Decision::Retry => { return false; }
+            }
+        }
+        loop_check.Decision::StopIssueCeiling => {
+            match want {
+                loop_check.Decision::StopIssueVerified => { return false; }
+                loop_check.Decision::StopIssueDefect => { return false; }
+                loop_check.Decision::StopIssueCeiling => { return true; }
+                loop_check.Decision::StopIssueSignature => { return false; }
+                loop_check.Decision::StopRunProvider => { return false; }
+                loop_check.Decision::Retry => { return false; }
+            }
+        }
+        loop_check.Decision::StopIssueSignature => {
+            match want {
+                loop_check.Decision::StopIssueVerified => { return false; }
+                loop_check.Decision::StopIssueDefect => { return false; }
+                loop_check.Decision::StopIssueCeiling => { return false; }
+                loop_check.Decision::StopIssueSignature => { return true; }
+                loop_check.Decision::StopRunProvider => { return false; }
+                loop_check.Decision::Retry => { return false; }
+            }
+        }
+        loop_check.Decision::StopRunProvider => {
+            match want {
+                loop_check.Decision::StopIssueVerified => { return false; }
+                loop_check.Decision::StopIssueDefect => { return false; }
+                loop_check.Decision::StopIssueCeiling => { return false; }
+                loop_check.Decision::StopIssueSignature => { return false; }
+                loop_check.Decision::StopRunProvider => { return true; }
+                loop_check.Decision::Retry => { return false; }
+            }
+        }
+        loop_check.Decision::Retry => {
+            match want {
+                loop_check.Decision::StopIssueVerified => { return false; }
+                loop_check.Decision::StopIssueDefect => { return false; }
+                loop_check.Decision::StopIssueCeiling => { return false; }
+                loop_check.Decision::StopIssueSignature => { return false; }
+                loop_check.Decision::StopRunProvider => { return false; }
+                loop_check.Decision::Retry => { return true; }
+            }
+        }
+    }
+}
+
+// The loop the harness simulates: drive one issue with `decide` after every
+// attempt, with a stand-in agent whose every attempt fails, and assert the
+// loop stops with the named decision within the budgets. This is the shape
+// of the "runs forever" scenario from design §7.1, shrunk to a function a
+// test calls directly.
+//
+//   fixed_agent  true = every attempt fails with the same signature (the
+//                looping agent); false = every attempt fails from a cycle
+//                of different signatures (a struggling but not looping
+//                agent)
+//   max_attempts the attempt ceiling
+//   k_signature  the same-signature threshold
+//
+// Returns the decision the simulated run ended with.
+pub fn drive_standin(fixed_agent: bool, max_attempts: int, k_signature: int) -> [] loop_check.Decision {
+    region a {
+        var attempts = 0;
+        var consecutive = 0;
+        var last = "none yet";
+        var decision = loop_check.Decision::Retry;
+        while decision_is(decision, loop_check.Decision::Retry) {
+            // The stand-in attempt. In the real driver the agent edits the
+            // file and `cancho check` answers; here the outcome is always a
+            // retryable refusal whose signature the fixed agent repeats and
+            // the struggling agent cycles through. Normalisation is the
+            // driver's job (cancho#401); the stop rule only needs the
+            // signatures to be distinct.
+            var sig = "EFFECT_NOT_DECLARED";
+            if fixed_agent == false {
+                if attempts % 3 == 1 {
+                    sig = "TYPE_MISMATCH";
+                }
+                if attempts % 3 == 2 {
+                    sig = "MISSING_RELEASE";
+                }
+            }
+            decision = loop_check.decide(
+                attempts, consecutive, last, sig,
+                loop_check.Outcome::Retryable, max_attempts, k_signature);
+            if decision_is(decision, loop_check.Decision::Retry) {
+                attempts = attempts + 1;
+                // The driver's consecutive counter: the same signature
+                // grows it, a different one resets it.
+                if bytes.equal(last, sig) {
+                    consecutive = consecutive + 1;
+                } else {
+                    consecutive = 0;
+                }
+                last = sig;
+            }
+        }
+        return decision;
+    }
+}
+
+pub fn test_fixed_agent_stops_at_signature() -> [] int {
+    // The looping agent, K = 2: the same-signature stop fires on the second
+    // identical failure, long before a ceiling of 40 could, and it is the
+    // signature stop — the rule lex-code left open — that names the stop.
+    let d = drive_standin(true, 40, 2);
+    test.assert(decision_is(d, loop_check.Decision::StopIssueSignature));
+    return 0;
+}
+
+pub fn test_fixed_agent_stops_at_ceiling_when_k_high() -> [] int {
+    // The same looping agent with K high enough that only the ceiling can
+    // fire: stops at the ceiling, named, and never silently.
+    let d = drive_standin(true, 4, 100);
+    test.assert(decision_is(d, loop_check.Decision::StopIssueCeiling));
+    return 0;
+}
+
+pub fn test_struggling_agent_gets_full_budget() -> [] int {
+    // A struggling agent — every attempt fails, but never the same way — is
+    // the reason the signature stop is not "two failures": it gets the whole
+    // ceiling before being given up on, and the ceiling names it.
+    let d = drive_standin(false, 4, 2);
+    test.assert(decision_is(d, loop_check.Decision::StopIssueCeiling));
+    return 0;
+}
+
+pub fn test_plan_defect_never_retried() -> [] int {
+    region a {
+        // The store says the issue's own acceptance is unfixable: no edit
+        // can fix it, so the first attempt already ends the issue, even
+        // with a ceiling of 4 and K = 2. Classification is the store's
+        // word, never how the failure looks (design §4).
+        let d = loop_check.decide(
+            0, 0, "none yet", "whatever the prose said",
+            loop_check.Outcome::PlanDefect, 4, 2);
+        test.assert(decision_is(d, loop_check.Decision::StopIssueDefect));
+    }
+    return 0;
+}
+
+pub fn test_provider_outage_stops_run_preserving_attempts() -> [] int {
+    region a {
+        // A provider that returns nothing stops the run with the provider
+        // named (the driver maps StopRunProvider to the `provider_error`
+        // verdict); the attempts are not burned — the stop is the run's,
+        // not the issue's, so the issue keeps its count and comes back
+        // when the provider returns.
+        let d = loop_check.decide(
+            0, 0, "none yet", "irrelevant: the provider never answered",
+            loop_check.Outcome::ProviderOutage, 4, 2);
+        test.assert(decision_is(d, loop_check.Decision::StopRunProvider));
+    }
+    return 0;
+}
+
+pub fn test_verified_beats_ceiling() -> [] int {
+    region a {
+        // An issue that verifies on the attempt that would have been the
+        // ceiling's last: verified wins. The ceiling stops waste; it does
+        // not throw away a verified unit.
+        let d = loop_check.decide(
+            3, 3, "same", "same",
+            loop_check.Outcome::Verified, 4, 2);
+        test.assert(decision_is(d, loop_check.Decision::StopIssueVerified));
+    }
+    return 0;
+}
+
+pub fn test_progress_not_activity() -> [] int {
+    // A round that verified no new units and held no new scenarios made
+    // no progress, however many tokens it burned.
+    test.assert(loop_check.round_made_progress(2, 2, 10, 10) == false);
+    // One more unit verified is progress.
+    test.assert(loop_check.round_made_progress(2, 3, 10, 10) == true);
+    // No new units but one more scenario holding is progress too.
+    test.assert(loop_check.round_made_progress(2, 2, 10, 11) == true);
+    return 0;
+}
+
+pub fn test_stall_rounds_stop_the_run() -> [] int {
+    // Two rounds in a row with no progress stop the run (the default
+    // stall-rounds of 2): the second stagnant round ends it, named.
+    test.assert(loop_check.run_should_stop_stalled(1, 2, 5, 5, 3, 3) == true);
+    // The first stagnant round does not: the run goes on to the next.
+    test.assert(loop_check.run_should_stop_stalled(0, 2, 5, 5, 3, 3) == false);
+    // A round with progress resets the stall count entirely.
+    test.assert(loop_check.run_should_stop_stalled(1, 2, 6, 7, 3, 3) == false);
+    return 0;
+}
+
+pub fn test_same_signature_equality() -> [] int {
+    region a {
+        // The equality the signature stop is defined on, byte-for-byte, so
+        // a normalisation that drifted would fail here before any run.
+        test.assert(loop_check.same_signature(
+            "EFFECT_NOT_DECLARED", "EFFECT_NOT_DECLARED") == true);
+        test.assert(loop_check.same_signature(
+            "EFFECT_NOT_DECLARED", "EFFECT_NOT_DECLAREE") == false);
+        test.assert(loop_check.same_signature(
+            "EFFECT_NOT_DECLARED", "EFFECT_NOT_DECLARED!") == false);
+    }
+    return 0;
+}
+
+// No `main` here: the test runner supplies its own (`docs/testing.md` §3).
