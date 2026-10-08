@@ -1,0 +1,161 @@
+edition 6;
+module loop_check;
+// `loop_check` — the loop-safety contracts of `docs/design.md` §4, as pure
+// functions: no capability, no effect, no state outside the arguments. This
+// module is the part of the driver that *decides* — retry, stop the issue,
+// stop the run — and every decision is one function a test can call with the
+// exact history that should fire it.
+//
+// It is deliberately written before the driver it will judge (design §7.1):
+// the contracts are fixed here, measured by `tests/loop_check_test.cho`, and
+// the driver that consumes them is the next slice. Nothing in this module
+// knows what an LLM is, what a provider is, or what a `.cho` file is — the
+// stand-ins in the tests are byte slices from a `region`.
+//
+// The failure signature is a byte slice (design §4): the `rule_tag` plus
+// facts, names and numbers normalised out, exactly the normalisation
+// lex-code's `--lessons` uses to group. The driver will build that slice
+// from `cancho check --output json` (cancho#401); this module only compares
+// them for equality, which is all the same-signature stop rule needs.
+
+// Whether two failure signatures are the same failure. The normalisation is
+// the driver's job (it has the JSON); this is the equality the stop rule is
+// defined on, byte-for-byte, because a signature that compared "fuzzy" would
+// make the stop rule fuzzy too.
+pub fn same_signature[&a, &b](a: &a [byte], b: &b [byte]) -> [] bool {
+    let an = len(a);
+    let bn = len(b);
+    if an != bn {
+        return false;
+    }
+    var i = 0;
+    while i < an {
+        if a[i] != b[i] {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+// The verdicts a run can end with (design §6). Enums, not ints: cancho has
+// exhaustive `match`, so the driver cannot forget a case and the report
+// cannot print a number that is not a verdict.
+pub enum IssueVerdict { Verified, Failed, PlanDefect, Unavailable }
+pub enum RunVerdict { Done, Built, GateFailed, Stuck, Budget, ProviderError, NoPlan }
+
+// What one attempt on one issue ended in. The driver records this after each
+// `check`; the stop rules below read a history of them.
+//
+//   Verified        the issue verified
+//   Retryable       refused, code's fault: the normal retry case
+//   PlanDefect      refused, and the store says the issue's own acceptance
+//                   is unfixable — never retried (design §4)
+//   ProviderOutage  the provider returned nothing: a wait, not a failure —
+//                   attempts are preserved, never burned
+pub enum Outcome { Verified, Retryable, PlanDefect, ProviderOutage }
+
+// One step of the decision the driver makes after every attempt, returned by
+// `decide` below. The parameters of `decide` are the whole state the
+// contracts need — nothing is remembered between attempts except what the
+// caller passes back in: `attempts` (how many attempts the issue has already
+// had), `consecutive` (how many consecutive attempts ended in the same
+// signature before this one), `last_sig` and `this_sig` (the previous and
+// current failure signatures), `outcome`, `max_attempts` (the attempt
+// ceiling, design §4, default 4) and `k_signature` (K, the same-signature
+// stop threshold, design §4, default 2).
+//
+//   StopIssueVerified   the issue is done; take it off the board
+//   StopIssueDefect     a plan defect; not retried, ever
+//   StopIssueCeiling    the attempt ceiling fired
+//   StopIssueSignature  the same-signature stop fired: K consecutive
+//                       identical failures; spend the budget elsewhere
+//                       (design §4, the rule lex-code left open)
+//   StopRunProvider     the provider is away: stop the run, keep the
+//                       attempts, name the provider
+//   Retry               none of the above: run another attempt
+//
+// The order of the checks in `decide` is the contract. A plan defect is
+// never retried even if the ceiling has not fired; the ceiling fires even
+// when the last failure's signature is new; the signature stop fires even
+// when the ceiling has room left. A verified issue beats everything,
+// including a ceiling that would have fired on this attempt's number.
+pub enum Decision { StopIssueVerified, StopIssueDefect, StopIssueCeiling, StopIssueSignature, StopRunProvider, Retry }
+
+pub fn decide[&s, &t](
+    attempts: int,
+    consecutive: int,
+    last_sig: &s [byte],
+    this_sig: &t [byte],
+    outcome: Outcome,
+    max_attempts: int,
+    k_signature: int,
+) -> [] Decision {
+    match outcome {
+        // A verified issue is done whatever the budgets say: verified
+        // beats the ceiling that would have fired on this attempt.
+        Outcome::Verified => {
+            return Decision::StopIssueVerified;
+        }
+        // A provider outage is the run's stop, not the issue's:
+        // attempts are preserved, nothing is burned, and the run
+        // names the provider (design §4).
+        Outcome::ProviderOutage => {
+            return Decision::StopRunProvider;
+        }
+        // A plan defect is unfixable by any edit: report it, use up
+        // the issue's budget, carry on elsewhere. It is never
+        // retried even at attempts = 0 — the store's word is the
+        // classification, never how the failure looks (design §4).
+        Outcome::PlanDefect => {
+            return Decision::StopIssueDefect;
+        }
+        // The normal case: a refusal the code can fix. The budgets
+        // decide below, in order — the ceiling first, then the
+        // same-signature stop.
+        Outcome::Retryable => {
+            // The attempt ceiling: this attempt was the max_attempts'th.
+            if attempts + 1 >= max_attempts {
+                return Decision::StopIssueCeiling;
+            }
+            // The same-signature stop: this failure has the same
+            // normalised signature as the last consecutive ones, and
+            // K have now stacked up (design §4, the rule lex-code
+            // left open: it grouped failures to report, never to
+            // stop).
+            if consecutive + 1 >= k_signature && same_signature(last_sig, this_sig) {
+                return Decision::StopIssueSignature;
+            }
+            return Decision::Retry;
+        }
+    }
+}
+
+// Whether a round of the run made progress (design §4: progress, not
+// activity). A round counts only if the number of verified units grew or the
+// number of acceptance scenarios holding grew; a round that only spent
+// tokens is not progress, whatever its transcript looks like.
+pub fn round_made_progress(units_verified_before: int, units_verified_after: int,
+                           scenarios_before: int, scenarios_after: int) -> [] bool {
+    if units_verified_after > units_verified_before {
+        return true;
+    }
+    if scenarios_after > scenarios_before {
+        return true;
+    }
+    return false;
+}
+
+// Whether the run should stop because N rounds in a row made no progress
+// (design §4; lex-code's `--stall-rounds`, default 2). `stalled` is the count
+// of consecutive rounds that have already made no progress, *not* including
+// the round whose numbers are being judged here.
+pub fn run_should_stop_stalled(stalled: int, stall_rounds: int,
+                               units_verified_before: int, units_verified_after: int,
+                               scenarios_before: int, scenarios_after: int) -> [] bool {
+    if round_made_progress(units_verified_before, units_verified_after,
+                           scenarios_before, scenarios_after) {
+        return false;
+    }
+    return stalled + 1 >= stall_rounds;
+}
