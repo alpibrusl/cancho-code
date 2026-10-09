@@ -1,0 +1,281 @@
+edition 7;
+
+module provider;
+
+// `provider` — the Mistral agent over native HTTPS (issue #4, design §5):
+// one `POST /v1/chat/completions` to `api.mistral.ai`, the request the
+// API's JSON, the response body handed back for the driver to take the
+// model's edited file out of.
+//
+// Native HTTPS, not a spawned `curl`: `packages/http-client` is pure
+// cancho, and the I/O here is `vendor/fetch_io.cho` — the compiler's own
+// `examples/http_fetch_nb/fetch_io.cho`, moved verbatim, as its header
+// says to do ("an example module and not a package, for the reason
+// `tls_echo/front.cho` is: the second program that needs it moves it" —
+// this is the second program).
+//
+// The authority story, stated rather than hidden (design §8): the TLS
+// engine is `packages/tls`, which uses the system's OpenSSL through
+// `Ffi("libc")` — one foreign library, a number in the report. The
+// network is `net_out` with the host a literal in this file
+// (`api.mistral.ai`) but the report cannot bound a host DNS names, so
+// the tests say which host is reached, the way `hooks-mcp`'s report does.
+// The API key is never a literal and never written: the caller reads it
+// from its own environment and hands it over as a slice that lives only
+// as long as the request headers.
+//
+// What this module does not do: it does not edit any file (the driver
+// writes the project file; this is the transport), and it does not retry
+// (a failed transport answers `Failed` with a stable tag; the caller
+// maps it to the loop's `ProviderOutage` — a wait, not a burn, §4).
+
+import fetch_io as fio;
+import http_client as hc;
+import http_client_wire as wire;
+import std.buffer;
+import std.io;
+import tls;
+
+// How one completion attempt ended.
+pub enum Answered {
+    // The response body (the API's JSON, `choices[0].message.content`
+    // among it), in a buffer the caller owns and must drop. The status
+    // comes with it: the caller decides what a 4xx answer means.
+    Ok(int, buffer.Buffer),
+    // The transport refused: the tag is one of the `r_*` values below.
+    Failed(int),
+}
+
+pub fn r_connect() -> [] int { return 1; }
+pub fn r_tls() -> [] int { return 2; }
+pub fn r_timeout() -> [] int { return 3; }
+pub fn r_too_much() -> [] int { return 4; }
+pub fn r_no_roots() -> [] int { return 5; }
+
+// The tag a `Failed` carries, stable for the verdict line and the report.
+pub fn tag_of(tag: int) -> [] &static [byte] {
+    if tag == 1 { return "connect"; }
+    if tag == 2 { return "tls"; }
+    if tag == 3 { return "timeout"; }
+    if tag == 4 { return "too-much"; }
+    if tag == 5 { return "no-roots"; }
+    return "transport";
+}
+
+// One HTTPS POST to `api.mistral.ai:443`.
+//
+//   `key`     the API key, from the caller's environment
+//   `body`    the request body, JSON the caller built (the model's task
+//             and the file to edit, escaped — `append_escaped` below)
+//   `roots`   the PEM bundle to trust; nothing is built in, the same
+//             rule as `http_fetch_nb`: an https call is checked against
+//             what the operator handed it or refused
+//   `ip`      four bytes: where `api.mistral.ai` resolved to — resolving
+//             is the caller's, exactly `http-client.md` §3.8, because a
+//             resolver is a policy
+//   `entropy` 32 bytes for the TLS engine
+//   `most`    the bound on the response body, the caller's policy
+//   `wait_ms` the whole attempt's deadline: one number, no hang
+//
+// `host_for()` names the host twice — once in the HTTP `Host:` header the
+// client sends, once as the name the certificate must carry — from the
+// same literal, so they cannot disagree.
+pub fn host_for() -> [] &static [byte] {
+    return "api.mistral.ai";
+}
+
+pub fn complete[&h, &n, &c, &i, &k, &b, &r, &a, &e](heap: &!h Heap, net: &n Net(""), clock: &c Clock, io: &!i Io, key: &k [byte], body: &b [byte], roots: &r [byte], ip: &a [byte], entropy: &e [byte], most: int, wait_ms: int) -> [heap, net_out(""), conn_read, conn_write, poll, clock] Answered {
+    match fio.open(heap, 1, true) {
+        fio.Started::Failed(e) => {
+            return Answered::Failed(r_tls());
+        }
+        fio.Started::Ok(opened) => {
+            var trust = 0;
+            borrow mut opened as &!ioh in {
+                trust = fio.trust(ioh, roots);
+                fio.seed(ioh, entropy);
+            }
+            if trust < 1 {
+                fio.close(heap, opened);
+                return Answered::Failed(r_no_roots());
+            }
+            var up = -1;
+            borrow mut opened as &!ouh in {
+                up = fio.add_upstream(ouh, ip, 443, true, host_for());
+            }
+            if up < 0 {
+                fio.close(heap, opened);
+                return Answered::Failed(r_connect());
+            }
+            // The request and the pump live in `pump`, which takes the
+            // loop's whole state by value: the dial gives it back changed
+            // and a match binding cannot be reassigned (the same shape
+            // `fetch.cho`'s `run` uses: `var iov = iox`).
+            return pump(heap, net, clock, io, opened, key, body, most, wait_ms);
+        }
+    }
+}
+
+// The request, the send, and the read, until Done or the deadline. No
+// hang: `wait_ms` is the whole attempt's ceiling, and every stop is
+// named.
+fn pump[&h, &n, &c, &i, &x, &k, &b](heap: &!h Heap, net: &n Net(""), clock: &c Clock, io: &!i Io, iox: fio.Loop, key: &k [byte], body: &b [byte], most: int, wait_ms: int) -> [heap, net_out(""), conn_read, conn_write, poll, clock] Answered {
+    // The loop's whole state travels by value (`var iov = iox`, the shape
+    // `fetch.cho`'s `run` uses): the dial gives it back changed, and the
+    // borrows are taken per call, not held — a held `&!` borrow freezes
+    // the value (the checker says so, and the checker is right).
+    var iov = iox;
+    var client = hc.open(heap, 1, 65536, 16384, hc.default_limits());
+    var status = 0;
+    var ok_done = false;
+    var refused = 0;
+    var out = buffer.empty(heap, 1024);
+    borrow mut client as &!cw in {
+        region hd {
+            var auth = buffer.empty(heap, 256);
+            auth = buffer.append(heap, auth, "Bearer ");
+            auth = buffer.append(heap, auth, key);
+            // One request: POST /v1/chat/completions, the JSON body sized
+            // by its length, the auth header beside it. The key rides that
+            // header and exists nowhere else.
+            borrow auth as &ab in {
+                let t = hc.request(cw, clock_ms(clock), 0, "POST", "/v1/chat/completions", host_for(), buffer.bytes(ab), len(body), 0);
+                if t < 0 {
+                    refused = r_connect();
+                } else {
+                    // The request body, fed as the client has room.
+                    var sent = 0;
+                    var sending = true;
+                    while sending {
+                        let room = hc.send_room(cw, t);
+                        var n = len(body) - sent;
+                        if n > room {
+                            n = room;
+                        }
+                        if n <= 0 {
+                            sending = false;
+                        } else {
+                            let m = hc.send_body(cw, t, body[sent..sent + n], clock_ms(clock));
+                            if m < 0 {
+                                sending = false;
+                            } else {
+                                sent = sent + m;
+                                if sent >= len(body) {
+                                    sending = false;
+                                }
+                            }
+                        }
+                    }
+                    // The pump: step the transport, drain the events,
+                    // collect the body, until Done or the deadline. No
+                    // hang: `wait_ms` is the whole attempt's ceiling, and
+                    // every stop is named.
+                    var done = false;
+                    var failed = false;
+                    let started = clock_ms(clock);
+                    var now = started;
+                    while done == false && failed == false && refused == 0 && now - started < wait_ms {
+                        borrow mut iov as &!ioh in {
+                            fio.step(ioh, cw, clock, 100);
+                        }
+                        now = clock_ms(clock);
+                        var going = true;
+                        while going {
+                            match hc.poll(cw, now) {
+                                hc.Event::None => {
+                                    going = false;
+                                }
+                                hc.Event::Connect(slot) => {
+                                    iov = fio.dial(heap, iov, net, cw, slot, now);
+                                }
+                                hc.Event::Close(slot) => {
+                                    borrow mut iov as &!ioh in {
+                                        fio.shut(ioh, cw, slot, now);
+                                    }
+                                }
+                                hc.Event::Head(tk) => {
+                                    status = hc.status(cw, tk);
+                                }
+                                hc.Event::Body(tk) => {
+                                    let n = hc.avail(cw, tk);
+                                    borrow out as &ob in {
+                                        // The bound: `most` is the
+                                        // caller's, and a body past it is
+                                        // refused, not silently kept.
+                                        if buffer.size(ob) + n > most {
+                                            failed = true;
+                                        }
+                                    }
+                                    if failed == false {
+                                        out = buffer.append(heap, out, hc.body(cw, tk)[0..n]);
+                                    }
+                                    hc.consume(cw, tk, n, now);
+                                }
+                                hc.Event::Done(tk) => {
+                                    done = true;
+                                }
+                                hc.Event::Failed(tk) => {
+                                    failed = true;
+                                }
+                                _ => {
+                                    going = false;
+                                }
+                            }
+                        }
+                    }
+                    if done && failed == false {
+                        ok_done = true;
+                    } else {
+                        if failed {
+                            refused = r_too_much();
+                        } else {
+                            refused = r_timeout();
+                        }
+                    }
+                }
+            }
+            buffer.drop(heap, auth);
+        }
+    }
+    hc.close(heap, client);
+    fio.close(heap, iov);
+    // The answer is built exactly once, from plain values: `out` is moved
+    // into it on the one path that made it.
+    if ok_done {
+        return Answered::Ok(status, out);
+    }
+    buffer.drop(heap, out);
+    return Answered::Failed(refused);
+}
+
+// One string embedded in a JSON body, escaped as `std.json`'s writer
+// escapes: the two bytes that must not appear raw (the quote and the
+// backslash) and the control characters, in their six-byte form.
+pub fn append_escaped[&h, &t](heap: &!h Heap, out: buffer.Buffer, text: &t [byte]) -> [heap] buffer.Buffer {
+    var b = out;
+    var i = 0;
+    while i < len(text) {
+        let c = text[i];
+        if c == byte_of(34) {
+            b = buffer.append(heap, b, "\\\"");
+        } else {
+            if c == byte_of(92) {
+                b = buffer.append(heap, b, "\\\\");
+            } else {
+                if int_of(c) < 32 {
+                    b = buffer.append(heap, b, "\\u00");
+                    let n = int_of(c);
+                    let hi = n / 16;
+                    let lo = n - hi * 16;
+                    let hex: &static [byte] = "0123456789abcdef";
+                    b = buffer.push(heap, b, hex[hi]);
+                    b = buffer.push(heap, b, hex[lo]);
+                } else {
+                    b = buffer.push(heap, b, c);
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return b;
+}
