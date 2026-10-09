@@ -1,0 +1,135 @@
+edition 7;
+
+module snapshot;
+
+// `snapshot` — the §4 contract with no code until now: the shared source
+// file is snapshot before every attempt and after every verified unit,
+// and a file that no longer type-checks after a kill or a mid-edit attempt
+// is restored from the newest copy that did. One bad function must not
+// block every other unit's edit (`docs/design.md` §4).
+//
+// The store is a numbered series beside the project file, in a directory
+// the `Fs` capability names in its own type — the authority story is that
+// the tool's report says `fs_write("<the store>")` and nothing else. The
+// rotation is a fixed count (`keep`, design §4's bounded memory rule
+// applied to the store itself): the oldest snapshot is dropped when the
+// ring is full, and "the newest copy that checked" is always within `keep`.
+//
+// What this module does not do: it does not decide *when* to snapshot (the
+// driver's job) or *whether* a file checks (the checker's). It copies,
+// lists, and restores, and every answer is a named value, never a hang.
+
+import std.buffer;
+
+// The outcome of a restore, as data.
+pub enum Restored {
+    // The newest snapshot that checks was restored, and its index.
+    Ok(int),
+    // No snapshot exists: nothing to restore from.
+    Empty,
+    // Every snapshot failed to read: the store is corrupt, and the run
+    // stops with it named rather than guessing.
+    Unreadable,
+}
+
+// Copy `src` to `dst` by reading and writing it whole. The file is a
+// `.cho` source, which is small; the bound (`most`) is the caller's
+// policy. Answers 0, or -1 for any failure — a missing file is an
+// ordinary outcome (filesystem.md §3), not a bug.
+pub fn copy[&f, &s, &p, &q](fs: &f Fs(""), from: &p [byte], into: &q [byte], most: int) -> [fs_read(""), fs_write("")] int {
+    region a {
+        let text = alloc_slice[a](most, byte_of(0));
+        let n = fs_read(fs, from, text);
+        if n < 0 {
+            return -1;
+        }
+        let wrote = fs_write(fs, into, text[0..n]);
+        if wrote != n {
+            return -1;
+        }
+        return 0;
+    }
+}
+
+// The store's path for index `i`, built into `out`: `<prefix><i>.cho`.
+// The index is small (two digits cover a `keep` of 64), and the caller
+// owns the buffer.
+pub fn path_of[&h, &p](heap: &!h Heap, out: buffer.Buffer, prefix: &p [byte], i: int) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, out, prefix);
+    b = buffer.push_nat(heap, b, i);
+    b = buffer.append(heap, b, ".cho");
+    return b;
+}
+
+// Snapshot `file` into the store: write to index `next`, which the caller
+// advances modulo `keep` (the ring). Answers the index written, or -1.
+//
+// The write goes to a fresh path and the rotation is the caller's: a
+// snapshot that fails leaves the previous one in place, so the newest
+// copy that checks is never lost by a failed attempt to add one.
+pub fn take[&h, &f, &p, &q](heap: &!h Heap, fs: &f Fs(""), file: &p [byte], prefix: &q [byte], next: int, most: int) -> [heap, fs_read(""), fs_write("")] int {
+    region a {
+        var path = buffer.empty(heap, 128);
+        path = path_of(heap, path, prefix, next);
+        var r = -1;
+        borrow path as &pa in {
+            r = copy(fs, file, buffer.bytes(pa), most);
+        }
+        buffer.drop(heap, path);
+        if r < 0 {
+            return -1;
+        }
+        return next;
+    }
+}
+
+// Restore `file` from the newest snapshot that exists, newest first:
+// a snapshot is only taken after the file checked clean, so existence
+// is the test and the checker is not re-run here (the driver re-verifies
+// everything after a restore anyway — design §3).
+//
+// `next` is the ring position the caller will write next, so the newest
+// snapshot is `next - 1`, and the walk goes back `keep` positions.
+pub fn restore[&h, &f, &p, &q](heap: &!h Heap, fs: &f Fs(""), file: &p [byte], prefix: &q [byte], next: int, keep: int, most: int) -> [heap, fs_read(""), fs_write("")] Restored {
+    var i = 1;
+    var found = -1;
+    while i <= keep && found < 0 {
+        let at = next - i;
+        // The ring wraps: position -1 is the newest of the previous lap,
+        // which is `keep - 1`. `%` truncates toward zero with the sign of
+        // the dividend (defined-behaviour.md §2.3), so the wrap is made
+        // positive by hand — `push_nat` of a negative index would trap,
+        // and a trap in the restore path is exactly the silent stop this
+        // module exists to prevent (found by the empty-store gate case).
+        var pos = at % keep;
+        if pos < 0 {
+            pos = pos + keep;
+        }
+        region a {
+            var path = buffer.empty(heap, 128);
+            path = path_of(heap, path, prefix, pos);
+            var n = -1;
+            borrow path as &pa in {
+                region b {
+                    let probe = alloc_slice[b](most, byte_of(0));
+                    n = fs_read(fs, buffer.bytes(pa), probe);
+                }
+            }
+            if n >= 0 {
+                found = pos;
+                var r = -1;
+                borrow path as &pa in {
+                    r = copy(fs, buffer.bytes(pa), file, most);
+                }
+                buffer.drop(heap, path);
+                if r < 0 {
+                    return Restored::Unreadable;
+                }
+                return Restored::Ok(pos);
+            }
+            buffer.drop(heap, path);
+        }
+        i = i + 1;
+    }
+    return Restored::Empty;
+}
