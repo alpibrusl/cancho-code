@@ -1,0 +1,112 @@
+edition 7;
+
+// `snapshot_gate` — the gate program for `src/snapshot.cho` (design §4 and
+// §7.1): the snapshot ring, taken and restored, in the store the `Fs`
+// capability names. Run by `scripts/test-snapshot.sh`, which prepares a
+// store directory, runs each case, and asserts on the printed lines.
+//
+// A program rather than a `cancho test` test because the case needs `Fs`,
+// and a test may hold only `Heap` and `Io` (docs/testing.md §3).
+//
+// Each case prints lines the harness greps:
+//     take <index>            — a snapshot written at the ring position
+//     restored <index>        — the file restored from that snapshot
+//     restored empty          — no snapshot to restore from
+//     restored unreadable     — the store exists but cannot be read
+//
+//     snapshot_gate <case> <store-dir>
+//
+// The cases (the harness prepares /tmp first):
+//     take    — snapshot a known file three times; the ring advances 0,1,2
+//     rescue  — the harness snapshots once, corrupts the live file, then
+//               restores: the content is back, from the position before next
+//     empty   — a store with no snapshots: restore answers empty, and the
+//               live file is not touched
+
+import std.buffer;
+import std.bytes;
+import std.io;
+import snapshot;
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(net);
+    release(clock);
+    release(signals);
+    release(exec);
+    var console = io;
+    var h = heap;
+    var mode = "";
+    var store = "";
+    borrow args as &g in {
+        mode = arg(g, 1);
+        store = arg(g, 2);
+    }
+    borrow fs as &f in {
+        borrow mut console as &!i in {
+            borrow mut h as &!hh in {
+                region cm {
+                    var live = buffer.empty(hh, 128);
+                    live = buffer.append(hh, live, store);
+                    live = buffer.append(hh, live, "/live.cho");
+                    var prefix = buffer.empty(hh, 128);
+                    prefix = buffer.append(hh, prefix, store);
+                    prefix = buffer.append(hh, prefix, "/snap");
+                    borrow live as &lv in {
+                        borrow prefix as &pf in {
+                            if bytes.equal(mode, "take") {
+                                // Three snapshots; the ring must advance 0, 1, 2.
+                                var next = 0;
+                                var n = 0;
+                                while n < 3 {
+                                    let idx = snapshot.take(hh, f, buffer.bytes(lv), buffer.bytes(pf), next, 4096);
+                                    io.write_all(i, "take ");
+                                    io.print_int(i, idx);
+                                    io.newline(i);
+                                    if idx >= 0 {
+                                        next = idx + 1;
+                                    }
+                                    n = n + 1;
+                                }
+                            }
+                            if bytes.equal(mode, "rescue") {
+                                // The harness has snapshotted once (next = 1)
+                                // and then corrupted the live file. Restore:
+                                // the newest is position 0, and the content
+                                // comes back.
+                                match snapshot.restore(hh, f, buffer.bytes(lv), buffer.bytes(pf), 1, 4, 4096) {
+                                    snapshot.Restored::Ok(idx) => {
+                                        io.write_all(i, "restored ");
+                                        io.print_int(i, idx);
+                                        io.newline(i);
+                                    }
+                                    snapshot.Restored::Empty => { io.write_all(i, "restored empty\n"); }
+                                    snapshot.Restored::Unreadable => { io.write_all(i, "restored unreadable\n"); }
+                                }
+                            }
+                            if bytes.equal(mode, "empty") {
+                                match snapshot.restore(hh, f, buffer.bytes(lv), buffer.bytes(pf), 0, 4, 4096) {
+                                    snapshot.Restored::Ok(idx) => {
+                                        io.write_all(i, "restored ");
+                                        io.print_int(i, idx);
+                                        io.newline(i);
+                                    }
+                                    snapshot.Restored::Empty => { io.write_all(i, "restored empty\n"); }
+                                    snapshot.Restored::Unreadable => { io.write_all(i, "restored unreadable\n"); }
+                                }
+                            }
+                        }
+                    }
+                    buffer.drop(hh, live);
+                    buffer.drop(hh, prefix);
+                }
+            }
+        }
+    }
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return 0;
+}
