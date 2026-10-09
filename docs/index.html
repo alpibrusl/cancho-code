@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cancho-code: an assistant for cancho that proves its work</title>
+<meta name="description" content="A coding assistant written in cancho that ends every task in a machine-readable verdict produced by the type checker — never by what the model says about itself. Loop-safety as contracts: attempt ceilings, a same-signature stop rule, snapshot and restore.">
+<meta property="og:title" content="cancho-code: an assistant for cancho that proves its work">
+<meta property="og:description" content="Every task ends in a verdict produced by the compiler, bounded by contracts, with the agent any local or cloud model.">
+<meta name="color-scheme" content="light dark">
+<style>
+:root {
+  --bg: #fbfcfd; --fg: #14181a; --muted: #55606a; --line: #dfe5e7; --surface: #ffffff; --soft: #eff4f4;
+  --accent: #1f5fa6; --accent-fg: #ffffff; --good: #0f7b5f; --warn: #92400e; --warn-bg: #fdf6e7; --warn-line: #e0b765; --bad: #b42d27;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0b0f14; --fg: #e7ebec; --muted: #9aa8ae; --line: #212a2d; --surface: #131a1c; --soft: #172022;
+    --accent: #7fb2ff; --accent-fg: #07162c; --good: #4fd1a5; --warn: #f3c77a; --warn-bg: #1d1a12; --warn-line: #8a6a2a; --bad: #ff7b73; }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; scroll-padding-top: 4rem; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 1rem/1.6 var(--font); }
+a { color: var(--accent); text-underline-offset: .15em; }
+.wrap { width: 100%; max-width: 68rem; margin: 0 auto; padding: 0 16px; }
+header.top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+header.top .wrap { display: flex; align-items: center; gap: 1.5rem; height: 3.4rem; }
+.brand { display: inline-flex; align-items: center; gap: .5rem; font: 700 1rem var(--mono); color: var(--fg); text-decoration: none; letter-spacing: -.01em; }
+nav { display: flex; gap: 1.2rem; margin-left: auto; }
+nav a { color: var(--muted); text-decoration: none; font-size: .93rem; }
+nav a:hover { color: var(--fg); }
+@media (max-width: 40rem) { nav a.opt { display: none; } }
+.hero { padding: 3.5rem 0 2.5rem; border-bottom: 1px solid var(--line); }
+.hero h1 { font-size: clamp(1.6rem, 4vw, 2.6rem); line-height: 1.15; margin: 0 0 1rem; letter-spacing: -.02em; }
+.hero .sub { font-size: 1.1rem; color: var(--muted); max-width: 44rem; margin: 0; }
+.pill { display: inline-block; font: 600 .78rem var(--mono); color: var(--warn); border: 1px solid var(--warn-line); background: var(--warn-bg); padding: .2rem .6rem; border-radius: 99px; margin-bottom: 1rem; }
+main { padding: 2rem 0 4rem; }
+section { margin: 2.5rem 0; }
+h2 { font-size: 1.35rem; margin: 0 0 .8rem; letter-spacing: -.01em; }
+h3 { font-size: 1.05rem; margin: 1.6rem 0 .5rem; }
+p { margin: .6rem 0; max-width: 46rem; }
+ul { max-width: 44rem; padding-left: 1.2rem; }
+li { margin: .3rem 0; }
+pre { background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: .9rem 1rem; overflow-x: auto; font: .88rem/1.5 var(--mono); margin: 1rem 0; }
+code { font: .9em var(--mono); background: var(--soft); border-radius: 4px; padding: .08em .3em; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; max-width: 46rem; margin: 1rem 0; font-size: .93rem; }
+th, td { border: 1px solid var(--line); padding: .5rem .7rem; text-align: left; vertical-align: top; }
+th { background: var(--soft); font-weight: 600; }
+.note { border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: 8px; padding: .8rem 1rem; margin: 1rem 0; max-width: 46rem; }
+.note b { color: var(--warn); }
+.ok { color: var(--good); font-weight: 600; }
+footer { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href=".">cancho-code</a>
+  <nav>
+    <a href="#why">Why</a>
+    <a href="#run">Run it</a>
+    <a href="#ollama">Ollama walkthrough</a>
+    <a href="#contracts">Contracts</a>
+    <a class="opt" href="https://github.com/alpibrusl/cancho-code">GitHub</a>
+  </nav>
+</div></header>
+
+<div class="hero"><div class="wrap">
+  <span class="pill">design stage; the loop, the driver and the gates are built</span>
+  <h1>An assistant for <a href="https://github.com/alpibrusl/cancho">cancho</a> that proves its work</h1>
+  <p class="sub">Every task ends in a machine-readable verdict produced by the type checker and by examples written before the code — not by what the model says about itself. The agent is any model: a local one over Ollama, or a cloud one over native HTTPS. The loop is bounded by contracts, so a run that stops names its stop.</p>
+</div></div>
+
+<main class="wrap">
+
+<section id="why">
+<h2>Why</h2>
+<p>Most coding assistants hand you a transcript and ask you to read the diff. cancho-code hands you a verdict:</p>
+<pre><code>[ISSUE_VERDICT]	verified	attempts 1</code></pre>
+<p>The model does not decide when it is done. The compiler does. A run of the loop is: the agent edits the file, <code>cancho check --output json</code> answers, the loop decides — retry, stop the issue, stop the run — and after a verified answer it <em>checks again</em> before believing it, then snapshots it. Every way the run can end prints one named verdict line; there is no state in which it runs silently.</p>
+<p>The failure it is built not to repeat is <a href="https://github.com/alpibrusl/lex-code">lex-code</a>'s own, measured and documented there: runs that continue for a long time without solving anything. Loop-safety here is contracts with defaults, not tuning flags — and each one has a gate where a stand-in loops forever and the assertion is that the loop stops, in seconds rather than hours.</p>
+</section>
+
+<section id="run">
+<h2>Run it</h2>
+<p>Build the <code>fix</code> tool from a checkout of this repository, with the compiler's packages beside it:</p>
+<pre><code>git clone https://github.com/alpibrusl/cancho-code.git
+cd cancho-code
+export CANCHO=&lt;path-to-the-cancho-binary&gt;
+export CANCHO_PACKAGES=&lt;compiler-checkout&gt;/packages
+
+"$CANCHO" build tests/programs/fix.cho \
+    src/driver.cho src/checker.cho src/signature.cho \
+    src/loop_check.cho src/snapshot.cho \
+    --std --backend cranelift -o ./fix</code></pre>
+<p>Then point it at a broken program and an agent:</p>
+<pre><code>./fix "$CANCHO" project.cho "scripts/agent-ollama.sh" 4</code></pre>
+<p>The three arguments are the compiler (by its absolute path — the child of <code>exec_spawn</code> gets no <code>PATH</code> of its own), the file to fix, and the agent: any shell command that edits the file. The fourth is the attempt ceiling. Exit codes: 0 verified, 1 the budgets named a stop, 2 usage, 3 the checker or the agent is away — a wait, rerun.</p>
+</section>
+
+<section id="ollama">
+<h2>A realistic walkthrough: Ollama, qwen3.8:27b, a broken program</h2>
+<p>This is the whole point of the tool, end to end, on one machine: a local model with no key and no egress, a real program with a real error, and a compiler that decides when the model is done.</p>
+
+<h3>1. Install Ollama and pull the model</h3>
+<pre><code>curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen3.8:27b</code></pre>
+<p>27B wants a machine with roughly 20&nbsp;GB of memory to spare; on a laptop-class machine a whole run takes minutes, not seconds. That is fine — the budgets are in attempts and turns, not milliseconds.</p>
+
+<h3>2. Make a program with a real error</h3>
+<pre><code>mkdir demo &amp;&amp; cat &gt; demo/wordcount.cho &lt;&lt;'EOF'
+edition 7;
+
+// A broken word counter. Two errors, deliberately the same rule with
+// different messages, so a model that fixes one and not the other
+// changes the failure signature and gets its full budget back.
+fn counts[&i](io: &!i Io) -> [io_read] int {
+    var words = 0;
+    var inside = false;
+    var c = getchar(io);
+    while c >= 0 {
+        if c == 32 || c == 10 {
+            inside = false;
+        } else {
+            if inside == false {
+                words = words + 1;
+            }
+            inside = true;
+        }
+        c = getchar(io);
+    }
+    return inside;
+}
+
+fn label(total: int) -> [] int {
+    if total > 0 {
+        return "many";
+    }
+    return 0;
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi); release(fs); release(net); release(clock);
+    release(signals); release(exec); release(args);
+    release(io);
+    release(heap);
+    return 0;
+}
+EOF</code></pre>
+<p>Two errors, both <code>type-mismatch</code> with different messages: <code>counts</code> returns a <code>bool</code> where its signature says <code>int</code>, and <code>label</code> returns a string where it says <code>int</code>. The checker answers both in one pass:</p>
+<pre><code>"$CANCHO" check demo/wordcount.cho --output json --backend cranelift</code></pre>
+
+<h3>3. Run the loop with the local model as the agent</h3>
+<pre><code>export OLLAMA_MODEL=qwen3.8:27b
+./fix "$CANCHO" demo/wordcount.cho "$(pwd)/scripts/agent-ollama.sh" 4</code></pre>
+<p>What happens, turn by turn:</p>
+<ul>
+  <li>The driver runs <code>scripts/agent-ollama.sh demo/wordcount.cho</code>: the script pipes the file and the instruction ("reply with the complete corrected file") into <code>ollama run qwen3.8:27b</code>, strips any markdown fence, and overwrites the file with the answer.</li>
+  <li>The driver runs the real <code>cancho check --output json</code> on the result. The model's word is worth nothing here; the checker's JSON is the only oracle.</li>
+  <li><code>signature.of</code> turns the refusal into a failure signature — the <code>rule</code> verbatim, the message with its backticked spans kept and numbers normalised — and <code>loop_check.decide</code> decides with the §4 budgets: attempt ceiling 4, same-signature stop at K=2.</li>
+  <li>If the model fixes <code>counts</code> and not <code>label</code>: the signature changes ("expected <code>int</code>, found <code>bool</code>" becomes "expected <code>int</code>, found a string"), the counter resets, the loop tries again — a struggling model gets its full budget.</li>
+  <li>If the model returns the same wrong answer twice: the same-signature stop fires — <code>[ISSUE_VERDICT]	failed	signature</code> — and the run ends, named, instead of burning the night.</li>
+  <li>When the check says clean: the driver checks <em>again</em> (the re-verify pass) and only then snapshots the file and prints <code>[ISSUE_VERDICT]	verified	attempts N</code>.</li>
+</ul>
+
+<h3>4. What a good run looks like</h3>
+<pre><code>$ ./fix "$CANCHO" demo/wordcount.cho "$(pwd)/scripts/agent-ollama.sh" 4
+[ISSUE_VERDICT]	verified	attempts 2
+$ echo $?
+0
+$ "$CANCHO" check demo/wordcount.cho --output json --backend cranelift
+{
+  "refused": []
+}</code></pre>
+<p class="ok">Done is a proof, not a status.</p>
+
+<h3>5. What a bad run looks like (and why it is cheap)</h3>
+<p>A model that keeps answering with the same broken shape stops on the second identical refusal:</p>
+<pre><code>[ISSUE_VERDICT]	failed	signature
+$ echo $?
+1</code></pre>
+<p>The snapshot ring beside the file (<code>demo/wordcount.cho.snapshots/</code>) holds the newest state that checked clean, so a stopped run loses nothing: fix the prompt, rerun, the loop resumes from what the checker last believed.</p>
+
+<h3>Cloud models</h3>
+<p>The same loop drives a cloud provider over native HTTPS — <code>scripts/test-provider.sh mistral</code> with <code>MISTRAL_API_KEY</code> in the environment runs the end-to-end gate against the real API, the checker still the oracle. The provider is written in cancho on <code>packages/http-client</code> and <code>packages/tls</code>; the key rides the <code>Authorization</code> header and exists nowhere else.</p>
+</section>
+
+<section id="contracts">
+<h2>The loop-safety contracts</h2>
+<table>
+<tr><th>Contract</th><th>Rule</th><th>Default</th></tr>
+<tr><td>Attempt ceiling</td><td>attempts per issue before it is given up on, named</td><td>4</td></tr>
+<tr><td>Same-signature stop</td><td>K consecutive identical failure signatures end the issue — the rule lex-code left open: it grouped failures to report, never to stop</td><td>K = 2</td></tr>
+<tr><td>Plan defects never retried</td><td>the store's word, not how the failure looks</td><td>always on</td></tr>
+<tr><td>Re-verify pass</td><td>check again before believing a verified; a regressed file goes back on the board</td><td>always on</td></tr>
+<tr><td>Snapshot and restore</td><td>the newest state that checked clean is one restore away</td><td>ring of 8</td></tr>
+<tr><td>Outages are waits</td><td>a checker or agent that never answers is a named stop, attempts preserved</td><td>always on</td></tr>
+</table>
+<p>Each one has a gate: <code>scripts/test-checker.sh</code>, <code>test-snapshot.sh</code>, <code>test-driver.sh</code> (three cases: a fix verifies in one attempt; a looping agent stops at the signature rule; a cycling agent gets its full ceiling). Thirteen unit tests cover the decision functions and the signature normalisation.</p>
+</section>
+
+<section id="status">
+<h2>Status and limits, stated plainly</h2>
+<ul>
+  <li>Built: the decision module, the failure signature, the subprocess checker driver, the snapshot ring, the composed loop with its verdict lines, the Mistral provider over native HTTPS, the Ollama agent script, the <code>fix</code> front door. All gates green in CI without a network or a key.</li>
+  <li>Not built: the typed-issue board (issue #2 — which issue is next, what regressed), the report (issue #5), the authority pin in CI (issue #6).</li>
+  <li>The local-model path shells out to <code>ollama</code> through the <code>Exec</code> capability: the tool's authority report names the one directory its agents may live in.</li>
+  <li>Measured on this repo's own gates, four silent false-passes were found and fixed by the gates themselves, not by review: a reversed-signature normalisation, a shell <code>$0</code> argv bug, an edition-less fixture, a negative ring position.</li>
+</ul>
+</section>
+
+</main>
+<footer><div class="wrap">
+  <p><a href="https://github.com/alpibrusl/cancho-code">GitHub</a> · part of the <a href="https://github.com/alpibrusl/cancho">cancho</a> ecosystem · EUPL-1.2 · built under the principles of trust without comprehension.</p>
+</div></footer>
+</body>
+</html>
