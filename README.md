@@ -9,22 +9,22 @@ what the model says about itself. A task is a **typed issue** — a contract
 with a declared oracle — and *done is a proof the gate evaluates, never a
 status anyone sets*.
 
-**Status: design stage; the first code is the loop-safety harness.** The
-decision module [`src/loop_check.cho`](src/loop_check.cho) and its gates
-([`tests/loop_check_test.cho`](tests/loop_check_test.cho) — 9 tests, all
-passing under `cancho test`) are built: every loop-safety contract of the
-design has a test where a stand-in loops and the assertion is that the loop
-stops, named. The plan and its tasks are in the
-epic, [cancho-code#8](https://github.com/alpibrusl/cancho-code/issues/8); the
-design, [`docs/design.md`](docs/design.md), is drafted: the typed issue and
-project model, the loop-safety contracts with their proposed defaults, the
-verdict vocabulary, the gates fixed before the code they judge, and the
-authority row of the tool itself. Its prerequisites in the compiler are
-stated as dependencies on filed work
+**Status: design stage; the loop-safety harness and the subprocess driver are built.**
+
+- [`src/loop_check.cho`](src/loop_check.cho) — the §4 loop-safety contracts as pure functions, with their gates in [`tests/loop_check_test.cho`](tests/loop_check_test.cho).
+- [`src/signature.cho`](src/signature.cho) — the failure signature built from real `cancho check --output json`, with its gates in [`tests/signature_test.cho`](tests/signature_test.cho).
+- [`src/checker.cho`](src/checker.cho) — the subprocess slice: run the real `cancho check` under a narrowed `Exec` capability, capture its answer, map it to the loop's vocabulary. Gated by [`tests/programs/checker_gate.cho`](tests/programs/checker_gate.cho), driven by [`scripts/test-checker.sh`](scripts/test-checker.sh).
+
+The plan and its tasks are in the epic,
+[cancho-code#8](https://github.com/alpibrusl/cancho-code/issues/8); the design,
+[`docs/design.md`](docs/design.md), is drafted. Its prerequisites in the
+compiler are stated as dependencies on filed work
 ([cancho#401](https://github.com/alpibrusl/cancho/issues/401),
 [cancho#411](https://github.com/alpibrusl/cancho/issues/411),
 [cancho#406](https://github.com/alpibrusl/cancho/issues/406),
-[cancho#403](https://github.com/alpibrusl/cancho/issues/403)), not assumptions.
+[cancho#403](https://github.com/alpibrusl/cancho/issues/403)), not assumptions —
+and one is already measured as mostly built: `cancho check --output json`
+answers `rule`/`message`/`position`, plural, today.
 
 ## Why
 
@@ -37,21 +37,23 @@ attempt ceilings, a same-signature stop rule, progress-not-activity rounds,
 snapshot and restore — each with a test where a stand-in loops forever and
 the harness asserts the loop stops, in seconds rather than hours.
 
-cancho-code will be written in cancho, and will run under the same capability
-grants it enforces: no effect the session was not granted, whatever the prompt
-says, and an authority report pinned in CI.
+cancho-code is written in cancho, and runs under the same capability grants it
+enforces: the checker itself is started under a narrowed `Exec` capability,
+so the tool's own authority report will name the one program it may run.
 
 ## Running the gates
 
 ```sh
-cancho test tests/loop_check_test.cho src/loop_check.cho --std --backend cranelift
+cancho test tests/loop_check_test.cho tests/signature_test.cho src/loop_check.cho src/signature.cho --std --backend cranelift
+CANCHO=<path-to-cancho> scripts/test-checker.sh
 ```
 
-Nine tests: the looping agent stops at the same-signature stop; the
-struggling agent gets its full ceiling; a plan defect is never retried; a
-provider outage stops the run with the attempts preserved; verified beats
-the ceiling; a round without new units or scenarios is not progress; two
-stagnant rounds stop the run.
+Thirteen unit tests (the loop-safety contracts; the signature and its
+normalisation — same failure twice signs identically, reversed direction
+signs differently, numbers collapse, a clean check wires as verified) and
+three checker cases: a clean file answers `verified`, a refused file answers
+`retryable signed`, a checker that never answers answers `provider_outage` —
+a wait, not a failure.
 
 ## Contributing
 
