@@ -1,0 +1,120 @@
+edition 6;
+
+module signature;
+
+// `signature` — the failure signature the same-signature stop rule compares
+// (`docs/design.md` §4): built from `cancho check --output json`, which
+// answers, per refusal, a `rule` ("type-mismatch"), a `message`
+// ("expected `int`, found `bool`") and a `position`. Measured, not assumed:
+// the fixture JSON in the tests is captured from real `cancho check` runs.
+//
+// What makes two refusals *the same failure* is the design's rule, and the
+// normalisation below is that rule made concrete: the `rule` verbatim (it is
+// a closed vocabulary, not prose), then the `message` with its backticked
+// spans kept (the design says the direction matters —
+// "expected `int`, found `bool`" and "expected `bool`, found `int`" are
+// different mistakes) and every number outside them taken out, the same
+// shape lex-code's `--lessons` grouping uses for what varies between
+// identical failures. "expected `int`, found `bool`" twice at two positions
+// is the same failure twice, which is what the stop rule is for.
+//
+// The parsing is a byte scan, not a JSON parse: the signature needs two
+// fields of the first refusal, and a scan over the literals `"rule": "`
+// and `"message": "` is bounded by the input and needs one buffer. The
+// full JSON parse arrives with the driver slice, which needs `position`
+// and the plural too.
+
+import std.buffer;
+
+// The index of the first occurrence of `needle` in `hay` at or after
+// `start`, or -1. `needle` is always a literal here (`"rule": "`), so a
+// naive scan is the whole search.
+fn find[&h, &n](hay: &h [byte], needle: &n [byte], start: int) -> [] int {
+    let hn = len(hay);
+    let nn = len(needle);
+    var i = start;
+    while i + nn <= hn {
+        var matched = true;
+        var j = 0;
+        while j < nn {
+            if hay[i + j] != needle[j] {
+                matched = false;
+            }
+            j = j + 1;
+        }
+        if matched {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// The end of the JSON string value starting at `from` (just past the opening
+// quote): the next `"`. The checker's own messages hold no quotes inside
+// these two fields; a message that ever grows one will be caught by the
+// fixture test, which is what fixtures are for.
+fn value_end[&h](hay: &h [byte], from: int) -> [] int {
+    var end = from;
+    while end < len(hay) && hay[end] != byte_of(34) {
+        end = end + 1;
+    }
+    return end;
+}
+
+
+// The signature of the first refusal in a `cancho check --output json`
+// answer: `rule` verbatim, a colon, the message normalised, appended to
+// `out`. An answer with no refusal (a check that passed) leaves `out`
+// empty; the driver reads an empty signature as `Outcome::Verified`, not
+// as a failure with a strange signature.
+pub fn of[&h, &j](heap: &!h Heap, out: buffer.Buffer, json: &j [byte]) -> [heap] buffer.Buffer {
+    var b = out;
+    let rule_at = find(json, "\"rule\": \"", 0);
+    if rule_at < 0 {
+        return b;
+    }
+    let rule_end = value_end(json, rule_at + 9);
+    let message_at = find(json, "\"message\": \"", rule_end);
+    if message_at < 0 {
+        return b;
+    }
+    let message_end = value_end(json, message_at + 12);
+    b = buffer.append(heap, b, json[rule_at + 9..rule_end]);
+    b = buffer.push(heap, b, byte_of(58));
+    // The message, normalised in place: backticked spans are kept verbatim
+    // (the design says the direction matters — "expected `int`, found
+    // `bool`" and "expected `bool`, found `int`" are different mistakes),
+    // and every digit run outside backticks collapses to # (a line, a
+    // count: the same mistake at a different magnitude is the same
+    // mistake). The same failure at two positions signs identically; two
+    // different failures sign differently.
+    var i = message_at + 12;
+    while i < message_end {
+        let c = json[i];
+        if c == byte_of(96) {
+            var j2 = i + 1;
+            while j2 < message_end && json[j2] != byte_of(96) {
+                j2 = j2 + 1;
+            }
+            if j2 < message_end {
+                b = buffer.append(heap, b, json[i..j2 + 1]);
+                i = j2 + 1;
+            } else {
+                b = buffer.push(heap, b, byte_of(96));
+                i = i + 1;
+            }
+        } else {
+            if int_of(c) >= 48 && int_of(c) <= 57 {
+                while i < message_end && int_of(json[i]) >= 48 && int_of(json[i]) <= 57 {
+                    i = i + 1;
+                }
+                b = buffer.push(heap, b, byte_of(35));
+            } else {
+                b = buffer.push(heap, b, c);
+                i = i + 1;
+            }
+        }
+    }
+    return b;
+}
