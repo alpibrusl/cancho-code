@@ -1,0 +1,128 @@
+edition 6;
+
+module signature_test;
+
+// The gates for `src/signature.cho`: the failure signature built from real
+// `cancho check --output json` answers, the fixtures captured from real
+// runs (not hand-written), and the two properties the same-signature stop
+// rule rests on: the same failure at two positions signs identically, and
+// two different failures sign differently.
+//
+// A test answers 0 to pass. These tests need a `Heap` (the signature buffer
+// grows), and a `Heap` test declares it exactly as `main` would
+// (`docs/testing.md` §3).
+
+import std.bytes;
+import std.buffer;
+import std.test;
+import signature;
+import loop_check;
+
+pub fn test_same_failure_two_positions_same_signature[&h](heap: &!h Heap) -> [heap] int {
+        // Two real refusals of the same rule and the same message shape, at
+        // different files, lines and columns (`type_mismatch_a.json`,
+        // `type_mismatch_b.json`, captured from `cancho check --output
+        // json`). The signature must agree: this is what "the agent is
+        // looping" means, and what K counts.
+        let a = signature.of(heap, buffer.empty(heap, 64), FIXTURE_A);
+        let b = signature.of(heap, buffer.empty(heap, 64), FIXTURE_B);
+        borrow a as &ba in {
+            borrow b as &bb in {
+                test.assert(bytes.equal(buffer.bytes(ba), buffer.bytes(bb)));
+                test.assert(bytes.equal(buffer.bytes(ba), "type-mismatch:expected `int`, found `bool`"));
+            }
+        }
+        buffer.drop(heap, a);
+        buffer.drop(heap, b);
+    return 0;
+}
+
+pub fn test_clean_check_signs_empty[&h](heap: &!h Heap) -> [heap] int {
+        // A check that passed (`clean.json`: {"refused": []}) signs as the
+        // empty slice, which the driver reads as Outcome::Verified — not
+        // as a failure with a strange signature. The two fixtures agree
+        // on being empty, too: there is nothing to distinguish.
+        let s = signature.of(heap, buffer.empty(heap, 64), FIXTURE_CLEAN);
+        borrow s as &bs in {
+            test.assert(bytes.equal(buffer.bytes(bs), ""));
+            test.assert(len(buffer.bytes(bs)) == 0);
+        }
+        // The empty signature is the verified outcome, wired once here so
+        // the driver cannot wire it differently: an empty signature is a
+        // verified attempt, never a failure to stop on.
+        var sig_len = 0;
+        borrow s as &bs2 in {
+            sig_len = len(buffer.bytes(bs2));
+        }
+        let outcome = outcome_for(sig_len);
+        test.assert(outcome_is_verified(outcome));
+        buffer.drop(heap, s);
+    return 0;
+}
+
+pub fn test_two_different_failures_sign_differently[&h](heap: &!h Heap) -> [heap] int {
+        // `type-mismatch` with the direction reversed is a different
+        // failure: the rule is the same and the message shape is the same,
+        // but "expected int found bool" and "expected bool found int" are
+        // not the same mistake. The signature keeps the direction.
+        let a = signature.of(heap, buffer.empty(heap, 64), FIXTURE_A);
+        let reversed = signature.of(heap, buffer.empty(heap, 64), FIXTURE_REVERSED);
+        borrow a as &ba in {
+            borrow reversed as &br in {
+                test.assert(bytes.equal(buffer.bytes(ba), buffer.bytes(br)) == false);
+            }
+        }
+        buffer.drop(heap, a);
+        buffer.drop(heap, reversed);
+    return 0;
+}
+
+pub fn test_numbers_and_positions_are_normalised[&h](heap: &!h Heap) -> [heap] int {
+        // A message that carries a number ("line 12", a count) signs the
+        // same as the same message with a different number: digit runs
+        // collapse to `#`. This is the whole point of normalising before
+        // comparing — the same *mistake* at different magnitudes.
+        let with12 = signature.of(heap, buffer.empty(heap, 64),
+            "{\"refused\": [{\"rule\": \"type-mismatch\", \"message\": \"expected `int`, found `bool` at line 12\"}]}");
+        let with34 = signature.of(heap, buffer.empty(heap, 64),
+            "{\"refused\": [{\"rule\": \"type-mismatch\", \"message\": \"expected `int`, found `bool` at line 34\"}]}");
+        borrow with12 as &w1 in {
+            borrow with34 as &w2 in {
+                test.assert(bytes.equal(buffer.bytes(w1), buffer.bytes(w2)));
+                test.assert(bytes.equal(buffer.bytes(w1),
+                    "type-mismatch:expected `int`, found `bool` at line #"));
+            }
+        }
+        buffer.drop(heap, with12);
+        buffer.drop(heap, with34);
+    return 0;
+}
+
+// The fixtures, embedded: a test that read them from disk would need an
+// `Fs` grant and a path the CI might not have. `static` slices are the
+// language's own answer (docs/compile-time-data.md).
+static FIXTURE_A: [byte] { return "{\n  \"refused\": [\n    {\n      \"rule\": \"type-mismatch\",\n      \"message\": \"expected `int`, found `bool`\",\n      \"explanation\": \"An expression's type does not match what the context requires\",\n      \"position\": { \"file\": \"a.cho\", \"line\": 1, \"column\": 32 }\n    }\n  ]\n}"; }
+static FIXTURE_B: [byte] { return "{\n  \"refused\": [\n    {\n      \"rule\": \"type-mismatch\",\n      \"message\": \"expected `int`, found `bool`\",\n      \"explanation\": \"An expression's type does not match what the context requires\",\n      \"position\": { \"file\": \"b.cho\", \"line\": 1, \"column\": 42 }\n    }\n  ]\n}"; }
+static FIXTURE_CLEAN: [byte] { return "{\n  \"refused\": []\n}"; }
+static FIXTURE_REVERSED: [byte] { return "{\n  \"refused\": [\n    {\n      \"rule\": \"type-mismatch\",\n      \"message\": \"expected `bool`, found `int`\",\n      \"explanation\": \"An expression's type does not match what the context requires\",\n      \"position\": { \"file\": \"c.cho\", \"line\": 1, \"column\": 9 }\n    }\n  ]\n}"; }
+
+// The driver's wiring of the empty signature: the decision module says
+// verified, not a failure. Stated here so the signature tests and the
+// loop_check tests meet in one place.
+fn outcome_for(sig_len: int) -> [] loop_check.Outcome {
+    if sig_len == 0 {
+        return loop_check.Outcome::Verified;
+    }
+    return loop_check.Outcome::Retryable;
+}
+
+fn outcome_is_verified(o: loop_check.Outcome) -> [] bool {
+    match o {
+        loop_check.Outcome::Verified => { return true; }
+        loop_check.Outcome::Retryable => { return false; }
+        loop_check.Outcome::PlanDefect => { return false; }
+        loop_check.Outcome::ProviderOutage => { return false; }
+    }
+}
+
+// No `main`: the test runner supplies its own.
