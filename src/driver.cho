@@ -1,0 +1,214 @@
+edition 7;
+
+module driver;
+
+// `driver` — the loop the harness has been bounding slice by slice, now
+// composed: run the agent, check the file, decide, and after a verified
+// unit re-verify (design §3: an edit that silently drops a verified
+// issue's function puts it back on the board — nothing else would notice).
+//
+// This is also where the verdict lines arrive (design §6): every way the
+// loop can end prints one machine-readable line, and there is no state in
+// which it runs silently without either making progress or naming its
+// stop.
+//
+//     [ISSUE_VERDICT]\t<verified|failed|unavailable>\t<reason>
+//
+//   verified     — the unit checked clean and the re-verify held
+//   failed       — the budgets named the stop: `signature` (the
+//                  same-signature rule), `ceiling` (attempts), `defect`
+//   unavailable  — the checker or the agent is away: a wait, not a
+//                  failure; the caller preserves the attempts and stops
+//                  the run with the provider named (design §4)
+//
+// What is deliberately single-issue here: the board (which issue is next,
+// what regressed) is the typed-issue model's job, issue #2. This module
+// drives ONE issue against ONE file with the real checker, and the
+// re-verify pass is the regression catch in miniature: after the check
+// says verified, it checks again before believing it.
+
+import checker;
+import snapshot;
+import loop_check;
+import std.buffer;
+import std.bytes;
+import std.io;
+import std.process;
+
+// How the run ended, as data for the caller (the printed line is for the
+// person; this is for the run's verdict).
+pub enum Ended {
+    Verified,
+    FailedSignaure,
+    FailedCeiling,
+    PlanDefect,
+    Unavailable,
+}
+
+// Drive one issue: `agent` runs before every check (it is the editor —
+// an LLM in production, a shell stand-in in the gate), `check_cmd` is the
+// checker command for `file`, and the budgets are the design's §4.
+//
+// `snap_prefix` names the snapshot store; the loop snapshots after every
+// verified unit (the §4 contract), so a later regression has a clean
+// copy to restore from.
+pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
+    var attempts = 0;
+    var consecutive = 0;
+    var last = buffer.empty(heap, 64);
+    var snap_next = 0;
+    var ended = Ended::Unavailable;
+    var going = true;
+    while going {
+        // The agent's turn. Its output is not ours to parse: the check
+        // below is the only oracle (design §2 — done is what the gate
+        // says, never what the model claims). A provider outage here is
+        // the same wait-not-burn stop as the checker's.
+        match process.channels() {
+            process.Channels::Failed(e) => {
+                ended = Ended::Unavailable;
+                going = false;
+            }
+            process.Channels::Ok(to_child, child_in, from_child, child_out) => {
+                match exec_spawn(exec, "/bin/sh", agent, "", Stdio::Pipe(child_in), Stdio::Pipe(child_out), Stdio::Null) {
+                    Spawned::Failed(e) => {
+                        process.close(to_child, from_child);
+                        ended = Ended::Unavailable;
+                        going = false;
+                    }
+                    Spawned::Ok(child) => {
+                        let (agent_out, agent_ran) = process.capture(heap, clock, child, to_child, from_child, "", 4096, 30000);
+                        buffer.drop(heap, agent_out);
+                        match agent_ran {
+                            process.Ran::Code(n) => {
+                                // The agent answered; the check is the oracle.
+                                let answer = checker.run(heap, exec, clock, file, check_cmd, 4096, 30000);
+                                let checker.Answer { outcome, sig } = answer;
+                                var this_sig = sig;
+                                // Compare against the last attempt's signature
+                                // before it becomes the last.
+                                var same = false;
+                                borrow last as &lb in {
+                                    borrow this_sig as &tb in {
+                                        same = loop_check.same_signature(buffer.bytes(lb), buffer.bytes(tb));
+                                    }
+                                }
+                                // `decide` compares the two signatures it is
+                                // handed; hand them for real, via the regions
+                                // the buffers allow.
+                                var decision2 = loop_check.Decision::Retry;
+                                borrow last as &lb in {
+                                    borrow this_sig as &tb in {
+                                        decision2 = loop_check.decide(attempts, consecutive, buffer.bytes(lb), buffer.bytes(tb), outcome, max_attempts, k_signature);
+                                    }
+                                }
+                                match decision2 {
+                                    loop_check.Decision::StopIssueVerified => {
+                                        buffer.drop(heap, this_sig);
+                                        // The re-verify pass: check again
+                                        // before believing it. A file that
+                                        // stops checking between the two
+                                        // runs is a regression the single
+                                        // check would have certified.
+                                        let again = checker.run(heap, exec, clock, file, check_cmd, 4096, 30000);
+                                        let checker.Answer { outcome, sig } = again;
+                                        buffer.drop(heap, sig);
+                                        match outcome {
+                                            loop_check.Outcome::Verified => {
+                                                // Snapshot the verified state
+                                                // (§4): the newest copy that
+                                                // checked.
+                                                let idx = snapshot.take(heap, fs, file, snap_prefix, snap_next, 65536);
+                                                if idx >= 0 {
+                                                    snap_next = idx + 1;
+                                                }
+                                                io.write_all(io, "[ISSUE_VERDICT]\tverified\tattempts ");
+                                                io.print_int(io, attempts + 1);
+                                                io.newline(io);
+                                                ended = Ended::Verified;
+                                                going = false;
+                                            }
+                                            loop_check.Outcome::Retryable => {
+                                                // Regressed between the two
+                                                // runs: back on the board,
+                                                // named.
+                                                io.write_all(io, "[ISSUE_VERDICT]\tregressed\tre-verify refused\n");
+                                                attempts = attempts + 1;
+                                            }
+                                            loop_check.Outcome::PlanDefect => {
+                                                io.write_all(io, "[ISSUE_VERDICT]\tfailed\tdefect\n");
+                                                ended = Ended::PlanDefect;
+                                                going = false;
+                                            }
+                                            loop_check.Outcome::ProviderOutage => {
+                                                io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tchecker\n");
+                                                ended = Ended::Unavailable;
+                                                going = false;
+                                            }
+                                        }
+                                    }
+                                    loop_check.Decision::StopIssueDefect => {
+                                        buffer.drop(heap, this_sig);
+                                        io.write_all(io, "[ISSUE_VERDICT]\tfailed\tdefect\n");
+                                        ended = Ended::PlanDefect;
+                                        going = false;
+                                    }
+                                    loop_check.Decision::StopIssueCeiling => {
+                                        buffer.drop(heap, this_sig);
+                                        io.write_all(io, "[ISSUE_VERDICT]\tfailed\tceiling\n");
+                                        ended = Ended::FailedCeiling;
+                                        going = false;
+                                    }
+                                    loop_check.Decision::StopIssueSignature => {
+                                        buffer.drop(heap, this_sig);
+                                        io.write_all(io, "[ISSUE_VERDICT]\tfailed\tsignature\n");
+                                        ended = Ended::FailedSignaure;
+                                        going = false;
+                                    }
+                                    loop_check.Decision::StopRunProvider => {
+                                        buffer.drop(heap, this_sig);
+                                        io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tchecker\n");
+                                        ended = Ended::Unavailable;
+                                        going = false;
+                                    }
+                                    loop_check.Decision::Retry => {
+                                        if same {
+                                            consecutive = consecutive + 1;
+                                        } else {
+                                            consecutive = 0;
+                                        }
+                                        buffer.drop(heap, last);
+                                        last = this_sig;
+                                        attempts = attempts + 1;
+                                    }
+                                }
+                            }
+                            process.Ran::TimedOut => {
+                                io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
+                                ended = Ended::Unavailable;
+                                going = false;
+                            }
+                            process.Ran::TooMuch => {
+                                io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
+                                ended = Ended::Unavailable;
+                                going = false;
+                            }
+                            process.Ran::Signaled(s) => {
+                                io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
+                                ended = Ended::Unavailable;
+                                going = false;
+                            }
+                            process.Ran::Failed(e) => {
+                                io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
+                                ended = Ended::Unavailable;
+                                going = false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    buffer.drop(heap, last);
+    return ended;
+}
