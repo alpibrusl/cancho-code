@@ -1,0 +1,218 @@
+edition 7;
+
+// `provider_gate` — the gate program for `src/provider.cho` (issue #4,
+// design §5): the Mistral agent as one native HTTPS call — the request
+// built, the call made, the answer's `choices[0].message.content` written
+// to the project file — then the real `cancho check` verifies it.
+//
+// A program rather than a `cancho test` test because the case needs `Net`,
+// `Clock`, `Io` and `Fs`, and the mistral case needs the network.
+//
+//     provider_gate <case> <checker-path> <project-dir> <roots> <ip> <key>
+//
+// The arguments come from the harness, which reads the key from the
+// environment and resolves the host with `getent` (a resolver is a policy,
+// http-client.md §3.8; this program is a transport and takes the policy
+// as an argument).
+//
+// The cases:
+//     host    — the literal, for the record and for the harness to assert
+//     mistral — the real API: the answer's content written to the project
+//               file, `[PROVIDER] written` on success, a named tag on
+//               every refusal — a wait, not a burn (design §4)
+
+import provider;
+import std.buffer;
+import std.bytes;
+import std.io;
+import std.json;
+
+// "a.b.c.d" into `out` (four bytes), which the caller owns. Answers
+// true if the text was a dotted quad, false if `out` now holds zeros.
+fn octets_into[&t, &o](text: &t [byte], out: &!o [byte]) -> [] bool {
+    var part = 0;
+    var value = 0 - 1;
+    var dot = 0;
+    var ok = true;
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if c >= 48 && c <= 57 {
+            if value < 0 {
+                value = 0;
+            }
+            value = value * 10 + c - 48;
+        } else {
+            if c == 46 {
+                if value < 0 || value > 255 || part > 3 {
+                    ok = false;
+                } else {
+                    out[part] = byte_of(value);
+                    part = part + 1;
+                    value = 0 - 1;
+                    dot = dot + 1;
+                }
+            } else {
+                ok = false;
+            }
+        }
+        i = i + 1;
+    }
+    if value < 0 || value > 255 || part != 3 || dot != 3 {
+        ok = false;
+    } else {
+        out[3] = byte_of(value);
+    }
+    return ok;
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(signals);
+    release(exec);
+    var console = io;
+    var h = heap;
+    var mode = "";
+    var checker_path = "";
+    var dir = "";
+    var roots_path = "";
+    var ip_text = "";
+    var api_key = "";
+    borrow args as &g in {
+        mode = arg(g, 1);
+        checker_path = arg(g, 2);
+        dir = arg(g, 3);
+        roots_path = arg(g, 4);
+        ip_text = arg(g, 5);
+        api_key = arg(g, 6);
+    }
+    borrow net as &n in {
+        borrow clock as &c in {
+            borrow fs as &f in {
+                borrow mut console as &!i in {
+                    borrow mut h as &!hh in {
+                        region cm {
+                            var file = buffer.empty(hh, 192);
+                            file = buffer.append(hh, file, dir);
+                            file = buffer.append(hh, file, "/project.cho");
+                            if bytes.equal(mode, "host") {
+                                io.write_all(i, "host ");
+                                io.write_all(i, provider.host_for());
+                                io.newline(i);
+                            }
+                            if bytes.equal(mode, "mistral") {
+                                // The file, the roots: the caller's pieces.
+                                var text = buffer.empty(hh, 4096);
+                                var roots = buffer.empty(hh, 65536);
+                                region b {
+                                    let probe = alloc_slice[b](131072, byte_of(0));
+                                    borrow file as &fe in {
+                                        let n = fs_read(f, buffer.bytes(fe), probe);
+                                        if n > 0 {
+                                            text = buffer.append(hh, text, probe[0..n]);
+                                        }
+                                    }
+                                    let rn = fs_read(f, roots_path, probe);
+                                    if rn > 0 {
+                                        roots = buffer.append(hh, roots, probe[0..rn]);
+                                    }
+                                }
+                                // The request body: the API's JSON, the task
+                                // and the file escaped into it.
+                                var body = buffer.empty(hh, 16384);
+                                body = buffer.append(hh, body, "{\"model\":\"mistral-small-latest\",\"messages\":[{\"role\":\"user\",\"content\":\"The cancho program at the end of this message has exactly one error: a function returns true where its signature requires an int. Reply with the complete corrected file and nothing else. Program:\n");
+                                borrow text as &te in {
+                                    body = provider.append_escaped(hh, body, buffer.bytes(te));
+                                }
+                                body = buffer.append(hh, body, "\"}]}");
+                                region e {
+                                    let entropy = alloc_slice[e](32, byte_of(0));
+                                    fs_read(f, "/dev/urandom", entropy);
+                                    region ipr {
+                                        let ip = alloc_slice[ipr](4, byte_of(0));
+                                        if octets_into(ip_text, ip) == false {
+                                            ip[0] = byte_of(0);
+                                            ip[1] = byte_of(0);
+                                            ip[2] = byte_of(0);
+                                            ip[3] = byte_of(0);
+                                        }
+                                        borrow body as &bd in {
+                                            borrow roots as &rt in {
+                                                match provider.complete(hh, n, c, i, api_key, buffer.bytes(bd), buffer.bytes(rt), ip, entropy, 65536, 90000) {
+                                                    provider.Answered::Ok(status, out) => {
+                                                        if status == 200 {
+                                                            // The content, out of the answer's
+                                                            // JSON, into the project file. Every
+                                                            // refusal in the walk is named,
+                                                            // never guessed.
+                                                            var wrote = false;
+                                                            borrow out as &ou in {
+                                                                region tp {
+                                                                    let tape = alloc_slice[tp](json.tape_len(buffer.bytes(ou)), 0);
+                                                                    let parsed = json.parse(buffer.bytes(ou), tape);
+                                                                    if parsed >= 0 {
+                                                                        let choices = json.get(buffer.bytes(ou), tape, 0, "choices");
+                                                                        if choices >= 0 && json.is_array(tape, choices) && json.count(tape, choices) > 0 {
+                                                                            let first = json.at(tape, choices, 0);
+                                                                            let message = json.get(buffer.bytes(ou), tape, first, "message");
+                                                                            if message >= 0 {
+                                                                                let content = json.get(buffer.bytes(ou), tape, message, "content");
+                                                                                if content >= 0 && json.is_string(tape, content) {
+                                                                                    let n2 = json.string_length(buffer.bytes(ou), tape, content);
+                                                                                    region cb {
+                                                                                        let decoded = alloc_slice[cb](n2, byte_of(0));
+                                                                                        let dn = json.string_into(buffer.bytes(ou), tape, content, decoded);
+                                                                                        borrow file as &fe2 in {
+                                                                                            fs_write(f, buffer.bytes(fe2), decoded[0..dn]);
+                                                                                        }
+                                                                                    }
+                                                                                    wrote = true;
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                            if wrote {
+                                                                io.write_all(i, "[PROVIDER] written\n");
+                                                            } else {
+                                                                io.write_all(i, "[PROVIDER] no-content\n");
+                                                            }
+                                                            buffer.drop(hh, out);
+                                                        } else {
+                                                            io.write_all(i, "[PROVIDER] status ");
+                                                            io.print_int(i, status);
+                                                            io.newline(i);
+                                                            buffer.drop(hh, out);
+                                                        }
+                                                    }
+                                                    provider.Answered::Failed(tag) => {
+                                                        io.write_all(i, "[PROVIDER] ");
+                                                        io.write_all(i, provider.tag_of(tag));
+                                                        io.newline(i);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                buffer.drop(hh, body);
+                                buffer.drop(hh, roots);
+                                buffer.drop(hh, text);
+                            }
+                            buffer.drop(hh, file);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    release(net);
+    release(clock);
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return 0;
+}
