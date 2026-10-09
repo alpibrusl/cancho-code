@@ -1,0 +1,135 @@
+edition 7;
+
+module checker;
+
+// `checker` — the driver's subprocess slice: run the real `cancho check`
+// on a file, capture its `--output json` answer, build the failure
+// signature, and hand the loop one `Outcome` it can decide on
+// (`docs/design.md` §3 and §7.1).
+//
+// The authority story is the point of this module's shape: the checker is
+// started under a narrowed `Exec` capability (`exec_spawn` under
+// `Exec("<prefix>")`), so this tool's own authority report names the one
+// directory its checker may live in — the design's §8, made concrete. The
+// module never reads or writes a file itself: it hands the checker a path
+// and reads what the checker prints, which is the checker's own grant to
+// exercise, not this one's.
+//
+// What this module does not do, on purpose: it does not decide when to run
+// (that is the driver loop's job, bounded by `loop_check`), and it does not
+// retry (that is `loop_check.decide`'s). One function, one capture, one
+// answer.
+
+import loop_check;
+import signature;
+import std.buffer;
+import std.process;
+
+// One run of the checker, as data: the outcome the loop decides on, and the
+// signature of the refusal when there was one. A `res` struct because it
+// holds a `buffer.Buffer`, which owns its box.
+pub res struct Answer {
+    outcome: loop_check.Outcome,
+    sig: buffer.Buffer,
+}
+
+// Drop an answer's buffer. The outcome is a `val` enum and needs nothing.
+pub fn drop[&h](heap: &!h Heap, a: Answer) -> [heap] int {
+    let Answer { outcome, sig } = a;
+    buffer.drop(heap, sig);
+    return 0;
+}
+
+// Run the checker command `cmd` (which names `file` in it — the caller
+// builds the command, so the driver's tests can point it at a stand-in
+// checker), under `exec` (narrowed by the caller to the directory the
+// checker lives in), and answer with the loop's outcome and the refusal's
+// signature.
+//
+//   `clock`   for `capture`'s deadline (design §4: no hang, a named stop —
+//             a checker that never answers is `TimedOut`, below)
+//   `file`    the `.cho` path to check (named in `cmd` by the caller)
+//   `cmd`     the shell argv for the checker, built with `std.process.Argv`:
+//             `sh -c '<checker> check --output json --backend cranelift
+//             <file>'`. Measured, twice over: the child of `exec_spawn`
+//             gets exactly the environment passed and no PATH of its own
+//             (processes.md §4.3), so the checker runs by its absolute
+//             path — the caller's, never a baked-in literal. And the whole
+//             command is ONE argv element after `-c`: separate entries
+//             become the shell's `$0`, not arguments, and the first gate
+//             run answered `verified` to a refused file exactly this way.
+//   `most`    the capture bound on the checker's output (a JSON answer is
+//             small; the bound is the caller's policy, not this module's)
+//   `timeout` the capture deadline in ms
+//
+// The mapping to the loop's vocabulary:
+//   - an answer with no refusal            → `Outcome::Verified`
+//   - a refusal                            → `Outcome::Retryable` and its signature
+//   - a checker that did not answer in time → `Outcome::ProviderOutage`:
+//     the tool's own dependency is away, and per design §4 the run stops
+//     with it named rather than burning attempts on a tool that is not there.
+//     (The provider of a *check* is the checker itself.)
+//   - a spawn failure (the binary is not there, `exec` refuses the prefix)
+//     → `Outcome::ProviderOutage` too: the same wait-not-burn rule, and the
+//     report names the checker.
+pub fn run[&h, &x, &c, &f, &m](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, file: &f [byte], cmd: &m [byte], most: int, timeout: int) -> [heap, exec(""), clock, poll] Answer {
+    region a {
+        // The command is one shell invocation: `sh` is what the Exec
+        // capability names, and the command string is the caller's.
+        let path = "/bin/sh";
+        let argv = cmd;
+        match process.channels() {
+            process.Channels::Failed(e) => {
+                let empty = buffer.empty(heap, 16);
+                return Answer { outcome: loop_check.Outcome::ProviderOutage, sig: empty };
+            }
+            process.Channels::Ok(to_child, child_in, from_child, child_out) => {
+                match exec_spawn(exec, path, argv, "", Stdio::Pipe(child_in), Stdio::Pipe(child_out), Stdio::Null) {
+                    Spawned::Failed(e) => {
+                        process.close(to_child, from_child);
+                        let empty = buffer.empty(heap, 16);
+                        return Answer { outcome: loop_check.Outcome::ProviderOutage, sig: empty };
+                    }
+                    Spawned::Ok(child) => {
+                        let (out, ran) = process.capture(heap, clock, child, to_child, from_child, "", most, timeout);
+                        var sig = buffer.empty(heap, 64);
+                        var outcome = loop_check.Outcome::ProviderOutage;
+                        match ran {
+                            process.Ran::Code(n) => {
+                                // The checker answers 0 for a program that
+                                // checks clean and 1 for a refusal; the JSON
+                                // is the truth either way, and the signature
+                                // is empty exactly when there was no
+                                // refusal — which is the verified case.
+                                borrow out as &o in {
+                                    sig = signature.of(heap, sig, buffer.bytes(o));
+                                }
+                                borrow sig as &s in {
+                                    if buffer.size(s) == 0 {
+                                        outcome = loop_check.Outcome::Verified;
+                                    } else {
+                                        outcome = loop_check.Outcome::Retryable;
+                                    }
+                                }
+                            }
+                            process.Ran::TimedOut => {
+                                outcome = loop_check.Outcome::ProviderOutage;
+                            }
+                            process.Ran::TooMuch => {
+                                outcome = loop_check.Outcome::ProviderOutage;
+                            }
+                            process.Ran::Signaled(s) => {
+                                outcome = loop_check.Outcome::ProviderOutage;
+                            }
+                            process.Ran::Failed(e) => {
+                                outcome = loop_check.Outcome::ProviderOutage;
+                            }
+                        }
+                        buffer.drop(heap, out);
+                        return Answer { outcome: outcome, sig: sig };
+                    }
+                }
+            }
+        }
+    }
+}
