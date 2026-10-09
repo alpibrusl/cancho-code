@@ -1,0 +1,139 @@
+edition 7;
+
+// `fix` — the tool's front door for one issue: drive the loop over one
+// project file with a real agent (a shell command: `scripts/agent-ollama.sh`
+// for a local model, a curl one-liner for a cloud one) and the real
+// `cancho check` as the only oracle. Every ending prints its §6 verdict
+// line; there is no state in which it runs silently.
+//
+//     fix <checker-path> <project.cho> <agent-command> <attempts>
+//
+//   checker-path   the compiler binary, by its absolute path (measured:
+//                  the child of exec_spawn gets no PATH of its own)
+//   project.cho    the file to fix
+//   agent-command  the shell command that edits the file each turn; the
+//                  driver does not parse its output — the checker decides
+//   attempts       the attempt ceiling (design §4, default 4)
+//
+// The snapshot store is `<file>.snapshots/`, so a regression has a clean
+// copy one `snapshot.restore` away, and the ring is bounded at 8.
+//
+// Exit codes (design §6): 0 verified, 1 the budgets named a stop,
+// 2 usage, 3 the checker or the agent is away (a wait: rerun, the
+// attempts are preserved by the caller's own budget).
+
+import driver;
+import std.buffer;
+import std.bytes;
+import std.io;
+import std.process;
+
+// A decimal number, or 0 for anything else (the attempt ceiling's
+// default when the argument is not a number — a refusal would be a
+// second oracle, and the checker is the only one).
+fn digits_of[&a](text: &a [byte]) -> [] int {
+    var n = 0;
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if c < 48 || c > 57 {
+            return 0;
+        }
+        n = n * 10 + c - 48;
+        i = i + 1;
+    }
+    return n;
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(net);
+    release(signals);
+    var console = io;
+    var h = heap;
+    var checker_path = "";
+    var file = "";
+    var agent = "";
+    var ceiling = 4;
+    borrow mut console as &!ci in {
+    borrow args as &g in {
+        if arg_count(g) < 4 {
+            io.error_all(ci, "usage: fix <checker> <project.cho> <agent-cmd> [attempts]\n");
+        } else {
+            checker_path = arg(g, 1);
+            file = arg(g, 2);
+            agent = arg(g, 3);
+            if arg_count(g) > 4 {
+                ceiling = digits_of(arg(g, 4));
+            }
+        }
+    }
+    }
+    if len(file) == 0 {
+        release(fs);
+        release(exec);
+        release(clock);
+        release(console);
+        release(h);
+        release(args);
+        return 2;
+    }
+    var status = 1;
+    borrow fs as &fz in {
+    borrow exec as &x in {
+        borrow clock as &c in {
+            borrow mut console as &!i in {
+                borrow mut h as &!hh in {
+                    region cm {
+                        // The checker command, one shell element after
+                        // `-c`: "<checker> check --output json
+                        // --backend cranelift <file>".
+                        var cmd = buffer.empty(hh, 512);
+                        cmd = buffer.append(hh, cmd, "-c\0");
+                        cmd = buffer.append(hh, cmd, checker_path);
+                        cmd = buffer.append(hh, cmd, " check --output json --backend cranelift ");
+                        cmd = buffer.append(hh, cmd, file);
+                        cmd = buffer.append(hh, cmd, "\0");
+                        // The agent command, same shape: the file is its
+                        // argument.
+                        var act = buffer.empty(hh, 512);
+                        act = buffer.append(hh, act, "-c\0");
+                        act = buffer.append(hh, act, agent);
+                        act = buffer.append(hh, act, " ");
+                        act = buffer.append(hh, act, file);
+                        act = buffer.append(hh, act, "\0");
+                        // The snapshot store beside the file.
+                        var prefix = buffer.empty(hh, 512);
+                        prefix = buffer.append(hh, prefix, file);
+                        prefix = buffer.append(hh, prefix, ".snapshots/snap");
+                        borrow cmd as &ce in {
+                            borrow act as &ae in {
+                                borrow prefix as &pe in {
+                                    match driver.run_issue(hh, x, c, i, fz, file, buffer.bytes(ae), buffer.bytes(ce), buffer.bytes(pe), ceiling, 2) {
+                                        driver.Ended::Verified => { status = 0; }
+                                        driver.Ended::FailedSignaure => { status = 1; }
+                                        driver.Ended::FailedCeiling => { status = 1; }
+                                        driver.Ended::PlanDefect => { status = 1; }
+                                        driver.Ended::Unavailable => { status = 3; }
+                                    }
+                                }
+                            }
+                        }
+                        buffer.drop(hh, cmd);
+                        buffer.drop(hh, act);
+                        buffer.drop(hh, prefix);
+                    }
+                }
+            }
+        }
+    }
+    }
+    release(fs);
+    release(exec);
+    release(clock);
+    release(console);
+    release(h);
+    release(args);
+    return status;
+}
