@@ -1,0 +1,135 @@
+edition 7;
+
+// `driver_gate` — the gate program for `src/driver.cho` (design §3, §7.1):
+// the whole loop composed — a stand-in agent, the real `cancho check`, the
+// §4 budgets, the re-verify pass, the snapshot — run by
+// `scripts/test-driver.sh`, which prepares the project file and the
+// stand-in, runs each case, and asserts on the printed verdict lines.
+//
+// A program rather than a `cancho test` test because the case needs `Exec`,
+// `Clock`, `Fs` and `Io`, and a test may hold only `Heap` and `Io`.
+//
+//     driver_gate <case> <checker-path> <project-dir>
+//
+// The cases (the harness prepares the project file first):
+//     fix     — the stand-in agent fixes the file on its first turn:
+//                the loop answers verified, in one attempt
+//     stuck   — the stand-in never fixes anything (the same refusal every
+//                turn): the same-signature stop ends it in two attempts,
+//                with `failed signature` — the rule lex-code left open
+//     ceiling — the stand-in changes the failure every turn (a different
+//                refusal each time): the signature rule cannot fire; the
+//                attempt ceiling does, with `failed ceiling`
+
+import std.buffer;
+import std.bytes;
+import std.io;
+import driver;
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(net);
+    release(signals);
+    var console = io;
+    var h = heap;
+    var mode = "";
+    var checker_path = "";
+    var dir = "";
+    borrow args as &g in {
+        mode = arg(g, 1);
+        checker_path = arg(g, 2);
+        dir = arg(g, 3);
+    }
+    borrow exec as &x in {
+        borrow clock as &c in {
+            borrow fs as &f in {
+                borrow mut console as &!i in {
+                    borrow mut h as &!hh in {
+                        region cm {
+                            // The project file and the checker command,
+                            // built from the harness's directory and
+                            // checker path.
+                            var file = buffer.empty(hh, 160);
+                            file = buffer.append(hh, file, dir);
+                            file = buffer.append(hh, file, "/project.cho");
+                            var snap = buffer.empty(hh, 160);
+                            snap = buffer.append(hh, snap, dir);
+                            snap = buffer.append(hh, snap, "/snap");
+                            var cmd = buffer.empty(hh, 192);
+                            cmd = buffer.append(hh, cmd, "-c\0");
+                            cmd = buffer.append(hh, cmd, checker_path);
+                            cmd = buffer.append(hh, cmd, " check --output json --backend cranelift ");
+                            cmd = buffer.append(hh, cmd, dir);
+                            cmd = buffer.append(hh, cmd, "/project.cho\0");
+                            // The stand-in agents. `fix` repairs the file on
+                            // its first turn; `stuck` does nothing; `ceiling`
+                            // writes a different broken function each turn —
+                            // the cycling failures that the signature rule
+                            // must NOT stop, so the ceiling can.
+                            var agent = buffer.empty(hh, 192);
+                            if bytes.equal(mode, "fix") {
+                                agent = buffer.append(hh, agent, "-c\0cp ");
+                                agent = buffer.append(hh, agent, dir);
+                                agent = buffer.append(hh, agent, "/fixed.cho ");
+                                agent = buffer.append(hh, agent, dir);
+                                agent = buffer.append(hh, agent, "/project.cho\0");
+                            }
+                            if bytes.equal(mode, "stuck") {
+                                agent = buffer.append(hh, agent, "-c\0true\0");
+                            }
+                            if bytes.equal(mode, "ceiling") {
+                                // A stand-in whose failure changes every turn, deterministically: a
+                                // flip file alternates which wrong value the
+                                // broken function returns — `1x` (an unknown
+                                // name) and `1.5` (a float) — so every
+                                // refusal differs and only the ceiling can
+                                // fire. Measured, three ways, before this
+                                // shape: an agent that overwrote the whole
+                                // file replaced every refusal with the same
+                                // program-level one; a time-based flip cycled
+                                // too slowly; and a one-way sed consumed its
+                                // own pattern, leaving attempt two identical
+                                // to attempt one. All three fired the
+                                // signature rule on turn two, and none was a
+                                // cycling agent.
+                                agent = buffer.append(hh, agent, "-c\0f='");
+                                agent = buffer.append(hh, agent, dir);
+                                agent = buffer.append(hh, agent, "/flip'; p='");
+                                agent = buffer.append(hh, agent, dir);
+                                agent = buffer.append(hh, agent, "/project.cho'; if [ -f $f ]; then rm $f; sed -i s/1x/1.5/ $p; else touch $f; sed -i 's/return true/return 1x/' $p; fi\0");
+                            }
+                            borrow file as &fe in {
+                                borrow cmd as &ce in {
+                                    borrow agent as &ae in {
+                                        borrow snap as &se in {
+                                            let ended = driver.run_issue(hh, x, c, i, f, buffer.bytes(fe), buffer.bytes(ae), buffer.bytes(ce), buffer.bytes(se), 4, 2);
+                                            match ended {
+                                                driver.Ended::Verified => { }
+                                                driver.Ended::FailedSignaure => { }
+                                                driver.Ended::FailedCeiling => { }
+                                                driver.Ended::PlanDefect => { }
+                                                driver.Ended::Unavailable => { }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            buffer.drop(hh, file);
+                            buffer.drop(hh, cmd);
+                            buffer.drop(hh, agent);
+                            buffer.drop(hh, snap);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    release(exec);
+    release(clock);
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return 0;
+}
