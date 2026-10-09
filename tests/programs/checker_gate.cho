@@ -1,0 +1,143 @@
+edition 7;
+
+// `checker_gate` — the gate program for `src/checker.cho` (design §7.1):
+// the driver's subprocess slice driving the *real* `cancho check` binary
+// under a narrowed `Exec` capability, run by `scripts/test-checker.sh`,
+// which builds this program, runs each case, and asserts on the printed
+// lines. A program rather than a `cancho test` test because the case needs
+// `Exec` and `Clock`, and a test may hold only `Heap` and `Io`
+// (`docs/testing.md` §3) — the same reason `process_capture.cho` is a
+// program in the compiler's own tree.
+//
+// Each case prints one line the harness greps:
+//     case <name> [signed]
+// where <name> is verified|retryable|provider_outage — the loop's
+// vocabulary, spelled for a person and stable for a script.
+//
+//     checker_gate <case> <checker-path>
+//
+// The cases (the harness prepares the files in /tmp first):
+//     ok       — a program that checks clean → verified
+//     bad      — a program with one type-mismatch → retryable signed
+//     silent   — the checker is replaced by a sleep, with a 1ms budget →
+//                provider_outage (a wait, not a failure: attempts preserved)
+
+import std.buffer;
+import std.bytes;
+import std.io;
+import std.process;
+import checker;
+import loop_check;
+
+fn name_of(o: loop_check.Outcome) -> [] &static [byte] {
+    match o {
+        loop_check.Outcome::Verified => { return "verified"; }
+        loop_check.Outcome::Retryable => { return "retryable"; }
+        loop_check.Outcome::PlanDefect => { return "plan_defect"; }
+        loop_check.Outcome::ProviderOutage => { return "provider_outage"; }
+    }
+}
+
+// One case: run `checker.run` on `file` (the checker command names it),
+// print the loop's outcome. The signature itself is asserted in the
+// signature suite; here the outcome is the contract, plus whether the
+// refusal was parsed at all (the `bad` case must not be verified, which is
+// the difference between a working driver and one whose capture is broken).
+fn one[&h, &x, &c, &i, &f, &m](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, file: &f [byte], cmd: &m [byte], most: int, timeout: int) -> [heap, exec(""), clock, poll, io_write] int {
+    let answer = checker.run(heap, exec, clock, file, cmd, most, timeout);
+    let checker.Answer { outcome, sig } = answer;
+    io.write_all(io, "case ");
+    io.write_all(io, name_of(outcome));
+    borrow sig as &sg in {
+        if buffer.size(sg) > 0 {
+            io.write_all(io, " signed");
+        }
+    }
+    io.newline(io);
+    checker.drop(heap, checker.Answer { outcome: outcome, sig: sig });
+    return 0;
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(fs);
+    release(net);
+    release(signals);
+    var console = io;
+    var h = heap;
+    var mode = "";
+    var checker_path = "";
+    borrow args as &g in {
+        mode = arg(g, 1);
+        checker_path = arg(g, 2);
+    }
+    borrow exec as &x in {
+        borrow clock as &c in {
+            borrow mut console as &!i in {
+                borrow mut h as &!hh in {
+                    // The command is one argv element per `sh -c`: the
+                    // first entry after `-c` is the whole command string,
+                    // so the checker's path and the file are joined into
+                    // it with a buffer, not added as separate entries
+                    // (`sh -c cmd a b` would run `cmd` with `a` in $0 —
+                    // measured: the separate-entries form found no
+                    // checker and answered verified).
+                    region cm {
+                        var cmd_ok = buffer.empty(hh, 128);
+                        cmd_ok = buffer.append(hh, cmd_ok, checker_path);
+                        cmd_ok = buffer.append(hh, cmd_ok, " check --output json --backend cranelift /tmp/cc_gate_ok.cho");
+                        var cmd_bad = buffer.empty(hh, 128);
+                        cmd_bad = buffer.append(hh, cmd_bad, checker_path);
+                        cmd_bad = buffer.append(hh, cmd_bad, " check --output json --backend cranelift /tmp/cc_gate_bad.cho");
+                        var l_ok = process.argv(hh, 32);
+                        var l_bad = process.argv(hh, 32);
+                        var l_slp = process.argv(hh, 8);
+                        let (t1, tc1) = process.add(hh, l_ok, "-c");
+                        l_ok = t1;
+                        let (t2, tc2) = process.add(hh, l_bad, "-c");
+                        l_bad = t2;
+                        let (t3, tc3) = process.add(hh, l_slp, "-c");
+                        l_slp = t3;
+                        borrow cmd_ok as &co in {
+                            let (t4, tc4) = process.add(hh, l_ok, buffer.bytes(co));
+                            l_ok = t4;
+                        }
+                        borrow cmd_bad as &cb in {
+                            let (t5, tc5) = process.add(hh, l_bad, buffer.bytes(cb));
+                            l_bad = t5;
+                        }
+                        let (t6, tc6) = process.add(hh, l_slp, "sleep 30");
+                        l_slp = t6;
+                        borrow l_ok as &lo in {
+                            if bytes.equal(mode, "ok") {
+                                one(hh, x, c, i, "/tmp/cc_gate_ok.cho", process.list(lo), 4096, 30000);
+                            }
+                        }
+                        borrow l_bad as &lb in {
+                            if bytes.equal(mode, "bad") {
+                                one(hh, x, c, i, "/tmp/cc_gate_bad.cho", process.list(lb), 4096, 30000);
+                            }
+                        }
+                        borrow l_slp as &ls in {
+                            if bytes.equal(mode, "silent") {
+                                one(hh, x, c, i, "-", process.list(ls), 4096, 1);
+                            }
+                        }
+                        process.drop(hh, l_ok);
+                        process.drop(hh, l_bad);
+                        process.drop(hh, l_slp);
+                        buffer.drop(hh, cmd_ok);
+                        buffer.drop(hh, cmd_bad);
+                    }
+                }
+            }
+        }
+    }
+    release(exec);
+    release(clock);
+    release(console);
+    release(h);
+    release(args);
+    return 0;
+}
