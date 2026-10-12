@@ -1,0 +1,851 @@
+edition 7;
+module csv;
+import std.list;
+import std.result;
+import std.test;
+
+// csvline port (list elements are Box[Box[[byte]]]: the compiler cannot match-bind a fat Box[[byte]] through a reference): fields are owned byte boxes, a record is a List of them.
+
+pub fn drop_fields[&h](heap: &!h Heap, fields: list.List[Box[Box[[byte]]]]) -> [heap] int {
+    match fields {
+        list.List::Empty => { return 0; }
+        list.List::Cons(f, rest) => {
+            unbox_slice(heap, unbox(heap, f));
+            let tail = unbox(heap, rest);
+            return 1 + drop_fields(heap, tail);
+        }
+    }
+}
+
+// scan one field starting at i. Returns the index of the terminating comma or
+// end of line (after the closing quote for a quoted field), or a negative code:
+// -1 unclosed quote, -2 bad char in unquoted field, -3 junk after closing quote.
+fn scan_field[&r](line: &r [byte], i: int) -> [] int {
+    let n = len(line);
+    if i < n && line[i] == byte_of('"') {
+        var k = i + 1;
+        while true {
+            if k >= n { return -1; }
+            if line[k] == byte_of('"') {
+                if k + 1 < n && line[k + 1] == byte_of('"') { k = k + 2; }
+                else {
+                    let after = k + 1;
+                    if after < n && line[after] != byte_of(',') { return -3; }
+                    return after;
+                }
+            } else { k = k + 1; }
+        }
+    }
+    var j = i;
+    while j < n && line[j] != byte_of(',') {
+        if line[j] == byte_of('"') || line[j] == byte_of('\r') || line[j] == byte_of('\n') { return -2; }
+        j = j + 1;
+    }
+    return j;
+}
+
+// length of the decoded field occupying [i, j)
+fn field_len[&r](line: &r [byte], i: int, j: int) -> [] int {
+    if i < j && line[i] == byte_of('"') {
+        var k = i + 1;
+        var out = 0;
+        while k < j - 1 {
+            if line[k] == byte_of('"') { k = k + 2; } else { k = k + 1; }
+            out = out + 1;
+        }
+        return out;
+    }
+    return j - i;
+}
+
+fn make_field[&h, &r](heap: &!h Heap, line: &r [byte], i: int, j: int) -> [heap] Box[[byte]] {
+    let m = field_len(line, i, j);
+    let b = box_slice(heap, m, byte_of(0));
+    borrow mut b as &!w in {
+        let s = contents(w);
+        if i < j && line[i] == byte_of('"') {
+            var k = i + 1;
+            var o = 0;
+            while k < j - 1 {
+                s[o] = line[k];
+                if line[k] == byte_of('"') { k = k + 2; } else { k = k + 1; }
+                o = o + 1;
+            }
+        } else {
+            var k = i;
+            while k < j { s[k - i] = line[k]; k = k + 1; }
+        }
+    }
+    return b;
+}
+
+fn parse_from[&h, &r](heap: &!h Heap, line: &r [byte], i: int) -> [heap] result.Result[list.List[Box[Box[[byte]]]], int] {
+    let j = scan_field(line, i);
+    if j < 0 { return result.Result::Err(0 - j); }
+    let f = make_field(heap, line, i, j);
+    if j >= len(line) {
+        return result.Result::Ok(list.push(heap, list.List::Empty, box(heap, f)));
+    }
+    match parse_from(heap, line, j + 1) {
+        result.Result::Ok(rest) => { return result.Result::Ok(list.push(heap, rest, box(heap, f))); }
+        result.Result::Err(e) => { unbox_slice(heap, f); return result.Result::Err(e); }
+    }
+}
+
+// Err carries a code: 1 unclosed quote, 2 bad char in unquoted field, 3 junk after closing quote.
+pub fn csv_parse_line[&h, &r](heap: &!h Heap, line: &r [byte]) -> [heap] result.Result[list.List[Box[Box[[byte]]]], int] {
+    return parse_from(heap, line, 0);
+}
+
+fn needs_quote[&r](f: &r [byte]) -> [] bool {
+    var k = 0;
+    while k < len(f) {
+        let c = f[k];
+        if c == byte_of(',') || c == byte_of('"') || c == byte_of('\r') || c == byte_of('\n') { return true; }
+        k = k + 1;
+    }
+    return false;
+}
+
+fn quotes_in[&r](f: &r [byte]) -> [] int {
+    var k = 0;
+    var q = 0;
+    while k < len(f) { if f[k] == byte_of('"') { q = q + 1; } k = k + 1; }
+    return q;
+}
+
+fn out_len[&l](fields: &l list.List[Box[Box[[byte]]]]) -> [] int {
+    match fields {
+        list.List::Empty => { return 0; }
+        list.List::Cons(f, rest) => {
+            let s = contents(contents(f));
+            var m = len(s);
+            if needs_quote(s) { m = m + 2 + quotes_in(s); }
+            match contents(rest) {
+                list.List::Empty => { return m; }
+                list.List::Cons(_, _) => { return m + 1 + out_len(contents(rest)); }
+            }
+        }
+    }
+}
+
+fn write_all[&l, &w](fields: &l list.List[Box[Box[[byte]]]], out: &!w [byte], at: int) -> [] int {
+    match fields {
+        list.List::Empty => { return at; }
+        list.List::Cons(f, rest) => {
+            let s = contents(contents(f));
+            var o = at;
+            if needs_quote(s) {
+                out[o] = byte_of('"'); o = o + 1;
+                var k = 0;
+                while k < len(s) {
+                    out[o] = s[k]; o = o + 1;
+                    if s[k] == byte_of('"') { out[o] = byte_of('"'); o = o + 1; }
+                    k = k + 1;
+                }
+                out[o] = byte_of('"'); o = o + 1;
+            } else {
+                var k = 0;
+                while k < len(s) { out[o] = s[k]; o = o + 1; k = k + 1; }
+            }
+            match contents(rest) {
+                list.List::Empty => { return o; }
+                list.List::Cons(_, _) => {
+                    out[o] = byte_of(','); o = o + 1;
+                    return write_all(contents(rest), out, o);
+                }
+            }
+        }
+    }
+}
+
+pub fn csv_format_line[&h, &l](heap: &!h Heap, fields: &l list.List[Box[Box[[byte]]]]) -> [heap] Box[[byte]] {
+    let b = box_slice(heap, out_len(fields), byte_of(0));
+    borrow mut b as &!w in {
+        write_all(fields, contents(w), 0);
+    }
+    return b;
+}
+
+
+// ---- test helpers (generated file) ----
+fn same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool {
+    if len(x) != len(y) { return false; }
+    var k = 0;
+    while k < len(x) { if x[k] != y[k] { return false; } k = k + 1; }
+    return true;
+}
+fn nth_is[&l, &r](fields: &l list.List[Box[Box[[byte]]]], idx: int, want: &r [byte]) -> [] bool {
+    match fields {
+        list.List::Empty => { return false; }
+        list.List::Cons(f, rest) => {
+            if idx == 0 { return same(contents(contents(f)), want); }
+            return nth_is(contents(rest), idx - 1, want);
+        }
+    }
+}
+fn mk[&h, &r](heap: &!h Heap, s: &r [byte]) -> [heap] Box[[byte]] {
+    let b = box_slice(heap, len(s), byte_of(0));
+    borrow mut b as &!w in { copy_into(contents(w), s); }
+    return b;
+}
+
+// {"fn": "csv_parse_line", "args": [""], "expect": {"$variant": "Ok", "args": [[""]]}}
+pub fn test_case_00[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 1 { ok = false; }
+              if !nth_is(r, 0, "") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["a"], "expect": {"$variant": "Ok", "args": [["a"]]}}
+pub fn test_case_01[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "a") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 1 { ok = false; }
+              if !nth_is(r, 0, "a") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["a,b,c"], "expect": {"$variant": "Ok", "args": [["a", "b", "c"]]}}
+pub fn test_case_02[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "a,b,c") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 3 { ok = false; }
+              if !nth_is(r, 0, "a") { ok = false; }
+              if !nth_is(r, 1, "b") { ok = false; }
+              if !nth_is(r, 2, "c") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["a,,b"], "expect": {"$variant": "Ok", "args": [["a", "", "b"]]}}
+pub fn test_case_03[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "a,,b") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 3 { ok = false; }
+              if !nth_is(r, 0, "a") { ok = false; }
+              if !nth_is(r, 1, "") { ok = false; }
+              if !nth_is(r, 2, "b") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["a,"], "expect": {"$variant": "Ok", "args": [["a", ""]]}}
+pub fn test_case_04[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "a,") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 2 { ok = false; }
+              if !nth_is(r, 0, "a") { ok = false; }
+              if !nth_is(r, 1, "") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": [","], "expect": {"$variant": "Ok", "args": [["", ""]]}}
+pub fn test_case_05[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, ",") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 2 { ok = false; }
+              if !nth_is(r, 0, "") { ok = false; }
+              if !nth_is(r, 1, "") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": [",,"], "expect": {"$variant": "Ok", "args": [["", "", ""]]}}
+pub fn test_case_06[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, ",,") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 3 { ok = false; }
+              if !nth_is(r, 0, "") { ok = false; }
+              if !nth_is(r, 1, "") { ok = false; }
+              if !nth_is(r, 2, "") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": [" a , b "], "expect": {"$variant": "Ok", "args": [[" a ", " b "]]}}
+pub fn test_case_07[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, " a , b ") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 2 { ok = false; }
+              if !nth_is(r, 0, " a ") { ok = false; }
+              if !nth_is(r, 1, " b ") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"a\""], "expect": {"$variant": "Ok", "args": [["a"]]}}
+pub fn test_case_08[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"a\"") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 1 { ok = false; }
+              if !nth_is(r, 0, "a") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"a,b\",c"], "expect": {"$variant": "Ok", "args": [["a,b", "c"]]}}
+pub fn test_case_09[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"a,b\",c") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 2 { ok = false; }
+              if !nth_is(r, 0, "a,b") { ok = false; }
+              if !nth_is(r, 1, "c") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"a\"\"b\",c"], "expect": {"$variant": "Ok", "args": [["a\"b", "c"]]}}
+pub fn test_case_10[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"a\"\"b\",c") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 2 { ok = false; }
+              if !nth_is(r, 0, "a\"b") { ok = false; }
+              if !nth_is(r, 1, "c") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"\""], "expect": {"$variant": "Ok", "args": [[""]]}}
+pub fn test_case_11[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"\"") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 1 { ok = false; }
+              if !nth_is(r, 0, "") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"\",x"], "expect": {"$variant": "Ok", "args": [["", "x"]]}}
+pub fn test_case_12[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"\",x") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 2 { ok = false; }
+              if !nth_is(r, 0, "") { ok = false; }
+              if !nth_is(r, 1, "x") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"a\nb\",c"], "expect": {"$variant": "Ok", "args": [["a\nb", "c"]]}}
+pub fn test_case_13[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"a\nb\",c") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 2 { ok = false; }
+              if !nth_is(r, 0, "a\nb") { ok = false; }
+              if !nth_is(r, 1, "c") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["a,\"b,c\",d"], "expect": {"$variant": "Ok", "args": [["a", "b,c", "d"]]}}
+pub fn test_case_14[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "a,\"b,c\",d") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 3 { ok = false; }
+              if !nth_is(r, 0, "a") { ok = false; }
+              if !nth_is(r, 1, "b,c") { ok = false; }
+              if !nth_is(r, 2, "d") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"a\"\"\""], "expect": {"$variant": "Ok", "args": [["a\""]]}}
+pub fn test_case_15[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"a\"\"\"") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 1 { ok = false; }
+              if !nth_is(r, 0, "a\"") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"\"\"\""], "expect": {"$variant": "Ok", "args": [["\""]]}}
+pub fn test_case_16[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"\"\"\"") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 1 { ok = false; }
+              if !nth_is(r, 0, "\"") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"x\",\"y\""], "expect": {"$variant": "Ok", "args": [["x", "y"]]}}
+pub fn test_case_17[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"x\",\"y\"") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 2 { ok = false; }
+              if !nth_is(r, 0, "x") { ok = false; }
+              if !nth_is(r, 1, "y") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\u00e9,\u00fc"], "expect": {"$variant": "Ok", "args": [["\u00e9", "\u00fc"]]}}
+pub fn test_case_18[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "é,ü") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 2 { ok = false; }
+              if !nth_is(r, 0, "é") { ok = false; }
+              if !nth_is(r, 1, "ü") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"\u00e9,\u00fc\""], "expect": {"$variant": "Ok", "args": [["\u00e9,\u00fc"]]}}
+pub fn test_case_19[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"é,ü\"") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 1 { ok = false; }
+              if !nth_is(r, 0, "é,ü") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\u65e5\u672c,\u8a9e"], "expect": {"$variant": "Ok", "args": [["\u65e5\u672c", "\u8a9e"]]}}
+pub fn test_case_20[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "日本,語") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 2 { ok = false; }
+              if !nth_is(r, 0, "日本") { ok = false; }
+              if !nth_is(r, 1, "語") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"line1\r\nline2\",z"], "expect": {"$variant": "Ok", "args": [["line1\r\nline2", "z"]]}}
+pub fn test_case_21[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"line1\r\nline2\",z") {
+        result.Result::Ok(fs) => {
+            var ok = true;
+            borrow fs as &r in { if list.length(r) != 2 { ok = false; }
+              if !nth_is(r, 0, "line1\r\nline2") { ok = false; }
+              if !nth_is(r, 1, "z") { ok = false; }
+            }
+            drop_fields(heap, fs);
+            if ok { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["  \"a\""], "expect_err": true}
+pub fn test_case_22[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "  \"a\"") {
+        result.Result::Ok(fs) => { drop_fields(heap, fs); return 1; }
+        result.Result::Err(_) => { return 0; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"a\" ,b"], "expect_err": true}
+pub fn test_case_23[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"a\" ,b") {
+        result.Result::Ok(fs) => { drop_fields(heap, fs); return 1; }
+        result.Result::Err(_) => { return 0; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"a"], "expect_err": true}
+pub fn test_case_24[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"a") {
+        result.Result::Ok(fs) => { drop_fields(heap, fs); return 1; }
+        result.Result::Err(_) => { return 0; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["a\"b"], "expect_err": true}
+pub fn test_case_25[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "a\"b") {
+        result.Result::Ok(fs) => { drop_fields(heap, fs); return 1; }
+        result.Result::Err(_) => { return 0; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["a,\"b"], "expect_err": true}
+pub fn test_case_26[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "a,\"b") {
+        result.Result::Ok(fs) => { drop_fields(heap, fs); return 1; }
+        result.Result::Err(_) => { return 0; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"a\"b"], "expect_err": true}
+pub fn test_case_27[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"a\"b") {
+        result.Result::Ok(fs) => { drop_fields(heap, fs); return 1; }
+        result.Result::Err(_) => { return 0; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"a\" ,b "], "expect_err": true}
+pub fn test_case_28[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"a\" ,b ") {
+        result.Result::Ok(fs) => { drop_fields(heap, fs); return 1; }
+        result.Result::Err(_) => { return 0; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["a\nb"], "expect_err": true}
+pub fn test_case_29[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "a\nb") {
+        result.Result::Ok(fs) => { drop_fields(heap, fs); return 1; }
+        result.Result::Err(_) => { return 0; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["a\rb"], "expect_err": true}
+pub fn test_case_30[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "a\rb") {
+        result.Result::Ok(fs) => { drop_fields(heap, fs); return 1; }
+        result.Result::Err(_) => { return 0; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"a\"x,b"], "expect_err": true}
+pub fn test_case_31[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"a\"x,b") {
+        result.Result::Ok(fs) => { drop_fields(heap, fs); return 1; }
+        result.Result::Err(_) => { return 0; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["a,b\"c\""], "expect_err": true}
+pub fn test_case_32[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "a,b\"c\"") {
+        result.Result::Ok(fs) => { drop_fields(heap, fs); return 1; }
+        result.Result::Err(_) => { return 0; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["\"\"\""], "expect_err": true}
+pub fn test_case_33[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "\"\"\"") {
+        result.Result::Ok(fs) => { drop_fields(heap, fs); return 1; }
+        result.Result::Err(_) => { return 0; }
+    }
+}
+// {"fn": "csv_parse_line", "args": ["a,\"b\"c"], "expect_err": true}
+pub fn test_case_34[&h](heap: &!h Heap) -> [heap] int {
+    match csv_parse_line(heap, "a,\"b\"c") {
+        result.Result::Ok(fs) => { drop_fields(heap, fs); return 1; }
+        result.Result::Err(_) => { return 0; }
+    }
+}
+// {"fn": "csv_format_line", "args": [["a"]], "expect": "a"}
+pub fn test_case_35[&h](heap: &!h Heap) -> [heap] int {
+    var l: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    l = list.push(heap, l, box(heap, mk(heap, "a")));
+    var ok = false;
+    borrow l as &r in {
+        let out = csv_format_line(heap, r);
+        borrow out as &q in { ok = same(contents(q), "a"); }
+        unbox_slice(heap, out);
+    }
+    drop_fields(heap, l);
+    if ok { return 0; }
+    return 1;
+}
+// {"fn": "csv_format_line", "args": [["a", "b"]], "expect": "a,b"}
+pub fn test_case_36[&h](heap: &!h Heap) -> [heap] int {
+    var l: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    l = list.push(heap, l, box(heap, mk(heap, "b")));
+    l = list.push(heap, l, box(heap, mk(heap, "a")));
+    var ok = false;
+    borrow l as &r in {
+        let out = csv_format_line(heap, r);
+        borrow out as &q in { ok = same(contents(q), "a,b"); }
+        unbox_slice(heap, out);
+    }
+    drop_fields(heap, l);
+    if ok { return 0; }
+    return 1;
+}
+// {"fn": "csv_format_line", "args": [[""]], "expect": ""}
+pub fn test_case_37[&h](heap: &!h Heap) -> [heap] int {
+    var l: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    l = list.push(heap, l, box(heap, mk(heap, "")));
+    var ok = false;
+    borrow l as &r in {
+        let out = csv_format_line(heap, r);
+        borrow out as &q in { ok = same(contents(q), ""); }
+        unbox_slice(heap, out);
+    }
+    drop_fields(heap, l);
+    if ok { return 0; }
+    return 1;
+}
+// {"fn": "csv_format_line", "args": [["", ""]], "expect": ","}
+pub fn test_case_38[&h](heap: &!h Heap) -> [heap] int {
+    var l: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    l = list.push(heap, l, box(heap, mk(heap, "")));
+    l = list.push(heap, l, box(heap, mk(heap, "")));
+    var ok = false;
+    borrow l as &r in {
+        let out = csv_format_line(heap, r);
+        borrow out as &q in { ok = same(contents(q), ","); }
+        unbox_slice(heap, out);
+    }
+    drop_fields(heap, l);
+    if ok { return 0; }
+    return 1;
+}
+// {"fn": "csv_format_line", "args": [["a,b"]], "expect": "\"a,b\""}
+pub fn test_case_39[&h](heap: &!h Heap) -> [heap] int {
+    var l: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    l = list.push(heap, l, box(heap, mk(heap, "a,b")));
+    var ok = false;
+    borrow l as &r in {
+        let out = csv_format_line(heap, r);
+        borrow out as &q in { ok = same(contents(q), "\"a,b\""); }
+        unbox_slice(heap, out);
+    }
+    drop_fields(heap, l);
+    if ok { return 0; }
+    return 1;
+}
+// {"fn": "csv_format_line", "args": [["a\"b"]], "expect": "\"a\"\"b\""}
+pub fn test_case_40[&h](heap: &!h Heap) -> [heap] int {
+    var l: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    l = list.push(heap, l, box(heap, mk(heap, "a\"b")));
+    var ok = false;
+    borrow l as &r in {
+        let out = csv_format_line(heap, r);
+        borrow out as &q in { ok = same(contents(q), "\"a\"\"b\""); }
+        unbox_slice(heap, out);
+    }
+    drop_fields(heap, l);
+    if ok { return 0; }
+    return 1;
+}
+// {"fn": "csv_format_line", "args": [["a\nb", "c"]], "expect": "\"a\nb\",c"}
+pub fn test_case_41[&h](heap: &!h Heap) -> [heap] int {
+    var l: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    l = list.push(heap, l, box(heap, mk(heap, "c")));
+    l = list.push(heap, l, box(heap, mk(heap, "a\nb")));
+    var ok = false;
+    borrow l as &r in {
+        let out = csv_format_line(heap, r);
+        borrow out as &q in { ok = same(contents(q), "\"a\nb\",c"); }
+        unbox_slice(heap, out);
+    }
+    drop_fields(heap, l);
+    if ok { return 0; }
+    return 1;
+}
+// {"fn": "csv_format_line", "args": [[" a ", "b"]], "expect": " a ,b"}
+pub fn test_case_42[&h](heap: &!h Heap) -> [heap] int {
+    var l: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    l = list.push(heap, l, box(heap, mk(heap, "b")));
+    l = list.push(heap, l, box(heap, mk(heap, " a ")));
+    var ok = false;
+    borrow l as &r in {
+        let out = csv_format_line(heap, r);
+        borrow out as &q in { ok = same(contents(q), " a ,b"); }
+        unbox_slice(heap, out);
+    }
+    drop_fields(heap, l);
+    if ok { return 0; }
+    return 1;
+}
+// {"fn": "csv_format_line", "args": [["\""]], "expect": "\"\"\"\""}
+pub fn test_case_43[&h](heap: &!h Heap) -> [heap] int {
+    var l: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    l = list.push(heap, l, box(heap, mk(heap, "\"")));
+    var ok = false;
+    borrow l as &r in {
+        let out = csv_format_line(heap, r);
+        borrow out as &q in { ok = same(contents(q), "\"\"\"\""); }
+        unbox_slice(heap, out);
+    }
+    drop_fields(heap, l);
+    if ok { return 0; }
+    return 1;
+}
+// {"fn": "csv_format_line", "args": [["a", "", "b"]], "expect": "a,,b"}
+pub fn test_case_44[&h](heap: &!h Heap) -> [heap] int {
+    var l: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    l = list.push(heap, l, box(heap, mk(heap, "b")));
+    l = list.push(heap, l, box(heap, mk(heap, "")));
+    l = list.push(heap, l, box(heap, mk(heap, "a")));
+    var ok = false;
+    borrow l as &r in {
+        let out = csv_format_line(heap, r);
+        borrow out as &q in { ok = same(contents(q), "a,,b"); }
+        unbox_slice(heap, out);
+    }
+    drop_fields(heap, l);
+    if ok { return 0; }
+    return 1;
+}
+// {"fn": "csv_format_line", "args": [["\u00e9", "\u65e5\u672c"]], "expect": "\u00e9,\u65e5\u672c"}
+pub fn test_case_45[&h](heap: &!h Heap) -> [heap] int {
+    var l: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    l = list.push(heap, l, box(heap, mk(heap, "日本")));
+    l = list.push(heap, l, box(heap, mk(heap, "é")));
+    var ok = false;
+    borrow l as &r in {
+        let out = csv_format_line(heap, r);
+        borrow out as &q in { ok = same(contents(q), "é,日本"); }
+        unbox_slice(heap, out);
+    }
+    drop_fields(heap, l);
+    if ok { return 0; }
+    return 1;
+}
+// {"fn": "csv_format_line", "args": [["x,\"y\"", "z"]], "expect": "\"x,\"\"y\"\"\",z"}
+pub fn test_case_46[&h](heap: &!h Heap) -> [heap] int {
+    var l: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    l = list.push(heap, l, box(heap, mk(heap, "z")));
+    l = list.push(heap, l, box(heap, mk(heap, "x,\"y\"")));
+    var ok = false;
+    borrow l as &r in {
+        let out = csv_format_line(heap, r);
+        borrow out as &q in { ok = same(contents(q), "\"x,\"\"y\"\"\",z"); }
+        unbox_slice(heap, out);
+    }
+    drop_fields(heap, l);
+    if ok { return 0; }
+    return 1;
+}
+// {"fn": "csv_format_line", "args": [["a\r\nb"]], "expect": "\"a\r\nb\""}
+pub fn test_case_47[&h](heap: &!h Heap) -> [heap] int {
+    var l: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    l = list.push(heap, l, box(heap, mk(heap, "a\r\nb")));
+    var ok = false;
+    borrow l as &r in {
+        let out = csv_format_line(heap, r);
+        borrow out as &q in { ok = same(contents(q), "\"a\r\nb\""); }
+        unbox_slice(heap, out);
+    }
+    drop_fields(heap, l);
+    if ok { return 0; }
+    return 1;
+}
+// {"fn": "csv_format_line", "args": [["", "a", ""]], "expect": ",a,"}
+pub fn test_case_48[&h](heap: &!h Heap) -> [heap] int {
+    var l: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    l = list.push(heap, l, box(heap, mk(heap, "")));
+    l = list.push(heap, l, box(heap, mk(heap, "a")));
+    l = list.push(heap, l, box(heap, mk(heap, "")));
+    var ok = false;
+    borrow l as &r in {
+        let out = csv_format_line(heap, r);
+        borrow out as &q in { ok = same(contents(q), ",a,"); }
+        unbox_slice(heap, out);
+    }
+    drop_fields(heap, l);
+    if ok { return 0; }
+    return 1;
+}
+// {"fn": "csv_format_line", "args": [[]], "expect": ""}
+pub fn test_case_49[&h](heap: &!h Heap) -> [heap] int {
+    var l: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    var ok = false;
+    borrow l as &r in {
+        let out = csv_format_line(heap, r);
+        borrow out as &q in { ok = same(contents(q), ""); }
+        unbox_slice(heap, out);
+    }
+    drop_fields(heap, l);
+    if ok { return 0; }
+    return 1;
+}

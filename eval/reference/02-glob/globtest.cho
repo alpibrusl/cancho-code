@@ -1,0 +1,92 @@
+edition 7;
+module globtest;
+import std.test;
+import glob;
+
+pub fn test_c000() -> [] int { test.assert(glob.glob_match("*.txt", "a.txt")); return 0; }
+pub fn test_c001() -> [] int { test.assert(glob.glob_match("*.txt", ".txt")); return 0; }
+pub fn test_c002() -> [] int { test.assert(!glob.glob_match("*.txt", "a/b.txt")); return 0; }
+pub fn test_c003() -> [] int { test.assert(glob.glob_match("**.txt", "a/b.txt")); return 0; }
+pub fn test_c004() -> [] int { test.assert(glob.glob_match("a/**/b", "a/x/y/b")); return 0; }
+pub fn test_c005() -> [] int { test.assert(!glob.glob_match("a/**/b", "a/b")); return 0; }
+pub fn test_c006() -> [] int { test.assert(glob.glob_match("a/**", "a/b/c")); return 0; }
+pub fn test_c007() -> [] int { test.assert(glob.glob_match("**", "a/b")); return 0; }
+pub fn test_c008() -> [] int { test.assert(!glob.glob_match("*", "a/b")); return 0; }
+pub fn test_c009() -> [] int { test.assert(glob.glob_match("*", "")); return 0; }
+pub fn test_c010() -> [] int { test.assert(glob.glob_match("", "")); return 0; }
+pub fn test_c011() -> [] int { test.assert(!glob.glob_match("", "a")); return 0; }
+pub fn test_c012() -> [] int { test.assert(glob.glob_match("?", "a")); return 0; }
+pub fn test_c013() -> [] int { test.assert(!glob.glob_match("?", "/")); return 0; }
+pub fn test_c014() -> [] int { test.assert(!glob.glob_match("?", "")); return 0; }
+pub fn test_c015() -> [] int { test.assert(glob.glob_match("??", "ab")); return 0; }
+pub fn test_c016() -> [] int { test.assert(glob.glob_match("a?c", "abc")); return 0; }
+pub fn test_c017() -> [] int { test.assert(!glob.glob_match("a?c", "a/c")); return 0; }
+pub fn test_c018() -> [] int { test.assert(glob.glob_match("[abc]", "b")); return 0; }
+pub fn test_c019() -> [] int { test.assert(!glob.glob_match("[abc]", "d")); return 0; }
+pub fn test_c020() -> [] int { test.assert(glob.glob_match("[a-c]", "b")); return 0; }
+pub fn test_c021() -> [] int { test.assert(!glob.glob_match("[a-c]x", "dx")); return 0; }
+pub fn test_c022() -> [] int { test.assert(glob.glob_match("[!a-c]", "d")); return 0; }
+pub fn test_c023() -> [] int { test.assert(!glob.glob_match("[!a-c]", "b")); return 0; }
+pub fn test_c024() -> [] int { test.assert(!glob.glob_match("[!a]", "/")); return 0; }
+pub fn test_c025() -> [] int { test.assert(glob.glob_match("[a-]", "-")); return 0; }
+pub fn test_c026() -> [] int { test.assert(glob.glob_match("[a-]", "a")); return 0; }
+pub fn test_c027() -> [] int { test.assert(!glob.glob_match("[a-]", "b")); return 0; }
+pub fn test_c028() -> [] int { test.assert(glob.glob_match("[-a]", "-")); return 0; }
+pub fn test_c029() -> [] int { test.assert(!glob.glob_match("[]]", "]")); return 0; }
+pub fn test_c030() -> [] int { test.assert(glob.glob_match("a\\*b", "a*b")); return 0; }
+pub fn test_c031() -> [] int { test.assert(!glob.glob_match("a\\*b", "axb")); return 0; }
+pub fn test_c032() -> [] int { test.assert(glob.glob_match("\\?", "?")); return 0; }
+pub fn test_c033() -> [] int { test.assert(glob.glob_match("\\\\", "\\")); return 0; }
+pub fn test_c034() -> [] int { test.assert(glob.glob_match("file[0-9].log", "file7.log")); return 0; }
+pub fn test_c035() -> [] int { test.assert(!glob.glob_match("file[0-9].log", "filex.log")); return 0; }
+pub fn test_c036() -> [] int { test.assert(glob.glob_match("*.[ch]", "main.c")); return 0; }
+pub fn test_c037() -> [] int { test.assert(glob.glob_match("*.[ch]", "main.h")); return 0; }
+pub fn test_c038() -> [] int { test.assert(!glob.glob_match("*.[ch]", "main.o")); return 0; }
+pub fn test_c039() -> [] int { test.assert(glob.glob_match("src/*/lib.rs", "src/core/lib.rs")); return 0; }
+pub fn test_c040() -> [] int { test.assert(!glob.glob_match("src/*/lib.rs", "src/a/b/lib.rs")); return 0; }
+pub fn test_c041() -> [] int { test.assert(glob.glob_match("src/**/lib.rs", "src/a/b/lib.rs")); return 0; }
+pub fn test_c042() -> [] int { test.assert(glob.glob_match("é?", "éa")); return 0; }
+pub fn test_c043() -> [] int { test.assert(!glob.glob_match("é?", "éaa")); return 0; }
+pub fn test_c044() -> [] int { test.assert(glob.glob_match("?", "é")); return 0; }
+pub fn test_c045() -> [] int { test.assert(!glob.glob_match("??", "é")); return 0; }
+pub fn test_c046() -> [] int { test.assert(glob.glob_match("[é]", "é")); return 0; }
+pub fn test_c047() -> [] int { test.assert(glob.glob_match("*é", "caffé")); return 0; }
+pub fn test_c048() -> [] int { test.assert(glob.glob_match("a*b*c", "aXXbYYc")); return 0; }
+pub fn test_c049() -> [] int { test.assert(!glob.glob_match("a*b*c", "acb")); return 0; }
+pub fn test_c050() -> [] int { test.assert(!glob.glob_match("a*a*a*a*b", "aaaaaaaaaaaaaaaaaaaaaaaaa")); return 0; }
+pub fn test_c051() -> [] int { test.assert(glob.glob_match("a*a*a*a*b", "aaaaaaaaaaaaaaaaaab")); return 0; }
+pub fn test_c052() -> [] int { test.assert(!glob.glob_match("**/*.lex", "x.lex")); return 0; }
+pub fn test_c053() -> [] int { test.assert(glob.glob_match("**/*.lex", "a/b/x.lex")); return 0; }
+pub fn test_c054() -> [] int { test.assert(glob.glob_match("*/**", "a/")); return 0; }
+pub fn test_c055() -> [] int { test.assert(glob.glob_match("[a-c]*", "bcd")); return 0; }
+pub fn test_c056() -> [] int { test.assert(glob.glob_match("[!/]", "x")); return 0; }
+pub fn test_c057() -> [] int { test.assert(!glob.glob_match("[/]", "/")); return 0; }
+pub fn test_c058() -> [] int { test.assert(!glob.glob_match("x[!]", "x!")); return 0; }
+pub fn test_c059() -> [] int { test.assert(!glob.glob_match("[z-a]", "m")); return 0; }
+pub fn test_c060() -> [] int { test.assert(!glob.glob_match("a\\", "a\\")); return 0; }
+pub fn test_c061() -> [] int { test.assert(!glob.glob_match("[abc", "a")); return 0; }
+pub fn test_c062() -> [] int { test.assert(!glob.glob_match("[", "[")); return 0; }
+pub fn test_c063() -> [] int { test.assert(!glob.glob_match("[!", "a")); return 0; }
+pub fn test_c064() -> [] int { test.assert(!glob.glob_valid("[abc")); return 0; }
+pub fn test_c065() -> [] int { test.assert(!glob.glob_valid("[")); return 0; }
+pub fn test_c066() -> [] int { test.assert(!glob.glob_valid("[!")); return 0; }
+pub fn test_c067() -> [] int { test.assert(!glob.glob_valid("[]")); return 0; }
+pub fn test_c068() -> [] int { test.assert(!glob.glob_valid("[!]")); return 0; }
+pub fn test_c069() -> [] int { test.assert(!glob.glob_valid("a\\")); return 0; }
+pub fn test_c070() -> [] int { test.assert(!glob.glob_valid("[z-a]")); return 0; }
+pub fn test_c071() -> [] int { test.assert(!glob.glob_valid("[a-c")); return 0; }
+pub fn test_c072() -> [] int { test.assert(!glob.glob_valid("\\")); return 0; }
+pub fn test_c073() -> [] int { test.assert(glob.glob_valid("")); return 0; }
+pub fn test_c074() -> [] int { test.assert(glob.glob_valid("*")); return 0; }
+pub fn test_c075() -> [] int { test.assert(glob.glob_valid("**")); return 0; }
+pub fn test_c076() -> [] int { test.assert(glob.glob_valid("?")); return 0; }
+pub fn test_c077() -> [] int { test.assert(glob.glob_valid("[a]")); return 0; }
+pub fn test_c078() -> [] int { test.assert(glob.glob_valid("[!a]")); return 0; }
+pub fn test_c079() -> [] int { test.assert(glob.glob_valid("[a-z]")); return 0; }
+pub fn test_c080() -> [] int { test.assert(glob.glob_valid("\\*")); return 0; }
+pub fn test_c081() -> [] int { test.assert(glob.glob_valid("a/**/b")); return 0; }
+pub fn test_c082() -> [] int { test.assert(glob.glob_valid("[-a]")); return 0; }
+pub fn test_c083() -> [] int { test.assert(glob.glob_valid("[a-]")); return 0; }
+pub fn test_c084() -> [] int { test.assert(!glob.glob_valid("[]]")); return 0; }
+pub fn test_c085() -> [] int { test.assert(glob.glob_valid("é*")); return 0; }
+pub fn test_c086() -> [] int { test.assert(!glob.glob_valid("[]a]")); return 0; }

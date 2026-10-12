@@ -1,0 +1,2058 @@
+edition 7;
+module semver_tests;
+import std.result;
+import std.test;
+import semver;
+
+fn is_ok_int(r: result.Result[int, &static [byte]], x: int) -> [] bool {
+    match r {
+        result.Result::Ok(v) => { return v == x; }
+        result.Result::Err(_) => { return false; }
+    }
+}
+fn is_ok_bool(r: result.Result[bool, &static [byte]], x: bool) -> [] bool {
+    match r {
+        result.Result::Ok(v) => { return v == x; }
+        result.Result::Err(_) => { return false; }
+    }
+}
+fn is_err_int(r: result.Result[int, &static [byte]]) -> [] bool {
+    match r {
+        result.Result::Ok(_) => { return false; }
+        result.Result::Err(_) => { return true; }
+    }
+}
+fn is_err_bool(r: result.Result[bool, &static [byte]]) -> [] bool {
+    match r {
+        result.Result::Ok(_) => { return false; }
+        result.Result::Err(_) => { return true; }
+    }
+}
+fn c0() -> [] bool {
+    return semver.semver_valid("1.0.0") == true;
+}
+fn c1() -> [] bool {
+    return semver.semver_valid("1.0.1") == true;
+}
+fn c2() -> [] bool {
+    return semver.semver_valid("1.1.0") == true;
+}
+fn c3() -> [] bool {
+    return semver.semver_valid("2.0.0") == true;
+}
+fn c4() -> [] bool {
+    return semver.semver_valid("0.0.0") == true;
+}
+fn c5() -> [] bool {
+    return semver.semver_valid("1.0.0-alpha") == true;
+}
+fn c6() -> [] bool {
+    return semver.semver_valid("1.0.0-alpha.1") == true;
+}
+fn c7() -> [] bool {
+    return semver.semver_valid("1.0.0-alpha.beta") == true;
+}
+fn c8() -> [] bool {
+    return semver.semver_valid("1.0.0-beta") == true;
+}
+fn c9() -> [] bool {
+    return semver.semver_valid("1.0.0-beta.2") == true;
+}
+fn c10() -> [] bool {
+    return semver.semver_valid("1.0.0-beta.11") == true;
+}
+fn c11() -> [] bool {
+    return semver.semver_valid("1.0.0-rc.1") == true;
+}
+fn c12() -> [] bool {
+    return semver.semver_valid("1.0.0+build5") == true;
+}
+fn c13() -> [] bool {
+    return semver.semver_valid("1.0.0-alpha+exp.sha") == true;
+}
+fn c14() -> [] bool {
+    return semver.semver_valid("10.20.30") == true;
+}
+fn c15() -> [] bool {
+    return semver.semver_valid("1.0.0-0") == true;
+}
+fn c16() -> [] bool {
+    return semver.semver_valid("1.0.0-a-b") == true;
+}
+fn c17() -> [] bool {
+    return semver.semver_valid("0.1.0") == true;
+}
+fn c18() -> [] bool {
+    return semver.semver_valid("0.0.3") == true;
+}
+fn c19() -> [] bool {
+    return semver.semver_valid("123456789.0.0") == true;
+}
+fn c20() -> [] bool {
+    return semver.semver_valid("") == false;
+}
+fn c21() -> [] bool {
+    return semver.semver_valid("1") == false;
+}
+fn c22() -> [] bool {
+    return semver.semver_valid("1.2") == false;
+}
+fn c23() -> [] bool {
+    return semver.semver_valid("1.2.3.4") == false;
+}
+fn c24() -> [] bool {
+    return semver.semver_valid("v1.2.3") == false;
+}
+fn c25() -> [] bool {
+    return semver.semver_valid("01.2.3") == false;
+}
+fn c26() -> [] bool {
+    return semver.semver_valid("1.02.3") == false;
+}
+fn c27() -> [] bool {
+    return semver.semver_valid("1.2.03") == false;
+}
+fn c28() -> [] bool {
+    return semver.semver_valid("1.2.3-") == false;
+}
+fn c29() -> [] bool {
+    return semver.semver_valid("1.2.3-01") == false;
+}
+fn c30() -> [] bool {
+    return semver.semver_valid("1.2.3-a..b") == false;
+}
+fn c31() -> [] bool {
+    return semver.semver_valid("1.2.3+") == false;
+}
+fn c32() -> [] bool {
+    return semver.semver_valid("1.2.3-a_b") == false;
+}
+fn c33() -> [] bool {
+    return semver.semver_valid("a.b.c") == false;
+}
+fn c34() -> [] bool {
+    return semver.semver_valid("1.2.-3") == false;
+}
+fn c35() -> [] bool {
+    return semver.semver_valid("1.2.3 ") == false;
+}
+fn c36() -> [] bool {
+    return semver.semver_valid(" 1.2.3") == false;
+}
+fn c37() -> [] bool {
+    return semver.semver_valid("1234567890.0.0") == false;
+}
+fn c38() -> [] bool {
+    return semver.semver_valid("1.2.3+a..b") == false;
+}
+fn c39() -> [] bool {
+    return semver.semver_valid("1.2.3-+x") == false;
+}
+fn c40() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0", "1.0.0"), 0);
+}
+fn c41() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0", "1.0.1"), -1);
+}
+fn c42() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0", "1.1.0"), -1);
+}
+fn c43() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0", "2.0.0"), -1);
+}
+fn c44() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0", "0.0.0"), 1);
+}
+fn c45() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0", "1.0.0-alpha"), 1);
+}
+fn c46() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0", "1.0.0-alpha.1"), 1);
+}
+fn c47() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0", "1.0.0-alpha.beta"), 1);
+}
+fn c48() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0", "1.0.0-beta"), 1);
+}
+fn c49() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0", "1.0.0-beta.2"), 1);
+}
+fn c50() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0", "1.0.0-beta.11"), 1);
+}
+fn c51() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0", "1.0.0-rc.1"), 1);
+}
+fn c52() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.1", "1.0.0"), 1);
+}
+fn c53() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.1", "1.0.1"), 0);
+}
+fn c54() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.1", "1.1.0"), -1);
+}
+fn c55() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.1", "2.0.0"), -1);
+}
+fn c56() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.1", "0.0.0"), 1);
+}
+fn c57() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.1", "1.0.0-alpha"), 1);
+}
+fn c58() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.1", "1.0.0-alpha.1"), 1);
+}
+fn c59() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.1", "1.0.0-alpha.beta"), 1);
+}
+fn c60() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.1", "1.0.0-beta"), 1);
+}
+fn c61() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.1", "1.0.0-beta.2"), 1);
+}
+fn c62() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.1", "1.0.0-beta.11"), 1);
+}
+fn c63() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.1", "1.0.0-rc.1"), 1);
+}
+fn c64() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.1.0", "1.0.0"), 1);
+}
+fn c65() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.1.0", "1.0.1"), 1);
+}
+fn c66() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.1.0", "1.1.0"), 0);
+}
+fn c67() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.1.0", "2.0.0"), -1);
+}
+fn c68() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.1.0", "0.0.0"), 1);
+}
+fn c69() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.1.0", "1.0.0-alpha"), 1);
+}
+fn c70() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.1.0", "1.0.0-alpha.1"), 1);
+}
+fn c71() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.1.0", "1.0.0-alpha.beta"), 1);
+}
+fn c72() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.1.0", "1.0.0-beta"), 1);
+}
+fn c73() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.1.0", "1.0.0-beta.2"), 1);
+}
+fn c74() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.1.0", "1.0.0-beta.11"), 1);
+}
+fn c75() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.1.0", "1.0.0-rc.1"), 1);
+}
+fn c76() -> [] bool {
+    return is_ok_int(semver.semver_compare("2.0.0", "1.0.0"), 1);
+}
+fn c77() -> [] bool {
+    return is_ok_int(semver.semver_compare("2.0.0", "1.0.1"), 1);
+}
+fn c78() -> [] bool {
+    return is_ok_int(semver.semver_compare("2.0.0", "1.1.0"), 1);
+}
+fn c79() -> [] bool {
+    return is_ok_int(semver.semver_compare("2.0.0", "2.0.0"), 0);
+}
+fn c80() -> [] bool {
+    return is_ok_int(semver.semver_compare("2.0.0", "0.0.0"), 1);
+}
+fn c81() -> [] bool {
+    return is_ok_int(semver.semver_compare("2.0.0", "1.0.0-alpha"), 1);
+}
+fn c82() -> [] bool {
+    return is_ok_int(semver.semver_compare("2.0.0", "1.0.0-alpha.1"), 1);
+}
+fn c83() -> [] bool {
+    return is_ok_int(semver.semver_compare("2.0.0", "1.0.0-alpha.beta"), 1);
+}
+fn c84() -> [] bool {
+    return is_ok_int(semver.semver_compare("2.0.0", "1.0.0-beta"), 1);
+}
+fn c85() -> [] bool {
+    return is_ok_int(semver.semver_compare("2.0.0", "1.0.0-beta.2"), 1);
+}
+fn c86() -> [] bool {
+    return is_ok_int(semver.semver_compare("2.0.0", "1.0.0-beta.11"), 1);
+}
+fn c87() -> [] bool {
+    return is_ok_int(semver.semver_compare("2.0.0", "1.0.0-rc.1"), 1);
+}
+fn c88() -> [] bool {
+    return is_ok_int(semver.semver_compare("0.0.0", "1.0.0"), -1);
+}
+fn c89() -> [] bool {
+    return is_ok_int(semver.semver_compare("0.0.0", "1.0.1"), -1);
+}
+fn c90() -> [] bool {
+    return is_ok_int(semver.semver_compare("0.0.0", "1.1.0"), -1);
+}
+fn c91() -> [] bool {
+    return is_ok_int(semver.semver_compare("0.0.0", "2.0.0"), -1);
+}
+fn c92() -> [] bool {
+    return is_ok_int(semver.semver_compare("0.0.0", "0.0.0"), 0);
+}
+fn c93() -> [] bool {
+    return is_ok_int(semver.semver_compare("0.0.0", "1.0.0-alpha"), -1);
+}
+fn c94() -> [] bool {
+    return is_ok_int(semver.semver_compare("0.0.0", "1.0.0-alpha.1"), -1);
+}
+fn c95() -> [] bool {
+    return is_ok_int(semver.semver_compare("0.0.0", "1.0.0-alpha.beta"), -1);
+}
+fn c96() -> [] bool {
+    return is_ok_int(semver.semver_compare("0.0.0", "1.0.0-beta"), -1);
+}
+fn c97() -> [] bool {
+    return is_ok_int(semver.semver_compare("0.0.0", "1.0.0-beta.2"), -1);
+}
+fn c98() -> [] bool {
+    return is_ok_int(semver.semver_compare("0.0.0", "1.0.0-beta.11"), -1);
+}
+fn c99() -> [] bool {
+    return is_ok_int(semver.semver_compare("0.0.0", "1.0.0-rc.1"), -1);
+}
+fn c100() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha", "1.0.0"), -1);
+}
+fn c101() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha", "1.0.1"), -1);
+}
+fn c102() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha", "1.1.0"), -1);
+}
+fn c103() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha", "2.0.0"), -1);
+}
+fn c104() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha", "0.0.0"), 1);
+}
+fn c105() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha", "1.0.0-alpha"), 0);
+}
+fn c106() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha", "1.0.0-alpha.1"), -1);
+}
+fn c107() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha", "1.0.0-alpha.beta"), -1);
+}
+fn c108() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha", "1.0.0-beta"), -1);
+}
+fn c109() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha", "1.0.0-beta.2"), -1);
+}
+fn c110() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha", "1.0.0-beta.11"), -1);
+}
+fn c111() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha", "1.0.0-rc.1"), -1);
+}
+fn c112() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.1", "1.0.0"), -1);
+}
+fn c113() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.1", "1.0.1"), -1);
+}
+fn c114() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.1", "1.1.0"), -1);
+}
+fn c115() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.1", "2.0.0"), -1);
+}
+fn c116() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.1", "0.0.0"), 1);
+}
+fn c117() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.1", "1.0.0-alpha"), 1);
+}
+fn c118() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.1", "1.0.0-alpha.1"), 0);
+}
+fn c119() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.1", "1.0.0-alpha.beta"), -1);
+}
+fn c120() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.1", "1.0.0-beta"), -1);
+}
+fn c121() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.1", "1.0.0-beta.2"), -1);
+}
+fn c122() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.1", "1.0.0-beta.11"), -1);
+}
+fn c123() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.1", "1.0.0-rc.1"), -1);
+}
+fn c124() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.beta", "1.0.0"), -1);
+}
+fn c125() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.beta", "1.0.1"), -1);
+}
+fn c126() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.beta", "1.1.0"), -1);
+}
+fn c127() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.beta", "2.0.0"), -1);
+}
+fn c128() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.beta", "0.0.0"), 1);
+}
+fn c129() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.beta", "1.0.0-alpha"), 1);
+}
+fn c130() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.beta", "1.0.0-alpha.1"), 1);
+}
+fn c131() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.beta", "1.0.0-alpha.beta"), 0);
+}
+fn c132() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.beta", "1.0.0-beta"), -1);
+}
+fn c133() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.beta", "1.0.0-beta.2"), -1);
+}
+fn c134() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.beta", "1.0.0-beta.11"), -1);
+}
+fn c135() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.beta", "1.0.0-rc.1"), -1);
+}
+fn c136() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta", "1.0.0"), -1);
+}
+fn c137() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta", "1.0.1"), -1);
+}
+fn c138() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta", "1.1.0"), -1);
+}
+fn c139() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta", "2.0.0"), -1);
+}
+fn c140() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta", "0.0.0"), 1);
+}
+fn c141() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta", "1.0.0-alpha"), 1);
+}
+fn c142() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta", "1.0.0-alpha.1"), 1);
+}
+fn c143() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta", "1.0.0-alpha.beta"), 1);
+}
+fn c144() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta", "1.0.0-beta"), 0);
+}
+fn c145() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta", "1.0.0-beta.2"), -1);
+}
+fn c146() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta", "1.0.0-beta.11"), -1);
+}
+fn c147() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta", "1.0.0-rc.1"), -1);
+}
+fn c148() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.2", "1.0.0"), -1);
+}
+fn c149() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.2", "1.0.1"), -1);
+}
+fn c150() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.2", "1.1.0"), -1);
+}
+fn c151() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.2", "2.0.0"), -1);
+}
+fn c152() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.2", "0.0.0"), 1);
+}
+fn c153() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.2", "1.0.0-alpha"), 1);
+}
+fn c154() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.2", "1.0.0-alpha.1"), 1);
+}
+fn c155() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.2", "1.0.0-alpha.beta"), 1);
+}
+fn c156() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.2", "1.0.0-beta"), 1);
+}
+fn c157() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.2", "1.0.0-beta.2"), 0);
+}
+fn c158() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.2", "1.0.0-beta.11"), -1);
+}
+fn c159() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.2", "1.0.0-rc.1"), -1);
+}
+fn c160() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.11", "1.0.0"), -1);
+}
+fn c161() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.11", "1.0.1"), -1);
+}
+fn c162() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.11", "1.1.0"), -1);
+}
+fn c163() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.11", "2.0.0"), -1);
+}
+fn c164() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.11", "0.0.0"), 1);
+}
+fn c165() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.11", "1.0.0-alpha"), 1);
+}
+fn c166() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.11", "1.0.0-alpha.1"), 1);
+}
+fn c167() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.11", "1.0.0-alpha.beta"), 1);
+}
+fn c168() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.11", "1.0.0-beta"), 1);
+}
+fn c169() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.11", "1.0.0-beta.2"), 1);
+}
+fn c170() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.11", "1.0.0-beta.11"), 0);
+}
+fn c171() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.11", "1.0.0-rc.1"), -1);
+}
+fn c172() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-rc.1", "1.0.0"), -1);
+}
+fn c173() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-rc.1", "1.0.1"), -1);
+}
+fn c174() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-rc.1", "1.1.0"), -1);
+}
+fn c175() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-rc.1", "2.0.0"), -1);
+}
+fn c176() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-rc.1", "0.0.0"), 1);
+}
+fn c177() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-rc.1", "1.0.0-alpha"), 1);
+}
+fn c178() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-rc.1", "1.0.0-alpha.1"), 1);
+}
+fn c179() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-rc.1", "1.0.0-alpha.beta"), 1);
+}
+fn c180() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-rc.1", "1.0.0-beta"), 1);
+}
+fn c181() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-rc.1", "1.0.0-beta.2"), 1);
+}
+fn c182() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-rc.1", "1.0.0-beta.11"), 1);
+}
+fn c183() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-rc.1", "1.0.0-rc.1"), 0);
+}
+fn c184() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0+a", "1.0.0+b"), 0);
+}
+fn c185() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha.1", "1.0.0-alpha.beta"), -1);
+}
+fn c186() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-beta.2", "1.0.0-beta.11"), -1);
+}
+fn c187() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-1", "1.0.0-a"), -1);
+}
+fn c188() -> [] bool {
+    return is_ok_int(semver.semver_compare("1.0.0-alpha", "1.0.0-alpha.1"), -1);
+}
+fn c189() -> [] bool {
+    return is_err_int(semver.semver_compare("1.2", "1.2.3"));
+}
+fn c190() -> [] bool {
+    return is_err_int(semver.semver_compare("1.2.3", "x"));
+}
+fn c191() -> [] bool {
+    return is_err_int(semver.semver_compare("", "1.0.0"));
+}
+fn c192() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", "1.2.3"), true);
+}
+fn c193() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", "1.2.3"), false);
+}
+fn c194() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", "1.2.3"), false);
+}
+fn c195() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", "1.2.3"), false);
+}
+fn c196() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", "1.2.3"), false);
+}
+fn c197() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", "1.2.3"), false);
+}
+fn c198() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", "1.2.3"), false);
+}
+fn c199() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", "1.2.3"), false);
+}
+fn c200() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", "1.2.3"), false);
+}
+fn c201() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", "1.2.3"), false);
+}
+fn c202() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", "1.2.3"), false);
+}
+fn c203() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", "1.2.3"), false);
+}
+fn c204() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", "1.2.3"), false);
+}
+fn c205() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", "1.2.3"), false);
+}
+fn c206() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", "1.2.3"), false);
+}
+fn c207() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", "1.2.3"), false);
+}
+fn c208() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", "1.2.3"), false);
+}
+fn c209() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", "=1.2.3"), true);
+}
+fn c210() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", "=1.2.3"), false);
+}
+fn c211() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", "=1.2.3"), false);
+}
+fn c212() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", "=1.2.3"), false);
+}
+fn c213() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", "=1.2.3"), false);
+}
+fn c214() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", "=1.2.3"), false);
+}
+fn c215() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", "=1.2.3"), false);
+}
+fn c216() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", "=1.2.3"), false);
+}
+fn c217() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", "=1.2.3"), false);
+}
+fn c218() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", "=1.2.3"), false);
+}
+fn c219() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", "=1.2.3"), false);
+}
+fn c220() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", "=1.2.3"), false);
+}
+fn c221() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", "=1.2.3"), false);
+}
+fn c222() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", "=1.2.3"), false);
+}
+fn c223() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", "=1.2.3"), false);
+}
+fn c224() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", "=1.2.3"), false);
+}
+fn c225() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", "=1.2.3"), false);
+}
+fn c226() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", ">1.2.3"), false);
+}
+fn c227() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", ">1.2.3"), true);
+}
+fn c228() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", ">1.2.3"), true);
+}
+fn c229() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", ">1.2.3"), true);
+}
+fn c230() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", ">1.2.3"), false);
+}
+fn c231() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", ">1.2.3"), false);
+}
+fn c232() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", ">1.2.3"), false);
+}
+fn c233() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", ">1.2.3"), false);
+}
+fn c234() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", ">1.2.3"), false);
+}
+fn c235() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", ">1.2.3"), false);
+}
+fn c236() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", ">1.2.3"), false);
+}
+fn c237() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", ">1.2.3"), false);
+}
+fn c238() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", ">1.2.3"), false);
+}
+fn c239() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", ">1.2.3"), false);
+}
+fn c240() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", ">1.2.3"), true);
+}
+fn c241() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", ">1.2.3"), true);
+}
+fn c242() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", ">1.2.3"), true);
+}
+fn c243() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", ">=1.2.3"), true);
+}
+fn c244() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", ">=1.2.3"), true);
+}
+fn c245() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", ">=1.2.3"), true);
+}
+fn c246() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", ">=1.2.3"), true);
+}
+fn c247() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", ">=1.2.3"), false);
+}
+fn c248() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", ">=1.2.3"), false);
+}
+fn c249() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", ">=1.2.3"), false);
+}
+fn c250() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", ">=1.2.3"), false);
+}
+fn c251() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", ">=1.2.3"), false);
+}
+fn c252() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", ">=1.2.3"), false);
+}
+fn c253() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", ">=1.2.3"), false);
+}
+fn c254() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", ">=1.2.3"), false);
+}
+fn c255() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", ">=1.2.3"), false);
+}
+fn c256() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", ">=1.2.3"), false);
+}
+fn c257() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", ">=1.2.3"), true);
+}
+fn c258() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", ">=1.2.3"), true);
+}
+fn c259() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", ">=1.2.3"), true);
+}
+fn c260() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", "<1.2.3"), false);
+}
+fn c261() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", "<1.2.3"), false);
+}
+fn c262() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", "<1.2.3"), false);
+}
+fn c263() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", "<1.2.3"), false);
+}
+fn c264() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", "<1.2.3"), true);
+}
+fn c265() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", "<1.2.3"), true);
+}
+fn c266() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", "<1.2.3"), true);
+}
+fn c267() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", "<1.2.3"), true);
+}
+fn c268() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", "<1.2.3"), true);
+}
+fn c269() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", "<1.2.3"), true);
+}
+fn c270() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", "<1.2.3"), true);
+}
+fn c271() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", "<1.2.3"), true);
+}
+fn c272() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", "<1.2.3"), true);
+}
+fn c273() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", "<1.2.3"), true);
+}
+fn c274() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", "<1.2.3"), false);
+}
+fn c275() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", "<1.2.3"), false);
+}
+fn c276() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", "<1.2.3"), false);
+}
+fn c277() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", "<=1.2.3"), true);
+}
+fn c278() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", "<=1.2.3"), false);
+}
+fn c279() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", "<=1.2.3"), false);
+}
+fn c280() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", "<=1.2.3"), false);
+}
+fn c281() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", "<=1.2.3"), true);
+}
+fn c282() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", "<=1.2.3"), true);
+}
+fn c283() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", "<=1.2.3"), true);
+}
+fn c284() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", "<=1.2.3"), true);
+}
+fn c285() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", "<=1.2.3"), true);
+}
+fn c286() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", "<=1.2.3"), true);
+}
+fn c287() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", "<=1.2.3"), true);
+}
+fn c288() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", "<=1.2.3"), true);
+}
+fn c289() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", "<=1.2.3"), true);
+}
+fn c290() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", "<=1.2.3"), true);
+}
+fn c291() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", "<=1.2.3"), false);
+}
+fn c292() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", "<=1.2.3"), false);
+}
+fn c293() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", "<=1.2.3"), false);
+}
+fn c294() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", "^1.2.3"), true);
+}
+fn c295() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", "^1.2.3"), true);
+}
+fn c296() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", "^1.2.3"), true);
+}
+fn c297() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", "^1.2.3"), false);
+}
+fn c298() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", "^1.2.3"), false);
+}
+fn c299() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", "^1.2.3"), false);
+}
+fn c300() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", "^1.2.3"), false);
+}
+fn c301() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", "^1.2.3"), false);
+}
+fn c302() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", "^1.2.3"), false);
+}
+fn c303() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", "^1.2.3"), false);
+}
+fn c304() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", "^1.2.3"), false);
+}
+fn c305() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", "^1.2.3"), false);
+}
+fn c306() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", "^1.2.3"), false);
+}
+fn c307() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", "^1.2.3"), false);
+}
+fn c308() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", "^1.2.3"), true);
+}
+fn c309() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", "^1.2.3"), true);
+}
+fn c310() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", "^1.2.3"), true);
+}
+fn c311() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", "~1.2.3"), true);
+}
+fn c312() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", "~1.2.3"), true);
+}
+fn c313() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", "~1.2.3"), false);
+}
+fn c314() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", "~1.2.3"), false);
+}
+fn c315() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", "~1.2.3"), false);
+}
+fn c316() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", "~1.2.3"), false);
+}
+fn c317() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", "~1.2.3"), false);
+}
+fn c318() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", "~1.2.3"), false);
+}
+fn c319() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", "~1.2.3"), false);
+}
+fn c320() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", "~1.2.3"), false);
+}
+fn c321() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", "~1.2.3"), false);
+}
+fn c322() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", "~1.2.3"), false);
+}
+fn c323() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", "~1.2.3"), false);
+}
+fn c324() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", "~1.2.3"), false);
+}
+fn c325() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", "~1.2.3"), false);
+}
+fn c326() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", "~1.2.3"), false);
+}
+fn c327() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", "~1.2.3"), false);
+}
+fn c328() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", "^0.2.3"), false);
+}
+fn c329() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", "^0.2.3"), false);
+}
+fn c330() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", "^0.2.3"), false);
+}
+fn c331() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", "^0.2.3"), false);
+}
+fn c332() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", "^0.2.3"), false);
+}
+fn c333() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", "^0.2.3"), true);
+}
+fn c334() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", "^0.2.3"), true);
+}
+fn c335() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", "^0.2.3"), false);
+}
+fn c336() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", "^0.2.3"), false);
+}
+fn c337() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", "^0.2.3"), false);
+}
+fn c338() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", "^0.2.3"), false);
+}
+fn c339() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", "^0.2.3"), false);
+}
+fn c340() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", "^0.2.3"), false);
+}
+fn c341() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", "^0.2.3"), false);
+}
+fn c342() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", "^0.2.3"), false);
+}
+fn c343() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", "^0.2.3"), false);
+}
+fn c344() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", "^0.2.3"), false);
+}
+fn c345() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", "^0.0.3"), false);
+}
+fn c346() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", "^0.0.3"), false);
+}
+fn c347() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", "^0.0.3"), false);
+}
+fn c348() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", "^0.0.3"), false);
+}
+fn c349() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", "^0.0.3"), false);
+}
+fn c350() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", "^0.0.3"), false);
+}
+fn c351() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", "^0.0.3"), false);
+}
+fn c352() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", "^0.0.3"), false);
+}
+fn c353() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", "^0.0.3"), true);
+}
+fn c354() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", "^0.0.3"), false);
+}
+fn c355() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", "^0.0.3"), false);
+}
+fn c356() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", "^0.0.3"), false);
+}
+fn c357() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", "^0.0.3"), false);
+}
+fn c358() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", "^0.0.3"), false);
+}
+fn c359() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", "^0.0.3"), false);
+}
+fn c360() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", "^0.0.3"), false);
+}
+fn c361() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", "^0.0.3"), false);
+}
+fn c362() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", "~0.2.3"), false);
+}
+fn c363() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", "~0.2.3"), false);
+}
+fn c364() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", "~0.2.3"), false);
+}
+fn c365() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", "~0.2.3"), false);
+}
+fn c366() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", "~0.2.3"), false);
+}
+fn c367() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", "~0.2.3"), true);
+}
+fn c368() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", "~0.2.3"), true);
+}
+fn c369() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", "~0.2.3"), false);
+}
+fn c370() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", "~0.2.3"), false);
+}
+fn c371() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", "~0.2.3"), false);
+}
+fn c372() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", "~0.2.3"), false);
+}
+fn c373() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", "~0.2.3"), false);
+}
+fn c374() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", "~0.2.3"), false);
+}
+fn c375() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", "~0.2.3"), false);
+}
+fn c376() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", "~0.2.3"), false);
+}
+fn c377() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", "~0.2.3"), false);
+}
+fn c378() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", "~0.2.3"), false);
+}
+fn c379() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", ">=1.0.0 <2.0.0"), true);
+}
+fn c380() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", ">=1.0.0 <2.0.0"), true);
+}
+fn c381() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", ">=1.0.0 <2.0.0"), true);
+}
+fn c382() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", ">=1.0.0 <2.0.0"), false);
+}
+fn c383() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", ">=1.0.0 <2.0.0"), true);
+}
+fn c384() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", ">=1.0.0 <2.0.0"), false);
+}
+fn c385() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", ">=1.0.0 <2.0.0"), false);
+}
+fn c386() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", ">=1.0.0 <2.0.0"), false);
+}
+fn c387() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", ">=1.0.0 <2.0.0"), false);
+}
+fn c388() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", ">=1.0.0 <2.0.0"), false);
+}
+fn c389() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", ">=1.0.0 <2.0.0"), true);
+}
+fn c390() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", ">=1.0.0 <2.0.0"), false);
+}
+fn c391() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", ">=1.0.0 <2.0.0"), false);
+}
+fn c392() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", ">=1.0.0 <2.0.0"), true);
+}
+fn c393() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", ">=1.0.0 <2.0.0"), true);
+}
+fn c394() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", ">=1.0.0 <2.0.0"), true);
+}
+fn c395() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", ">=1.0.0 <2.0.0"), true);
+}
+fn c396() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", ">1.0.0 <=1.1.0"), false);
+}
+fn c397() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", ">1.0.0 <=1.1.0"), false);
+}
+fn c398() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", ">1.0.0 <=1.1.0"), false);
+}
+fn c399() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", ">1.0.0 <=1.1.0"), false);
+}
+fn c400() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", ">1.0.0 <=1.1.0"), false);
+}
+fn c401() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", ">1.0.0 <=1.1.0"), false);
+}
+fn c402() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", ">1.0.0 <=1.1.0"), false);
+}
+fn c403() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", ">1.0.0 <=1.1.0"), false);
+}
+fn c404() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", ">1.0.0 <=1.1.0"), false);
+}
+fn c405() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", ">1.0.0 <=1.1.0"), false);
+}
+fn c406() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", ">1.0.0 <=1.1.0"), false);
+}
+fn c407() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", ">1.0.0 <=1.1.0"), false);
+}
+fn c408() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", ">1.0.0 <=1.1.0"), false);
+}
+fn c409() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", ">1.0.0 <=1.1.0"), true);
+}
+fn c410() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", ">1.0.0 <=1.1.0"), false);
+}
+fn c411() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", ">1.0.0 <=1.1.0"), false);
+}
+fn c412() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", ">1.0.0 <=1.1.0"), false);
+}
+fn c413() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", "^1.0.0 <1.5.0"), true);
+}
+fn c414() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", "^1.0.0 <1.5.0"), true);
+}
+fn c415() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", "^1.0.0 <1.5.0"), true);
+}
+fn c416() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", "^1.0.0 <1.5.0"), false);
+}
+fn c417() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", "^1.0.0 <1.5.0"), true);
+}
+fn c418() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", "^1.0.0 <1.5.0"), false);
+}
+fn c419() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", "^1.0.0 <1.5.0"), false);
+}
+fn c420() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", "^1.0.0 <1.5.0"), false);
+}
+fn c421() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", "^1.0.0 <1.5.0"), false);
+}
+fn c422() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", "^1.0.0 <1.5.0"), false);
+}
+fn c423() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", "^1.0.0 <1.5.0"), true);
+}
+fn c424() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", "^1.0.0 <1.5.0"), false);
+}
+fn c425() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", "^1.0.0 <1.5.0"), false);
+}
+fn c426() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", "^1.0.0 <1.5.0"), true);
+}
+fn c427() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", "^1.0.0 <1.5.0"), false);
+}
+fn c428() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", "^1.0.0 <1.5.0"), true);
+}
+fn c429() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", "^1.0.0 <1.5.0"), false);
+}
+fn c430() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", ">=1.0.0-alpha <1.0.0"), false);
+}
+fn c431() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", ">=1.0.0-alpha <1.0.0"), false);
+}
+fn c432() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", ">=1.0.0-alpha <1.0.0"), false);
+}
+fn c433() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", ">=1.0.0-alpha <1.0.0"), false);
+}
+fn c434() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", ">=1.0.0-alpha <1.0.0"), false);
+}
+fn c435() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", ">=1.0.0-alpha <1.0.0"), false);
+}
+fn c436() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", ">=1.0.0-alpha <1.0.0"), false);
+}
+fn c437() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", ">=1.0.0-alpha <1.0.0"), false);
+}
+fn c438() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", ">=1.0.0-alpha <1.0.0"), false);
+}
+fn c439() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", ">=1.0.0-alpha <1.0.0"), false);
+}
+fn c440() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", ">=1.0.0-alpha <1.0.0"), false);
+}
+fn c441() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", ">=1.0.0-alpha <1.0.0"), true);
+}
+fn c442() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", ">=1.0.0-alpha <1.0.0"), true);
+}
+fn c443() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", ">=1.0.0-alpha <1.0.0"), false);
+}
+fn c444() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", ">=1.0.0-alpha <1.0.0"), false);
+}
+fn c445() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", ">=1.0.0-alpha <1.0.0"), false);
+}
+fn c446() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", ">=1.0.0-alpha <1.0.0"), false);
+}
+fn c447() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", "^1.0.0-beta"), true);
+}
+fn c448() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", "^1.0.0-beta"), true);
+}
+fn c449() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", "^1.0.0-beta"), true);
+}
+fn c450() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", "^1.0.0-beta"), false);
+}
+fn c451() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", "^1.0.0-beta"), true);
+}
+fn c452() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", "^1.0.0-beta"), false);
+}
+fn c453() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", "^1.0.0-beta"), false);
+}
+fn c454() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", "^1.0.0-beta"), false);
+}
+fn c455() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", "^1.0.0-beta"), false);
+}
+fn c456() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", "^1.0.0-beta"), false);
+}
+fn c457() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", "^1.0.0-beta"), true);
+}
+fn c458() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", "^1.0.0-beta"), false);
+}
+fn c459() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", "^1.0.0-beta"), true);
+}
+fn c460() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", "^1.0.0-beta"), true);
+}
+fn c461() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", "^1.0.0-beta"), true);
+}
+fn c462() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", "^1.0.0-beta"), true);
+}
+fn c463() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", "^1.0.0-beta"), true);
+}
+fn c464() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.3", "~1.2.3-alpha"), true);
+}
+fn c465() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.4", "~1.2.3-alpha"), true);
+}
+fn c466() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.3.0", "~1.2.3-alpha"), false);
+}
+fn c467() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("2.0.0", "~1.2.3-alpha"), false);
+}
+fn c468() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.2.2", "~1.2.3-alpha"), false);
+}
+fn c469() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.3", "~1.2.3-alpha"), false);
+}
+fn c470() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.2.9", "~1.2.3-alpha"), false);
+}
+fn c471() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.3.0", "~1.2.3-alpha"), false);
+}
+fn c472() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.3", "~1.2.3-alpha"), false);
+}
+fn c473() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("0.0.4", "~1.2.3-alpha"), false);
+}
+fn c474() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0", "~1.2.3-alpha"), false);
+}
+fn c475() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-alpha", "~1.2.3-alpha"), false);
+}
+fn c476() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.0.0-beta.2", "~1.2.3-alpha"), false);
+}
+fn c477() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.1.0", "~1.2.3-alpha"), false);
+}
+fn c478() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.9.9", "~1.2.3-alpha"), false);
+}
+fn c479() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.4.99", "~1.2.3-alpha"), false);
+}
+fn c480() -> [] bool {
+    return is_ok_bool(semver.semver_satisfies("1.5.0", "~1.2.3-alpha"), false);
+}
+fn c481() -> [] bool {
+    return is_err_bool(semver.semver_satisfies("1.2.3", ""));
+}
+fn c482() -> [] bool {
+    return is_err_bool(semver.semver_satisfies("1.2.3", " >=1.0.0"));
+}
+fn c483() -> [] bool {
+    return is_err_bool(semver.semver_satisfies("1.2.3", ">=1.0.0 "));
+}
+fn c484() -> [] bool {
+    return is_err_bool(semver.semver_satisfies("1.2.3", ">=1.0.0  <2.0.0"));
+}
+fn c485() -> [] bool {
+    return is_err_bool(semver.semver_satisfies("1.2.3", "^1.2"));
+}
+fn c486() -> [] bool {
+    return is_err_bool(semver.semver_satisfies("1.2.3", "^"));
+}
+fn c487() -> [] bool {
+    return is_err_bool(semver.semver_satisfies("1.2.3", "~x"));
+}
+fn c488() -> [] bool {
+    return is_err_bool(semver.semver_satisfies("1.2", ">=1.0.0"));
+}
+fn c489() -> [] bool {
+    return is_err_bool(semver.semver_satisfies("x", "1.0.0"));
+}
+fn c490() -> [] bool {
+    return is_err_bool(semver.semver_satisfies("1.2.3", "!=1.0.0"));
+}
+fn c491() -> [] bool {
+    return is_err_bool(semver.semver_satisfies("1.2.3", ">= 1.0.0"));
+}
+pub fn test_cases_000() -> [] int {
+    test.assert(c0());
+    test.assert(c1());
+    test.assert(c2());
+    test.assert(c3());
+    test.assert(c4());
+    test.assert(c5());
+    test.assert(c6());
+    test.assert(c7());
+    test.assert(c8());
+    test.assert(c9());
+    test.assert(c10());
+    test.assert(c11());
+    test.assert(c12());
+    test.assert(c13());
+    test.assert(c14());
+    test.assert(c15());
+    test.assert(c16());
+    test.assert(c17());
+    test.assert(c18());
+    test.assert(c19());
+    test.assert(c20());
+    test.assert(c21());
+    test.assert(c22());
+    test.assert(c23());
+    test.assert(c24());
+    return 0;
+}
+pub fn test_cases_025() -> [] int {
+    test.assert(c25());
+    test.assert(c26());
+    test.assert(c27());
+    test.assert(c28());
+    test.assert(c29());
+    test.assert(c30());
+    test.assert(c31());
+    test.assert(c32());
+    test.assert(c33());
+    test.assert(c34());
+    test.assert(c35());
+    test.assert(c36());
+    test.assert(c37());
+    test.assert(c38());
+    test.assert(c39());
+    test.assert(c40());
+    test.assert(c41());
+    test.assert(c42());
+    test.assert(c43());
+    test.assert(c44());
+    test.assert(c45());
+    test.assert(c46());
+    test.assert(c47());
+    test.assert(c48());
+    test.assert(c49());
+    return 0;
+}
+pub fn test_cases_050() -> [] int {
+    test.assert(c50());
+    test.assert(c51());
+    test.assert(c52());
+    test.assert(c53());
+    test.assert(c54());
+    test.assert(c55());
+    test.assert(c56());
+    test.assert(c57());
+    test.assert(c58());
+    test.assert(c59());
+    test.assert(c60());
+    test.assert(c61());
+    test.assert(c62());
+    test.assert(c63());
+    test.assert(c64());
+    test.assert(c65());
+    test.assert(c66());
+    test.assert(c67());
+    test.assert(c68());
+    test.assert(c69());
+    test.assert(c70());
+    test.assert(c71());
+    test.assert(c72());
+    test.assert(c73());
+    test.assert(c74());
+    return 0;
+}
+pub fn test_cases_075() -> [] int {
+    test.assert(c75());
+    test.assert(c76());
+    test.assert(c77());
+    test.assert(c78());
+    test.assert(c79());
+    test.assert(c80());
+    test.assert(c81());
+    test.assert(c82());
+    test.assert(c83());
+    test.assert(c84());
+    test.assert(c85());
+    test.assert(c86());
+    test.assert(c87());
+    test.assert(c88());
+    test.assert(c89());
+    test.assert(c90());
+    test.assert(c91());
+    test.assert(c92());
+    test.assert(c93());
+    test.assert(c94());
+    test.assert(c95());
+    test.assert(c96());
+    test.assert(c97());
+    test.assert(c98());
+    test.assert(c99());
+    return 0;
+}
+pub fn test_cases_100() -> [] int {
+    test.assert(c100());
+    test.assert(c101());
+    test.assert(c102());
+    test.assert(c103());
+    test.assert(c104());
+    test.assert(c105());
+    test.assert(c106());
+    test.assert(c107());
+    test.assert(c108());
+    test.assert(c109());
+    test.assert(c110());
+    test.assert(c111());
+    test.assert(c112());
+    test.assert(c113());
+    test.assert(c114());
+    test.assert(c115());
+    test.assert(c116());
+    test.assert(c117());
+    test.assert(c118());
+    test.assert(c119());
+    test.assert(c120());
+    test.assert(c121());
+    test.assert(c122());
+    test.assert(c123());
+    test.assert(c124());
+    return 0;
+}
+pub fn test_cases_125() -> [] int {
+    test.assert(c125());
+    test.assert(c126());
+    test.assert(c127());
+    test.assert(c128());
+    test.assert(c129());
+    test.assert(c130());
+    test.assert(c131());
+    test.assert(c132());
+    test.assert(c133());
+    test.assert(c134());
+    test.assert(c135());
+    test.assert(c136());
+    test.assert(c137());
+    test.assert(c138());
+    test.assert(c139());
+    test.assert(c140());
+    test.assert(c141());
+    test.assert(c142());
+    test.assert(c143());
+    test.assert(c144());
+    test.assert(c145());
+    test.assert(c146());
+    test.assert(c147());
+    test.assert(c148());
+    test.assert(c149());
+    return 0;
+}
+pub fn test_cases_150() -> [] int {
+    test.assert(c150());
+    test.assert(c151());
+    test.assert(c152());
+    test.assert(c153());
+    test.assert(c154());
+    test.assert(c155());
+    test.assert(c156());
+    test.assert(c157());
+    test.assert(c158());
+    test.assert(c159());
+    test.assert(c160());
+    test.assert(c161());
+    test.assert(c162());
+    test.assert(c163());
+    test.assert(c164());
+    test.assert(c165());
+    test.assert(c166());
+    test.assert(c167());
+    test.assert(c168());
+    test.assert(c169());
+    test.assert(c170());
+    test.assert(c171());
+    test.assert(c172());
+    test.assert(c173());
+    test.assert(c174());
+    return 0;
+}
+pub fn test_cases_175() -> [] int {
+    test.assert(c175());
+    test.assert(c176());
+    test.assert(c177());
+    test.assert(c178());
+    test.assert(c179());
+    test.assert(c180());
+    test.assert(c181());
+    test.assert(c182());
+    test.assert(c183());
+    test.assert(c184());
+    test.assert(c185());
+    test.assert(c186());
+    test.assert(c187());
+    test.assert(c188());
+    test.assert(c189());
+    test.assert(c190());
+    test.assert(c191());
+    test.assert(c192());
+    test.assert(c193());
+    test.assert(c194());
+    test.assert(c195());
+    test.assert(c196());
+    test.assert(c197());
+    test.assert(c198());
+    test.assert(c199());
+    return 0;
+}
+pub fn test_cases_200() -> [] int {
+    test.assert(c200());
+    test.assert(c201());
+    test.assert(c202());
+    test.assert(c203());
+    test.assert(c204());
+    test.assert(c205());
+    test.assert(c206());
+    test.assert(c207());
+    test.assert(c208());
+    test.assert(c209());
+    test.assert(c210());
+    test.assert(c211());
+    test.assert(c212());
+    test.assert(c213());
+    test.assert(c214());
+    test.assert(c215());
+    test.assert(c216());
+    test.assert(c217());
+    test.assert(c218());
+    test.assert(c219());
+    test.assert(c220());
+    test.assert(c221());
+    test.assert(c222());
+    test.assert(c223());
+    test.assert(c224());
+    return 0;
+}
+pub fn test_cases_225() -> [] int {
+    test.assert(c225());
+    test.assert(c226());
+    test.assert(c227());
+    test.assert(c228());
+    test.assert(c229());
+    test.assert(c230());
+    test.assert(c231());
+    test.assert(c232());
+    test.assert(c233());
+    test.assert(c234());
+    test.assert(c235());
+    test.assert(c236());
+    test.assert(c237());
+    test.assert(c238());
+    test.assert(c239());
+    test.assert(c240());
+    test.assert(c241());
+    test.assert(c242());
+    test.assert(c243());
+    test.assert(c244());
+    test.assert(c245());
+    test.assert(c246());
+    test.assert(c247());
+    test.assert(c248());
+    test.assert(c249());
+    return 0;
+}
+pub fn test_cases_250() -> [] int {
+    test.assert(c250());
+    test.assert(c251());
+    test.assert(c252());
+    test.assert(c253());
+    test.assert(c254());
+    test.assert(c255());
+    test.assert(c256());
+    test.assert(c257());
+    test.assert(c258());
+    test.assert(c259());
+    test.assert(c260());
+    test.assert(c261());
+    test.assert(c262());
+    test.assert(c263());
+    test.assert(c264());
+    test.assert(c265());
+    test.assert(c266());
+    test.assert(c267());
+    test.assert(c268());
+    test.assert(c269());
+    test.assert(c270());
+    test.assert(c271());
+    test.assert(c272());
+    test.assert(c273());
+    test.assert(c274());
+    return 0;
+}
+pub fn test_cases_275() -> [] int {
+    test.assert(c275());
+    test.assert(c276());
+    test.assert(c277());
+    test.assert(c278());
+    test.assert(c279());
+    test.assert(c280());
+    test.assert(c281());
+    test.assert(c282());
+    test.assert(c283());
+    test.assert(c284());
+    test.assert(c285());
+    test.assert(c286());
+    test.assert(c287());
+    test.assert(c288());
+    test.assert(c289());
+    test.assert(c290());
+    test.assert(c291());
+    test.assert(c292());
+    test.assert(c293());
+    test.assert(c294());
+    test.assert(c295());
+    test.assert(c296());
+    test.assert(c297());
+    test.assert(c298());
+    test.assert(c299());
+    return 0;
+}
+pub fn test_cases_300() -> [] int {
+    test.assert(c300());
+    test.assert(c301());
+    test.assert(c302());
+    test.assert(c303());
+    test.assert(c304());
+    test.assert(c305());
+    test.assert(c306());
+    test.assert(c307());
+    test.assert(c308());
+    test.assert(c309());
+    test.assert(c310());
+    test.assert(c311());
+    test.assert(c312());
+    test.assert(c313());
+    test.assert(c314());
+    test.assert(c315());
+    test.assert(c316());
+    test.assert(c317());
+    test.assert(c318());
+    test.assert(c319());
+    test.assert(c320());
+    test.assert(c321());
+    test.assert(c322());
+    test.assert(c323());
+    test.assert(c324());
+    return 0;
+}
+pub fn test_cases_325() -> [] int {
+    test.assert(c325());
+    test.assert(c326());
+    test.assert(c327());
+    test.assert(c328());
+    test.assert(c329());
+    test.assert(c330());
+    test.assert(c331());
+    test.assert(c332());
+    test.assert(c333());
+    test.assert(c334());
+    test.assert(c335());
+    test.assert(c336());
+    test.assert(c337());
+    test.assert(c338());
+    test.assert(c339());
+    test.assert(c340());
+    test.assert(c341());
+    test.assert(c342());
+    test.assert(c343());
+    test.assert(c344());
+    test.assert(c345());
+    test.assert(c346());
+    test.assert(c347());
+    test.assert(c348());
+    test.assert(c349());
+    return 0;
+}
+pub fn test_cases_350() -> [] int {
+    test.assert(c350());
+    test.assert(c351());
+    test.assert(c352());
+    test.assert(c353());
+    test.assert(c354());
+    test.assert(c355());
+    test.assert(c356());
+    test.assert(c357());
+    test.assert(c358());
+    test.assert(c359());
+    test.assert(c360());
+    test.assert(c361());
+    test.assert(c362());
+    test.assert(c363());
+    test.assert(c364());
+    test.assert(c365());
+    test.assert(c366());
+    test.assert(c367());
+    test.assert(c368());
+    test.assert(c369());
+    test.assert(c370());
+    test.assert(c371());
+    test.assert(c372());
+    test.assert(c373());
+    test.assert(c374());
+    return 0;
+}
+pub fn test_cases_375() -> [] int {
+    test.assert(c375());
+    test.assert(c376());
+    test.assert(c377());
+    test.assert(c378());
+    test.assert(c379());
+    test.assert(c380());
+    test.assert(c381());
+    test.assert(c382());
+    test.assert(c383());
+    test.assert(c384());
+    test.assert(c385());
+    test.assert(c386());
+    test.assert(c387());
+    test.assert(c388());
+    test.assert(c389());
+    test.assert(c390());
+    test.assert(c391());
+    test.assert(c392());
+    test.assert(c393());
+    test.assert(c394());
+    test.assert(c395());
+    test.assert(c396());
+    test.assert(c397());
+    test.assert(c398());
+    test.assert(c399());
+    return 0;
+}
+pub fn test_cases_400() -> [] int {
+    test.assert(c400());
+    test.assert(c401());
+    test.assert(c402());
+    test.assert(c403());
+    test.assert(c404());
+    test.assert(c405());
+    test.assert(c406());
+    test.assert(c407());
+    test.assert(c408());
+    test.assert(c409());
+    test.assert(c410());
+    test.assert(c411());
+    test.assert(c412());
+    test.assert(c413());
+    test.assert(c414());
+    test.assert(c415());
+    test.assert(c416());
+    test.assert(c417());
+    test.assert(c418());
+    test.assert(c419());
+    test.assert(c420());
+    test.assert(c421());
+    test.assert(c422());
+    test.assert(c423());
+    test.assert(c424());
+    return 0;
+}
+pub fn test_cases_425() -> [] int {
+    test.assert(c425());
+    test.assert(c426());
+    test.assert(c427());
+    test.assert(c428());
+    test.assert(c429());
+    test.assert(c430());
+    test.assert(c431());
+    test.assert(c432());
+    test.assert(c433());
+    test.assert(c434());
+    test.assert(c435());
+    test.assert(c436());
+    test.assert(c437());
+    test.assert(c438());
+    test.assert(c439());
+    test.assert(c440());
+    test.assert(c441());
+    test.assert(c442());
+    test.assert(c443());
+    test.assert(c444());
+    test.assert(c445());
+    test.assert(c446());
+    test.assert(c447());
+    test.assert(c448());
+    test.assert(c449());
+    return 0;
+}
+pub fn test_cases_450() -> [] int {
+    test.assert(c450());
+    test.assert(c451());
+    test.assert(c452());
+    test.assert(c453());
+    test.assert(c454());
+    test.assert(c455());
+    test.assert(c456());
+    test.assert(c457());
+    test.assert(c458());
+    test.assert(c459());
+    test.assert(c460());
+    test.assert(c461());
+    test.assert(c462());
+    test.assert(c463());
+    test.assert(c464());
+    test.assert(c465());
+    test.assert(c466());
+    test.assert(c467());
+    test.assert(c468());
+    test.assert(c469());
+    test.assert(c470());
+    test.assert(c471());
+    test.assert(c472());
+    test.assert(c473());
+    test.assert(c474());
+    return 0;
+}
+pub fn test_cases_475() -> [] int {
+    test.assert(c475());
+    test.assert(c476());
+    test.assert(c477());
+    test.assert(c478());
+    test.assert(c479());
+    test.assert(c480());
+    test.assert(c481());
+    test.assert(c482());
+    test.assert(c483());
+    test.assert(c484());
+    test.assert(c485());
+    test.assert(c486());
+    test.assert(c487());
+    test.assert(c488());
+    test.assert(c489());
+    test.assert(c490());
+    test.assert(c491());
+    return 0;
+}

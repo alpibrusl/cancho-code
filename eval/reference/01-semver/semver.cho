@@ -1,0 +1,237 @@
+edition 7;
+module semver;
+import std.bytes;
+import std.result;
+
+pub struct Parsed { ok: bool, major: int, minor: int, patch: int, ps: int, pe: int }
+
+fn is_idc(c: int) -> [] bool {
+    return bytes.is_digit(c) || bytes.is_alpha(c) || c == 45;
+}
+
+fn all_digits[&s](s: &s [byte], a: int, b: int) -> [] bool {
+    var i = a;
+    while i < b {
+        if !bytes.is_digit(int_of(s[i])) { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+// one identifier s[a..b]; no_zero: an all-digit identifier may not lead with 0
+fn ident_ok[&s](s: &s [byte], a: int, b: int, no_zero: bool) -> [] bool {
+    if a >= b { return false; }
+    var i = a;
+    while i < b {
+        if !is_idc(int_of(s[i])) { return false; }
+        i = i + 1;
+    }
+    if no_zero && b - a > 1 && int_of(s[a]) == 48 && all_digits(s, a, b) { return false; }
+    return true;
+}
+
+// dot-separated identifier list s[a..b], at least one identifier
+fn list_ok[&s](s: &s [byte], a: int, b: int, no_zero: bool) -> [] bool {
+    if a >= b { return false; }
+    var start = a;
+    var i = a;
+    while i <= b {
+        if i == b || int_of(s[i]) == 46 {
+            if !ident_ok(s, start, i, no_zero) { return false; }
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn num_ok[&s](s: &s [byte], a: int, b: int) -> [] bool {
+    if a >= b || b - a > 9 { return false; }
+    if !all_digits(s, a, b) { return false; }
+    if b - a > 1 && int_of(s[a]) == 48 { return false; }
+    return true;
+}
+
+fn num_val[&s](s: &s [byte], a: int, b: int) -> [] int {
+    var v = 0;
+    var i = a;
+    while i < b {
+        v = v * 10 + int_of(s[i]) - 48;
+        i = i + 1;
+    }
+    return v;
+}
+
+fn find_byte[&s](s: &s [byte], from: int, c: int) -> [] int {
+    var i = from;
+    while i < len(s) {
+        if int_of(s[i]) == c { return i; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn bad() -> [] Parsed {
+    return Parsed { ok: false, major: 0, minor: 0, patch: 0, ps: -1, pe: -1 };
+}
+
+pub fn parse[&s](s: &s [byte]) -> [] Parsed {
+    let n = len(s);
+    let d1 = find_byte(s, 0, 46);
+    if d1 < 0 { return bad(); }
+    let d2 = find_byte(s, d1 + 1, 46);
+    if d2 < 0 { return bad(); }
+    var pe = d2 + 1;
+    while pe < n && int_of(s[pe]) != 45 && int_of(s[pe]) != 43 { pe = pe + 1; }
+    if !num_ok(s, 0, d1) || !num_ok(s, d1 + 1, d2) || !num_ok(s, d2 + 1, pe) { return bad(); }
+    var ps = -1;
+    var pre_end = -1;
+    var build_at = pe;
+    if pe < n && int_of(s[pe]) == 45 {
+        ps = pe + 1;
+        var q = ps;
+        while q < n && int_of(s[q]) != 43 { q = q + 1; }
+        pre_end = q;
+        build_at = q;
+        if !list_ok(s, ps, pre_end, true) { return bad(); }
+    }
+    if build_at < n {
+        // s[build_at] is '+'
+        if !list_ok(s, build_at + 1, n, false) { return bad(); }
+    }
+    return Parsed { ok: true, major: num_val(s, 0, d1), minor: num_val(s, d1 + 1, d2), patch: num_val(s, d2 + 1, pe), ps: ps, pe: pre_end };
+}
+
+fn sign(x: int) -> [] int {
+    if x < 0 { return -1; }
+    if x > 0 { return 1; }
+    return 0;
+}
+
+fn cmp_int(x: int, y: int) -> [] int {
+    if x < y { return -1; }
+    if x > y { return 1; }
+    return 0;
+}
+
+fn dot_or_end[&s](s: &s [byte], i: int, end: int) -> [] int {
+    var j = i;
+    while j < end && int_of(s[j]) != 46 { j = j + 1; }
+    return j;
+}
+
+fn cmp_ident[&a, &b](x: &a [byte], y: &b [byte]) -> [] int {
+    let xn = all_digits(x, 0, len(x));
+    let yn = all_digits(y, 0, len(y));
+    if xn && yn {
+        if len(x) != len(y) { return cmp_int(len(x), len(y)); }
+        return sign(bytes.compare(x, y));
+    }
+    if xn { return -1; }
+    if yn { return 1; }
+    return sign(bytes.compare(x, y));
+}
+
+fn cmp_pre[&a, &b](a: &a [byte], p: Parsed, b: &b [byte], q: Parsed) -> [] int {
+    var i = p.ps;
+    var j = q.ps;
+    while i < p.pe && j < q.pe {
+        let ie = dot_or_end(a, i, p.pe);
+        let je = dot_or_end(b, j, q.pe);
+        let c = cmp_ident(a[i..ie], b[j..je]);
+        if c != 0 { return c; }
+        i = ie + 1;
+        j = je + 1;
+    }
+    // a list is exhausted when its cursor has passed its end
+    if i >= p.pe && j >= q.pe { return 0; }
+    if i >= p.pe { return -1; }
+    return 1;
+}
+
+fn cmp_parsed[&a, &b](a: &a [byte], p: Parsed, b: &b [byte], q: Parsed) -> [] int {
+    if p.major != q.major { return cmp_int(p.major, q.major); }
+    if p.minor != q.minor { return cmp_int(p.minor, q.minor); }
+    if p.patch != q.patch { return cmp_int(p.patch, q.patch); }
+    if p.ps < 0 && q.ps < 0 { return 0; }
+    if p.ps < 0 { return 1; }
+    if q.ps < 0 { return -1; }
+    return cmp_pre(a, p, b, q);
+}
+
+// version p against the prerelease-free triple (M, m, pt)
+fn cmp_triple(p: Parsed, mj: int, mn: int, pt: int) -> [] int {
+    if p.major != mj { return cmp_int(p.major, mj); }
+    if p.minor != mn { return cmp_int(p.minor, mn); }
+    if p.patch != pt { return cmp_int(p.patch, pt); }
+    if p.ps >= 0 { return -1; }
+    return 0;
+}
+
+pub fn semver_valid[&s](s: &s [byte]) -> [] bool {
+    return parse(s).ok;
+}
+
+pub fn semver_compare[&a, &b](a: &a [byte], b: &b [byte]) -> [] result.Result[int, &static [byte]] {
+    let p = parse(a);
+    let q = parse(b);
+    if !p.ok { return result.Result::Err("invalid version: first argument"); }
+    if !q.ok { return result.Result::Err("invalid version: second argument"); }
+    return result.Result::Ok(cmp_parsed(a, p, b, q));
+}
+
+// operators: 0 =, 1 >, 2 >=, 3 <, 4 <=, 5 ^, 6 ~
+fn op_len[&s](s: &s [byte], a: int, b: int) -> [] int {
+    if a >= b { return 0; }
+    let c = int_of(s[a]);
+    let two = a + 1 < b && int_of(s[a + 1]) == 61;
+    if (c == 62 || c == 60) && two { return 2; }
+    if c == 62 || c == 60 || c == 61 || c == 94 || c == 126 { return 1; }
+    return 0;
+}
+
+fn op_code[&s](s: &s [byte], a: int, n: int) -> [] int {
+    if n == 0 { return 0; }
+    let c = int_of(s[a]);
+    if c == 62 { if n == 2 { return 2; } return 1; }
+    if c == 60 { if n == 2 { return 4; } return 3; }
+    if c == 94 { return 5; }
+    if c == 126 { return 6; }
+    return 0;
+}
+
+fn holds[&a, &b](op: int, v: Parsed, vs: &a [byte], c: Parsed, cs: &b [byte]) -> [] bool {
+    let k = cmp_parsed(vs, v, cs, c);
+    if op == 0 { return k == 0; }
+    if op == 1 { return k > 0; }
+    if op == 2 { return k >= 0; }
+    if op == 3 { return k < 0; }
+    if op == 4 { return k <= 0; }
+    if k < 0 { return false; }
+    if op == 6 { return cmp_triple(v, c.major, c.minor + 1, 0) < 0; }
+    if c.major > 0 { return cmp_triple(v, c.major + 1, 0, 0) < 0; }
+    if c.minor > 0 { return cmp_triple(v, 0, c.minor + 1, 0) < 0; }
+    return cmp_triple(v, 0, 0, c.patch + 1) < 0;
+}
+
+pub fn semver_satisfies[&v, &r](version: &v [byte], range: &r [byte]) -> [] result.Result[bool, &static [byte]] {
+    let vp = parse(version);
+    if !vp.ok { return result.Result::Err("invalid version"); }
+    let n = len(range);
+    if n == 0 { return result.Result::Err("invalid range: empty"); }
+    var sat = true;
+    var start = 0;
+    var i = 0;
+    while i <= n {
+        if i == n || int_of(range[i]) == 32 {
+            if start >= i { return result.Result::Err("invalid range: empty comparator"); }
+            let ol = op_len(range, start, i);
+            let cp = parse(range[start + ol..i]);
+            if !cp.ok { return result.Result::Err("invalid range: bad comparator"); }
+            if !holds(op_code(range, start, ol), vp, version, cp, range[start + ol..i]) { sat = false; }
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    return result.Result::Ok(sat);
+}

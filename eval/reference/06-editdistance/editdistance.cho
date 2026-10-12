@@ -1,0 +1,84 @@
+edition 7;
+module editdistance;
+import std.option;
+import std.vec;
+import std.utf8;
+
+// Decode `text` into code points, written into `out` (len(out) >= len(text)).
+// Returns the number of code points. Malformed bytes count as one each run (std.utf8 rule).
+fn decode_all[&r, &o](text: &r [byte], out: &!o [int]) -> [] int {
+    var n = 0;
+    var at = 0;
+    while at < len(text) {
+        match utf8.decode(text, at) {
+            utf8.Step::Code(cp, w) => { out[n] = cp; at = at + w; }
+            utf8.Step::Invalid(w) => { out[n] = 0 - 1 - at; at = at + w; }
+        }
+        n = n + 1;
+    }
+    return n;
+}
+
+fn min2(x: int, y: int) -> [] int {
+    if x < y { return x; }
+    return y;
+}
+
+// Levenshtein distance over code points.
+pub fn edit_distance[&r, &s](a: &r [byte], b: &s [byte]) -> [] int {
+    region w {
+        let xa = alloc_slice[w](len(a) + 1, 0);
+        let xb = alloc_slice[w](len(b) + 1, 0);
+        let n = decode_all(a, xa);
+        let m = decode_all(b, xb);
+        var prev = alloc_slice[w](m + 1, 0);
+        var cur = alloc_slice[w](m + 1, 0);
+        var j = 0;
+        while j <= m { prev[j] = j; j = j + 1; }
+        var i = 1;
+        while i <= n {
+            cur[0] = i;
+            j = 1;
+            while j <= m {
+                var sub = prev[j - 1];
+                if xa[i - 1] != xb[j - 1] { sub = sub + 1; }
+                cur[j] = min2(min2(prev[j] + 1, cur[j - 1] + 1), sub);
+                j = j + 1;
+            }
+            let t = prev;
+            prev = cur;
+            cur = t;
+            i = i + 1;
+        }
+        return prev[m];
+    }
+}
+
+pub fn char_count[&r](a: &r [byte]) -> [] int {
+    return utf8.count(a);
+}
+
+pub fn similarity_pct[&r, &s](a: &r [byte], b: &s [byte]) -> [] int {
+    let la = utf8.count(a);
+    let lb = utf8.count(b);
+    var m = la;
+    if lb > m { m = lb; }
+    if m == 0 { return 100; }
+    let d = edit_distance(a, b);
+    return (100 * (m - d)) / m;
+}
+
+pub fn closest[&q, &v, &s](query: &q [byte], candidates: &v vec.Vec[&s [byte]]) -> [] option.Option[&s [byte]] {
+    let n = vec.size(candidates);
+    if n == 0 { return option.Option::None; }
+    var best = vec.get(candidates, 0);
+    var bestd = edit_distance(query, best);
+    var i = 1;
+    while i < n {
+        let c = vec.get(candidates, i);
+        let d = edit_distance(query, c);
+        if d < bestd { best = c; bestd = d; }
+        i = i + 1;
+    }
+    return option.Option::Some(best);
+}

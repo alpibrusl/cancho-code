@@ -66,6 +66,8 @@ CANCHO=<path> scripts/test-trail.sh
 CANCHO=<path> scripts/test-agent.sh
 scripts/test-agent-ollama.sh
 CANCHO=<path> scripts/test-fix.sh
+CANCHO=<path> scripts/test-eval.sh
+CANCHO=<path> scripts/test-reference-ports.sh
 CANCHO=<path> scripts/test-driver.sh
 CANCHO=<path> CANCHO_PACKAGES=<compiler>/packages scripts/test-provider.sh build
 ```

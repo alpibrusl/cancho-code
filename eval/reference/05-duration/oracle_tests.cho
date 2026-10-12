@@ -1,0 +1,144 @@
+edition 7;
+module oracle_tests;
+import std.result;
+import std.buffer;
+import std.bytes;
+import std.test;
+import duration;
+
+fn fmt_is[&h](heap: &!h Heap, n: int, want: &static [byte]) -> [heap] int {
+    match duration.duration_format(heap, n) {
+        result.Result::Ok(b) => {
+            var same = false;
+            borrow b as &x in { same = bytes.equal(buffer.bytes(x), want); }
+            buffer.drop(heap, b);
+            if same { return 0; }
+            return 1;
+        }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+fn fmt_err[&h](heap: &!h Heap, n: int) -> [heap] int {
+    match duration.duration_format(heap, n) {
+        result.Result::Ok(b) => { buffer.drop(heap, b); return 1; }
+        result.Result::Err(_) => { return 0; }
+    }
+}
+fn parse_is(s: &static [byte], want: int) -> [] int {
+    match duration.duration_parse(s) {
+        result.Result::Ok(v) => { if v == want { return 0; } return 1; }
+        result.Result::Err(_) => { return 2; }
+    }
+}
+fn parse_err(s: &static [byte]) -> [] int {
+    match duration.duration_parse(s) {
+        result.Result::Ok(_) => { return 1; }
+        result.Result::Err(_) => { return 0; }
+    }
+}
+
+pub fn test_c00_parse() -> [] int { return parse_is("0s", 0); }
+pub fn test_c01_parse() -> [] int { return parse_is("1s", 1); }
+pub fn test_c02_parse() -> [] int { return parse_is("59s", 59); }
+pub fn test_c03_parse() -> [] int { return parse_is("60s", 60); }
+pub fn test_c04_parse() -> [] int { return parse_is("90s", 90); }
+pub fn test_c05_parse() -> [] int { return parse_is("1m", 60); }
+pub fn test_c06_parse() -> [] int { return parse_is("90m", 5400); }
+pub fn test_c07_parse() -> [] int { return parse_is("1h", 3600); }
+pub fn test_c08_parse() -> [] int { return parse_is("1h30m", 5400); }
+pub fn test_c09_parse() -> [] int { return parse_is("2d4h", 187200); }
+pub fn test_c10_parse() -> [] int { return parse_is("1w", 604800); }
+pub fn test_c11_parse() -> [] int { return parse_is("1w1d1h1m1s", 694861); }
+pub fn test_c12_parse() -> [] int { return parse_is("10w", 6048000); }
+pub fn test_c13_parse() -> [] int { return parse_is("999999999s", 999999999); }
+pub fn test_c14_parse() -> [] int { return parse_is("5m30s", 330); }
+pub fn test_c15_parse() -> [] int { return parse_is("00s", 0); }
+pub fn test_c16_parse() -> [] int { return parse_is("007m", 420); }
+pub fn test_c17_parse() -> [] int { return parse_is("1d12h", 129600); }
+pub fn test_c18_parse() -> [] int { return parse_is("3h45s", 10845); }
+pub fn test_c19_parse() -> [] int { return parse_is("2w3m", 1209780); }
+pub fn test_c20_parse() -> [] int { return parse_err(""); }
+pub fn test_c21_parse() -> [] int { return parse_err("s"); }
+pub fn test_c22_parse() -> [] int { return parse_err("1"); }
+pub fn test_c23_parse() -> [] int { return parse_err("1x"); }
+pub fn test_c24_parse() -> [] int { return parse_err("1 s"); }
+pub fn test_c25_parse() -> [] int { return parse_err(" 1s"); }
+pub fn test_c26_parse() -> [] int { return parse_err("1s "); }
+pub fn test_c27_parse() -> [] int { return parse_err("-1s"); }
+pub fn test_c28_parse() -> [] int { return parse_err("+1s"); }
+pub fn test_c29_parse() -> [] int { return parse_err("1.5h"); }
+pub fn test_c30_parse() -> [] int { return parse_err("1h1h"); }
+pub fn test_c31_parse() -> [] int { return parse_err("30m1h"); }
+pub fn test_c32_parse() -> [] int { return parse_err("1s1m"); }
+pub fn test_c33_parse() -> [] int { return parse_err("1h 30m"); }
+pub fn test_c34_parse() -> [] int { return parse_err("1H"); }
+pub fn test_c35_parse() -> [] int { return parse_err("1ms"); }
+pub fn test_c36_parse() -> [] int { return parse_err("1000000000s"); }
+pub fn test_c37_parse() -> [] int { return parse_err("h1"); }
+pub fn test_c38_parse() -> [] int { return parse_err("1hh"); }
+pub fn test_c39_parse() -> [] int { return parse_err("1h30"); }
+pub fn test_c40_parse() -> [] int { return parse_err("0"); }
+pub fn test_c41_parse() -> [] int { return parse_err("٣s"); }
+pub fn test_c42_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 0, "0s"); }
+pub fn test_c43_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 1, "1s"); }
+pub fn test_c44_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 59, "59s"); }
+pub fn test_c45_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 60, "1m"); }
+pub fn test_c46_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 61, "1m1s"); }
+pub fn test_c47_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 3599, "59m59s"); }
+pub fn test_c48_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 3600, "1h"); }
+pub fn test_c49_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 3661, "1h1m1s"); }
+pub fn test_c50_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 86399, "23h59m59s"); }
+pub fn test_c51_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 86400, "1d"); }
+pub fn test_c52_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 90061, "1d1h1m1s"); }
+pub fn test_c53_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 604800, "1w"); }
+pub fn test_c54_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 604801, "1w1s"); }
+pub fn test_c55_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 1209600, "2w"); }
+pub fn test_c56_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 1814399, "2w6d23h59m59s"); }
+pub fn test_c57_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 999999999, "1653w3d1h46m39s"); }
+pub fn test_c58_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 1000000000, "1653w3d1h46m40s"); }
+pub fn test_c59_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 31536000, "52w1d"); }
+pub fn test_c60_format[&h](heap: &!h Heap) -> [heap] int { return fmt_is(heap, 123456789, "204w21h33m9s"); }
+pub fn test_c61_format[&h](heap: &!h Heap) -> [heap] int { return fmt_err(heap, -1); }
+pub fn test_c62_format[&h](heap: &!h Heap) -> [heap] int { return fmt_err(heap, -60); }
+pub fn test_c63_format[&h](heap: &!h Heap) -> [heap] int { return fmt_err(heap, -999999); }
+
+pub fn test_x_roundtrip[&h](heap: &!h Heap) -> [heap] int {
+    var n = 0;
+    var bad = 0;
+    while n < 200000 {
+        match duration.duration_format(heap, n) {
+            result.Result::Ok(b) => {
+                borrow b as &x in {
+                    match duration.duration_parse(buffer.bytes(x)) {
+                        result.Result::Ok(v) => { if v != n { bad = bad + 1; } }
+                        result.Result::Err(_) => { bad = bad + 1; }
+                    }
+                }
+                buffer.drop(heap, b);
+            }
+            result.Result::Err(_) => { bad = bad + 1; }
+        }
+        n = n + 37;
+    }
+    return bad;
+}
+pub fn test_x_big_roundtrip[&h](heap: &!h Heap) -> [heap] int {
+    var bad = 0;
+    var n = 999999000;
+    while n < 1000001000 {
+        match duration.duration_format(heap, n) {
+            result.Result::Ok(b) => {
+                borrow b as &x in {
+                    match duration.duration_parse(buffer.bytes(x)) {
+                        result.Result::Ok(v) => { if v != n { bad = bad + 1; } }
+                        result.Result::Err(_) => { bad = bad + 1; }
+                    }
+                }
+                buffer.drop(heap, b);
+            }
+            result.Result::Err(_) => { bad = bad + 1; }
+        }
+        n = n + 1;
+    }
+    return bad;
+}

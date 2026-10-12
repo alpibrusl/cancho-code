@@ -1,0 +1,224 @@
+edition 7;
+module ini;
+import std.option;
+import std.result;
+import std.buffer;
+import std.bytes;
+
+// Representation (port decision): cancho has no string type and no list of
+// strings in std. A "List[Str]" result is an owned std.buffer.Buffer holding
+// the "name=value" entries, each terminated by "\n". Err carries the 1-based
+// line number (no formatted message; there is no int->text formatter that
+// does not need a heap, and the brief only requires "naming the line").
+
+fn find_byte[&t](s: &t [byte], b: int) -> [] int {
+    var i = 0;
+    while i < len(s) {
+        if int_of(s[i]) == b { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+fn is_key_char(c: int) -> [] bool {
+    return bytes.is_alpha(c) || bytes.is_digit(c) || c == '_' || c == '.' || c == '-';
+}
+
+fn valid_key[&t](k: &t [byte]) -> [] bool {
+    if len(k) == 0 { return false; }
+    var i = 0;
+    while i < len(k) {
+        if is_key_char(int_of(k[i])) == false { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn valid_section[&t](n: &t [byte]) -> [] bool {
+    if len(n) == 0 { return false; }
+    var i = 0;
+    while i < len(n) {
+        let c = int_of(n[i]);
+        if c == '[' || c == ']' || c == '=' { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+// Phase 1: validate and record every assignment, in order, as
+// "full=value\n" (duplicates kept). Err(line) on malformed input.
+fn raw_settings[&h, &t](heap: &!h Heap, text: &t [byte]) -> [heap] result.Result[buffer.Buffer, int] {
+    var raw = buffer.empty(heap, 16);
+    var section = text[0..0];
+    var pos = 0;
+    var lineno = 0;
+    var bad = 0;
+    while bad == 0 && pos <= len(text) {
+        let rest = text[pos..len(text)];
+        var nl = find_byte(rest, 10);
+        var stop = len(text);
+        if nl >= 0 { stop = pos + nl; }
+        let line = bytes.trim(text[pos..stop]);
+        pos = stop + 1;
+        lineno = lineno + 1;
+        if len(line) > 0 {
+            let c0 = int_of(line[0]);
+            if c0 == ';' || c0 == '#' {
+                // comment
+            } else if c0 == '[' {
+                if int_of(line[len(line) - 1]) != ']' || len(line) < 2 {
+                    bad = lineno;
+                } else {
+                    let name = bytes.trim(line[1..len(line) - 1]);
+                    if valid_section(name) { section = name; } else { bad = lineno; }
+                }
+            } else {
+                let eq = find_byte(line, '=');
+                if eq < 0 {
+                    bad = lineno;
+                } else {
+                    let k = bytes.trim(line[0..eq]);
+                    var v = bytes.trim(line[eq + 1..len(line)]);
+                    if valid_key(k) == false {
+                        bad = lineno;
+                    } else {
+                        if len(v) >= 2 && int_of(v[0]) == '"' && int_of(v[len(v) - 1]) == '"' {
+                            v = v[1..len(v) - 1];
+                        }
+                        if len(section) > 0 {
+                            raw = buffer.append(heap, raw, section);
+                            raw = buffer.push(heap, raw, byte_of('.'));
+                        }
+                        raw = buffer.append(heap, raw, k);
+                        raw = buffer.push(heap, raw, byte_of('='));
+                        raw = buffer.append(heap, raw, v);
+                        raw = buffer.push(heap, raw, byte_of('\n'));
+                    }
+                }
+            }
+        }
+    }
+    if bad != 0 {
+        buffer.drop(heap, raw);
+        return result.Result::Err(bad);
+    }
+    return result.Result::Ok(raw);
+}
+
+// start of the record after the one starting at i (past its "\n")
+fn rec_end[&t](r: &t [byte], i: int) -> [] int {
+    let n = find_byte(r[i..len(r)], 10);
+    return i + n;
+}
+
+// Phase 2: collapse duplicates: first position, last value.
+fn dedupe_in[&h, &t](heap: &!h Heap, r: &t [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 16);
+    var i = 0;
+    while i < len(r) {
+        let e = rec_end(r, i);
+        let nlen = find_byte(r[i..e], '=');
+        let name = r[i..i + nlen];
+        // seen earlier?
+        var seen = false;
+        var k = 0;
+        while k < i {
+            let ke = rec_end(r, k);
+            let kn = find_byte(r[k..ke], '=');
+            if bytes.equal(r[k..k + kn], name) { seen = true; }
+            k = ke + 1;
+        }
+        if seen == false {
+            // last value for this name
+            var vs = i + nlen + 1;
+            var ve = e;
+            var j = e + 1;
+            while j < len(r) {
+                let je = rec_end(r, j);
+                let jn = find_byte(r[j..je], '=');
+                if bytes.equal(r[j..j + jn], name) {
+                    vs = j + jn + 1;
+                    ve = je;
+                }
+                j = je + 1;
+            }
+            out = buffer.append(heap, out, name);
+            out = buffer.push(heap, out, byte_of('='));
+            out = buffer.append(heap, out, r[vs..ve]);
+            out = buffer.push(heap, out, byte_of('\n'));
+        }
+        i = e + 1;
+    }
+    return out;
+}
+
+fn dedupe[&h](heap: &!h Heap, raw: buffer.Buffer) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 1);
+    buffer.drop(heap, out);
+    borrow raw as &r in {
+        out = dedupe_in(heap, buffer.bytes(r));
+    }
+    buffer.drop(heap, raw);
+    return out;
+}
+
+pub fn ini_parse[&h, &t](heap: &!h Heap, text: &t [byte]) -> [heap] result.Result[buffer.Buffer, int] {
+    match raw_settings(heap, text) {
+        result.Result::Err(n) => { return result.Result::Err(n); }
+        result.Result::Ok(raw) => {
+            let out = dedupe(heap, raw);
+            return result.Result::Ok(out);
+        }
+    }
+}
+
+// Start of the value of "full" in the deduped entries r, or -1.
+fn value_start[&t, &f](r: &t [byte], full: &f [byte]) -> [] int {
+    var i = 0;
+    while i < len(r) {
+        let e = rec_end(r, i);
+        let nlen = find_byte(r[i..e], '=');
+        if bytes.equal(r[i..i + nlen], full) { return i + nlen + 1; }
+        i = e + 1;
+    }
+    return 0 - 1;
+}
+
+fn lookup_owned[&h](heap: &!h Heap, entries: buffer.Buffer, fullbuf: buffer.Buffer) -> [heap] option.Option[buffer.Buffer] {
+    var vs = 0 - 1;
+    var ve = 0;
+    borrow entries as &r in {
+        let b = buffer.bytes(r);
+        borrow fullbuf as &f in {
+            vs = value_start(b, buffer.bytes(f));
+        }
+        if vs >= 0 { ve = rec_end(b, vs); }
+    }
+    buffer.drop(heap, fullbuf);
+    if vs < 0 {
+        buffer.drop(heap, entries);
+        return option.Option::None;
+    }
+    var v = buffer.empty(heap, 1);
+    borrow entries as &r in {
+        v = buffer.append(heap, v, buffer.bytes(r)[vs..ve]);
+    }
+    buffer.drop(heap, entries);
+    return option.Option::Some(v);
+}
+
+pub fn ini_get[&h, &t, &s, &k](heap: &!h Heap, text: &t [byte], section: &s [byte], key: &k [byte]) -> [heap] result.Result[option.Option[buffer.Buffer], int] {
+    match ini_parse(heap, text) {
+        result.Result::Err(n) => { return result.Result::Err(n); }
+        result.Result::Ok(entries) => {
+            var full = buffer.empty(heap, 16);
+            if len(section) > 0 {
+                full = buffer.append(heap, full, section);
+                full = buffer.push(heap, full, byte_of('.'));
+            }
+            full = buffer.append(heap, full, key);
+            let out = lookup_owned(heap, entries, full);
+            return result.Result::Ok(out);
+        }
+    }
+}
