@@ -1,0 +1,71 @@
+edition 7;
+
+// The trail gate's program (docs/parity.md P0): `trail.begin` and
+// `trail.record` against a real file, one mode per case.
+//
+//     trail_gate <mode> <path>
+//
+//   plain   begin, then two ordinary records
+//   hostile begin, then one record whose signature holds `"`, `\` and a
+//           newline byte, which must be escaped so the line stays one record
+//   restart records, then begin again: the second run starts from empty
+//   cap     a record that would pass the cap answers -1 and writes nothing
+//
+// It prints the integer each `record` answered, one per line.
+
+import std.buffer;
+import std.bytes;
+import std.io;
+import trail;
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(net);
+    release(clock);
+    release(signals);
+    release(exec);
+    var console = io;
+    var h = heap;
+    var mode = "";
+    var path = "";
+    borrow args as &g in {
+        mode = arg(g, 1);
+        path = arg(g, 2);
+    }
+    borrow fs as &f in {
+        borrow mut console as &!i in {
+            borrow mut h as &!hh in {
+                if bytes.equal(mode, "plain") {
+                    trail.begin(f, path);
+                    io.print_int(i, trail.record(hh, f, path, 0, 12, "refused", "type-mismatch:expected `int`, found `bool`", "retry", 65536));
+                    io.newline(i);
+                    io.print_int(i, trail.record(hh, f, path, 1, 0, "verified", "", "verified", 65536));
+                    io.newline(i);
+                }
+                if bytes.equal(mode, "hostile") {
+                    trail.begin(f, path);
+                    io.print_int(i, trail.record(hh, f, path, 0, 7, "refused", "a \"quoted\" word, a back\\slash,\na second line", "retry", 65536));
+                    io.newline(i);
+                }
+                if bytes.equal(mode, "restart") {
+                    trail.begin(f, path);
+                    trail.record(hh, f, path, 0, 1, "refused", "x", "retry", 65536);
+                    trail.begin(f, path);
+                    io.print_int(i, trail.record(hh, f, path, 0, 2, "verified", "", "verified", 65536));
+                    io.newline(i);
+                }
+                if bytes.equal(mode, "cap") {
+                    trail.begin(f, path);
+                    io.print_int(i, trail.record(hh, f, path, 0, 1, "refused", "a signature that does not fit in forty bytes of cap", "retry", 40));
+                    io.newline(i);
+                }
+            }
+        }
+    }
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return 0;
+}

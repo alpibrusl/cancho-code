@@ -57,10 +57,11 @@ jobs:
       - name: Unit tests (the loop's decisions, the failure signature)
         run: $HOME/cancho-bin/cancho test tests/loop_check_test.cho tests/signature_test.cho src/loop_check.cho src/signature.cho --std --backend cranelift
 
-      - name: The gates (checker, snapshot ring, driver loop, provider)
+      - name: The gates (checker, snapshot ring, trail, driver loop, provider)
         run: |
           export CANCHO=$HOME/cancho-bin/cancho CANCHO_PACKAGES=$HOME/cancho-bin/packages
           sh scripts/test-checker.sh
           sh scripts/test-snapshot.sh
+          sh scripts/test-trail.sh
           sh scripts/test-driver.sh
           sh scripts/test-provider.sh

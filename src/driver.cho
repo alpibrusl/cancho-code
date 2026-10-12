@@ -29,6 +29,7 @@ module driver;
 
 import checker;
 import snapshot;
+import trail;
 import loop_check;
 import std.buffer;
 import std.bytes;
@@ -45,6 +46,20 @@ pub enum Ended {
     Unavailable,
 }
 
+fn outcome_name(o: loop_check.Outcome) -> [] &static [byte] {
+    match o {
+        loop_check.Outcome::Verified => { return "verified"; }
+        loop_check.Outcome::Retryable => { return "refused"; }
+        loop_check.Outcome::PlanDefect => { return "defect"; }
+        loop_check.Outcome::ProviderOutage => { return "outage"; }
+    }
+}
+
+// One record of the trail (parity P0), on the file the run drives.
+fn note[&h, &z, &t, &o, &s, &d](heap: &!h Heap, fs: &z Fs(""), tpath: &t buffer.Buffer, attempt: int, ms: int, outcome: &o [byte], sig: &s [byte], decision: &d [byte]) -> [heap, fs_read(""), fs_write("")] int {
+    return trail.record(heap, fs, buffer.bytes(tpath), attempt, ms, outcome, sig, decision, 65536);
+}
+
 // Drive one issue: `agent` runs before every check (it is the editor —
 // an LLM in production, a shell stand-in in the gate), `check_cmd` is the
 // checker command for `file`, and the budgets are the design's §4.
@@ -53,6 +68,11 @@ pub enum Ended {
 // verified unit (the §4 contract), so a later regression has a clean
 // copy to restore from.
 pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
+    var tpath = buffer.append(heap, buffer.empty(heap, 256), file);
+    tpath = buffer.append(heap, tpath, ".trail.jsonl");
+    borrow tpath as &tq0 in {
+        trail.begin(fs, buffer.bytes(tq0));
+    }
     var attempts = 0;
     var consecutive = 0;
     var last = buffer.empty(heap, 64);
@@ -77,14 +97,17 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
                         going = false;
                     }
                     Spawned::Ok(child) => {
+                        let t0 = clock_ms(clock);
                         let (agent_out, agent_ran) = process.capture(heap, clock, child, to_child, from_child, "", 4096, 30000);
                         buffer.drop(heap, agent_out);
+                        let agent_ms = clock_ms(clock) - t0;
                         match agent_ran {
                             process.Ran::Code(n) => {
                                 // The agent answered; the check is the oracle.
                                 let answer = checker.run(heap, exec, clock, file, check_cmd, 4096, 30000);
                                 let checker.Answer { outcome, sig } = answer;
                                 var this_sig = sig;
+                                let oname = outcome_name(outcome);
                                 // Compare against the last attempt's signature
                                 // before it becomes the last.
                                 var same = false;
@@ -115,6 +138,9 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
                                         buffer.drop(heap, sig);
                                         match outcome {
                                             loop_check.Outcome::Verified => {
+                                                borrow tpath as &tq in {
+                                                    note(heap, fs, tq, attempts, agent_ms, "verified", "", "verified");
+                                                }
                                                 // Snapshot the verified state
                                                 // (§4): the newest copy that
                                                 // checked.
@@ -129,6 +155,9 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
                                                 going = false;
                                             }
                                             loop_check.Outcome::Retryable => {
+                                                borrow tpath as &tq in {
+                                                    note(heap, fs, tq, attempts, agent_ms, "refused", "", "regressed");
+                                                }
                                                 // Regressed between the two
                                                 // runs: back on the board,
                                                 // named.
@@ -136,11 +165,17 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
                                                 attempts = attempts + 1;
                                             }
                                             loop_check.Outcome::PlanDefect => {
+                                                borrow tpath as &tq in {
+                                                    note(heap, fs, tq, attempts, agent_ms, "defect", "", "defect");
+                                                }
                                                 io.write_all(io, "[ISSUE_VERDICT]\tfailed\tdefect\n");
                                                 ended = Ended::PlanDefect;
                                                 going = false;
                                             }
                                             loop_check.Outcome::ProviderOutage => {
+                                                borrow tpath as &tq in {
+                                                    note(heap, fs, tq, attempts, agent_ms, "outage", "", "provider");
+                                                }
                                                 io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tchecker\n");
                                                 ended = Ended::Unavailable;
                                                 going = false;
@@ -148,34 +183,64 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
                                         }
                                     }
                                     loop_check.Decision::StopIssueDefect => {
+                                        borrow tpath as &tq in {
+                                            borrow this_sig as &tb in {
+                                                note(heap, fs, tq, attempts, agent_ms, oname, buffer.bytes(tb), "defect");
+                                            }
+                                        }
                                         buffer.drop(heap, this_sig);
                                         io.write_all(io, "[ISSUE_VERDICT]\tfailed\tdefect\n");
                                         ended = Ended::PlanDefect;
                                         going = false;
                                     }
                                     loop_check.Decision::StopIssueCeiling => {
+                                        borrow tpath as &tq in {
+                                            borrow this_sig as &tb in {
+                                                note(heap, fs, tq, attempts, agent_ms, oname, buffer.bytes(tb), "ceiling");
+                                            }
+                                        }
                                         buffer.drop(heap, this_sig);
                                         io.write_all(io, "[ISSUE_VERDICT]\tfailed\tceiling\n");
                                         ended = Ended::FailedCeiling;
                                         going = false;
                                     }
                                     loop_check.Decision::StopIssueSignature => {
+                                        borrow tpath as &tq in {
+                                            borrow this_sig as &tb in {
+                                                note(heap, fs, tq, attempts, agent_ms, oname, buffer.bytes(tb), "signature");
+                                            }
+                                        }
                                         buffer.drop(heap, this_sig);
                                         io.write_all(io, "[ISSUE_VERDICT]\tfailed\tsignature\n");
                                         ended = Ended::FailedSignaure;
                                         going = false;
                                     }
                                     loop_check.Decision::StopRunProvider => {
+                                        borrow tpath as &tq in {
+                                            borrow this_sig as &tb in {
+                                                note(heap, fs, tq, attempts, agent_ms, oname, buffer.bytes(tb), "provider");
+                                            }
+                                        }
                                         buffer.drop(heap, this_sig);
                                         io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tchecker\n");
                                         ended = Ended::Unavailable;
                                         going = false;
                                     }
                                     loop_check.Decision::Retry => {
+                                        borrow tpath as &tq in {
+                                            borrow this_sig as &tb in {
+                                                note(heap, fs, tq, attempts, agent_ms, oname, buffer.bytes(tb), "retry");
+                                            }
+                                        }
+                                        // `consecutive` counts the attempts, this one
+                                        // included, that ended in this signature: a
+                                        // fresh signature starts a run of one, not
+                                        // zero (found by the trail gate: with zero
+                                        // the stop needed K+1 identical refusals).
                                         if same {
                                             consecutive = consecutive + 1;
                                         } else {
-                                            consecutive = 0;
+                                            consecutive = 1;
                                         }
                                         buffer.drop(heap, last);
                                         last = this_sig;
@@ -210,5 +275,6 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
         }
     }
     buffer.drop(heap, last);
+    buffer.drop(heap, tpath);
     return ended;
 }
