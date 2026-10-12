@@ -1,0 +1,59 @@
+edition 7;
+
+// plancheck <plan.json>: check a plan (docs/plan.md). Exit 0 valid, 1 invalid,
+// 2 usage (no argument, the file cannot be read, or it is 1 MiB or more).
+
+import std.buffer;
+import std.io;
+import plan;
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(net);
+    release(clock);
+    release(signals);
+    release(exec);
+    var console = io;
+    var h = heap;
+    var path = "";
+    var given = false;
+    var status = 2;
+    borrow args as &g in {
+        if arg_count(g) >= 2 {
+            given = true;
+            path = arg(g, 1);
+        }
+    }
+    if given {
+        borrow fs as &f in {
+            borrow mut console as &!i in {
+                borrow mut h as &!hh in {
+                    let room = box_slice(hh, 1048576, byte_of(0));
+                    borrow mut room as &!rw in {
+                        let text = contents(rw);
+                        let n = fs_read(f, path, text);
+                        if n >= 1048576 {
+                            // The buffer is full: the file may be longer, and a plan checked in
+                            // part would be reported as if it were the whole.
+                            io.error_all(i, "plancheck: the plan is too large (1 MiB or more)\n");
+                        } else if n >= 0 {
+                            let (out, code) = plan.check(hh, text[0..n]);
+                            borrow out as &o in {
+                                buffer.write(i, o);
+                            }
+                            buffer.drop(hh, out);
+                            status = code;
+                        }
+                    }
+                    unbox_slice(hh, room);
+                }
+            }
+        }
+    }
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return status;
+}
