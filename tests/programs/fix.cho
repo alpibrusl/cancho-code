@@ -6,7 +6,7 @@ edition 7;
 // `cancho check` as the only oracle. Every ending prints its §6 verdict
 // line; there is no state in which it runs silently.
 //
-//     fix <checker-path> <project.cho> <agent-command> <attempts>
+//     fix <checker-path> <project.cho> <agent-command> [attempts [agent-seconds]]
 //
 //   checker-path   the compiler binary, by its absolute path (measured:
 //                  the child of exec_spawn gets no PATH of its own)
@@ -14,6 +14,8 @@ edition 7;
 //   agent-command  the shell command that edits the file each turn; the
 //                  driver does not parse its output — the checker decides
 //   attempts       the attempt ceiling (design §4, default 4)
+//   agent-seconds  the cap on one agent turn (default 30); past it the run
+//                  ends `unavailable agent`, named, not burned as a failure
 //
 // The snapshot store is `<file>.snapshots/`, so a regression has a clean
 // copy one `snapshot.restore` away, and the ring is bounded at 8.
@@ -56,16 +58,20 @@ fn main(world: World) -> [] int {
     var file = "";
     var agent = "";
     var ceiling = 4;
+    var agent_seconds = 30;
     borrow mut console as &!ci in {
     borrow args as &g in {
         if arg_count(g) < 4 {
-            io.error_all(ci, "usage: fix <checker> <project.cho> <agent-cmd> [attempts]\n");
+            io.error_all(ci, "usage: fix <checker> <project.cho> <agent-cmd> [attempts [agent-seconds]]\n");
         } else {
             checker_path = arg(g, 1);
             file = arg(g, 2);
             agent = arg(g, 3);
             if arg_count(g) > 4 {
                 ceiling = digits_of(arg(g, 4));
+            }
+            if arg_count(g) > 5 {
+                agent_seconds = digits_of(arg(g, 5));
             }
         }
     }
@@ -110,7 +116,7 @@ fn main(world: World) -> [] int {
                         borrow cmd as &ce in {
                             borrow act as &ae in {
                                 borrow prefix as &pe in {
-                                    match driver.run_issue(hh, x, c, i, fz, file, buffer.bytes(ae), buffer.bytes(ce), buffer.bytes(pe), ceiling, 2) {
+                                    match driver.run_issue(hh, x, c, i, fz, file, buffer.bytes(ae), buffer.bytes(ce), buffer.bytes(pe), ceiling, 2, agent_seconds * 1000) {
                                         driver.Ended::Verified => { status = 0; }
                                         driver.Ended::FailedSignaure => { status = 1; }
                                         driver.Ended::FailedCeiling => { status = 1; }

@@ -26,6 +26,21 @@ import std.bytes;
 import std.io;
 import driver;
 
+// A decimal number, or 30000 for anything else.
+fn digits_of[&a](text: &a [byte]) -> [] int {
+    var n = 0;
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if c < 48 || c > 57 {
+            return 30000;
+        }
+        n = n * 10 + c - 48;
+        i = i + 1;
+    }
+    return n;
+}
+
 fn main(world: World) -> [] int {
     let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
     release(ffi);
@@ -36,10 +51,18 @@ fn main(world: World) -> [] int {
     var mode = "";
     var checker_path = "";
     var dir = "";
+    var custom_agent = "";
+    var timeout_ms = 30000;
     borrow args as &g in {
         mode = arg(g, 1);
         checker_path = arg(g, 2);
         dir = arg(g, 3);
+        if arg_count(g) > 4 {
+            custom_agent = arg(g, 4);
+        }
+        if arg_count(g) > 5 {
+            timeout_ms = digits_of(arg(g, 5));
+        }
     }
     borrow exec as &x in {
         borrow clock as &c in {
@@ -75,6 +98,14 @@ fn main(world: World) -> [] int {
                                 agent = buffer.append(hh, agent, dir);
                                 agent = buffer.append(hh, agent, "/project.cho\0");
                             }
+                            if bytes.equal(mode, "custom") {
+                                // The agent is whatever shell text the harness hands in
+                                // (argv 4): one stand-in per case of the agent contract
+                                // (scripts/test-agent.sh), no fixture of its own.
+                                agent = buffer.append(hh, agent, "-c\0");
+                                agent = buffer.append(hh, agent, custom_agent);
+                                agent = buffer.append(hh, agent, "\0");
+                            }
                             if bytes.equal(mode, "stuck") {
                                 agent = buffer.append(hh, agent, "-c\0true\0");
                             }
@@ -107,7 +138,7 @@ fn main(world: World) -> [] int {
                                 borrow cmd as &ce in {
                                     borrow agent as &ae in {
                                         borrow snap as &se in {
-                                            let ended = driver.run_issue(hh, x, c, i, f, buffer.bytes(fe), buffer.bytes(ae), buffer.bytes(ce), buffer.bytes(se), 4, 2);
+                                            let ended = driver.run_issue(hh, x, c, i, f, buffer.bytes(fe), buffer.bytes(ae), buffer.bytes(ce), buffer.bytes(se), 4, 2, timeout_ms);
                                             match ended {
                                                 driver.Ended::Verified => { }
                                                 driver.Ended::FailedSignaure => { }

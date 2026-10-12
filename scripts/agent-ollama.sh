@@ -1,35 +1,64 @@
 #!/bin/sh
-# agent-ollama.sh — the driver's agent, as a local model: read the project
-# file, ask the model to fix it, write the answer back. The checker is the
-# oracle (design §2): nothing here judges the answer, and the loop's §4
-# budgets bound it — a looping model stops at the same-signature rule, a
-# struggling one at the ceiling.
+# agent-ollama.sh — the driver's agent, as a local model: read the project file and the checker's refusals, ask the model for the
+# corrected file, write the answer back. The checker is the oracle (design §2): nothing here judges the answer, and the loop's §4
+# budgets bound it — a looping model stops at the same-signature rule, a struggling one at the ceiling.
 #
 #     agent-ollama.sh <project.cho>
 #
-# The model comes from the environment (OLLAMA_MODEL, default
-# qwen3.8:27b — a local model, no key, no network egress: everything
-# happens on the machine).
+# What the driver gives its agent (scripts/test-agent.sh pins each): the project file as the one argument, the checker's current
+# answer for it in <project.cho>.feedback (before every turn, the first included), and no environment at all.
 #
-# The prompt asks for the complete file back because the driver overwrites
-# the project file with the model's answer; a diff-format answer would be
-# written as-is and refused by the checker, which is the oracle catching
-# the shape, exactly as designed.
+# Through Ollama's HTTP API, not the `ollama` binary: with stdout redirected, `ollama run` wrote a spinner and a "Thinking..." trace
+# into the answer (issue #12), and the binary panics without a HOME, which the driver's agent does not have (issue #13). The API
+# is asked for the answer only (stream and think off), returns it as one JSON field, and needs no environment.
+#
+#   OLLAMA_MODEL    the model                      (default qwen3.8:27b)
+#   OLLAMA_URL      the server                     (default http://localhost:11434)
+#   OLLAMA_NUM_CTX  the context window in tokens   (default 8192)
+#
+# Exit codes: 0 the file was replaced; 1 the server or the model failed (the file is left as it was — the driver names that
+# `unavailable agent` / `agent_exit`, it is not a looping model).
 set -u
 
 file="${1:?usage: agent-ollama.sh <project.cho>}"
-model="${OLLAMA_MODEL:-qwen3.8:27b}"
-tmp=$(mktemp -t cc-ollama-XXXXXX)
 
-{
-    printf 'The cancho program below has one or more errors that its compiler refuses.\n'
-    printf 'Reply with the complete corrected file and nothing else — no markdown fences, no explanation.\n'
-    printf -- '---\n'
-    cat "$file"
-    printf -- '---\n'
-} | ollama run "$model" > "$tmp" || { rm -f "$tmp"; exit 1; }
+exec python3 - "$file" "${OLLAMA_MODEL:-qwen3.8:27b}" "${OLLAMA_URL:-http://localhost:11434}" "${OLLAMA_NUM_CTX:-8192}" <<'PY'
+import json, os, re, sys, urllib.request
 
-# A markdown fence is the one shape a model reliably adds and the checker
-# reliably refuses; stripped here rather than burned into an attempt.
-sed -i -e 's/^```[a-z]*$//' -e 's/^```$//' "$tmp"
-mv "$tmp" "$file"
+file, model, url, num_ctx = sys.argv[1], sys.argv[2], sys.argv[3].rstrip("/"), int(sys.argv[4])
+source = open(file, encoding="utf-8").read()
+
+# The checker's current refusals, one line each; if the feedback is not the JSON the checker normally prints, the text itself.
+feedback = ""
+try:
+    raw = open(file + ".feedback", encoding="utf-8").read()
+    try:
+        refusals = json.loads(raw).get("refused", [])
+        feedback = "".join("- line %d, column %d: %s (rule %s)\n" % (r["position"]["line"], r["position"]["column"], r["message"], r["rule"]) for r in refusals[:8])
+    except (ValueError, KeyError, AttributeError):
+        feedback = raw[:1500]
+except OSError:
+    pass
+
+prompt = ("The cancho program below is refused by its compiler. Reply with the complete corrected file and nothing else: "
+          "no markdown fences, no explanation.\n")
+if feedback:
+    prompt += "The compiler's current refusals:\n" + feedback
+prompt += "---\n" + source + "---\n"
+
+body = json.dumps({"model": model, "prompt": prompt, "stream": False, "think": False,
+                   "options": {"num_ctx": num_ctx, "temperature": 0.2}}).encode()
+try:
+    request = urllib.request.Request(url + "/api/generate", body, {"Content-Type": "application/json"})
+    answer = json.load(urllib.request.urlopen(request, timeout=1800))["response"]
+except Exception as e:
+    sys.stderr.write("agent-ollama: %s\n" % e)
+    sys.exit(1)
+
+# A markdown fence is the one shape a model reliably adds and the checker reliably refuses; stripped here, not burned as an attempt.
+answer = re.sub(r"^```[a-z]*\n?", "", answer.strip())
+answer = re.sub(r"\n?```\s*$", "", answer)
+tmp = file + ".agent.tmp"
+open(tmp, "w", encoding="utf-8").write(answer + "\n")
+os.replace(tmp, file)
+PY

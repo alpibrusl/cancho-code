@@ -64,15 +64,33 @@ fn note[&h, &z, &t, &o, &s, &d](heap: &!h Heap, fs: &z Fs(""), tpath: &t buffer.
 // an LLM in production, a shell stand-in in the gate), `check_cmd` is the
 // checker command for `file`, and the budgets are the design's §4.
 //
+// `agent_timeout_ms` caps one agent turn (a local 27B model with the
+// compiler's refusals in its prompt took longer than the 30 s that used to be
+// fixed here, and the run ended `unavailable agent` before the model had a
+// fair attempt: issue #11). The checker keeps its own 30 s.
+//
 // `snap_prefix` names the snapshot store; the loop snapshots after every
 // verified unit (the §4 contract), so a later regression has a clean
 // copy to restore from.
-pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
+pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
     var tpath = buffer.append(heap, buffer.empty(heap, 256), file);
     tpath = buffer.append(heap, tpath, ".trail.jsonl");
     borrow tpath as &tq0 in {
         trail.begin(fs, buffer.bytes(tq0));
     }
+    // The checker's current answer for the file goes to `<file>.feedback`
+    // before every agent turn (docs/parity.md P1): the agent has no way to ask
+    // the checker itself, and a model that never sees the refusal repeats it
+    // (issue #12). The command is the checker's own, redirected.
+    var fbcmd = buffer.empty(heap, len(check_cmd) + len(file) + 32);
+    var ci = 0;
+    while ci + 1 < len(check_cmd) {
+        fbcmd = buffer.push(heap, fbcmd, check_cmd[ci]);
+        ci = ci + 1;
+    }
+    fbcmd = buffer.append(heap, fbcmd, " > ");
+    fbcmd = buffer.append(heap, fbcmd, file);
+    fbcmd = buffer.append(heap, fbcmd, ".feedback 2>&1\0");
     var attempts = 0;
     var consecutive = 0;
     var last = buffer.empty(heap, 64);
@@ -80,6 +98,10 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
     var ended = Ended::Unavailable;
     var going = true;
     while going {
+        borrow fbcmd as &fq in {
+            let fb = checker.run(heap, exec, clock, file, buffer.bytes(fq), 4096, 30000);
+            checker.drop(heap, fb);
+        }
         // The agent's turn. Its output is not ours to parse: the check
         // below is the only oracle (design §2 — done is what the gate
         // says, never what the model claims). A provider outage here is
@@ -98,11 +120,22 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
                     }
                     Spawned::Ok(child) => {
                         let t0 = clock_ms(clock);
-                        let (agent_out, agent_ran) = process.capture(heap, clock, child, to_child, from_child, "", 4096, 30000);
+                        let (agent_out, agent_ran) = process.capture(heap, clock, child, to_child, from_child, "", 4096, agent_timeout_ms);
                         buffer.drop(heap, agent_out);
                         let agent_ms = clock_ms(clock) - t0;
                         match agent_ran {
                             process.Ran::Code(n) => {
+                                if n != 0 {
+                                    // The agent itself failed (a script that could not run
+                                    // its model, a missing tool): named in its own verdict
+                                    // and in the trail, not read as a looping model.
+                                    borrow tpath as &tq in {
+                                        note(heap, fs, tq, attempts, agent_ms, "none", "", "agent_exit");
+                                    }
+                                    io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
+                                    ended = Ended::Unavailable;
+                                    going = false;
+                                } else {
                                 // The agent answered; the check is the oracle.
                                 let answer = checker.run(heap, exec, clock, file, check_cmd, 4096, 30000);
                                 let checker.Answer { outcome, sig } = answer;
@@ -247,23 +280,36 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
                                         attempts = attempts + 1;
                                     }
                                 }
-                            }
+                                                            }
+}
                             process.Ran::TimedOut => {
+                                borrow tpath as &tq in {
+                                    note(heap, fs, tq, attempts, agent_ms, "none", "", "agent_timeout");
+                                }
                                 io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
                                 ended = Ended::Unavailable;
                                 going = false;
                             }
                             process.Ran::TooMuch => {
+                                borrow tpath as &tq in {
+                                    note(heap, fs, tq, attempts, agent_ms, "none", "", "agent_output");
+                                }
                                 io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
                                 ended = Ended::Unavailable;
                                 going = false;
                             }
                             process.Ran::Signaled(s) => {
+                                borrow tpath as &tq in {
+                                    note(heap, fs, tq, attempts, agent_ms, "none", "", "agent_signal");
+                                }
                                 io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
                                 ended = Ended::Unavailable;
                                 going = false;
                             }
                             process.Ran::Failed(e) => {
+                                borrow tpath as &tq in {
+                                    note(heap, fs, tq, attempts, agent_ms, "none", "", "agent_failed");
+                                }
                                 io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
                                 ended = Ended::Unavailable;
                                 going = false;
@@ -276,5 +322,6 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
     }
     buffer.drop(heap, last);
     buffer.drop(heap, tpath);
+    buffer.drop(heap, fbcmd);
     return ended;
 }

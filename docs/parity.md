@@ -7,7 +7,7 @@ Status is measured against `main` of this repository on 2026-10-12. "lex-code" r
 | # | Feature | lex-code | cancho-code today | Needs from cancho | Atomic gate |
 |---|---|---|---|---|---|
 | P0 | **Trail**: one record per attempt (agent time, the checker's refusals, the signature, the decision) | session event database; `--lessons` mines it | none: one `[ISSUE_VERDICT]` line (#15) | nothing | stand-in agents (fix, stuck, ceiling) produce exactly the expected records |
-| P1 | **Agent contract**: the refusals reach the agent; a non-zero agent exit is named; a configurable turn timeout; `PATH` | the agent sees the check output | file only (#11, #12, #13) | nothing | a stand-in that echoes its input proves the refusals arrive; one that exits 3 is named, not "looping" |
+| P1 | **Agent contract**: the refusals reach the agent; a failing agent is named; a configurable turn timeout; the agent has no environment | the agent sees the check output | **built** (#11, #12, #13): `<project>.feedback` before every turn, `unavailable agent` / `agent_exit` in the trail, `fix`'s `agent-seconds`, the Ollama agent over the HTTP API | nothing | `scripts/test-agent.sh` (env, exit, timeout, feedback) and `scripts/test-agent-ollama.sh`; each shown red by a mutation |
 | P2 | **Verdicts and exit codes** (`[PROJECT_VERDICT]`, `[PLAN]`, `[ACCEPTANCE]`, exit 0 to 4) | built | `[ISSUE_VERDICT]` only (#5) | nothing | every verdict reachable by a fixture, exit codes asserted |
 | P3 | **Typed plan and plan check** (units with signatures, examples, deps; no cycles; no unbuildable example; no `or true` invariant) | `--package-check`, `[PLAN_CHECK]`, filing is deterministic | none (#2) | `std.json` | accepted and refused plan fixtures, one per rule |
 | P4 | **Unit verification by its own examples** (a unit is done when its examples hold, not when the file checks) | `lex issue verify` | `cancho check` only | `cancho satisfy` (cancho#406, draft cancho#412) | a unit that checks but returns the wrong value is refused |
@@ -22,7 +22,7 @@ Status is measured against `main` of this repository on 2026-10-12. "lex-code" r
 
 ## Order
 
-P0 first: nothing else can be debugged without the trail. P1 next: the first runs on `qwen3.8:27b-mlx` showed the loop cannot learn from a refusal it never sees (#12) and that a broken agent is read as a looping one (#13). P2, P3, P4 follow; P5 composes them. P6 to P12 wait on a design each.
+P0 first: nothing else can be debugged without the trail. P1 next: the first runs on `qwen3.8:27b-mlx` showed the loop cannot learn from a refusal it never sees (#12) and that a broken agent is read as a looping one (#13). *Correction, found while building P1:* #13 first blamed a missing `PATH`; measured, the shell's default PATH finds the tools and the failure was `ollama` panicking on an unset `HOME`. P2, P3, P4 follow; P5 composes them. P6 to P12 wait on a design each.
 
 ## What is deliberately different
 
