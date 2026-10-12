@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # The compiler these sources were written for: the commit in .cancho-rev, the one place to change it.
+      - name: Read the compiler pin
+        id: pin
+        run: echo "rev=$(tr -d '[:space:]' < .cancho-rev)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the compiler
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ~/cancho-bin
+          key: cancho-${{ steps.pin.outputs.rev }}-ubuntu-24.04
+
+      - name: Check out cancho
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: alpibrusl/cancho
+          ref: ${{ steps.pin.outputs.rev }}
+          path: cancho
+
+      - name: Build cancho
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cd cancho
+          cargo build --release -p cancho
+          mkdir -p ~/cancho-bin
+          cp target/release/cancho ~/cancho-bin/
+          cp -r packages ~/cancho-bin/packages
+
+      # The authority report is pinned: what the assistant can do is a committed file, and a new capability or
+      # foreign call is a red diff that only a commit of the new file turns green (scripts/check-authority.sh).
+      - name: The authority report of the front door is the committed one (no network, no foreign code)
+        run: CANCHO=$HOME/cancho-bin/cancho scripts/check-authority.sh
+
+      - name: The authority report of the provider is the committed one (net_out, the one reachable host class)
+        run: CANCHO=$HOME/cancho-bin/cancho CANCHO_PACKAGES=$HOME/cancho-bin/packages scripts/check-authority.sh --provider
+
+      - name: The pins can fail (a stray net_out is a red diff)
+        run: |
+          export CANCHO=$HOME/cancho-bin/cancho CANCHO_PACKAGES=$HOME/cancho-bin/packages
+          scripts/check-authority.sh --prove
+          scripts/check-authority.sh --provider --prove
+
+      - name: Unit tests (the loop's decisions, the failure signature)
+        run: $HOME/cancho-bin/cancho test tests/loop_check_test.cho tests/signature_test.cho src/loop_check.cho src/signature.cho --std --backend cranelift
+
+      - name: The gates (checker, snapshot ring, driver loop, provider)
+        run: |
+          export CANCHO=$HOME/cancho-bin/cancho CANCHO_PACKAGES=$HOME/cancho-bin/packages
+          sh scripts/test-checker.sh
+          sh scripts/test-snapshot.sh
+          sh scripts/test-driver.sh
+          sh scripts/test-provider.sh
