@@ -97,7 +97,7 @@ fn main(world: World) -> [] int {
                                 agent = buffer.append(hh, agent, dir);
                                 agent = buffer.append(hh, agent, "/flip'; p='");
                                 agent = buffer.append(hh, agent, dir);
-                                agent = buffer.append(hh, agent, "/project.cho'; if [ -f $f ]; then rm $f; sed -i s/1x/1.5/ $p; else touch $f; sed -i 's/return true/return 1x/' $p; fi\0");
+                                agent = buffer.append(hh, agent, "/project.cho'; if [ -f $f ]; then rm $f; sed -i.bak s/1x/1.5/ $p; else touch $f; sed -i.bak 's/return true/return 1x/' $p; fi\0");
                             }
                             borrow file as &fe in {
                                 borrow cmd as &ce in {
