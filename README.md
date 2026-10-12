@@ -35,12 +35,26 @@ A cloud model works the same way — `scripts/test-provider.sh mistral` with
 `MISTRAL_API_KEY` in the environment runs the end-to-end gate against the
 real API, the checker still the oracle.
 
+## The agent contract
+
+`fix <checker> <project.cho> <agent-command> [attempts [agent-seconds]]` runs the agent as a shell command with the project file as its argument. Each promise below has its own gate (`scripts/test-agent.sh`):
+
+- **The checker's answer** for the file is in `<project.cho>.feedback` before every turn, the first included, so a model sees what the compiler refused.
+- **No environment.** The agent has none (no `HOME`); the shell's own default `PATH` finds the usual tools.
+- **A turn is capped** by `agent-seconds` (default 30). Past it the run ends `unavailable agent`, named, not burned as a failure.
+- **A failing agent is named**: a non-zero exit, a timeout, a signal each end `unavailable agent` and are recorded in `<project.cho>.trail.jsonl` (`agent_exit`, `agent_timeout`, ...). The file is left as it was.
+
+`scripts/agent-ollama.sh` is the local-model agent (Ollama's HTTP API; `scripts/test-agent-ollama.sh` runs it against a stub server).
+
 ## Running the gates
 
 ```sh
 cancho test tests/loop_check_test.cho tests/signature_test.cho src/loop_check.cho src/signature.cho --std --backend cranelift
 CANCHO=<path> scripts/test-checker.sh
 CANCHO=<path> scripts/test-snapshot.sh
+CANCHO=<path> scripts/test-trail.sh
+CANCHO=<path> scripts/test-agent.sh
+scripts/test-agent-ollama.sh
 CANCHO=<path> scripts/test-driver.sh
 CANCHO=<path> CANCHO_PACKAGES=<compiler>/packages scripts/test-provider.sh build
 ```

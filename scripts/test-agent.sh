@@ -3,6 +3,8 @@
 # one case per promise, each with a stand-in agent that is one line of shell (tests/programs/driver_gate.cho, mode `custom`).
 #
 #   env       the agent has no environment: no HOME (ollama panics without one), but the shell's default PATH finds sed and mktemp
+#   timeout   the agent's turn is capped by an argument, not a constant
+#   feedback  the checker's answer reaches the agent as <project>.feedback before every turn, the first one included
 #   exit      an agent that exits non-zero is named `unavailable agent` / `agent_exit` in the trail and the file is untouched
 #
 # Exit 0 every case held.
@@ -52,6 +54,31 @@ t="$d/project.cho.trail.jsonl"
 expect "exit: one record" "$(wc -l < "$t" | tr -d ' ')" 1
 expect "exit: decision" "$(sed -n 's/.*"decision":"\([^"]*\)".*/\1/p' "$t")" agent_exit
 expect "exit: file untouched" "$(cksum < "$d/project.cho")" "$before"
+rm -rf "$d"
+
+# timeout: the agent's turn is capped by the 5th argument (ms), not by a constant; a slower agent under a longer cap still works
+d=$(fresh); start=$(date +%s)
+out=$("$exe" custom "$CANCHO" "$d" "sleep 5" 1000 2>&1); took=$(( $(date +%s) - start ))
+expect "timeout: verdict" "$(printf '%s' "$out" | grep ISSUE_VERDICT)" "$(printf '[ISSUE_VERDICT]\tunavailable\tagent')"
+[ "$took" -lt 4 ] || { echo "FAIL: timeout: took ${took}s under a 1 s cap" >&2; fail=1; }
+expect "timeout: decision" "$(sed -n 's/.*"decision":"\([^"]*\)".*/\1/p' "$d/project.cho.trail.jsonl")" agent_timeout
+rm -rf "$d"
+d=$(fresh)
+printf 'edition 7;\nfn main(world: World) -> [] int {\n    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);\n    release(ffi); release(fs); release(net); release(clock); release(signals); release(exec); release(args);\n    release(io); release(heap);\n    return 0;\n}\n' > "$d/fixed.cho"
+out=$("$exe" custom "$CANCHO" "$d" "sleep 1; cp $d/fixed.cho $d/project.cho" 10000 2>&1)
+expect "timeout: a slow agent under a long cap verifies" "$(printf '%s' "$out" | grep ISSUE_VERDICT | cut -f1,2)" "$(printf '[ISSUE_VERDICT]\tverified')"
+rm -rf "$d"
+
+# feedback: before every agent turn the driver writes the checker's current answer to <project>.feedback, so the agent can show a model
+# what the compiler refused. Turn 0 already has it (the driver checks the seed before the first turn); a stuck agent runs twice.
+d=$(fresh)
+"$exe" custom "$CANCHO" "$d" "cat $d/project.cho.feedback >> $d/probe.txt" >/dev/null 2>&1
+want=$("$CANCHO" check --output json --backend cranelift "$d/project.cho" 2>&1); want="$want
+$want"
+got=$(cat "$d/probe.txt" 2>/dev/null)
+[ -n "$got" ] || { echo "FAIL: feedback: the agent saw nothing" >&2; fail=1; }
+expect "feedback: the agent saw the checker's answer, on both turns" "$got" "$want"
+case "$got" in *type-mismatch*) ;; *) echo "FAIL: feedback: no refusal in what the agent saw" >&2; fail=1 ;; esac
 rm -rf "$d"
 
 rm -f "$exe"
