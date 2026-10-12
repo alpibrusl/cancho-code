@@ -40,7 +40,7 @@ FIX
 # env: the agent has no environment (cancho programs have none to pass): no HOME, which is why `ollama` panics without a line
 # in the script that sets it; and the shell's own default PATH finds the tools a script needs. This pins what was measured.
 d=$(fresh)
-"$exe" custom "$CANCHO" "$d" "printf 'home=[%s]\n' \"\$HOME\" > $d/env.txt; command -v sed mktemp >> $d/env.txt" >/dev/null 2>&1
+"$exe" custom "$CANCHO" "$d" "printf 'home=[%s]\n' \"\$HOME\" > $d/env.txt; command -v sed >> $d/env.txt; command -v mktemp >> $d/env.txt" >/dev/null 2>&1
 expect "env: HOME is not set for the agent" "$(sed -n 1p "$d/env.txt")" "home=[]"
 expect "env: sed resolves" "$(sed -n 2p "$d/env.txt" | sed 's#.*/##')" sed
 expect "env: mktemp resolves" "$(sed -n 3p "$d/env.txt" | sed 's#.*/##')" mktemp
