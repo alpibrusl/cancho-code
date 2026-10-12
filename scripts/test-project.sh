@@ -66,7 +66,7 @@ printf 'sed -i.bak "s/x + 2/x * 2/" "$1"\n' > "$rc/a.2.sh"
 out=$(run "$T/plan.json" "$wd" "$rc" "$lg"); r=$?
 expect "examples: exit code" "$r" 0
 expect "examples: agent order" "$(order "$lg")" "a a b c"
-expect "examples: acceptance lines for a" "$(printf '%s\n' "$out" | sed -n '/a:building/,/a:verified/p' | grep ACCEPTANCE | cut -f2 | tr '\n' ' ')" "fail pass "
+expect "examples: acceptance lines for a" "$(printf '%s\n' "$out" | tr '\t' ':' | sed -n '/^\[UNIT\]:a:building/,/^\[UNIT\]:a:verified/p' | grep ACCEPTANCE | cut -d: -f2 | tr '\n' ' ')" "fail pass "
 expect "examples: a took two attempts" "$(printf '%s\n' "$out" | grep 'ISSUE_VERDICT.*verified' | head -1 | cut -f3)" "attempts 2"
 rm -rf "$wd" "$rc"
 
@@ -99,13 +99,14 @@ rm -rf "$wd" "$rc"
 
 # stuck: a is always wrong, b is independent, c depends on a
 set -- $(mk); wd=$1; rc=$2; lg=$3
-printf 'printf "\\nfn double(x: int) -> [] int { return x + 3; }\\n" >> "$1"\n' > "$rc/a.sh"
+printf 'sed -i.bak "/fn double/d" "$1"; printf "\\nfn double(x: int) -> [] int { return x + 3; }\\n" >> "$1"\n' > "$rc/a.sh"
 out=$(run "$T/plan-failing.json" "$wd" "$rc" "$lg"); r=$?
 expect "stuck: exit code" "$r" 1
 expect "stuck: verdict" "$(verdict "$out")" stuck
 expect "stuck: unit lines" "$(units "$out")" "a:building a:failed b:building b:verified c:skipped"
 expect "stuck: agent order (b was still built)" "$(order "$lg")" "a a b"
 expect "stuck: the state has b only" "$(order "$wd/state.txt")" "verified b"
+expect "stuck: the failed unit's trail was kept (two records)" "$(wc -l < "$wd/trail-a.jsonl" 2>/dev/null | tr -d ' ')" 2
 rm -rf "$wd" "$rc"
 
 # no plan
@@ -119,8 +120,23 @@ rm -rf "$wd" "$rc"
 
 # usage
 "$exe" >/dev/null 2>&1; expect "usage: no arguments" "$?" 2
+# a checker path that is not absolute: the driver spawns it from another directory, so it is a usage error, not a crash
+set -- $(mk); wd=$1; rc=$2; lg=$3
+out=$("$exe" "cancho" "$T/plan.json" "$wd" "true" 2>&1); r=$?
+expect "usage: a relative checker path" "$r" 2
+case "$out" in *absolute*) ;; *) echo "FAIL: usage: a relative checker path: no message that says 'absolute' ('$out')" >&2; fail=1 ;; esac
+rm -rf "$wd" "$rc"
 set -- $(mk); wd=$1; rc=$2; lg=$3
 "$exe" "$CANCHO" "$T/does-not-exist.json" "$wd" "true" >/dev/null 2>&1; expect "usage: a plan that is not there" "$?" 2
+rm -rf "$wd" "$rc"
+
+# a path with `..` in it: the file capability refuses traversal by trapping (exit 132), so the driver says so and exits 2 instead
+set -- $(mk); wd=$1; rc=$2; lg=$3
+out=$("$exe" "$CANCHO" "$T/plan.json" "$wd/../$(basename "$wd")" "true" 2>&1); r=$?
+expect "usage: a work directory with .. in it" "$r" 2
+case "$out" in *".."*) ;; *) echo "FAIL: usage: a work directory with .. : no message that names '..' ('$out')" >&2; fail=1 ;; esac
+out=$("$exe" "$CANCHO" "$T/../project/plan.json" "$wd" "true" 2>&1); r=$?
+expect "usage: a plan path with .. in it" "$r" 2
 rm -rf "$wd" "$rc"
 
 rm -f "$exe"

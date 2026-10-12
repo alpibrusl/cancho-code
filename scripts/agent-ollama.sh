@@ -62,10 +62,21 @@ if os.environ.get("OLLAMA_PRIMER"):
         sys.stderr.write("agent-ollama: cannot read OLLAMA_PRIMER: %s\n" % e)
         sys.exit(1)
 
-prompt = primer + ("The cancho program below is refused by its compiler. Reply with the complete corrected file and nothing else: "
-          "no markdown fences, no explanation.\n")
+# A project unit leaves its task beside the file (docs/project.md): what to write. It goes ahead of the file.
+task = ""
+try:
+    task = open(file + ".task", encoding="utf-8").read().strip()
+except OSError:
+    pass
+
+if task:
+    prompt = primer + ("Your task, for the cancho program below:\n" + task + "\n\nReply with the complete file, with the task done, and nothing else: "
+              "no markdown fences, no explanation.\n")
+else:
+    prompt = primer + ("The cancho program below is refused by its compiler. Reply with the complete corrected file and nothing else: "
+              "no markdown fences, no explanation.\n")
 if feedback:
-    prompt += "The compiler's current refusals:\n" + feedback
+    prompt += "The current output of the compiler and of the checks on the file:\n" + feedback
 prompt += "---\n" + source + "---\n"
 
 body = json.dumps({"model": model, "prompt": prompt, "stream": False, "think": False,

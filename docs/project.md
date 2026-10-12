@@ -6,7 +6,7 @@ docs/parity.md P5. `fix` drives one issue against one file. A **project** is a p
 project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds]]
 ```
 
-`checker` and `workdir` are absolute paths; `workdir` must exist. The agent command is the same shell command `fix` takes: it is run with the project file appended as its last argument and reads `<project.cho>.task` to learn what to write (scripts/agent-ollama.sh does). `attempts` is the ceiling per unit (default 4), `agent-seconds` the cap on one agent turn (default 30).
+`checker` and `workdir` are absolute paths (a relative checker is exit 2: the first implementation died with SIGILL on one); `workdir` must exist. The agent command is the same shell command `fix` takes: it is run with the project file appended as its last argument and reads `<project.cho>.task` to learn what to write (scripts/agent-ollama.sh does). `attempts` is the ceiling per unit (default 4), `agent-seconds` the cap on one agent turn (default 30).
 
 ## Layout (flat: a program cannot make directories)
 
@@ -18,7 +18,8 @@ project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds
 | `tests-<id>.cho` | the unit's examples as tests, written before each unit |
 | `legend-<id>.txt` | test name and example text, one per line |
 | `state.txt` | one line `verified <id>` per verified unit, rewritten whole after every change: what a resumed run keeps |
-| `trail-<id>.jsonl` | the unit's trail (docs/ the trail record, P0), copied after the unit |
+| `trail-<id>.jsonl` | the unit's trail (the P0 record), copied after the unit **whatever its outcome**: a unit that failed is the one whose trail is wanted |
+| `project.cho.before` | `project.cho` as it was before the unit was built; a unit that fails (not one that is merely unavailable) puts it back, so the units that do not depend on it still build on a file without the failed unit's leftovers |
 | `project.cho.feedback`, `.acceptance`, `.trail.jsonl`, `project.cho.snap<N>.cho`... | what `fix`'s loop writes beside its file (the loop is reused: `driver.run_issue`) |
 
 Files without a `module` header share one namespace when compiled together, so the tests call the functions unqualified.
@@ -54,9 +55,14 @@ The loop's **check command** is `<checker> check --std --output json --backend c
    - Verified: add to the state (rewrite `state.txt`), print `[UNIT]<TAB><id><TAB>verified`, copy the trail to `trail-<id>.jsonl`, then **sweep**: run the acceptance command of every OTHER verified unit. One that fails is dropped from the state, printed `[UNIT]<TAB><sid><TAB>regressed`, and its next task carries a `NOTE:` naming the unit that broke it and the failing output. Back to 4.
    - Failed (signature, ceiling, defect): mark it failed for this run, print `[UNIT]<TAB><id><TAB>failed`. Back to 4: units that do not depend on it are still built.
    - Unavailable (the agent or the checker is away): print `[UNIT]<TAB><id><TAB>unavailable`, stop at once with `[PROJECT_VERDICT]<TAB>provider_error`, exit 4. The state keeps what verified.
-6. Units never reached because a dependency failed are printed `[UNIT]<TAB><id><TAB>skipped`. If any unit failed or was skipped: `[PROJECT_VERDICT]<TAB>stuck`, exit 1. Otherwise the **final gate**: check `project.cho` + `main.cho`, and run every unit's tests in one `cancho test`. Holds: `[PROJECT_VERDICT]<TAB>done`, exit 0. Fails: `[PROJECT_VERDICT]<TAB>gate_failed`, exit 1.
+6. Units never reached because a dependency failed are printed `[UNIT]<TAB><id><TAB>skipped`. If any unit failed or was skipped: `[PROJECT_VERDICT]<TAB>stuck`, exit 1. Otherwise the **final gate**: check `project.cho` + `main.cho`, and run every unit's tests, one `cancho test` per tests file (each starts `import std.test;`, and two such files in one run are refused: `test is already bound to another import`). Holds: `[PROJECT_VERDICT]<TAB>done`, exit 0. Fails: `[PROJECT_VERDICT]<TAB>gate_failed`, exit 1.
 
 Usage errors (fewer than 4 arguments, `workdir` or the plan file unreadable): exit 2.
+
+## Two facts the first implementation and the gate turned up
+
+- **The acceptance signature is the informative line, not the first.** On macOS the linker prints a warning before every test run, with a temp directory in its text; as the first line it made every attempt's signature different, and a unit whose agent was always wrong ran to its ceiling instead of stopping at the second identical failure. `src/acceptance.cho` now picks the first line that says `FAILED` or `error`, else the first that is not `ld:` noise (`scripts/test-acceptance.sh`, case `noise`).
+- **An example's `==` compares scalars.** A result that is an enum or a record needs a field read; a test file that does not build is the unit's failure, with the compiler's message in the feedback.
 
 ## What it does not do
 

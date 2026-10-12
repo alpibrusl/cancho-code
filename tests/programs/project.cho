@@ -1,0 +1,106 @@
+edition 7;
+
+// `project` -- build a plan (docs/plan.md) unit by unit (docs/project.md):
+//
+//     project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds]]
+//
+// Exit codes: 0 done, 1 stuck or the final gate failed, 2 usage, 3 the plan is invalid, 4 the agent or the checker is away.
+
+import project;
+import std.bytes;
+import std.io;
+
+fn digits_of[&a](text: &a [byte]) -> [] int {
+    var n = 0;
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if c < 48 || c > 57 {
+            return 0;
+        }
+        n = n * 10 + c - 48;
+        i = i + 1;
+    }
+    return n;
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(net);
+    release(signals);
+    var console = io;
+    var h = heap;
+    var checker = "";
+    var plan_path = "";
+    var wd = "";
+    var agent = "";
+    var attempts = 4;
+    var seconds = 30;
+    var given = false;
+    borrow mut console as &!ci in {
+        borrow args as &g in {
+            if arg_count(g) < 5 {
+                io.error_all(ci, "usage: project <checker> <plan.json> <workdir> <agent-cmd> [attempts [agent-seconds]]\n");
+            } else {
+                given = true;
+                checker = arg(g, 1);
+                plan_path = arg(g, 2);
+                wd = arg(g, 3);
+                agent = arg(g, 4);
+                // The checker and the agent are spawned from another directory: a relative path is a usage error, not a crash
+                // (found by the first implementation, which died with SIGILL on one).
+                if len(checker) == 0 || int_of(checker[0]) != 47 {
+                    io.error_all(ci, "project: the checker path must be absolute\n");
+                    given = false;
+                }
+                // Nor may the plan or the work directory hold `..`: the file capability refuses traversal by trapping (SIGILL, exit 132),
+                // so a path named `/a/../b` killed the program instead of being refused. (The checker is spawned by the shell and
+                // does not go through that capability.)
+                if bytes.find(plan_path, "..") >= 0 || bytes.find(wd, "..") >= 0 {
+                    io.error_all(ci, "project: a path may not contain '..'\n");
+                    given = false;
+                }
+                if arg_count(g) > 5 {
+                    attempts = digits_of(arg(g, 5));
+                }
+                if arg_count(g) > 6 {
+                    seconds = digits_of(arg(g, 6));
+                }
+            }
+        }
+    }
+    var status = 2;
+    if given {
+        borrow fs as &fz in {
+            borrow exec as &x in {
+                borrow clock as &c in {
+                    borrow mut console as &!i in {
+                        borrow mut h as &!hh in {
+                            let room = box_slice(hh, 1048576, byte_of(0));
+                            borrow mut room as &!rw in {
+                                let text = contents(rw);
+                                let n = fs_read(fz, plan_path, text);
+                                if n >= 1048576 {
+                                    io.error_all(i, "project: the plan is too large (1 MiB or more)\n");
+                                } else if n >= 0 {
+                                    status = project.run(hh, x, c, i, fz, text[0..n], checker, wd, agent, attempts, seconds * 1000);
+                                } else {
+                                    io.error_all(i, "project: the plan cannot be read\n");
+                                }
+                            }
+                            unbox_slice(hh, room);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    release(fs);
+    release(exec);
+    release(clock);
+    release(console);
+    release(h);
+    release(args);
+    return status;
+}

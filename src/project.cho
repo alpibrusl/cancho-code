@@ -1,0 +1,647 @@
+edition 7;
+
+module project;
+
+// `project` -- the project driver (docs/project.md, docs/parity.md P5): a plan built unit by unit. The next unit whose
+// dependencies are verified is handed to `driver.run_issue` (the `fix` loop, reused unchanged); everything verified is
+// re-checked after every unit; `state.txt` lets a killed run resume.
+//
+// The plan is parsed once onto a tape. Per unit `u`, `meta[3u]` is its state (0 open, 1 verified, 2 failed this run),
+// `meta[3u+1]` how often it was built, `meta[3u+2]` the length of its NOTE, kept in `notes` (note() bytes per unit).
+
+import acceptance;
+import driver;
+import plan;
+import snapshot;
+import std.buffer;
+import std.bytes;
+import std.io;
+import std.json;
+
+fn note_cap() -> [] int {
+    return 640;
+}
+
+// ---- small helpers --------------------------------------------------------
+
+// `<wd>/<pre><id><suf>`.
+fn in_wd[&h, &w, &a, &b, &c](heap: &!h Heap, wd: &w [byte], pre: &a [byte], id: &b [byte], suf: &c [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, buffer.empty(heap, 128), wd);
+    b = buffer.append(heap, b, "/");
+    b = buffer.append(heap, b, pre);
+    b = buffer.append(heap, b, id);
+    b = buffer.append(heap, b, suf);
+    return b;
+}
+
+// Write `b` whole to `path` and end it; 0, or -1 when the write failed.
+fn put[&h, &z, &p](heap: &!h Heap, fs: &z Fs(""), path: &p [byte], b: buffer.Buffer) -> [heap, fs_write("")] int {
+    var r = -1;
+    borrow b as &bb in {
+        let want = buffer.size(bb);
+        if fs_write(fs, path, buffer.bytes(bb)) == want {
+            r = 0;
+        }
+    }
+    buffer.drop(heap, b);
+    return r;
+}
+
+// Append the string at node `i`, decoded.
+fn add_str[&h, &s, &t](heap: &!h Heap, b: buffer.Buffer, src: &s [byte], tape: &t [int], i: int) -> [heap] buffer.Buffer {
+    var out = b;
+    if json.string_plain(tape, i) {
+        out = buffer.append(heap, out, json.string_view(src, tape, i));
+    } else {
+        let n = json.string_length(src, tape, i);
+        if n > 0 {
+            region r {
+                let tmp = alloc_slice[r](n, byte_of(0));
+                json.string_into(src, tape, i, tmp);
+                out = buffer.append(heap, out, tmp[0..n]);
+            }
+        }
+    }
+    return out;
+}
+
+fn say[&i, &d](io: &!i Io, id: &d [byte], word: &static [byte]) -> [io_write] int {
+    io.write_all(io, "[UNIT]\t");
+    io.write_all(io, id);
+    io.write_all(io, "\t");
+    io.write_all(io, word);
+    io.write_all(io, "\n");
+    return 0;
+}
+
+// ---- the plan -------------------------------------------------------------
+
+fn uid[&s, &t, &n](src: &s [byte], tape: &t [int], nodes: &n [int], u: int) -> [] &s [byte] {
+    return json.string_view(src, tape, json.get(src, tape, nodes[u], "id"));
+}
+
+fn find_unit[&s, &t, &n, &x](src: &s [byte], tape: &t [int], nodes: &n [int], count: int, id: &x [byte]) -> [] int {
+    var u = 0;
+    while u < count {
+        if bytes.equal(uid(src, tape, nodes, u), id) {
+            return u;
+        }
+        u = u + 1;
+    }
+    return 0 - 1;
+}
+
+// Are all of `u`'s dependencies verified?
+fn deps_done[&s, &t, &n, &m](src: &s [byte], tape: &t [int], nodes: &n [int], meta: &m [int], count: int, u: int) -> [] bool {
+    let arr = json.get(src, tape, nodes[u], "deps");
+    var j = arr + 1;
+    var left = json.count(tape, arr);
+    while left > 0 {
+        let d = find_unit(src, tape, nodes, count, json.string_view(src, tape, j));
+        if d < 0 || meta[3 * d] != 1 {
+            return false;
+        }
+        j = json.skip(tape, j);
+        left = left - 1;
+    }
+    return true;
+}
+
+// The first unit in file order that is open and ready, or -1.
+fn next_unit[&s, &t, &n, &m](src: &s [byte], tape: &t [int], nodes: &n [int], meta: &m [int], count: int) -> [] int {
+    var u = 0;
+    while u < count {
+        if meta[3 * u] == 0 && deps_done(src, tape, nodes, meta, count, u) {
+            return u;
+        }
+        u = u + 1;
+    }
+    return 0 - 1;
+}
+
+// ---- notes ----------------------------------------------------------------
+
+fn fill[&o, &x](notes: &!o [byte], base: int, pos: int, text: &x [byte]) -> [] int {
+    var p = pos;
+    var k = 0;
+    while k < len(text) && p < note_cap() {
+        notes[base + p] = text[k];
+        p = p + 1;
+        k = k + 1;
+    }
+    return p;
+}
+
+// The NOTE of unit `u`: which unit broke it, and the failing output (cut to fit).
+fn set_note[&o, &m, &b, &x](notes: &!o [byte], meta: &!m [int], u: int, broke: &b [byte], said: &x [byte]) -> [] int {
+    let base = u * note_cap();
+    var p = fill(notes, base, 0, "The unit ");
+    p = fill(notes, base, p, broke);
+    p = fill(notes, base, p, " broke this one. Failing test output:\n");
+    p = fill(notes, base, p, said);
+    meta[3 * u + 2] = p;
+    return 0;
+}
+
+// ---- files ----------------------------------------------------------------
+
+// `edition 7;` and the unit's examples as tests, and the legend.
+fn write_tests[&h, &z, &s, &t, &w](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], tape: &t [int], node: int, wd: &w [byte]) -> [heap, fs_write("")] int {
+    let id = json.string_view(src, tape, json.get(src, tape, node, "id"));
+    var sid = buffer.empty(heap, 32);
+    var q = 0;
+    while q < len(id) {
+        let c = int_of(id[q]);
+        if bytes.is_alpha(c) || bytes.is_digit(c) || c == 95 {
+            sid = buffer.push(heap, sid, id[q]);
+        } else {
+            sid = buffer.push(heap, sid, byte_of(95));
+        }
+        q = q + 1;
+    }
+    var tests = buffer.append(heap, buffer.empty(heap, 512), "edition 7;\nimport std.test;\n");
+    var legend = buffer.empty(heap, 256);
+    let arr = json.get(src, tape, node, "examples");
+    var j = arr + 1;
+    var left = json.count(tape, arr);
+    var k = 1;
+    while left > 0 {
+        var ex = add_str(heap, buffer.empty(heap, 64), src, tape, j);
+        var name = buffer.append(heap, buffer.empty(heap, 32), "test_");
+        borrow sid as &sb in {
+            name = buffer.append(heap, name, buffer.bytes(sb));
+        }
+        name = buffer.append(heap, name, "_");
+        name = buffer.push_nat(heap, name, k);
+        borrow name as &nb in {
+            borrow ex as &eb in {
+                tests = buffer.append(heap, tests, "pub fn ");
+                tests = buffer.append(heap, tests, buffer.bytes(nb));
+                tests = buffer.append(heap, tests, "() -> [] int { test.assert(");
+                tests = buffer.append(heap, tests, buffer.bytes(eb));
+                tests = buffer.append(heap, tests, "); return 0; }\n");
+                legend = buffer.append(heap, legend, buffer.bytes(nb));
+                legend = buffer.append(heap, legend, " ");
+                legend = buffer.append(heap, legend, buffer.bytes(eb));
+                legend = buffer.append(heap, legend, "\n");
+            }
+        }
+        buffer.drop(heap, name);
+        buffer.drop(heap, ex);
+        j = json.skip(tape, j);
+        left = left - 1;
+        k = k + 1;
+    }
+    buffer.drop(heap, sid);
+    let tp = in_wd(heap, wd, "tests-", id, ".cho");
+    let lp = in_wd(heap, wd, "legend-", id, ".txt");
+    var r = 0;
+    borrow tp as &tq in {
+        if put(heap, fs, buffer.bytes(tq), tests) < 0 {
+            r = -1;
+        }
+    }
+    borrow lp as &lq in {
+        if put(heap, fs, buffer.bytes(lq), legend) < 0 {
+            r = -1;
+        }
+    }
+    buffer.drop(heap, tp);
+    buffer.drop(heap, lp);
+    return r;
+}
+
+// `project.cho.task` for unit `node`.
+fn write_task[&h, &z, &s, &t, &w, &x](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], tape: &t [int], node: int, wd: &w [byte], note: &x [byte]) -> [heap, fs_write("")] int {
+    let id = json.string_view(src, tape, json.get(src, tape, node, "id"));
+    let sg = json.get(src, tape, node, "signature");
+    var sig = add_str(heap, buffer.empty(heap, 96), src, tape, sg);
+    var b = buffer.append(heap, buffer.empty(heap, 512), "UNIT: ");
+    b = buffer.append(heap, b, id);
+    b = buffer.append(heap, b, "\nFUNCTION: ");
+    borrow sig as &sb in {
+        let (a, e) = plan.name_range(buffer.bytes(sb));
+        if a >= 0 {
+            b = buffer.append(heap, b, buffer.bytes(sb)[a..e]);
+        }
+        b = buffer.append(heap, b, "\nSIGNATURE: ");
+        b = buffer.append(heap, b, buffer.bytes(sb));
+    }
+    buffer.drop(heap, sig);
+    b = buffer.append(heap, b, "\nEXAMPLES:\n");
+    let arr = json.get(src, tape, node, "examples");
+    var j = arr + 1;
+    var left = json.count(tape, arr);
+    while left > 0 {
+        b = add_str(heap, b, src, tape, j);
+        b = buffer.append(heap, b, "\n");
+        j = json.skip(tape, j);
+        left = left - 1;
+    }
+    b = buffer.append(heap, b, "INSTRUCTIONS: Add this function to project.cho, keeping every other function as it is. The file has no main.\n");
+    if len(note) > 0 {
+        b = buffer.append(heap, b, "NOTE: ");
+        b = buffer.append(heap, b, note);
+        b = buffer.append(heap, b, "\n");
+    }
+    let path = in_wd(heap, wd, "project.cho.task", "", "");
+    var r = 0;
+    borrow path as &pq in {
+        r = put(heap, fs, buffer.bytes(pq), b);
+    }
+    buffer.drop(heap, path);
+    return r;
+}
+
+// `state.txt`, rewritten whole: one `verified <id>` per verified unit.
+fn state_write[&h, &z, &s, &t, &n, &m, &w](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], tape: &t [int], nodes: &n [int], meta: &m [int], count: int, wd: &w [byte]) -> [heap, fs_write("")] int {
+    var b = buffer.empty(heap, 128);
+    var u = 0;
+    while u < count {
+        if meta[3 * u] == 1 {
+            b = buffer.append(heap, b, "verified ");
+            b = buffer.append(heap, b, uid(src, tape, nodes, u));
+            b = buffer.append(heap, b, "\n");
+        }
+        u = u + 1;
+    }
+    let path = in_wd(heap, wd, "state.txt", "", "");
+    var r = 0;
+    borrow path as &pq in {
+        r = put(heap, fs, buffer.bytes(pq), b);
+    }
+    buffer.drop(heap, path);
+    return r;
+}
+
+// Mark the units `state.txt` names as verified (a missing file is empty).
+fn state_read[&h, &z, &s, &t, &n, &m, &w](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], tape: &t [int], nodes: &n [int], meta: &!m [int], count: int, wd: &w [byte]) -> [heap, fs_read("")] int {
+    let path = in_wd(heap, wd, "state.txt", "", "");
+    borrow path as &pq in {
+        region r {
+            let text = alloc_slice[r](65536, byte_of(0));
+            let got = fs_read(fs, buffer.bytes(pq), text);
+            var p = 0;
+            while p < got {
+                var e = p;
+                while e < got && int_of(text[e]) != 10 {
+                    e = e + 1;
+                }
+                let line = text[p..e];
+                if bytes.starts_with(line, "verified ") {
+                    let u = find_unit(src, tape, nodes, count, bytes.trim(line[9..len(line)]));
+                    if u >= 0 {
+                        meta[3 * u] = 1;
+                    }
+                }
+                p = e + 1;
+            }
+        }
+    }
+    buffer.drop(heap, path);
+    return 0;
+}
+
+// `main.cho` (a fixed main that releases every capability) and `project.cho` when absent: 0, or -1 when the work directory
+// cannot be written.
+fn write_fixed[&h, &z, &w](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte]) -> [heap, fs_read(""), fs_write("")] int {
+    var m = buffer.append(heap, buffer.empty(heap, 512), "edition 7;\n\nfn main(world: World) -> [] int {\n");
+    m = buffer.append(heap, m, "    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);\n");
+    m = buffer.append(heap, m, "    release(io);\n    release(ffi);\n    release(fs);\n    release(heap);\n    release(args);\n");
+    m = buffer.append(heap, m, "    release(net);\n    release(clock);\n    release(signals);\n    release(exec);\n    return 0;\n}\n");
+    let mp = in_wd(heap, wd, "main.cho", "", "");
+    var r = 0;
+    borrow mp as &mq in {
+        r = put(heap, fs, buffer.bytes(mq), m);
+    }
+    buffer.drop(heap, mp);
+    let pp = in_wd(heap, wd, "project.cho", "", "");
+    borrow pp as &pq in {
+        region g {
+            let probe = alloc_slice[g](16, byte_of(0));
+            if fs_read(fs, buffer.bytes(pq), probe) < 0 {
+                if fs_write(fs, buffer.bytes(pq), "edition 7;\n") < 0 {
+                    r = -1;
+                }
+            }
+        }
+    }
+    buffer.drop(heap, pp);
+    return r;
+}
+
+// ---- commands -------------------------------------------------------------
+
+// The unit's acceptance command (the file is appended by the runner, the `#` ends the command).
+fn unit_accept[&h, &k, &w, &d](heap: &!h Heap, checker: &k [byte], wd: &w [byte], id: &d [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, buffer.empty(heap, 512), checker);
+    b = buffer.append(heap, b, " test --std --backend cranelift ");
+    b = buffer.append(heap, b, wd);
+    b = buffer.append(heap, b, "/project.cho ");
+    b = buffer.append(heap, b, wd);
+    b = buffer.append(heap, b, "/tests-");
+    b = buffer.append(heap, b, id);
+    b = buffer.append(heap, b, ".cho || { cat ");
+    b = buffer.append(heap, b, wd);
+    b = buffer.append(heap, b, "/legend-");
+    b = buffer.append(heap, b, id);
+    b = buffer.append(heap, b, ".txt; exit 1; } #");
+    return b;
+}
+
+// Run unit `id`'s acceptance command on project.cho.
+fn verify[&h, &x, &c, &k, &w, &d](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, checker: &k [byte], wd: &w [byte], id: &d [byte]) -> [heap, exec(""), clock, poll] acceptance.Result {
+    let text = unit_accept(heap, checker, wd, id);
+    let file = in_wd(heap, wd, "project.cho", "", "");
+    var ans = acceptance.Result { held: 2, why: buffer.empty(heap, 8), said: buffer.empty(heap, 8) };
+    borrow text as &tb in {
+        borrow file as &fb in {
+            acceptance.drop(heap, ans);
+            ans = acceptance.run(heap, exec, clock, buffer.bytes(tb), buffer.bytes(fb), 4096, 60000);
+        }
+    }
+    buffer.drop(heap, text);
+    buffer.drop(heap, file);
+    return ans;
+}
+
+// Re-verify every verified unit but `skip` (-1: none): the ones that fail go back on the board, with a NOTE naming `broke`.
+fn recheck[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &b](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], tape: &t [int], nodes: &n [int], meta: &!m [int], notes: &!o [byte], count: int, skip: int, broke: &b [byte], keep: bool, checker: &k [byte], wd: &w [byte]) -> [heap, exec(""), clock, poll, io_write, fs_write("")] int {
+    var u = 0;
+    var dropped = 0;
+    while u < count {
+        if u != skip && meta[3 * u] == 1 {
+            let r = verify(heap, exec, clock, checker, wd, uid(src, tape, nodes, u));
+            let acceptance.Result { held, why, said } = r;
+            buffer.drop(heap, why);
+            if held == 0 {
+                if keep {
+                    say(io, uid(src, tape, nodes, u), "kept");
+                }
+            } else {
+                meta[3 * u] = 0;
+                dropped = dropped + 1;
+                say(io, uid(src, tape, nodes, u), "regressed");
+                borrow said as &sd in {
+                    set_note(notes, meta, u, broke, buffer.bytes(sd));
+                }
+            }
+            buffer.drop(heap, said);
+        }
+        u = u + 1;
+    }
+    if dropped > 0 {
+        state_write(heap, fs, src, tape, nodes, meta, count, wd);
+    }
+    return dropped;
+}
+
+// Build unit `u` with the fix loop: 0 verified, 1 failed, 2 unavailable.
+fn build[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], tape: &t [int], nodes: &n [int], meta: &!m [int], notes: &o [byte], u: int, checker: &k [byte], wd: &w [byte], agent: &a [byte], attempts: int, agent_ms: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] int {
+    let id = uid(src, tape, nodes, u);
+    let base = u * note_cap();
+    write_task(heap, fs, src, tape, nodes[u], wd, notes[base..base + meta[3 * u + 2]]);
+    meta[3 * u + 2] = 0;
+    meta[3 * u + 1] = meta[3 * u + 1] + 1;
+    say(io, id, "building");
+    let file = in_wd(heap, wd, "project.cho", "", "");
+    var cmd = buffer.append(heap, buffer.empty(heap, 512), "-c\0");
+    cmd = buffer.append(heap, cmd, checker);
+    cmd = buffer.append(heap, cmd, " check --std --output json --backend cranelift ");
+    cmd = buffer.append(heap, cmd, wd);
+    cmd = buffer.append(heap, cmd, "/project.cho ");
+    cmd = buffer.append(heap, cmd, wd);
+    cmd = buffer.append(heap, cmd, "/main.cho\0");
+    var act = buffer.append(heap, buffer.empty(heap, 512), "-c\0");
+    act = buffer.append(heap, act, agent);
+    act = buffer.append(heap, act, " ");
+    act = buffer.append(heap, act, wd);
+    act = buffer.append(heap, act, "/project.cho\0");
+    var prefix = buffer.append(heap, buffer.empty(heap, 128), wd);
+    prefix = buffer.append(heap, prefix, "/project.cho.snap");
+    let accept = unit_accept(heap, checker, wd, id);
+    var status = 1;
+    borrow file as &fb in {
+        borrow cmd as &ce in {
+            borrow act as &ae in {
+                borrow prefix as &pe in {
+                    borrow accept as &qe in {
+                        match driver.run_issue(heap, exec, clock, io, fs, buffer.bytes(fb), buffer.bytes(ae), buffer.bytes(ce), buffer.bytes(pe), attempts, 2, agent_ms, buffer.bytes(qe), 60000) {
+                            driver.Ended::Verified => {
+                                status = 0;
+                            }
+                            driver.Ended::FailedSignaure => {
+                                status = 1;
+                            }
+                            driver.Ended::FailedCeiling => {
+                                status = 1;
+                            }
+                            driver.Ended::PlanDefect => {
+                                status = 1;
+                            }
+                            driver.Ended::Unavailable => {
+                                status = 2;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    buffer.drop(heap, file);
+    buffer.drop(heap, cmd);
+    buffer.drop(heap, act);
+    buffer.drop(heap, prefix);
+    buffer.drop(heap, accept);
+    return status;
+}
+
+// Copy project.cho to `<name>` in the work directory, or `<name>` back over project.cho (`back`): 0, or -1.
+fn keep_copy[&h, &z, &w, &d](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], name: &d [byte], back: bool) -> [heap, fs_read(""), fs_write("")] int {
+    let file = in_wd(heap, wd, "project.cho", "", "");
+    let other = in_wd(heap, wd, name, "", "");
+    var r = -1;
+    borrow file as &fb in {
+        borrow other as &ob in {
+            if back {
+                r = snapshot.copy(fs, buffer.bytes(ob), buffer.bytes(fb), 65536);
+            } else {
+                r = snapshot.copy(fs, buffer.bytes(fb), buffer.bytes(ob), 65536);
+            }
+        }
+    }
+    buffer.drop(heap, file);
+    buffer.drop(heap, other);
+    return r;
+}
+
+// Keep the unit's trail, whatever its outcome: `trail-<id>.jsonl`.
+fn keep_trail[&h, &z, &d, &w](heap: &!h Heap, fs: &z Fs(""), id: &d [byte], wd: &w [byte]) -> [heap, fs_read(""), fs_write("")] int {
+    let from = in_wd(heap, wd, "project.cho.trail.jsonl", "", "");
+    let into = in_wd(heap, wd, "trail-", id, ".jsonl");
+    var r = -1;
+    borrow from as &fb in {
+        borrow into as &ib in {
+            r = snapshot.copy(fs, buffer.bytes(fb), buffer.bytes(ib), 65536);
+        }
+    }
+    buffer.drop(heap, from);
+    buffer.drop(heap, into);
+    return r;
+}
+
+// The final gate: project.cho and main.cho check, and every unit's tests run (one `cancho test` per tests file: each starts with `import std.test;`, and two such files in one run are refused).
+fn final_gate[&h, &x, &c, &s, &t, &n, &k, &w](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, src: &s [byte], tape: &t [int], nodes: &n [int], count: int, checker: &k [byte], wd: &w [byte]) -> [heap, exec(""), clock, poll] bool {
+    var b = buffer.append(heap, buffer.empty(heap, 1024), checker);
+    b = buffer.append(heap, b, " check --std --output json --backend cranelift ");
+    b = buffer.append(heap, b, wd);
+    b = buffer.append(heap, b, "/project.cho ");
+    b = buffer.append(heap, b, wd);
+    b = buffer.append(heap, b, "/main.cho > /dev/null");
+    var u = 0;
+    while u < count {
+        b = buffer.append(heap, b, " && ");
+        b = buffer.append(heap, b, checker);
+        b = buffer.append(heap, b, " test --std --backend cranelift ");
+        b = buffer.append(heap, b, wd);
+        b = buffer.append(heap, b, "/project.cho ");
+        b = buffer.append(heap, b, wd);
+        b = buffer.append(heap, b, "/tests-");
+        b = buffer.append(heap, b, uid(src, tape, nodes, u));
+        b = buffer.append(heap, b, ".cho");
+        u = u + 1;
+    }
+    b = buffer.append(heap, b, " #");
+    let file = in_wd(heap, wd, "project.cho", "", "");
+    var ok = false;
+    borrow b as &bb in {
+        borrow file as &fb in {
+            let r = acceptance.run(heap, exec, clock, buffer.bytes(bb), buffer.bytes(fb), 65536, 120000);
+            let acceptance.Result { held, why, said } = r;
+            ok = held == 0;
+            buffer.drop(heap, why);
+            buffer.drop(heap, said);
+        }
+    }
+    buffer.drop(heap, b);
+    buffer.drop(heap, file);
+    return ok;
+}
+
+// ---- the loop -------------------------------------------------------------
+
+fn drive[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], tape: &t [int], nodes: &!n [int], meta: &!m [int], notes: &!o [byte], count: int, checker: &k [byte], wd: &w [byte], agent: &a [byte], attempts: int, agent_ms: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] int {
+    let units = json.get(src, tape, 0, "units");
+    var j = units + 1;
+    var u = 0;
+    while u < count {
+        nodes[u] = j;
+        write_tests(heap, fs, src, tape, j, wd);
+        j = json.skip(tape, j);
+        u = u + 1;
+    }
+    state_read(heap, fs, src, tape, nodes, meta, count, wd);
+    // Re-verify what the state says is verified.
+    recheck(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, count, -1, "an earlier edit", true, checker, wd);
+    var provider = false;
+    var going = true;
+    while going {
+        let next = next_unit(src, tape, nodes, meta, count);
+        if next < 0 {
+            going = false;
+        } else {
+            let id = uid(src, tape, nodes, next);
+            if meta[3 * next + 1] >= 3 * count {
+                // The guard against two units breaking each other for ever.
+                meta[3 * next] = 2;
+                say(io, id, "failed");
+            } else {
+                // A unit that fails leaves its attempts in project.cho; the file goes back to what it was, so the units
+                // that do not depend on it still build.
+                keep_copy(heap, fs, wd, "project.cho.before", false);
+                let r = build(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, next, checker, wd, agent, attempts, agent_ms);
+                // The unit's trail is kept whatever the outcome: a unit that failed is the one whose trail is wanted.
+                keep_trail(heap, fs, id, wd);
+                if r == 0 {
+                    meta[3 * next] = 1;
+                    state_write(heap, fs, src, tape, nodes, meta, count, wd);
+                    say(io, id, "verified");
+                    recheck(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, count, next, id, false, checker, wd);
+                } else if r == 1 {
+                    keep_copy(heap, fs, wd, "project.cho.before", true);
+                    meta[3 * next] = 2;
+                    say(io, id, "failed");
+                } else {
+                    say(io, id, "unavailable");
+                    provider = true;
+                    going = false;
+                }
+            }
+        }
+    }
+    if provider {
+        io.write_all(io, "[PROJECT_VERDICT]\tprovider_error\n");
+        return 4;
+    }
+    var stuck = false;
+    u = 0;
+    while u < count {
+        if meta[3 * u] == 2 {
+            stuck = true;
+        } else if meta[3 * u] == 0 {
+            stuck = true;
+            say(io, uid(src, tape, nodes, u), "skipped");
+        }
+        u = u + 1;
+    }
+    if stuck {
+        io.write_all(io, "[PROJECT_VERDICT]\tstuck\n");
+        return 1;
+    }
+    if final_gate(heap, exec, clock, src, tape, nodes, count, checker, wd) {
+        io.write_all(io, "[PROJECT_VERDICT]\tdone\n");
+        return 0;
+    }
+    io.write_all(io, "[PROJECT_VERDICT]\tgate_failed\n");
+    return 1;
+}
+
+// Build the plan in `src` in `wd`: the exit code of docs/project.md (0 done, 1 stuck or gate failed, 2 the work directory
+// cannot be written, 3 no plan, 4 the agent or the checker is away).
+pub fn run[&h, &x, &c, &i, &z, &s, &k, &w, &a](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], checker: &k [byte], wd: &w [byte], agent: &a [byte], attempts: int, agent_ms: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write, err_write] int {
+    let (out, code) = plan.check(heap, src);
+    borrow out as &o in {
+        buffer.write(io, o);
+    }
+    buffer.drop(heap, out);
+    if code != 0 {
+        io.write_all(io, "[PROJECT_VERDICT]\tno_plan\n");
+        return 3;
+    }
+    if write_fixed(heap, fs, wd) < 0 {
+        io.error_all(io, "project: the work directory cannot be written\n");
+        return 2;
+    }
+    var status = 1;
+    let tb = box_slice(heap, json.tape_len(src), 0);
+    borrow mut tb as &!tw in {
+        let tape = contents(tw);
+        json.parse(src, tape);
+        let count = json.count(tape, json.get(src, tape, 0, "units"));
+        let nb = box_slice(heap, count + 1, 0);
+        let mb = box_slice(heap, 3 * count + 3, 0);
+        let sb = box_slice(heap, (count + 1) * note_cap(), byte_of(0));
+        borrow mut nb as &!nw in {
+            borrow mut mb as &!mw in {
+                borrow mut sb as &!sw in {
+                    status = drive(heap, exec, clock, io, fs, src, tape, contents(nw), contents(mw), contents(sw), count, checker, wd, agent, attempts, agent_ms);
+                }
+            }
+        }
+        unbox_slice(heap, sb);
+        unbox_slice(heap, mb);
+        unbox_slice(heap, nb);
+    }
+    unbox_slice(heap, tb);
+    return status;
+}
