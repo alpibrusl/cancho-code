@@ -186,6 +186,9 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q](heap: &!h Heap, exec: &
                                     }
                                     buffer.drop(heap, said);
                                 }
+                                if checked && len(accept) == 0 {
+                                    io.write_all(io, "[ACCEPTANCE]\tnone\n");
+                                }
                                 var this_sig = sg;
                                 let oname = outcome_name(oc);
                                 // Compare against the last attempt's signature

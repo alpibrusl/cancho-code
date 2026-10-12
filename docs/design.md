@@ -156,6 +156,24 @@ Verdict lines follow lex-code's shape, adapted:
 [ACCEPTANCE]       <pass|fail|none|skipped>
 ```
 
+**What is built (docs/parity.md P2, `scripts/test-verdicts.sh`).** `fix` prints
+`[ISSUE_VERDICT]<TAB><state><TAB><reason>`: the third field is the reason
+(`attempts N`, `signature`, `ceiling`, `agent`, `checker`), not an id, because
+there is one issue per run until the project driver (P5) gives issues ids.
+`[ACCEPTANCE]` prints `pass`, `fail` or `none` when the checker has verified the
+file. Reachable and asserted: `verified` (exit 0), `failed signature`,
+`failed ceiling` (exit 1), `unavailable agent`, `unavailable checker` (exit 3),
+usage (exit 2). Reserved, with no fixture that reaches them: `failed defect`
+(the store's word, and there is no store) and `regressed` (a file that checks and
+then stops checking between two runs). `[PROJECT_VERDICT]` arrives with P5 and
+`[PLAN]` with P3.
+
+**Verified means the checker said so.** The checker answers `verified` only for
+exit 0 and the clean answer `"refused": []`. A refusal is a refusal; anything
+else without one (a checker that is not there, one that crashes, one that prints
+something else) is `unavailable checker`. The first version read "no refusal
+found" as verified, so a missing checker verified every file.
+
 `done` means every unit verified **and** the assembled file type-checks **and**
 the acceptance gate ran and passed. `built` = every unit verified but the gate
 could not run; `gate_failed` = it ran and failed. Neither is finished.

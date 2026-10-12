@@ -67,6 +67,7 @@ jobs:
           sh scripts/test-agent-ollama.sh
           sh scripts/test-fix.sh
           sh scripts/test-acceptance.sh
+          sh scripts/test-verdicts.sh
           sh scripts/test-eval.sh
           sh scripts/test-reference-ports.sh
           sh scripts/test-driver.sh

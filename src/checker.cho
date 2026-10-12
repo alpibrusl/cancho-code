@@ -23,6 +23,7 @@ module checker;
 import loop_check;
 import signature;
 import std.buffer;
+import std.bytes;
 import std.process;
 
 // One run of the checker, as data: the outcome the loop decides on, and the
@@ -104,11 +105,26 @@ pub fn run[&h, &x, &c, &f, &m](heap: &!h Heap, exec: &x Exec(""), clock: &c Cloc
                                 borrow out as &o in {
                                     sig = signature.of(heap, sig, buffer.bytes(o));
                                 }
+                                // A refusal in the answer is a refusal. No refusal is
+                                // "verified" ONLY when the checker said so: exit 0 and
+                                // the clean answer `"refused": []`. Anything else with
+                                // no refusal in it (a checker that is not there, one
+                                // that crashes, one that prints something else) is the
+                                // checker being away, never a pass: the first version
+                                // read "no refusal found" as verified, and a missing
+                                // binary verified every file (found by the verdicts
+                                // gate, docs/parity.md P2).
+                                var clean = false;
+                                borrow out as &o2 in {
+                                    clean = n == 0 && bytes.find(buffer.bytes(o2), "\"refused\": []") >= 0;
+                                }
                                 borrow sig as &s in {
-                                    if buffer.size(s) == 0 {
+                                    if buffer.size(s) > 0 {
+                                        outcome = loop_check.Outcome::Retryable;
+                                    } else if clean {
                                         outcome = loop_check.Outcome::Verified;
                                     } else {
-                                        outcome = loop_check.Outcome::Retryable;
+                                        outcome = loop_check.Outcome::ProviderOutage;
                                     }
                                 }
                             }
