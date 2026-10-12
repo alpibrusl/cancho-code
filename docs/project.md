@@ -64,6 +64,8 @@ Usage errors (fewer than 4 arguments, `workdir` or the plan file unreadable): ex
 - **The acceptance signature is the informative line, not the first.** On macOS the linker prints a warning before every test run, with a temp directory in its text; as the first line it made every attempt's signature different, and a unit whose agent was always wrong ran to its ceiling instead of stopping at the second identical failure. `src/acceptance.cho` now picks the first line that says `FAILED` or `error`, else the first that is not `ld:` noise (`scripts/test-acceptance.sh`, case `noise`).
 - **An example's `==` compares scalars.** A result that is an enum or a record needs a field read; a test file that does not build is the unit's failure, with the compiler's message in the feedback.
 
+- **The acceptance and the agent get a `PATH`.** `exec_spawn`'s environment is exactly what the parent passes, so both are spawned with `PATH=/usr/local/bin:/usr/bin:/bin`. Without it, `cancho test` inside the acceptance failed on Linux (`cc: fatal error: '-fuse-linker-plugin', but liblto_plugin.so not found`): found by CI, reproduced in a Linux container.
+
 ## What it does not do
 
 No whole-run turn budget (design section 4; each unit has its ceiling), no parallel units, no unit reordering by cost, no repair round for failures that exist only when units share a file (P8), no hardening or acceptance scenarios for services (P6, P7), no report (P9). A regressed unit is rebuilt like any other, and a regression that two units keep causing each other runs until the per-unit ceilings stop it: each rebuild is a new `run_issue` with a fresh ceiling, so the loop stops after at most `3 x units` rebuilds of one unit (a guard, then `stuck`).

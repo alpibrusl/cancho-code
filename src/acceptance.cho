@@ -9,6 +9,9 @@ module acceptance;
 // builds `verified`, none meeting the brief's shapes. The acceptance command
 // is where a brief's own examples go.
 //
+// The one thing the child is given besides its arguments is a PATH, exported: a shell has a default PATH it does not export, so a
+// child it started (`cancho test` calling `cc` to link) had none and failed on Linux with "liblto_plugin.so not found".
+//
 // It is a shell command with the project file appended, run like the agent
 // (`/bin/sh -c`, standard error folded into standard output, bounded output,
 // a deadline): exit 0 holds, anything else does not. A failure becomes a
@@ -118,7 +121,7 @@ pub fn run[&h, &x, &c, &k, &p](heap: &!h Heap, exec: &x Exec(""), clock: &c Cloc
         }
         process.Channels::Ok(to_child, child_in, from_child, child_out) => {
             borrow argv as &av in {
-                match exec_spawn(exec, "/bin/sh", buffer.bytes(av), "", Stdio::Pipe(child_in), Stdio::Pipe(child_out), Stdio::Null) {
+                match exec_spawn(exec, "/bin/sh", buffer.bytes(av), "PATH=/usr/local/bin:/usr/bin:/bin\0", Stdio::Pipe(child_in), Stdio::Pipe(child_out), Stdio::Null) {
                     Spawned::Failed(e) => {
                         process.close(to_child, from_child);
                         why = buffer.append(heap, why, "acceptance:error");

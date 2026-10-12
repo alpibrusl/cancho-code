@@ -8,6 +8,7 @@
 #   stuck     it never holds and says the same thing: the same-signature stop ends it (`failed signature`) in two turns; the output is
 #             in <project>.feedback
 #   noise     a varying first line (a linker warning with a temp directory) does not hide the failure: the signature is the failing test
+#   path      the acceptance command runs with an exported PATH, so what it launches (a compiler calling the linker) works
 #   hang      an acceptance that never answers is cut at its own cap and counts as a failure (`acceptance:timeout`), not a hang
 #
 # Stand-ins are one line of shell (tests/programs/driver_gate.cho, mode `custom`, args: agent, agent cap ms, acceptance, acceptance cap ms).
@@ -83,6 +84,13 @@ expect "noise: verdict" "$(printf '%s\n' "$out" | grep ISSUE_VERDICT)" "$(printf
 t="$d/project.cho.trail.jsonl"
 expect "noise: records" "$(wc -l < "$t" | tr -d ' ')" 2
 expect "noise: signature is the failing test" "$(field "$t" sig 1)" "acceptance:test test_a_1 ... FAILED"
+rm -rf "$d"
+
+# path: the acceptance runs with a PATH that its children inherit. A shell has a default PATH it does not export, so a child (`cancho test`
+# calling `cc` to link) started with none and failed on Linux with "liblto_plugin.so not found" (found by the project gate on a Linux runner)
+d=$(fresh)
+out=$(run "$d" "cp $d/fixed.cho $d/project.cho" "env | grep -q '^PATH=.*/usr/bin' #")
+expect "path: the acceptance's children get a PATH" "$(printf '%s\n' "$out" | grep ACCEPTANCE | cut -f2)" pass
 rm -rf "$d"
 
 # hang

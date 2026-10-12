@@ -49,7 +49,7 @@ real API, the checker still the oracle.
 `fix <checker> <project.cho> <agent-command> [attempts [agent-seconds]]` runs the agent as a shell command with the project file as its argument. Each promise below has its own gate (`scripts/test-agent.sh`):
 
 - **The checker's answer** for the file is in `<project.cho>.feedback` before every turn, the first included, so a model sees what the compiler refused.
-- **No environment.** The agent has none (no `HOME`); the shell's own default `PATH` finds the usual tools.
+- **Almost no environment.** The agent gets no `HOME` and nothing from yours, and exactly one variable the driver passes: `PATH=/usr/local/bin:/usr/bin:/bin`, exported. A shell's own default `PATH` is not exported to what it launches, so a build the agent or the acceptance ran (`cancho test` calling `cc`) failed to link on Linux until this was passed explicitly.
 - **A turn is capped** by `agent-seconds` (default 30). Past it the run ends `unavailable agent`, named, not burned as a failure.
 - **An acceptance command** (optional sixth argument, seconds as the seventh) runs on the file after the checker verifies it: exit 0 prints `[ACCEPTANCE] pass`; anything else is `[ACCEPTANCE] fail`, a retryable failure whose output the agent reads in `<project.cho>.feedback`. `verified` then means "meets this check", not only "type-checks": on the first audit, three builds were `verified` and none met the brief's shapes.
 - **A failing agent is named**: a non-zero exit, a timeout, a signal each end `unavailable agent` and are recorded in `<project.cho>.trail.jsonl` (`agent_exit`, `agent_timeout`, ...). The file is left as it was.
