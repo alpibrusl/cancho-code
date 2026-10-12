@@ -48,7 +48,7 @@ if [ "$variant" = provider ]; then
 else
   pinned=$here/docs/authority.json
   files=("$here/tests/programs/fix.cho" "$here/src/driver.cho" "$here/src/checker.cho" "$here/src/signature.cho"
-    "$here/src/loop_check.cho" "$here/src/snapshot.cho")
+    "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho")
 fi
 
 work=$(mktemp -d)

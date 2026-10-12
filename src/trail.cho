@@ -1,0 +1,83 @@
+edition 7;
+
+module trail;
+
+// `trail` — one JSON line per attempt (docs/parity.md P0). A run that ends
+// `failed` used to leave a verdict line and a file; nothing recorded what the
+// checker said on each attempt, which signature the stop rule compared, or how
+// long the agent took. The trail is that record:
+//
+//     {"attempt":N,"agent_ms":M,"outcome":"verified|refused|outage|defect","sig":"...","decision":"..."}
+//
+// `sig` is the failure signature the same-signature rule compares (empty when
+// the file checked), JSON-escaped; `decision` is what the loop decided after
+// this attempt (retry, verified, regressed, ceiling, signature, defect,
+// provider). Fields keep this order; `scripts/test-driver.sh` reads them back.
+//
+// There is no append primitive, so each call reads the file, adds a line and
+// writes it back whole, capped at `most` bytes: past the cap the line is
+// dropped and the call answers -1, never a truncated line. A trail is a few
+// hundred bytes per attempt, so the copy is not a cost that matters.
+
+import std.buffer;
+
+// `text` with `"`, `\` and control bytes escaped for a JSON string.
+fn escaped[&h, &t](heap: &!h Heap, out: buffer.Buffer, text: &t [byte]) -> [heap] buffer.Buffer {
+    var b = out;
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if c == 34 {
+            b = buffer.append(heap, b, "\\\"");
+        } else if c == 92 {
+            b = buffer.append(heap, b, "\\\\");
+        } else if c < 32 {
+            b = buffer.push(heap, b, byte_of(32));
+        } else {
+            b = buffer.push(heap, b, text[i]);
+        }
+        i = i + 1;
+    }
+    return b;
+}
+
+// Start a fresh trail: an empty file at `path`.
+pub fn begin[&z, &p](fs: &z Fs(""), path: &p [byte]) -> [fs_write("")] int {
+    return fs_write(fs, path, "");
+}
+
+// Add one attempt's record to the trail at `path`. 0 on success, -1 when the
+// file could not be written or the cap was reached.
+pub fn record[&h, &z, &p, &o, &s, &d](heap: &!h Heap, fs: &z Fs(""), path: &p [byte], attempt: int, agent_ms: int, outcome: &o [byte], sig: &s [byte], decision: &d [byte], most: int) -> [heap, fs_read(""), fs_write("")] int {
+    region a {
+        let old = alloc_slice[a](most, byte_of(0));
+        var n = fs_read(fs, path, old);
+        if n < 0 {
+            n = 0;
+        }
+        var b = buffer.empty(heap, n + 256);
+        b = buffer.append(heap, b, old[0..n]);
+        b = buffer.append(heap, b, "{\"attempt\":");
+        b = buffer.push_nat(heap, b, attempt);
+        b = buffer.append(heap, b, ",\"agent_ms\":");
+        b = buffer.push_nat(heap, b, agent_ms);
+        b = buffer.append(heap, b, ",\"outcome\":\"");
+        b = buffer.append(heap, b, outcome);
+        b = buffer.append(heap, b, "\",\"sig\":\"");
+        b = escaped(heap, b, sig);
+        b = buffer.append(heap, b, "\",\"decision\":\"");
+        b = buffer.append(heap, b, decision);
+        b = buffer.append(heap, b, "\"}\n");
+        var r = -1;
+        borrow b as &bb in {
+            let all = buffer.bytes(bb);
+            if len(all) <= most {
+                if fs_write(fs, path, all) == len(all) {
+                    r = 0;
+                }
+            }
+        }
+        buffer.drop(heap, b);
+        return r;
+    }
+}

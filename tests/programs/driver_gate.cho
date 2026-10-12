@@ -80,11 +80,15 @@ fn main(world: World) -> [] int {
                             }
                             if bytes.equal(mode, "ceiling") {
                                 // A stand-in whose failure changes every turn, deterministically: a
-                                // flip file alternates which wrong value the
-                                // broken function returns — `1x` (an unknown
-                                // name) and `1.5` (a float) — so every
-                                // refusal differs and only the ceiling can
-                                // fire. Measured, three ways, before this
+                                // flip file alternates which unknown name the
+                                // broken function (line 2 of the file) returns
+                                // — `zz`, `yy`, `zz`, ... — so consecutive
+                                // refusals differ and only the ceiling can
+                                // fire. (The earlier stand-in rewrote only
+                                // `return true`: on its third turn nothing
+                                // matched, the file stayed as it was, and the
+                                // gate passed only because the driver counted
+                                // one repeat too few; the trail showed it.) Measured, three ways, before this
                                 // shape: an agent that overwrote the whole
                                 // file replaced every refusal with the same
                                 // program-level one; a time-based flip cycled
@@ -97,7 +101,7 @@ fn main(world: World) -> [] int {
                                 agent = buffer.append(hh, agent, dir);
                                 agent = buffer.append(hh, agent, "/flip'; p='");
                                 agent = buffer.append(hh, agent, dir);
-                                agent = buffer.append(hh, agent, "/project.cho'; if [ -f $f ]; then rm $f; sed -i.bak s/1x/1.5/ $p; else touch $f; sed -i.bak 's/return true/return 1x/' $p; fi\0");
+                                agent = buffer.append(hh, agent, "/project.cho'; if [ -f $f ]; then rm $f; sed -i.bak '2s/.*/fn broken() -> [] int { return yy; }/' $p; else touch $f; sed -i.bak '2s/.*/fn broken() -> [] int { return zz; }/' $p; fi\0");
                             }
                             borrow file as &fe in {
                                 borrow cmd as &ce in {
