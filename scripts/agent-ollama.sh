@@ -17,7 +17,8 @@
 #                   `fix ... "OLLAMA_MODEL=qwen3.8:27b-mlx scripts/agent-ollama.sh"`. Without it the default is used, and a
 #                   model that is not installed is a 404 and `agent_exit` (found on the first end-to-end run).
 #   OLLAMA_URL      the server                     (default http://localhost:11434)
-#   OLLAMA_NUM_CTX  the context window in tokens   (default 8192)
+#   OLLAMA_NUM_CTX  the context window in tokens   (default 8192; raise it with a primer: `cancho agent-guidelines` is about 5,500 tokens)
+#   OLLAMA_PRIMER   a file whose text goes first in the prompt (optional)
 #
 # Exit codes: 0 the file was replaced; 1 the server or the model failed (the file is left as it was — the driver names that
 # `unavailable agent` / `agent_exit`, it is not a looping model).
@@ -37,13 +38,30 @@ try:
     raw = open(file + ".feedback", encoding="utf-8").read()
     try:
         refusals = json.loads(raw).get("refused", [])
-        feedback = "".join("- line %d, column %d: %s (rule %s)\n" % (r["position"]["line"], r["position"]["column"], r["message"], r["rule"]) for r in refusals[:8])
+        lines = source.split("\n")
+        for r in refusals[:8]:
+            line, col = r["position"]["line"], r["position"]["column"]
+            feedback += "- line %d, column %d: %s (rule %s)\n" % (line, col, r["message"], r["rule"])
+            # The source line itself, with a caret under the column: "line 9, column 39" is hard to find by counting.
+            if 1 <= line <= len(lines):
+                feedback += "    " + lines[line - 1] + "\n    " + " " * (col - 1) + "^\n"
     except (ValueError, KeyError, AttributeError):
         feedback = raw[:1500]
 except OSError:
     pass
 
-prompt = ("The cancho program below is refused by its compiler. Reply with the complete corrected file and nothing else: "
+# An optional primer, first in the prompt: the language's own page for an agent (`cancho agent-guidelines > file`). A model that
+# has never seen cancho repeats the same refusal; an unreadable primer is an error, not a silent skip, so a typo in the path cannot
+# pass for a model that "did not use" it.
+primer = ""
+if os.environ.get("OLLAMA_PRIMER"):
+    try:
+        primer = open(os.environ["OLLAMA_PRIMER"], encoding="utf-8").read() + "\n\n"
+    except OSError as e:
+        sys.stderr.write("agent-ollama: cannot read OLLAMA_PRIMER: %s\n" % e)
+        sys.exit(1)
+
+prompt = primer + ("The cancho program below is refused by its compiler. Reply with the complete corrected file and nothing else: "
           "no markdown fences, no explanation.\n")
 if feedback:
     prompt += "The compiler's current refusals:\n" + feedback
