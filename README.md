@@ -47,6 +47,15 @@ real API, the checker still the oracle.
 
 `scripts/agent-ollama.sh` is the local-model agent (Ollama's HTTP API; `scripts/test-agent-ollama.sh` runs it against a stub server).
 
+**Give a local model the language's own page.** A model that has never seen cancho repeats the same refusal: on a trivial task (`clamp`), 6 of 6 baseline runs ended `failed signature` on `-> int` without the effect row, with or without the offending source line shown. With `OLLAMA_PRIMER` naming the output of `cancho agent-guidelines` (about 5,500 tokens, generated from the binary), 3 of 3 verified in one turn:
+
+```sh
+cancho agent-guidelines > guidelines.md
+./fix "$CANCHO" project.cho "OLLAMA_MODEL=qwen3.8:27b OLLAMA_NUM_CTX=16384 OLLAMA_PRIMER=$(pwd)/guidelines.md $(pwd)/scripts/agent-ollama.sh" 6 900
+```
+
+`verified` means the checker accepts the file, nothing more: see the audit numbers in alpibrusl/cancho-code#9.
+
 ## Running the gates
 
 ```sh
