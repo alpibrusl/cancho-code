@@ -15,7 +15,7 @@ command -v "$CANCHO" >/dev/null 2>&1 || { echo "no cancho on PATH; set CANCHO=" 
 root=$(cd "$(dirname "$0")/.." && pwd)
 exe=$(mktemp -t cc-fix-XXXXXX)
 "$CANCHO" build "$root/tests/programs/fix.cho" "$root/src/driver.cho" "$root/src/checker.cho" \
-    "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" \
+    "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" "$root/src/acceptance.cho" \
     --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 fail=0
@@ -39,6 +39,27 @@ expect "fixed: verdict" "$(printf '%s' "$out" | grep ISSUE_VERDICT | cut -f1,2)"
 expect "fixed: the trail has one record" "$(wc -l < "$d/project.cho.trail.jsonl" | tr -d ' ')" 1
 [ -f "$d/project.cho.snap0.cho" ] || { echo "FAIL: fixed: the verified state was not snapshotted ($d/project.cho.snap0.cho)" >&2; fail=1; }
 [ -f "$d/project.cho.snap0.cho" ] && expect "fixed: the snapshot is the verified file" "$(cat "$d/project.cho.snap0.cho")" "$(cat "$d/project.cho")"
+
+# std: the checker `fix` runs knows the standard library, so a project can import it (the first acceptance runs on a task that wants
+# an Option were refused `no module std.option in this program` by the loop's own checker, because the command had no --std)
+d2=$(mktemp -d -t cc-fix-std-XXXXXX)
+printf 'edition 7;\nimport std.option;\nfn broken() -> [] option.Option[int] { return true; }\n' > "$d2/project.cho"
+sed 1d "$d/fixed.cho" >> "$d2/project.cho"
+cat > "$d2/good.cho" <<'GOOD'
+edition 7;
+import std.option;
+fn pick() -> [] option.Option[int] { return option.Option::Some(1); }
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi); release(fs); release(net); release(clock); release(signals); release(exec); release(args);
+    release(io); release(heap);
+    let p = pick();
+    return 0;
+}
+GOOD
+out=$("$exe" "$CANCHO" "$d2/project.cho" "cp $d2/good.cho" 4 2>&1)
+expect "std: a project that imports std.option verifies" "$(printf '%s' "$out" | grep ISSUE_VERDICT | cut -f1,2)" "$(printf '[ISSUE_VERDICT]\tverified')"
+rm -rf "$d2"
 
 rm -rf "$exe" "$d"
 [ "$fail" = 0 ] && echo "front door gate: ok" || { echo "front door gate: FAILED" >&2; exit 1; }

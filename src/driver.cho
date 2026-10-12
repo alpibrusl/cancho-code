@@ -29,6 +29,7 @@ module driver;
 
 import checker;
 import snapshot;
+import acceptance;
 import trail;
 import loop_check;
 import std.buffer;
@@ -69,10 +70,14 @@ fn note[&h, &z, &t, &o, &s, &d](heap: &!h Heap, fs: &z Fs(""), tpath: &t buffer.
 // fixed here, and the run ended `unavailable agent` before the model had a
 // fair attempt: issue #11). The checker keeps its own 30 s.
 //
+// `accept` is the acceptance command (empty: none): after the checker verifies the
+// file it runs on it, and a file that does not satisfy it is a retryable failure
+// with an `acceptance:` signature (src/acceptance.cho, docs/parity.md P4a).
+//
 // `snap_prefix` names the snapshot store; the loop snapshots after every
 // verified unit (the §4 contract), so a later regression has a clean
 // copy to restore from.
-pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
+pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int, accept: &q [byte], accept_timeout_ms: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
     var tpath = buffer.append(heap, buffer.empty(heap, 256), file);
     tpath = buffer.append(heap, tpath, ".trail.jsonl");
     borrow tpath as &tq0 in {
@@ -82,7 +87,7 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
     // before every agent turn (docs/parity.md P1): the agent has no way to ask
     // the checker itself, and a model that never sees the refusal repeats it
     // (issue #12). The command is the checker's own, redirected.
-    var fbcmd = buffer.empty(heap, len(check_cmd) + len(file) + 32);
+    var fbcmd = buffer.empty(heap, len(check_cmd) + len(file) * 4 + 96);
     var ci = 0;
     while ci + 1 < len(check_cmd) {
         fbcmd = buffer.push(heap, fbcmd, check_cmd[ci]);
@@ -90,7 +95,18 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
     }
     fbcmd = buffer.append(heap, fbcmd, " > ");
     fbcmd = buffer.append(heap, fbcmd, file);
-    fbcmd = buffer.append(heap, fbcmd, ".feedback 2>&1\0");
+    fbcmd = buffer.append(heap, fbcmd, ".feedback 2>&1; if [ -s ");
+    fbcmd = buffer.append(heap, fbcmd, file);
+    fbcmd = buffer.append(heap, fbcmd, ".acceptance ]; then cat ");
+    fbcmd = buffer.append(heap, fbcmd, file);
+    fbcmd = buffer.append(heap, fbcmd, ".acceptance >> ");
+    fbcmd = buffer.append(heap, fbcmd, file);
+    fbcmd = buffer.append(heap, fbcmd, ".feedback; fi\0");
+    var accpath = buffer.append(heap, buffer.empty(heap, 256), file);
+    accpath = buffer.append(heap, accpath, ".acceptance");
+    borrow accpath as &aq0 in {
+        acceptance.note(heap, fs, buffer.bytes(aq0), "");
+    }
     var attempts = 0;
     var consecutive = 0;
     var last = buffer.empty(heap, 64);
@@ -139,8 +155,39 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
                                 // The agent answered; the check is the oracle.
                                 let answer = checker.run(heap, exec, clock, file, check_cmd, 4096, 30000);
                                 let checker.Answer { outcome, sig } = answer;
-                                var this_sig = sig;
-                                let oname = outcome_name(outcome);
+                                var oc = outcome;
+                                var sg = sig;
+                                var checked = false;
+                                match oc {
+                                    loop_check.Outcome::Verified => { checked = true; }
+                                    loop_check.Outcome::Retryable => { }
+                                    loop_check.Outcome::PlanDefect => { }
+                                    loop_check.Outcome::ProviderOutage => { }
+                                }
+                                if checked && len(accept) > 0 {
+                                    let ar = acceptance.run(heap, exec, clock, accept, file, 4096, accept_timeout_ms);
+                                    let acceptance.Result { held, why, said } = ar;
+                                    if held == 0 {
+                                        io.write_all(io, "[ACCEPTANCE]\tpass\n");
+                                        borrow accpath as &aq in {
+                                            acceptance.note(heap, fs, buffer.bytes(aq), "");
+                                        }
+                                        buffer.drop(heap, why);
+                                    } else {
+                                        io.write_all(io, "[ACCEPTANCE]\tfail\n");
+                                        borrow accpath as &aq in {
+                                            borrow said as &sd in {
+                                                acceptance.note(heap, fs, buffer.bytes(aq), buffer.bytes(sd));
+                                            }
+                                        }
+                                        buffer.drop(heap, sg);
+                                        sg = why;
+                                        oc = loop_check.Outcome::Retryable;
+                                    }
+                                    buffer.drop(heap, said);
+                                }
+                                var this_sig = sg;
+                                let oname = outcome_name(oc);
                                 // Compare against the last attempt's signature
                                 // before it becomes the last.
                                 var same = false;
@@ -155,7 +202,7 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
                                 var decision2 = loop_check.Decision::Retry;
                                 borrow last as &lb in {
                                     borrow this_sig as &tb in {
-                                        decision2 = loop_check.decide(attempts, consecutive, buffer.bytes(lb), buffer.bytes(tb), outcome, max_attempts, k_signature);
+                                        decision2 = loop_check.decide(attempts, consecutive, buffer.bytes(lb), buffer.bytes(tb), oc, max_attempts, k_signature);
                                     }
                                 }
                                 match decision2 {
@@ -322,6 +369,7 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
     }
     buffer.drop(heap, last);
     buffer.drop(heap, tpath);
+    buffer.drop(heap, accpath);
     buffer.drop(heap, fbcmd);
     return ended;
 }

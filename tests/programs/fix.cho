@@ -6,7 +6,7 @@ edition 7;
 // `cancho check` as the only oracle. Every ending prints its §6 verdict
 // line; there is no state in which it runs silently.
 //
-//     fix <checker-path> <project.cho> <agent-command> [attempts [agent-seconds]]
+//     fix <checker-path> <project.cho> <agent-command> [attempts [agent-seconds [acceptance-command [acceptance-seconds]]]]
 //
 //   checker-path   the compiler binary, by its absolute path (measured:
 //                  the child of exec_spawn gets no PATH of its own)
@@ -16,6 +16,10 @@ edition 7;
 //   attempts       the attempt ceiling (design §4, default 4)
 //   agent-seconds  the cap on one agent turn (default 30); past it the run
 //                  ends `unavailable agent`, named, not burned as a failure
+//   acceptance-command  a shell command run on the file (appended) after the
+//                  checker verifies it: exit 0 holds (`[ACCEPTANCE] pass`),
+//                  anything else is a retryable failure whose output the agent
+//                  reads in <project>.feedback (default: none; seconds, default 60)
 //
 // Beside the file the run leaves `<file>.trail.jsonl` (one record per
 // attempt), `<file>.feedback` (the checker's last answer, which the agent
@@ -63,10 +67,12 @@ fn main(world: World) -> [] int {
     var agent = "";
     var ceiling = 4;
     var agent_seconds = 30;
+    var accept_text = "";
+    var accept_seconds = 60;
     borrow mut console as &!ci in {
     borrow args as &g in {
         if arg_count(g) < 4 {
-            io.error_all(ci, "usage: fix <checker> <project.cho> <agent-cmd> [attempts [agent-seconds]]\n");
+            io.error_all(ci, "usage: fix <checker> <project.cho> <agent-cmd> [attempts [agent-seconds [acceptance-cmd [acceptance-seconds]]]]\n");
         } else {
             checker_path = arg(g, 1);
             file = arg(g, 2);
@@ -76,6 +82,12 @@ fn main(world: World) -> [] int {
             }
             if arg_count(g) > 5 {
                 agent_seconds = digits_of(arg(g, 5));
+            }
+            if arg_count(g) > 6 {
+                accept_text = arg(g, 6);
+            }
+            if arg_count(g) > 7 {
+                accept_seconds = digits_of(arg(g, 7));
             }
         }
     }
@@ -102,7 +114,7 @@ fn main(world: World) -> [] int {
                         var cmd = buffer.empty(hh, 512);
                         cmd = buffer.append(hh, cmd, "-c\0");
                         cmd = buffer.append(hh, cmd, checker_path);
-                        cmd = buffer.append(hh, cmd, " check --output json --backend cranelift ");
+                        cmd = buffer.append(hh, cmd, " check --std --output json --backend cranelift ");
                         cmd = buffer.append(hh, cmd, file);
                         cmd = buffer.append(hh, cmd, "\0");
                         // The agent command, same shape: the file is its
@@ -120,7 +132,7 @@ fn main(world: World) -> [] int {
                         borrow cmd as &ce in {
                             borrow act as &ae in {
                                 borrow prefix as &pe in {
-                                    match driver.run_issue(hh, x, c, i, fz, file, buffer.bytes(ae), buffer.bytes(ce), buffer.bytes(pe), ceiling, 2, agent_seconds * 1000) {
+                                    match driver.run_issue(hh, x, c, i, fz, file, buffer.bytes(ae), buffer.bytes(ce), buffer.bytes(pe), ceiling, 2, agent_seconds * 1000, accept_text, accept_seconds * 1000) {
                                         driver.Ended::Verified => { status = 0; }
                                         driver.Ended::FailedSignaure => { status = 1; }
                                         driver.Ended::FailedCeiling => { status = 1; }

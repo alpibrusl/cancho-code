@@ -18,6 +18,7 @@
 #                   model that is not installed is a 404 and `agent_exit` (found on the first end-to-end run).
 #   OLLAMA_URL      the server                     (default http://localhost:11434)
 #   OLLAMA_NUM_CTX  the context window in tokens   (default 8192; raise it with a primer: `cancho agent-guidelines` is about 5,500 tokens)
+#   OLLAMA_NUM_PREDICT  the most tokens one answer may take (default 4096; an unbounded generation held one turn for 900 s)
 #   OLLAMA_PRIMER   a file whose text goes first in the prompt (optional)
 #
 # Exit codes: 0 the file was replaced; 1 the server or the model failed (the file is left as it was — the driver names that
@@ -68,17 +69,47 @@ if feedback:
 prompt += "---\n" + source + "---\n"
 
 body = json.dumps({"model": model, "prompt": prompt, "stream": False, "think": False,
-                   "options": {"num_ctx": num_ctx, "temperature": 0.2}}).encode()
-try:
+                   "options": {"num_ctx": num_ctx, "temperature": 0.2, "num_predict": int(os.environ.get("OLLAMA_NUM_PREDICT", "4096"))}}).encode()
+def ask():
     request = urllib.request.Request(url + "/api/generate", body, {"Content-Type": "application/json"})
-    answer = json.load(urllib.request.urlopen(request, timeout=1800))["response"]
-except Exception as e:
-    sys.stderr.write("agent-ollama: %s\n" % e)
-    sys.exit(1)
+    return json.load(urllib.request.urlopen(request, timeout=1800))["response"]
 
-# A markdown fence is the one shape a model reliably adds and the checker reliably refuses; stripped here, not burned as an attempt.
-answer = re.sub(r"^```[a-z]*\n?", "", answer.strip())
-answer = re.sub(r"\n?```\s*$", "", answer)
+def program(answer):
+    """The file in a model's answer, or None when there is no program in it."""
+    # This model leaks its reasoning markers into the answer (`</think>`): what follows the last one is the answer; when nothing there
+    # is a program, the program is what precedes it (the reply ended on the tag, after a closing fence).
+    if "</think>" in answer:
+        head, tail = answer.rsplit("</think>", 1)
+        after = program(tail) if tail.strip() else None
+        return after if after is not None else program(head)
+    answer = answer.replace("<think>", "")
+    # A markdown fence is the one shape a model reliably adds and the checker reliably refuses, and it often explains first: when the
+    # answer holds fenced blocks the file is the longest of them (the program, not the prose around it); with none it is the answer.
+    blocks = re.findall(r"```[A-Za-z0-9_+-]*[ \t]*\n(.*?)```", answer, re.S)
+    if blocks:
+        answer = max(blocks, key=len)
+    # no complete block: a fence may still be left at either end (an unopened or an unclosed one)
+    answer = re.sub(r"^\s*```[A-Za-z0-9_+-]*[ \t]*\n", "", answer)
+    answer = re.sub(r"\n[ \t]*```\s*$", "", answer)
+    # A reply with no program in it is the model's own reasoning (this one thinks aloud in the answer about one call in four, until the
+    # generation bound cuts it off): not a file. A preamble before the program is cut: the file starts at its `edition` line.
+    m = re.search(r"^edition \d+;", answer, re.M)
+    return answer[m.start():].strip("\n") if m else None
+
+# Up to three samples: a reply without a program is retried, never written over the project.
+answer = None
+for attempt in range(3):
+    try:
+        got = ask()
+    except Exception as e:
+        sys.stderr.write("agent-ollama: %s\n" % e)
+        sys.exit(1)
+    answer = program(got)
+    if answer is not None:
+        break
+    sys.stderr.write("agent-ollama: sample %d has no program in it (reasoning, not a file)\n" % (attempt + 1))
+if answer is None:
+    sys.exit(1)
 tmp = file + ".agent.tmp"
 open(tmp, "w", encoding="utf-8").write(answer + "\n")
 os.replace(tmp, file)

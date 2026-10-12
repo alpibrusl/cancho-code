@@ -53,6 +53,8 @@ fn main(world: World) -> [] int {
     var dir = "";
     var custom_agent = "";
     var timeout_ms = 30000;
+    var accept_text = "";
+    var accept_ms = 60000;
     borrow args as &g in {
         mode = arg(g, 1);
         checker_path = arg(g, 2);
@@ -62,6 +64,12 @@ fn main(world: World) -> [] int {
         }
         if arg_count(g) > 5 {
             timeout_ms = digits_of(arg(g, 5));
+        }
+        if arg_count(g) > 6 {
+            accept_text = arg(g, 6);
+        }
+        if arg_count(g) > 7 {
+            accept_ms = digits_of(arg(g, 7));
         }
     }
     borrow exec as &x in {
@@ -138,7 +146,7 @@ fn main(world: World) -> [] int {
                                 borrow cmd as &ce in {
                                     borrow agent as &ae in {
                                         borrow snap as &se in {
-                                            let ended = driver.run_issue(hh, x, c, i, f, buffer.bytes(fe), buffer.bytes(ae), buffer.bytes(ce), buffer.bytes(se), 4, 2, timeout_ms);
+                                            let ended = driver.run_issue(hh, x, c, i, f, buffer.bytes(fe), buffer.bytes(ae), buffer.bytes(ce), buffer.bytes(se), 4, 2, timeout_ms, accept_text, accept_ms);
                                             match ended {
                                                 driver.Ended::Verified => { }
                                                 driver.Ended::FailedSignaure => { }
