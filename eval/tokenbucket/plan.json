@@ -1,0 +1,52 @@
+{
+ "name": "tokenbucket",
+ "units": [
+  {
+   "id": "refill",
+   "signature": "fn bucket_refill(tokens_milli: int, last_ms: int, now_ms: int, capacity: int, per_sec: int) -> [] int",
+   "examples": [
+    "bucket_refill(0, 0, 1000, 10, 1) == 1000",
+    "bucket_refill(9500, 0, 1000, 10, 1) == 10000",
+    "bucket_refill(500, 100, 50, 10, 1) == 500",
+    "bucket_refill(0, 0, 10000, 10, 1) == 10000"
+   ],
+   "deps": []
+  },
+  {
+   "id": "take",
+   "signature": "fn bucket_take(tokens_milli: int, cost: int) -> [] option.Option[int]",
+   "examples": [
+    "bucket_take(5000, 5) == option.Option::Some(0)",
+    "bucket_take(4999, 5) == option.Option::None",
+    "bucket_take(5000, 0) == option.Option::None"
+   ],
+   "deps": []
+  },
+  {
+   "id": "retry",
+   "signature": "fn retry_after_ms(tokens_milli: int, cost: int, per_sec: int, capacity: int) -> [] int",
+   "examples": [
+    "retry_after_ms(0, 1, 1, 10) == 1000",
+    "retry_after_ms(500, 1, 1, 10) == 500",
+    "retry_after_ms(0, 5, 3, 10) == 1667",
+    "retry_after_ms(0, 1, 0, 10) == -1",
+    "retry_after_ms(0, 11, 5, 10) == -1"
+   ],
+   "deps": []
+  },
+  {
+   "id": "allow",
+   "signature": "fn bucket_allow(tokens_milli: int, last_ms: int, now_ms: int, capacity: int, per_sec: int, cost: int) -> [] Allow",
+   "examples": [
+    "bucket_allow(0, 0, 429, 3, 7, 3).allowed == true",
+    "bucket_allow(0, 0, 428, 3, 7, 3).tokens_milli == 2996",
+    "bucket_allow(0, 0, 0, 10, 1, 11).retry_ms == -1"
+   ],
+   "deps": [
+    "refill",
+    "take",
+    "retry"
+   ]
+  }
+ ]
+}

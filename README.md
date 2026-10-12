@@ -36,6 +36,10 @@ A cloud model works the same way — `scripts/test-provider.sh mistral` with
 `MISTRAL_API_KEY` in the environment runs the end-to-end gate against the
 real API, the checker still the oracle.
 
+## The plan
+
+`plancheck <plan.json>` checks a plan (units with a signature, examples and dependencies) with no model: `[PLAN_ERROR]` lines for every problem, then `[PLAN] valid|invalid`, exit 0, 1 or 2. Format and rules: [docs/plan.md](docs/plan.md); gate: `scripts/test-plan.sh`, one fixture per rule.
+
 ## The agent contract
 
 `fix <checker> <project.cho> <agent-command> [attempts [agent-seconds]]` runs the agent as a shell command with the project file as its argument. Each promise below has its own gate (`scripts/test-agent.sh`):
@@ -69,6 +73,7 @@ scripts/test-agent-ollama.sh
 CANCHO=<path> scripts/test-fix.sh
 CANCHO=<path> scripts/test-acceptance.sh
 CANCHO=<path> scripts/test-verdicts.sh
+CANCHO=<path> scripts/test-plan.sh
 CANCHO=<path> scripts/test-eval.sh
 CANCHO=<path> scripts/test-reference-ports.sh
 CANCHO=<path> scripts/test-driver.sh

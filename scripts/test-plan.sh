@@ -3,7 +3,7 @@
 # [PLAN_ERROR] line asserted in order, the verdict line, and the exit code. tests/plans/expected.txt is the table.
 #
 # Also: a valid plan prints exactly `[PLAN]<TAB>valid`; every error line has four fields and a non-empty message; and the usage
-# cases (no argument, a file that is not there) exit 2.
+# cases (no argument, a file that is not there, a file of 1 MiB or more) exit 2.
 set -u
 
 CANCHO="${CANCHO:-cancho}"
@@ -44,6 +44,21 @@ done < "${exe}.table"
 
 "$exe" >/dev/null 2>&1; expect "usage: no argument" "$?" 2
 "$exe" "$root/tests/plans/does-not-exist.json" >/dev/null 2>&1; expect "usage: a file that is not there" "$?" 2
+
+# the real plan for 07-tokenbucket (eval/tokenbucket/plan.json, the brief as units) is valid
+out=$("$exe" "$root/eval/tokenbucket/plan.json" 2>&1); rc=$?
+expect "tokenbucket plan: exit code" "$rc" 0
+expect "tokenbucket plan: output" "$out" "$(printf '[PLAN]\tvalid')"
+
+# a plan of 1 MiB or more is refused as a usage error, never read in part (a truncated plan would be checked as if it were the whole)
+big=$(mktemp -t cc-plan-big-XXXXXX)
+python3 -c "
+import sys
+sys.stdout.write(open('$root/tests/plans/valid.json').read().rstrip()[:-1] + ' ' * 1100000 + '}')" > "$big" 2>/dev/null
+out=$("$exe" "$big" 2>&1); rc=$?
+expect "oversize: exit code" "$rc" 2
+case "$out" in *"too large"*) ;; *) echo "FAIL: oversize: no 'too large' message ('$out')" >&2; fail=1 ;; esac
+rm -f "$big"
 
 rm -f "$exe" "${exe}.table"
 [ "$fail" = 0 ] && echo "plan gate: ok" || { echo "plan gate: FAILED" >&2; exit 1; }
