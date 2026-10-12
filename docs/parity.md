@@ -1,0 +1,29 @@
+# Parity with lex-code, feature by feature
+
+The goal (epic #8, evaluation #9) is that cancho-code does what lex-code does, so the two can be measured on the same backlog. This file is the map: each lex-code feature, what cancho-code has today, what it needs from cancho, and the **atomic gate** that proves the feature alone, before it is composed with another. A gate is written before the code it judges and must be shown to fail (a mutation that breaks the feature turns it red). A claim here that turns out false is corrected in place.
+
+Status is measured against `main` of this repository on 2026-10-12. "lex-code" refers to `alpibrusl/lex-code` (its `docs/PACKAGES.md` and `bin/lex-code-overnight`).
+
+| # | Feature | lex-code | cancho-code today | Needs from cancho | Atomic gate |
+|---|---|---|---|---|---|
+| P0 | **Trail**: one record per attempt (agent time, the checker's refusals, the signature, the decision) | session event database; `--lessons` mines it | none: one `[ISSUE_VERDICT]` line (#15) | nothing | stand-in agents (fix, stuck, ceiling) produce exactly the expected records |
+| P1 | **Agent contract**: the refusals reach the agent; a non-zero agent exit is named; a configurable turn timeout; `PATH` | the agent sees the check output | file only (#11, #12, #13) | nothing | a stand-in that echoes its input proves the refusals arrive; one that exits 3 is named, not "looping" |
+| P2 | **Verdicts and exit codes** (`[PROJECT_VERDICT]`, `[PLAN]`, `[ACCEPTANCE]`, exit 0 to 4) | built | `[ISSUE_VERDICT]` only (#5) | nothing | every verdict reachable by a fixture, exit codes asserted |
+| P3 | **Typed plan and plan check** (units with signatures, examples, deps; no cycles; no unbuildable example; no `or true` invariant) | `--package-check`, `[PLAN_CHECK]`, filing is deterministic | none (#2) | `std.json` | accepted and refused plan fixtures, one per rule |
+| P4 | **Unit verification by its own examples** (a unit is done when its examples hold, not when the file checks) | `lex issue verify` | `cancho check` only | `cancho satisfy` (cancho#406, draft cancho#412) | a unit that checks but returns the wrong value is refused |
+| P5 | **Project driver**: next unit by dependency order, re-verify everything that verified, resume keeps verified units | `lex issue next`, `--project` | one file, one issue | P3, P4 | a regression in unit A is caught while building unit B; a killed run resumes without redoing A |
+| P6 | **Hardening**: invariants of the plan checked on generated inputs | built | none | an input generator (design first) | an invariant that fails on one input is reported with that input |
+| P7 | **Acceptance gate**: start the built program, replay the brief's scenarios against it | `--acceptance-check` | none | process spawn (have), an HTTP client (`packages/http-client`) | a program that checks but does not serve fails the gate |
+| P8 | **Integration repair**: failures that exist only when units share a file are handed back as one task | built | none | P5 | a cross-unit conflict is repaired or named |
+| P9 | **Unattended supervisor and report** (rounds, stall detection, thinking toggle, killed-round restore, `REPORT.md`) | `lex-code-overnight` | none | P0, P5 | a killed run restores the last checking copy; the report is read back from the store |
+| P10 | **Lessons mined from trails** | `--lessons` | none | P0 | a stalled fixture's real cause is listed first |
+| P11 | **Hints, patches, fallback provider** | `--hint`, `--patch`, `--fallback` | `--fallback` named in the design | P1 | each flag alone, one fixture each |
+| P12 | **Dashboard** | read-only live view | none | P0 | the trail rendered; no write path |
+
+## Order
+
+P0 first: nothing else can be debugged without the trail. P1 next: the first runs on `qwen3.8:27b-mlx` showed the loop cannot learn from a refusal it never sees (#12) and that a broken agent is read as a looping one (#13). P2, P3, P4 follow; P5 composes them. P6 to P12 wait on a design each.
+
+## What is deliberately different
+
+lex-code builds on lex-lang's op log and `lex issue` commands. cancho has no issue system yet (cancho#403, the vcs store, is a draft). Until it lands, a unit's state lives in a plain file next to the plan, and the board is derived from it, not from an op log. When #403 lands, this is the one place that moves.
