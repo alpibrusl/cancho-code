@@ -17,8 +17,12 @@ edition 7;
 //   agent-seconds  the cap on one agent turn (default 30); past it the run
 //                  ends `unavailable agent`, named, not burned as a failure
 //
-// The snapshot store is `<file>.snapshots/`, so a regression has a clean
-// copy one `snapshot.restore` away, and the ring is bounded at 8.
+// Beside the file the run leaves `<file>.trail.jsonl` (one record per
+// attempt), `<file>.feedback` (the checker's last answer, which the agent
+// reads) and, for a verified state, `<file>.snap0.cho`, `.snap1.cho`, ...
+// so a regression has a clean copy to restore from. No directory: the
+// first version named `<file>.snapshots/snap`, a directory nothing created,
+// so every snapshot write failed unseen until a real run found it.
 //
 // Exit codes (design §6): 0 verified, 1 the budgets named a stop,
 // 2 usage, 3 the checker or the agent is away (a wait: rerun, the
@@ -112,7 +116,7 @@ fn main(world: World) -> [] int {
                         // The snapshot store beside the file.
                         var prefix = buffer.empty(hh, 512);
                         prefix = buffer.append(hh, prefix, file);
-                        prefix = buffer.append(hh, prefix, ".snapshots/snap");
+                        prefix = buffer.append(hh, prefix, ".snap");
                         borrow cmd as &ce in {
                             borrow act as &ae in {
                                 borrow prefix as &pe in {
