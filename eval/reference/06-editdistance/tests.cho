@@ -1,0 +1,333 @@
+edition 7;
+module tests;
+import std.option;
+import std.vec;
+import std.test;
+import editdistance;
+
+fn bytes_eq[&r, &s](a: &r [byte], b: &s [byte]) -> [] bool {
+    if len(a) != len(b) { return false; }
+    var i = 0;
+    while i < len(a) { if a[i] != b[i] { return false; } i = i + 1; }
+    return true;
+}
+
+pub fn test_01_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("", ""), 0);
+    return 0;
+}
+
+pub fn test_02_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("", ""), 100);
+    return 0;
+}
+
+pub fn test_03_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("a", ""), 1);
+    return 0;
+}
+
+pub fn test_04_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("a", ""), 0);
+    return 0;
+}
+
+pub fn test_05_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("", "abc"), 3);
+    return 0;
+}
+
+pub fn test_06_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("", "abc"), 0);
+    return 0;
+}
+
+pub fn test_07_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("kitten", "sitting"), 3);
+    return 0;
+}
+
+pub fn test_08_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("kitten", "sitting"), 57);
+    return 0;
+}
+
+pub fn test_09_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("flaw", "lawn"), 2);
+    return 0;
+}
+
+pub fn test_10_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("flaw", "lawn"), 50);
+    return 0;
+}
+
+pub fn test_11_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("abc", "abc"), 0);
+    return 0;
+}
+
+pub fn test_12_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("abc", "abc"), 100);
+    return 0;
+}
+
+pub fn test_13_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("abc", "abd"), 1);
+    return 0;
+}
+
+pub fn test_14_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("abc", "abd"), 66);
+    return 0;
+}
+
+pub fn test_15_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("abc", "acb"), 2);
+    return 0;
+}
+
+pub fn test_16_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("abc", "acb"), 33);
+    return 0;
+}
+
+pub fn test_17_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("saturday", "sunday"), 3);
+    return 0;
+}
+
+pub fn test_18_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("saturday", "sunday"), 62);
+    return 0;
+}
+
+pub fn test_19_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("intention", "execution"), 5);
+    return 0;
+}
+
+pub fn test_20_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("intention", "execution"), 44);
+    return 0;
+}
+
+pub fn test_21_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("café", "cafe"), 1);
+    return 0;
+}
+
+pub fn test_22_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("café", "cafe"), 75);
+    return 0;
+}
+
+pub fn test_23_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("café", "cafés"), 1);
+    return 0;
+}
+
+pub fn test_24_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("café", "cafés"), 80);
+    return 0;
+}
+
+pub fn test_25_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("日本語", "日本"), 1);
+    return 0;
+}
+
+pub fn test_26_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("日本語", "日本"), 66);
+    return 0;
+}
+
+pub fn test_27_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("日本語", "中国語"), 2);
+    return 0;
+}
+
+pub fn test_28_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("日本語", "中国語"), 33);
+    return 0;
+}
+
+pub fn test_29_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("é", "e"), 1);
+    return 0;
+}
+
+pub fn test_30_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("é", "e"), 0);
+    return 0;
+}
+
+pub fn test_31_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("ü", "ue"), 2);
+    return 0;
+}
+
+pub fn test_32_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("ü", "ue"), 0);
+    return 0;
+}
+
+pub fn test_33_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("naïve", "naive"), 1);
+    return 0;
+}
+
+pub fn test_34_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("naïve", "naive"), 80);
+    return 0;
+}
+
+pub fn test_35_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), 40);
+    return 0;
+}
+
+pub fn test_36_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), 0);
+    return 0;
+}
+
+pub fn test_37_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij", "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghix"), 1);
+    return 0;
+}
+
+pub fn test_38_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij", "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghix"), 98);
+    return 0;
+}
+
+pub fn test_39_edit_distance() -> [] int {
+    test.assert_eq(editdistance.edit_distance("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", ""), 60);
+    return 0;
+}
+
+pub fn test_40_similarity_pct() -> [] int {
+    test.assert_eq(editdistance.similarity_pct("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", ""), 0);
+    return 0;
+}
+
+pub fn test_41_closest[&h](heap: &!h Heap) -> [heap] int {
+    var l = vec.empty(heap, 5, "");
+    l = vec.push(heap, l, "sitting");
+    l = vec.push(heap, l, "mitten");
+    l = vec.push(heap, l, "bitten");
+    l = vec.push(heap, l, "kitchen");
+    var code = 9;
+    borrow l as &lb in {
+        let r = editdistance.closest("kitten", lb);
+        match r { option.Option::None => { code = 1; } option.Option::Some(s) => { if bytes_eq(s, "mitten") { code = 0; } else { code = 2; } } }
+    }
+    vec.drop(heap, l);
+    return code;
+}
+
+pub fn test_42_closest[&h](heap: &!h Heap) -> [heap] int {
+    var l = vec.empty(heap, 1, "");
+    var code = 9;
+    borrow l as &lb in {
+        let r = editdistance.closest("abc", lb);
+        match r { option.Option::None => { code = 0; } option.Option::Some(_) => { code = 1; } }
+    }
+    vec.drop(heap, l);
+    return code;
+}
+
+pub fn test_43_closest[&h](heap: &!h Heap) -> [heap] int {
+    var l = vec.empty(heap, 3, "");
+    l = vec.push(heap, l, "abd");
+    l = vec.push(heap, l, "abe");
+    var code = 9;
+    borrow l as &lb in {
+        let r = editdistance.closest("abc", lb);
+        match r { option.Option::None => { code = 1; } option.Option::Some(s) => { if bytes_eq(s, "abd") { code = 0; } else { code = 2; } } }
+    }
+    vec.drop(heap, l);
+    return code;
+}
+
+pub fn test_44_closest[&h](heap: &!h Heap) -> [heap] int {
+    var l = vec.empty(heap, 2, "");
+    l = vec.push(heap, l, "xyz");
+    var code = 9;
+    borrow l as &lb in {
+        let r = editdistance.closest("abc", lb);
+        match r { option.Option::None => { code = 1; } option.Option::Some(s) => { if bytes_eq(s, "xyz") { code = 0; } else { code = 2; } } }
+    }
+    vec.drop(heap, l);
+    return code;
+}
+
+pub fn test_45_closest[&h](heap: &!h Heap) -> [heap] int {
+    var l = vec.empty(heap, 4, "");
+    l = vec.push(heap, l, "cafe");
+    l = vec.push(heap, l, "caff");
+    l = vec.push(heap, l, "cafés");
+    var code = 9;
+    borrow l as &lb in {
+        let r = editdistance.closest("café", lb);
+        match r { option.Option::None => { code = 1; } option.Option::Some(s) => { if bytes_eq(s, "cafe") { code = 0; } else { code = 2; } } }
+    }
+    vec.drop(heap, l);
+    return code;
+}
+
+pub fn test_46_closest[&h](heap: &!h Heap) -> [heap] int {
+    var l = vec.empty(heap, 4, "");
+    l = vec.push(heap, l, "b");
+    l = vec.push(heap, l, "a");
+    l = vec.push(heap, l, "a");
+    var code = 9;
+    borrow l as &lb in {
+        let r = editdistance.closest("a", lb);
+        match r { option.Option::None => { code = 1; } option.Option::Some(s) => { if bytes_eq(s, "a") { code = 0; } else { code = 2; } } }
+    }
+    vec.drop(heap, l);
+    return code;
+}
+
+pub fn test_47_closest[&h](heap: &!h Heap) -> [heap] int {
+    var l = vec.empty(heap, 4, "");
+    l = vec.push(heap, l, "x");
+    l = vec.push(heap, l, "");
+    l = vec.push(heap, l, "yy");
+    var code = 9;
+    borrow l as &lb in {
+        let r = editdistance.closest("", lb);
+        match r { option.Option::None => { code = 1; } option.Option::Some(s) => { if bytes_eq(s, "") { code = 0; } else { code = 2; } } }
+    }
+    vec.drop(heap, l);
+    return code;
+}
+
+pub fn test_48_closest[&h](heap: &!h Heap) -> [heap] int {
+    var l = vec.empty(heap, 4, "");
+    l = vec.push(heap, l, "日本語");
+    l = vec.push(heap, l, "本日");
+    l = vec.push(heap, l, "日");
+    var code = 9;
+    borrow l as &lb in {
+        let r = editdistance.closest("日本", lb);
+        match r { option.Option::None => { code = 1; } option.Option::Some(s) => { if bytes_eq(s, "日本語") { code = 0; } else { code = 2; } } }
+    }
+    vec.drop(heap, l);
+    return code;
+}
+
+pub fn test_49_closest[&h](heap: &!h Heap) -> [heap] int {
+    var l = vec.empty(heap, 3, "");
+    l = vec.push(heap, l, "same");
+    l = vec.push(heap, l, "same");
+    var code = 9;
+    borrow l as &lb in {
+        let r = editdistance.closest("same", lb);
+        match r { option.Option::None => { code = 1; } option.Option::Some(s) => { if bytes_eq(s, "same") { code = 0; } else { code = 2; } } }
+    }
+    vec.drop(heap, l);
+    return code;
+}

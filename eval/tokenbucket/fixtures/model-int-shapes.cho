@@ -1,0 +1,63 @@
+edition 7;
+
+fn bucket_refill(tokens_milli: int, last_ms: int, now_ms: int, capacity: int, per_sec: int) -> [] int {
+    var elapsed = now_ms - last_ms;
+    if elapsed < 0 {
+        elapsed = 0;
+     }
+    var total = tokens_milli + elapsed * per_sec;
+    let cap = capacity * 1000;
+    if total > cap {
+        total = cap;
+     }
+    return total;
+}
+
+fn bucket_take(tokens_milli: int, cost: int) -> [] int {
+    if cost < 1 {
+        return -1;
+     }
+    let needed = cost * 1000;
+    if tokens_milli < needed {
+        return -1;
+     }
+    return tokens_milli - needed;
+}
+
+fn retry_after_ms(tokens_milli: int, cost: int, per_sec: int, capacity: int) -> [] int {
+    if cost < 1 || cost > capacity {
+        return -1;
+     }
+    let needed = cost * 1000;
+    if tokens_milli >= needed {
+        return 0;
+     }
+    if per_sec <= 0 {
+        return -1;
+     }
+    let missing = needed - tokens_milli;
+    return (missing + per_sec - 1) / per_sec;
+}
+
+fn bucket_allow(tokens_milli: int, last_ms: int, now_ms: int, capacity: int, per_sec: int, cost: int) -> [] int {
+    let refilled = bucket_refill(tokens_milli, last_ms, now_ms, capacity, per_sec);
+    if cost < 1 || cost > capacity {
+        return -1;
+     }
+    let taken = bucket_take(refilled, cost);
+    if taken < 0 {
+        return retry_after_ms(refilled, cost, per_sec, capacity);
+     }
+    return 0;
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi); release(fs); release(net); release(clock); release(signals); release(exec); release(args);
+    release(io); release(heap);
+    let a = bucket_refill(0, 0, 1000, 10, 1);
+    let b = bucket_refill(9500, 0, 1000, 10, 1);
+    let c = retry_after_ms(0, 5, 3, 10);
+    let d = bucket_allow(0, 0, 429, 3, 7, 3);
+    return 0;
+}

@@ -1,0 +1,113 @@
+edition 7;
+module oracle_test;
+import std.option;
+import std.result;
+import std.buffer;
+import std.bytes;
+import ini;
+
+// 0 pass, 1 wrong value, 2 unexpected Err, 3 unexpected Ok
+fn parse_ok[&h](heap: &!h Heap, text: &static [byte], expect: &static [byte]) -> [heap] int {
+    match ini.ini_parse(heap, text) {
+        result.Result::Err(n) => { return 2; }
+        result.Result::Ok(b) => {
+            var st = 1;
+            borrow b as &r in { if bytes.equal(buffer.bytes(r), expect) { st = 0; } }
+            buffer.drop(heap, b);
+            return st;
+        }
+    }
+}
+fn parse_err[&h](heap: &!h Heap, text: &static [byte]) -> [heap] int {
+    match ini.ini_parse(heap, text) {
+        result.Result::Err(n) => { return 0; }
+        result.Result::Ok(b) => { buffer.drop(heap, b); return 3; }
+    }
+}
+fn get_some[&h](heap: &!h Heap, text: &static [byte], s: &static [byte], k: &static [byte], expect: &static [byte]) -> [heap] int {
+    match ini.ini_get(heap, text, s, k) {
+        result.Result::Err(n) => { return 2; }
+        result.Result::Ok(o) => {
+            match o {
+                option.Option::None => { return 1; }
+                option.Option::Some(b) => {
+                    var st = 1;
+                    borrow b as &r in { if bytes.equal(buffer.bytes(r), expect) { st = 0; } }
+                    buffer.drop(heap, b);
+                    return st;
+                }
+            }
+        }
+    }
+}
+fn get_none[&h](heap: &!h Heap, text: &static [byte], s: &static [byte], k: &static [byte]) -> [heap] int {
+    match ini.ini_get(heap, text, s, k) {
+        result.Result::Err(n) => { return 2; }
+        result.Result::Ok(o) => {
+            match o {
+                option.Option::None => { return 0; }
+                option.Option::Some(b) => { buffer.drop(heap, b); return 1; }
+            }
+        }
+    }
+}
+fn get_err[&h](heap: &!h Heap, text: &static [byte], s: &static [byte], k: &static [byte]) -> [heap] int {
+    match ini.ini_get(heap, text, s, k) {
+        result.Result::Err(n) => { return 0; }
+        result.Result::Ok(o) => {
+            match o {
+                option.Option::None => { return 3; }
+                option.Option::Some(b) => { buffer.drop(heap, b); return 3; }
+            }
+        }
+    }
+}
+pub fn test_case_00[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "", ""); }
+pub fn test_case_01[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a=1", "a=1\n"); }
+pub fn test_case_02[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a = 1", "a=1\n"); }
+pub fn test_case_03[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "  a  =  1  ", "a=1\n"); }
+pub fn test_case_04[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a=1\nb=2", "a=1\nb=2\n"); }
+pub fn test_case_05[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "[s]\na=1", "s.a=1\n"); }
+pub fn test_case_06[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "[s]\na=1\n[t]\na=2", "s.a=1\nt.a=2\n"); }
+pub fn test_case_07[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a=1\n[s]\nb=2", "a=1\ns.b=2\n"); }
+pub fn test_case_08[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "; comment\n# other\na=1", "a=1\n"); }
+pub fn test_case_09[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a=1\n\n\nb=2", "a=1\nb=2\n"); }
+pub fn test_case_10[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a=1\r\nb=2\r\n", "a=1\nb=2\n"); }
+pub fn test_case_11[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a=b=c", "a=b=c\n"); }
+pub fn test_case_12[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a=", "a=\n"); }
+pub fn test_case_13[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a=\"quoted value\"", "a=quoted value\n"); }
+pub fn test_case_14[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a=\"  padded  \"", "a=  padded  \n"); }
+pub fn test_case_15[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a=\"half", "a=\"half\n"); }
+pub fn test_case_16[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a=\"\"", "a=\n"); }
+pub fn test_case_17[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a=\"\"\"", "a=\"\n"); }
+pub fn test_case_18[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a = x ; not a comment", "a=x ; not a comment\n"); }
+pub fn test_case_19[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "[ spaced name ]\nk=v", "spaced name.k=v\n"); }
+pub fn test_case_20[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "[a.b]\nc.d=e", "a.b.c.d=e\n"); }
+pub fn test_case_21[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "k=1\nk=2", "k=2\n"); }
+pub fn test_case_22[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "k=1\nj=2\nk=3", "k=3\nj=2\n"); }
+pub fn test_case_23[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "[s]\nk=1\n[s]\nk=2\nj=3", "s.k=2\ns.j=3\n"); }
+pub fn test_case_24[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "[s]\n; c\nk=1\n  # indented comment\nj=2", "s.k=1\ns.j=2\n"); }
+pub fn test_case_25[&h](heap: &!h Heap) -> [heap] int { return parse_err(heap, "é=1"); }
+pub fn test_case_26[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "k=é", "k=é\n"); }
+pub fn test_case_27[&h](heap: &!h Heap) -> [heap] int { return parse_err(heap, "[日本]\nキー=値"); }
+pub fn test_case_28[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a=1\n[s]\n[t]\nb=2", "a=1\nt.b=2\n"); }
+pub fn test_case_29[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "key-with.dash_1=x", "key-with.dash_1=x\n"); }
+pub fn test_case_30[&h](heap: &!h Heap) -> [heap] int { return parse_err(heap, "=novalue"); }
+pub fn test_case_31[&h](heap: &!h Heap) -> [heap] int { return parse_err(heap, "a b=1"); }
+pub fn test_case_32[&h](heap: &!h Heap) -> [heap] int { return parse_err(heap, "[unclosed\na=1"); }
+pub fn test_case_33[&h](heap: &!h Heap) -> [heap] int { return parse_err(heap, "[]\na=1"); }
+pub fn test_case_34[&h](heap: &!h Heap) -> [heap] int { return parse_err(heap, "[a]b]\nk=1"); }
+pub fn test_case_35[&h](heap: &!h Heap) -> [heap] int { return parse_err(heap, "[a=b]\nk=1"); }
+pub fn test_case_36[&h](heap: &!h Heap) -> [heap] int { return parse_err(heap, "just text"); }
+pub fn test_case_37[&h](heap: &!h Heap) -> [heap] int { return parse_err(heap, "a=1\njust text"); }
+pub fn test_case_38[&h](heap: &!h Heap) -> [heap] int { return parse_err(heap, "[s] trailing\na=1"); }
+pub fn test_case_39[&h](heap: &!h Heap) -> [heap] int { return parse_ok(heap, "a=1 \n b=2", "a=1\nb=2\n"); }
+pub fn test_case_40[&h](heap: &!h Heap) -> [heap] int { return get_some(heap, "a=1\n[s]\nk=v\nj = \"two words\"\n[t]\nk=w\n[a.b]\nc=d", "", "a", "1"); }
+pub fn test_case_41[&h](heap: &!h Heap) -> [heap] int { return get_some(heap, "a=1\n[s]\nk=v\nj = \"two words\"\n[t]\nk=w\n[a.b]\nc=d", "s", "k", "v"); }
+pub fn test_case_42[&h](heap: &!h Heap) -> [heap] int { return get_some(heap, "a=1\n[s]\nk=v\nj = \"two words\"\n[t]\nk=w\n[a.b]\nc=d", "s", "j", "two words"); }
+pub fn test_case_43[&h](heap: &!h Heap) -> [heap] int { return get_some(heap, "a=1\n[s]\nk=v\nj = \"two words\"\n[t]\nk=w\n[a.b]\nc=d", "t", "k", "w"); }
+pub fn test_case_44[&h](heap: &!h Heap) -> [heap] int { return get_none(heap, "a=1\n[s]\nk=v\nj = \"two words\"\n[t]\nk=w\n[a.b]\nc=d", "s", "x"); }
+pub fn test_case_45[&h](heap: &!h Heap) -> [heap] int { return get_none(heap, "a=1\n[s]\nk=v\nj = \"two words\"\n[t]\nk=w\n[a.b]\nc=d", "u", "k"); }
+pub fn test_case_46[&h](heap: &!h Heap) -> [heap] int { return get_some(heap, "a=1\n[s]\nk=v\nj = \"two words\"\n[t]\nk=w\n[a.b]\nc=d", "a.b", "c", "d"); }
+pub fn test_case_47[&h](heap: &!h Heap) -> [heap] int { return get_none(heap, "a=1\n[s]\nk=v\nj = \"two words\"\n[t]\nk=w\n[a.b]\nc=d", "", "k"); }
+pub fn test_case_48[&h](heap: &!h Heap) -> [heap] int { return get_err(heap, "[bad", "", "a"); }

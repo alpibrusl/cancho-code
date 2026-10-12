@@ -1,0 +1,150 @@
+edition 7;
+module glob;
+import std.utf8;
+
+// token kinds: 0 star, 1 double star, 2 any one, 3 set, 4 literal char
+pub struct Tok { ok: bool, kind: int, c: int, s: int, e: int, neg: bool, next: int }
+
+// (code point, width). A malformed byte becomes a code point above U+10FFFF so it
+// never equals any pattern character and always advances.
+fn cp[&r](text: &r [byte], at: int) -> [] (int, int) {
+    match utf8.decode(text, at) {
+        utf8.Step::Code(c, w) => { return (c, w); }
+        utf8.Step::Invalid(w) => { return (0x110000 + int_of(text[at]), w); }
+    }
+}
+
+fn bad() -> [] Tok {
+    return Tok { ok: false, kind: 0, c: 0, s: 0, e: 0, neg: false, next: 0 };
+}
+
+// first ']' at or after `from`, or -1
+fn find_close[&r](pat: &r [byte], from: int) -> [] int {
+    var q = from;
+    while q < len(pat) {
+        if int_of(pat[q]) == ']' { return q; }
+        q = q + 1;
+    }
+    return -1;
+}
+
+// Does the set body pat[s..e) hold code point c? Returns 1/0, or -1 if a range is reversed.
+fn set_scan[&r](pat: &r [byte], s: int, e: int, c: int) -> [] int {
+    var q = s;
+    var hit = 0;
+    while q < e {
+        let lo = cp(pat, q);
+        let w = lo.1;
+        if q + w + 1 < e && int_of(pat[q + w]) == '-' {
+            let hi = cp(pat, q + w + 1);
+            if lo.0 > hi.0 { return -1; }
+            if lo.0 <= c && c <= hi.0 { hit = 1; }
+            q = q + w + 1 + hi.1;
+        } else {
+            if lo.0 == c { hit = 1; }
+            q = q + w;
+        }
+    }
+    return hit;
+}
+
+pub fn tok_at[&r](pat: &r [byte], p: int) -> [] Tok {
+    let b = int_of(pat[p]);
+    if b == '*' {
+        if p + 1 < len(pat) && int_of(pat[p + 1]) == '*' {
+            return Tok { ok: true, kind: 1, c: 0, s: 0, e: 0, neg: false, next: p + 2 };
+        }
+        return Tok { ok: true, kind: 0, c: 0, s: 0, e: 0, neg: false, next: p + 1 };
+    }
+    if b == '?' {
+        return Tok { ok: true, kind: 2, c: 0, s: 0, e: 0, neg: false, next: p + 1 };
+    }
+    if b == '\\' {
+        if p + 1 >= len(pat) { return bad(); }
+        let x = cp(pat, p + 1);
+        return Tok { ok: true, kind: 4, c: x.0, s: 0, e: 0, neg: false, next: p + 1 + x.1 };
+    }
+    if b == '[' {
+        var s = p + 1;
+        var neg = false;
+        if s < len(pat) && int_of(pat[s]) == '!' {
+            neg = true;
+            s = s + 1;
+        }
+        let k = find_close(pat, s);
+        if k < 0 { return bad(); }
+        if k == s { return bad(); }
+        if set_scan(pat, s, k, 0) < 0 { return bad(); }
+        return Tok { ok: true, kind: 3, c: 0, s: s, e: k, neg: neg, next: k + 1 };
+    }
+    let x = cp(pat, p);
+    return Tok { ok: true, kind: 4, c: x.0, s: 0, e: 0, neg: false, next: p + x.1 };
+}
+
+pub fn glob_valid[&r](pattern: &r [byte]) -> [] bool {
+    var p = 0;
+    while p < len(pattern) {
+        let t = tok_at(pattern, p);
+        if !t.ok { return false; }
+        p = t.next;
+    }
+    return true;
+}
+
+fn one_ok[&r, &t](pat: &r [byte], tk: Tok, c: int) -> [] bool {
+    if c == '/' { return false; }
+    if tk.kind == 2 { return true; }
+    if tk.kind == 4 { return c == tk.c; }
+    let h = set_scan(pat, tk.s, tk.e, c);
+    if tk.neg { return h == 0; }
+    return h == 1;
+}
+
+pub fn glob_match[&r, &t](pattern: &r [byte], text: &t [byte]) -> [] bool {
+    if !glob_valid(pattern) { return false; }
+    let n = len(text);
+    var result = false;
+    region a {
+        let cur = alloc_slice[a](n + 1, 0);
+        let nxt = alloc_slice[a](n + 1, 0);
+        cur[0] = 1;
+        var p = 0;
+        while p < len(pattern) {
+            let tk = tok_at(pattern, p);
+            p = tk.next;
+            var i = 0;
+            while i <= n { nxt[i] = 0; i = i + 1; }
+            if tk.kind <= 1 {
+                var carry = false;
+                i = 0;
+                while i <= n {
+                    if cur[i] == 1 { carry = true; }
+                    if carry { nxt[i] = 1; }
+                    if i < n {
+                        let x = cp(text, i);
+                        if x.0 == '/' && tk.kind == 0 { carry = false; }
+                        i = i + x.1;
+                    } else {
+                        i = i + 1;
+                    }
+                }
+            } else {
+                i = 0;
+                while i < n {
+                    let x = cp(text, i);
+                    if cur[i] == 1 {
+                        var ok = false;
+                        if tk.kind == 4 && x.0 == tk.c { ok = true; }
+                        if tk.kind != 4 { ok = one_ok(pattern, tk, x.0); }
+                        if ok { nxt[i + x.1] = 1; }
+                    }
+                    i = i + x.1;
+                }
+            }
+            i = 0;
+            while i <= n { cur[i] = nxt[i]; i = i + 1; }
+        }
+        result = cur[n] == 1;
+    }
+    return result;
+}

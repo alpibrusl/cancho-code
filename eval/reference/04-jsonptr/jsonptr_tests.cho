@@ -1,0 +1,842 @@
+edition 7;
+module jsonptr_tests;
+import std.list;
+import std.result;
+import std.test;
+import std.bytes;
+import jsonptr;
+
+fn mk[&h, &r](heap: &!h Heap, s: &r [byte]) -> [heap] Box[[byte]] {
+    let b = box_slice(heap, len(s), byte_of(0));
+    borrow mut b as &!w in { copy_into(contents(w), s); }
+    return b;
+}
+
+fn drop_list[&h](heap: &!h Heap, l: list.List[Box[jsonptr.Token]]) -> [heap] int {
+    match l {
+        list.List::Empty => { return 0; }
+        list.List::Cons(t, rest) => {
+            let jsonptr.Token { held } = unbox(heap, t);
+            unbox_slice(heap, held);
+            let tail = unbox(heap, rest);
+            return 1 + drop_list(heap, tail);
+        }
+    }
+}
+
+fn list_eq[&a, &b](x: &a list.List[Box[jsonptr.Token]], y: &b list.List[Box[jsonptr.Token]]) -> [] bool {
+    match x {
+        list.List::Empty => {
+            match y {
+                list.List::Empty => { return true; }
+                list.List::Cons(_, _) => { return false; }
+            }
+        }
+        list.List::Cons(t, rest) => {
+            match y {
+                list.List::Empty => { return false; }
+                list.List::Cons(u, rest2) => {
+                    if bytes.equal(contents(contents(t).held), contents(contents(u).held)) == false { return false; }
+                    return list_eq(contents(rest), contents(rest2));
+                }
+            }
+        }
+    }
+}
+
+fn parse_ok[&h, &r](heap: &!h Heap, p: &r [byte], exp: list.List[Box[jsonptr.Token]]) -> [heap] bool {
+    match jsonptr.ptr_parse(heap, p) {
+        result.Result::Ok(got) => {
+            var same = false;
+            borrow got as &g in { borrow exp as &e in { same = list_eq(g, e); } }
+            drop_list(heap, got);
+            drop_list(heap, exp);
+            return same;
+        }
+        result.Result::Err(_) => {
+            drop_list(heap, exp);
+            return false;
+        }
+    }
+}
+
+fn parse_err[&h, &r](heap: &!h Heap, p: &r [byte]) -> [heap] bool {
+    match jsonptr.ptr_parse(heap, p) {
+        result.Result::Ok(got) => { drop_list(heap, got); return false; }
+        result.Result::Err(_) => { return true; }
+    }
+}
+
+fn format_is[&h, &r](heap: &!h Heap, toks: list.List[Box[jsonptr.Token]], exp: &r [byte]) -> [heap] bool {
+    var same = false;
+    borrow toks as &t in {
+        let out = jsonptr.ptr_format(heap, t);
+        borrow out as &o in { same = bytes.equal(contents(o), exp); }
+        unbox_slice(heap, out);
+    }
+    drop_list(heap, toks);
+    return same;
+}
+
+fn append_ok[&h, &r, &t, &e](heap: &!h Heap, p: &r [byte], tok: &t [byte], exp: &e [byte]) -> [heap] bool {
+    match jsonptr.ptr_append(heap, p, tok) {
+        result.Result::Ok(b) => {
+            var same = false;
+            borrow b as &o in { same = bytes.equal(contents(o), exp); }
+            unbox_slice(heap, b);
+            return same;
+        }
+        result.Result::Err(_) => { return false; }
+    }
+}
+
+fn append_err[&h, &r, &t](heap: &!h Heap, p: &r [byte], tok: &t [byte]) -> [heap] bool {
+    match jsonptr.ptr_append(heap, p, tok) {
+        result.Result::Ok(b) => { unbox_slice(heap, b); return false; }
+        result.Result::Err(_) => { return true; }
+    }
+}
+
+fn parent_ok[&r, &e](p: &r [byte], exp: &e [byte]) -> [] bool {
+    match jsonptr.ptr_parent(p) {
+        result.Result::Ok(s) => { return bytes.equal(s, exp); }
+        result.Result::Err(_) => { return false; }
+    }
+}
+
+fn parent_err[&r](p: &r [byte]) -> [] bool {
+    match jsonptr.ptr_parent(p) {
+        result.Result::Ok(_) => { return false; }
+        result.Result::Err(_) => { return true; }
+    }
+}
+
+pub fn test_000_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    test.assert(parse_ok(heap, "", e));
+    return 0;
+}
+
+pub fn test_001_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "") }));
+    test.assert(parse_ok(heap, "/", e));
+    return 0;
+}
+
+pub fn test_002_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "") }));
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "") }));
+    test.assert(parse_ok(heap, "//", e));
+    return 0;
+}
+
+pub fn test_003_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "a") }));
+    test.assert(parse_ok(heap, "/a", e));
+    return 0;
+}
+
+pub fn test_004_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "b") }));
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "a") }));
+    test.assert(parse_ok(heap, "/a/b", e));
+    return 0;
+}
+
+pub fn test_005_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "a/b") }));
+    test.assert(parse_ok(heap, "/a~1b", e));
+    return 0;
+}
+
+pub fn test_006_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "a~b") }));
+    test.assert(parse_ok(heap, "/a~0b", e));
+    return 0;
+}
+
+pub fn test_007_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "~1") }));
+    test.assert(parse_ok(heap, "/~01", e));
+    return 0;
+}
+
+pub fn test_008_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "/0") }));
+    test.assert(parse_ok(heap, "/~10", e));
+    return 0;
+}
+
+pub fn test_009_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "") }));
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "a") }));
+    test.assert(parse_ok(heap, "/a/", e));
+    return 0;
+}
+
+pub fn test_010_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "日本") }));
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "é") }));
+    test.assert(parse_ok(heap, "/é/日本", e));
+    return 0;
+}
+
+pub fn test_011_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "") }));
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, " ") }));
+    test.assert(parse_ok(heap, "/ /", e));
+    return 0;
+}
+
+pub fn test_012_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "1") }));
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "0") }));
+    test.assert(parse_ok(heap, "/0/1", e));
+    return 0;
+}
+
+pub fn test_013_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "a//b") }));
+    test.assert(parse_ok(heap, "/a~1~1b", e));
+    return 0;
+}
+
+pub fn test_014_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "~/") }));
+    test.assert(parse_ok(heap, "/~0~1", e));
+    return 0;
+}
+
+pub fn test_015_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(parse_err(heap, "a"));
+    return 0;
+}
+
+pub fn test_016_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(parse_err(heap, "a/b"));
+    return 0;
+}
+
+pub fn test_017_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(parse_err(heap, "~"));
+    return 0;
+}
+
+pub fn test_018_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(parse_err(heap, "/~"));
+    return 0;
+}
+
+pub fn test_019_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(parse_err(heap, "/~2"));
+    return 0;
+}
+
+pub fn test_020_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(parse_err(heap, "/a~"));
+    return 0;
+}
+
+pub fn test_021_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(parse_err(heap, "/a~x/b"));
+    return 0;
+}
+
+pub fn test_022_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(parse_err(heap, "/~/a"));
+    return 0;
+}
+
+pub fn test_023_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(parse_err(heap, "x/"));
+    return 0;
+}
+
+pub fn test_024_ptr_parse[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(parse_err(heap, " /a"));
+    return 0;
+}
+
+pub fn test_025_ptr_format[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    test.assert(format_is(heap, e, ""));
+    return 0;
+}
+
+pub fn test_026_ptr_format[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "") }));
+    test.assert(format_is(heap, e, "/"));
+    return 0;
+}
+
+pub fn test_027_ptr_format[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "a") }));
+    test.assert(format_is(heap, e, "/a"));
+    return 0;
+}
+
+pub fn test_028_ptr_format[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "b") }));
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "a") }));
+    test.assert(format_is(heap, e, "/a/b"));
+    return 0;
+}
+
+pub fn test_029_ptr_format[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "a/b") }));
+    test.assert(format_is(heap, e, "/a~1b"));
+    return 0;
+}
+
+pub fn test_030_ptr_format[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "a~b") }));
+    test.assert(format_is(heap, e, "/a~0b"));
+    return 0;
+}
+
+pub fn test_031_ptr_format[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "~1") }));
+    test.assert(format_is(heap, e, "/~01"));
+    return 0;
+}
+
+pub fn test_032_ptr_format[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "~0") }));
+    test.assert(format_is(heap, e, "/~00"));
+    return 0;
+}
+
+pub fn test_033_ptr_format[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "") }));
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "c~d") }));
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "a/b") }));
+    test.assert(format_is(heap, e, "/a~1b/c~0d/"));
+    return 0;
+}
+
+pub fn test_034_ptr_format[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "é") }));
+    test.assert(format_is(heap, e, "/é"));
+    return 0;
+}
+
+pub fn test_035_ptr_format[&h](heap: &!h Heap) -> [heap] int {
+    var e: list.List[Box[jsonptr.Token]] = list.List::Empty;
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "") }));
+    e = list.push(heap, e, box(heap, jsonptr.Token { held: mk(heap, "") }));
+    test.assert(format_is(heap, e, "//"));
+    return 0;
+}
+
+pub fn test_036_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "", "x", "/x"));
+    return 0;
+}
+
+pub fn test_037_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "", "a/b", "/a~1b"));
+    return 0;
+}
+
+pub fn test_038_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "", "~", "/~0"));
+    return 0;
+}
+
+pub fn test_039_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "", "", "/"));
+    return 0;
+}
+
+pub fn test_040_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "", "é", "/é"));
+    return 0;
+}
+
+pub fn test_041_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/", "x", "//x"));
+    return 0;
+}
+
+pub fn test_042_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/", "a/b", "//a~1b"));
+    return 0;
+}
+
+pub fn test_043_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/", "~", "//~0"));
+    return 0;
+}
+
+pub fn test_044_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/", "", "//"));
+    return 0;
+}
+
+pub fn test_045_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/", "é", "//é"));
+    return 0;
+}
+
+pub fn test_046_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "//", "x", "///x"));
+    return 0;
+}
+
+pub fn test_047_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "//", "a/b", "///a~1b"));
+    return 0;
+}
+
+pub fn test_048_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "//", "~", "///~0"));
+    return 0;
+}
+
+pub fn test_049_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "//", "", "///"));
+    return 0;
+}
+
+pub fn test_050_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "//", "é", "///é"));
+    return 0;
+}
+
+pub fn test_051_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a", "x", "/a/x"));
+    return 0;
+}
+
+pub fn test_052_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a", "a/b", "/a/a~1b"));
+    return 0;
+}
+
+pub fn test_053_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a", "~", "/a/~0"));
+    return 0;
+}
+
+pub fn test_054_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a", "", "/a/"));
+    return 0;
+}
+
+pub fn test_055_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a", "é", "/a/é"));
+    return 0;
+}
+
+pub fn test_056_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a/b", "x", "/a/b/x"));
+    return 0;
+}
+
+pub fn test_057_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a/b", "a/b", "/a/b/a~1b"));
+    return 0;
+}
+
+pub fn test_058_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a/b", "~", "/a/b/~0"));
+    return 0;
+}
+
+pub fn test_059_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a/b", "", "/a/b/"));
+    return 0;
+}
+
+pub fn test_060_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a/b", "é", "/a/b/é"));
+    return 0;
+}
+
+pub fn test_061_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a~1b", "x", "/a~1b/x"));
+    return 0;
+}
+
+pub fn test_062_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a~1b", "a/b", "/a~1b/a~1b"));
+    return 0;
+}
+
+pub fn test_063_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a~1b", "~", "/a~1b/~0"));
+    return 0;
+}
+
+pub fn test_064_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a~1b", "", "/a~1b/"));
+    return 0;
+}
+
+pub fn test_065_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a~1b", "é", "/a~1b/é"));
+    return 0;
+}
+
+pub fn test_066_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a~0b", "x", "/a~0b/x"));
+    return 0;
+}
+
+pub fn test_067_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a~0b", "a/b", "/a~0b/a~1b"));
+    return 0;
+}
+
+pub fn test_068_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a~0b", "~", "/a~0b/~0"));
+    return 0;
+}
+
+pub fn test_069_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a~0b", "", "/a~0b/"));
+    return 0;
+}
+
+pub fn test_070_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a~0b", "é", "/a~0b/é"));
+    return 0;
+}
+
+pub fn test_071_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/~01", "x", "/~01/x"));
+    return 0;
+}
+
+pub fn test_072_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/~01", "a/b", "/~01/a~1b"));
+    return 0;
+}
+
+pub fn test_073_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/~01", "~", "/~01/~0"));
+    return 0;
+}
+
+pub fn test_074_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/~01", "", "/~01/"));
+    return 0;
+}
+
+pub fn test_075_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/~01", "é", "/~01/é"));
+    return 0;
+}
+
+pub fn test_076_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/~10", "x", "/~10/x"));
+    return 0;
+}
+
+pub fn test_077_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/~10", "a/b", "/~10/a~1b"));
+    return 0;
+}
+
+pub fn test_078_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/~10", "~", "/~10/~0"));
+    return 0;
+}
+
+pub fn test_079_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/~10", "", "/~10/"));
+    return 0;
+}
+
+pub fn test_080_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/~10", "é", "/~10/é"));
+    return 0;
+}
+
+pub fn test_081_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a/", "x", "/a//x"));
+    return 0;
+}
+
+pub fn test_082_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a/", "a/b", "/a//a~1b"));
+    return 0;
+}
+
+pub fn test_083_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a/", "~", "/a//~0"));
+    return 0;
+}
+
+pub fn test_084_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a/", "", "/a//"));
+    return 0;
+}
+
+pub fn test_085_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a/", "é", "/a//é"));
+    return 0;
+}
+
+pub fn test_086_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/é/日本", "x", "/é/日本/x"));
+    return 0;
+}
+
+pub fn test_087_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/é/日本", "a/b", "/é/日本/a~1b"));
+    return 0;
+}
+
+pub fn test_088_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/é/日本", "~", "/é/日本/~0"));
+    return 0;
+}
+
+pub fn test_089_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/é/日本", "", "/é/日本/"));
+    return 0;
+}
+
+pub fn test_090_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/é/日本", "é", "/é/日本/é"));
+    return 0;
+}
+
+pub fn test_091_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/ /", "x", "/ //x"));
+    return 0;
+}
+
+pub fn test_092_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/ /", "a/b", "/ //a~1b"));
+    return 0;
+}
+
+pub fn test_093_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/ /", "~", "/ //~0"));
+    return 0;
+}
+
+pub fn test_094_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/ /", "", "/ //"));
+    return 0;
+}
+
+pub fn test_095_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/ /", "é", "/ //é"));
+    return 0;
+}
+
+pub fn test_096_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/0/1", "x", "/0/1/x"));
+    return 0;
+}
+
+pub fn test_097_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/0/1", "a/b", "/0/1/a~1b"));
+    return 0;
+}
+
+pub fn test_098_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/0/1", "~", "/0/1/~0"));
+    return 0;
+}
+
+pub fn test_099_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/0/1", "", "/0/1/"));
+    return 0;
+}
+
+pub fn test_100_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/0/1", "é", "/0/1/é"));
+    return 0;
+}
+
+pub fn test_101_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a~1~1b", "x", "/a~1~1b/x"));
+    return 0;
+}
+
+pub fn test_102_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a~1~1b", "a/b", "/a~1~1b/a~1b"));
+    return 0;
+}
+
+pub fn test_103_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a~1~1b", "~", "/a~1~1b/~0"));
+    return 0;
+}
+
+pub fn test_104_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a~1~1b", "", "/a~1~1b/"));
+    return 0;
+}
+
+pub fn test_105_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/a~1~1b", "é", "/a~1~1b/é"));
+    return 0;
+}
+
+pub fn test_106_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/~0~1", "x", "/~0~1/x"));
+    return 0;
+}
+
+pub fn test_107_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/~0~1", "a/b", "/~0~1/a~1b"));
+    return 0;
+}
+
+pub fn test_108_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/~0~1", "~", "/~0~1/~0"));
+    return 0;
+}
+
+pub fn test_109_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/~0~1", "", "/~0~1/"));
+    return 0;
+}
+
+pub fn test_110_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_ok(heap, "/~0~1", "é", "/~0~1/é"));
+    return 0;
+}
+
+pub fn test_111_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_err(heap, "a", "x"));
+    return 0;
+}
+
+pub fn test_112_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_err(heap, "a/b", "x"));
+    return 0;
+}
+
+pub fn test_113_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_err(heap, "~", "x"));
+    return 0;
+}
+
+pub fn test_114_ptr_append[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(append_err(heap, "/~", "x"));
+    return 0;
+}
+
+pub fn test_115_ptr_parent() -> [] int {
+    test.assert(parent_err(""));
+    return 0;
+}
+
+pub fn test_116_ptr_parent() -> [] int {
+    test.assert(parent_ok("/", ""));
+    return 0;
+}
+
+pub fn test_117_ptr_parent() -> [] int {
+    test.assert(parent_ok("//", "/"));
+    return 0;
+}
+
+pub fn test_118_ptr_parent() -> [] int {
+    test.assert(parent_ok("/a", ""));
+    return 0;
+}
+
+pub fn test_119_ptr_parent() -> [] int {
+    test.assert(parent_ok("/a/b", "/a"));
+    return 0;
+}
+
+pub fn test_120_ptr_parent() -> [] int {
+    test.assert(parent_ok("/a~1b", ""));
+    return 0;
+}
+
+pub fn test_121_ptr_parent() -> [] int {
+    test.assert(parent_ok("/a~0b", ""));
+    return 0;
+}
+
+pub fn test_122_ptr_parent() -> [] int {
+    test.assert(parent_ok("/~01", ""));
+    return 0;
+}
+
+pub fn test_123_ptr_parent() -> [] int {
+    test.assert(parent_ok("/~10", ""));
+    return 0;
+}
+
+pub fn test_124_ptr_parent() -> [] int {
+    test.assert(parent_ok("/a/", "/a"));
+    return 0;
+}
+
+pub fn test_125_ptr_parent() -> [] int {
+    test.assert(parent_ok("/é/日本", "/é"));
+    return 0;
+}
+
+pub fn test_126_ptr_parent() -> [] int {
+    test.assert(parent_ok("/ /", "/ "));
+    return 0;
+}
+
+pub fn test_127_ptr_parent() -> [] int {
+    test.assert(parent_ok("/0/1", "/0"));
+    return 0;
+}
+
+pub fn test_128_ptr_parent() -> [] int {
+    test.assert(parent_ok("/a~1~1b", ""));
+    return 0;
+}
+
+pub fn test_129_ptr_parent() -> [] int {
+    test.assert(parent_ok("/~0~1", ""));
+    return 0;
+}
+
+pub fn test_130_ptr_parent() -> [] int {
+    test.assert(parent_err("a"));
+    return 0;
+}
+
+pub fn test_131_ptr_parent() -> [] int {
+    test.assert(parent_err("a/b"));
+    return 0;
+}
+
+pub fn test_132_ptr_parent() -> [] int {
+    test.assert(parent_err("~"));
+    return 0;
+}
+
+pub fn test_133_ptr_parent() -> [] int {
+    test.assert(parent_err("/~"));
+    return 0;
+}

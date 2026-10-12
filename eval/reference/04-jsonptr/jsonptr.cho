@@ -1,0 +1,188 @@
+edition 7;
+module jsonptr;
+import std.list;
+import std.result;
+
+// Token = owned bytes. A Box[[byte]] is two leaves (pointer + length), and a
+// `match` through a reference cannot bind a payload wider than one leaf, so a
+// token is a Box[Token] (one leaf) wrapping the boxed slice.
+// A token list is List[Box[Token]].
+pub res struct Token { held: Box[[byte]] }
+
+// Errors are static strings.
+
+fn is_tilde(b: byte) -> [] bool { return int_of(b) == 126; }
+fn is_slash(b: byte) -> [] bool { return int_of(b) == 47; }
+
+// Is s[from..to] a token with only valid ~ escapes?
+fn valid_token[&r](s: &r [byte], from: int, to: int) -> [] bool {
+    var i = from;
+    while i < to {
+        if is_tilde(s[i]) {
+            if i + 1 >= to { return false; }
+            let c = int_of(s[i + 1]);
+            if c != 48 && c != 49 { return false; }
+            i = i + 2;
+        } else {
+            i = i + 1;
+        }
+    }
+    return true;
+}
+
+fn valid_pointer[&r](p: &r [byte]) -> [] bool {
+    if len(p) == 0 { return true; }
+    if is_slash(p[0]) == false { return false; }
+    var start = 1;
+    var i = 1;
+    while i <= len(p) {
+        if i == len(p) || is_slash(p[i]) {
+            if valid_token(p, start, i) == false { return false; }
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+// Bytes after unescaping s[from..to] (already validated).
+fn unesc_len[&r](s: &r [byte], from: int, to: int) -> [] int {
+    var n = 0;
+    var i = from;
+    while i < to {
+        if is_tilde(s[i]) { i = i + 2; } else { i = i + 1; }
+        n = n + 1;
+    }
+    return n;
+}
+
+fn make_token[&h, &r](heap: &!h Heap, s: &r [byte], from: int, to: int) -> [heap] Box[[byte]] {
+    let b = box_slice(heap, unesc_len(s, from, to), byte_of(0));
+    borrow mut b as &!w in {
+        let out = contents(w);
+        var i = from;
+        var o = 0;
+        while i < to {
+            if is_tilde(s[i]) {
+                if int_of(s[i + 1]) == 48 { out[o] = byte_of(126); } else { out[o] = byte_of(47); }
+                i = i + 2;
+            } else {
+                out[o] = s[i];
+                i = i + 1;
+            }
+            o = o + 1;
+        }
+    }
+    return b;
+}
+
+pub fn ptr_parse[&h, &r](heap: &!h Heap, p: &r [byte]) -> [heap] result.Result[list.List[Box[Token]], &static [byte]] {
+    if len(p) == 0 {
+        return result.Result::Ok(list.List::Empty);
+    }
+    if is_slash(p[0]) == false {
+        return result.Result::Err("pointer must be empty or start with /");
+    }
+    if valid_pointer(p) == false {
+        return result.Result::Err("invalid ~ escape");
+    }
+    // Walk from the end, pushing to the front, so the order comes out right.
+    var acc: list.List[Box[Token]] = list.List::Empty;
+    var end = len(p);
+    var i = len(p) - 1;
+    while i >= 0 {
+        if is_slash(p[i]) {
+            acc = list.push(heap, acc, box(heap, Token { held: make_token(heap, p, i + 1, end) }));
+            end = i;
+        }
+        i = i - 1;
+    }
+    return result.Result::Ok(acc);
+}
+
+fn esc_extra[&r](s: &r [byte]) -> [] int {
+    var n = 0;
+    var i = 0;
+    while i < len(s) {
+        if is_tilde(s[i]) || is_slash(s[i]) { n = n + 1; }
+        i = i + 1;
+    }
+    return n;
+}
+
+// Write "/" + escaped s at out[pos..]; return new pos.
+fn put_token[&r, &w](s: &r [byte], out: &!w [byte], pos: int) -> [] int {
+    var o = pos;
+    out[o] = byte_of(47);
+    o = o + 1;
+    var i = 0;
+    while i < len(s) {
+        if is_tilde(s[i]) {
+            out[o] = byte_of(126); out[o + 1] = byte_of(48); o = o + 2;
+        } else {
+            if is_slash(s[i]) {
+                out[o] = byte_of(126); out[o + 1] = byte_of(49); o = o + 2;
+            } else {
+                out[o] = s[i]; o = o + 1;
+            }
+        }
+        i = i + 1;
+    }
+    return o;
+}
+
+fn format_len[&l](tokens: &l list.List[Box[Token]]) -> [] int {
+    match tokens {
+        list.List::Empty => { return 0; }
+        list.List::Cons(t, rest) => {
+            let s = contents(contents(t).held);
+            return 1 + len(s) + esc_extra(s) + format_len(contents(rest));
+        }
+    }
+}
+
+fn format_fill[&l, &w](tokens: &l list.List[Box[Token]], out: &!w [byte], pos: int) -> [] int {
+    match tokens {
+        list.List::Empty => { return pos; }
+        list.List::Cons(t, rest) => {
+            let next = put_token(contents(contents(t).held), out, pos);
+            return format_fill(contents(rest), out, next);
+        }
+    }
+}
+
+pub fn ptr_format[&h, &l](heap: &!h Heap, tokens: &l list.List[Box[Token]]) -> [heap] Box[[byte]] {
+    let b = box_slice(heap, format_len(tokens), byte_of(0));
+    borrow mut b as &!w in {
+        format_fill(tokens, contents(w), 0);
+    }
+    return b;
+}
+
+pub fn ptr_append[&h, &r, &t](heap: &!h Heap, p: &r [byte], token: &t [byte]) -> [heap] result.Result[Box[[byte]], &static [byte]] {
+    if valid_pointer(p) == false {
+        return result.Result::Err("invalid pointer");
+    }
+    let b = box_slice(heap, len(p) + 1 + len(token) + esc_extra(token), byte_of(0));
+    borrow mut b as &!w in {
+        let out = contents(w);
+        copy_into(out[0..len(p)], p);
+        put_token(token, out, len(p));
+    }
+    return result.Result::Ok(b);
+}
+
+// The result borrows from p: no allocation.
+pub fn ptr_parent[&r](p: &r [byte]) -> [] result.Result[&r [byte], &static [byte]] {
+    if valid_pointer(p) == false {
+        return result.Result::Err("invalid pointer");
+    }
+    if len(p) == 0 {
+        return result.Result::Err("the root has no parent");
+    }
+    var i = len(p) - 1;
+    while is_slash(p[i]) == false {
+        i = i - 1;
+    }
+    return result.Result::Ok(p[0..i]);
+}
