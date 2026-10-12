@@ -1,0 +1,135 @@
+edition 7;
+
+module acceptance;
+
+// `acceptance` — an optional command that runs on the file after the checker
+// verifies it (docs/parity.md P4a). The checker answers "does it type-check";
+// a brief says more than that (a task that wants an `Option` and gets an `int`
+// type-checks), and the first end-to-end audit found exactly that: three
+// builds `verified`, none meeting the brief's shapes. The acceptance command
+// is where a brief's own examples go.
+//
+// It is a shell command with the project file appended, run like the agent
+// (`/bin/sh -c`, standard error folded into standard output, bounded output,
+// a deadline): exit 0 holds, anything else does not. A failure becomes a
+// signature, `acceptance:` and the first line it printed, so the loop's own
+// stops (the attempt ceiling, the same-signature rule) apply to it unchanged;
+// its output reaches the agent through `<project>.acceptance`, appended to
+// the feedback before the next turn.
+
+import std.buffer;
+import std.process;
+
+// How one run of the acceptance command ended: `held` is 0 when it exited 0,
+// 1 when it exited non-zero, 2 when it timed out or could not run; `why` is
+// the signature (empty when it held), `said` everything it printed.
+pub res struct Result {
+    held: int,
+    why: buffer.Buffer,
+    said: buffer.Buffer,
+}
+
+pub fn drop[&h](heap: &!h Heap, r: Result) -> [heap] int {
+    let Result { held, why, said } = r;
+    buffer.drop(heap, why);
+    buffer.drop(heap, said);
+    return 0;
+}
+
+// `acceptance:` and the first line of `out` (at most 160 bytes), or
+// `acceptance:exit` when it printed nothing.
+fn line_sig[&h, &o](heap: &!h Heap, sig: buffer.Buffer, out: &o [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, sig, "acceptance:");
+    var i = 0;
+    var wrote = 0;
+    var going = true;
+    while going && i < len(out) && i < 160 {
+        let c = int_of(out[i]);
+        if c == 10 || c == 13 {
+            going = false;
+        } else {
+            b = buffer.push(heap, b, out[i]);
+            wrote = wrote + 1;
+            i = i + 1;
+        }
+    }
+    if wrote == 0 {
+        b = buffer.append(heap, b, "exit");
+    }
+    return b;
+}
+
+pub fn run[&h, &x, &c, &k, &p](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, text: &k [byte], file: &p [byte], most: int, timeout: int) -> [heap, exec(""), clock, poll] Result {
+    var argv = buffer.empty(heap, len(text) + len(file) + 32);
+    argv = buffer.append(heap, argv, "-c\0exec 2>&1; ");
+    argv = buffer.append(heap, argv, text);
+    argv = buffer.append(heap, argv, " ");
+    argv = buffer.append(heap, argv, file);
+    argv = buffer.append(heap, argv, "\0");
+    var held = 2;
+    var why = buffer.empty(heap, 64);
+    var said = buffer.empty(heap, 16);
+    match process.channels() {
+        process.Channels::Failed(e) => {
+            why = buffer.append(heap, why, "acceptance:error");
+        }
+        process.Channels::Ok(to_child, child_in, from_child, child_out) => {
+            borrow argv as &av in {
+                match exec_spawn(exec, "/bin/sh", buffer.bytes(av), "", Stdio::Pipe(child_in), Stdio::Pipe(child_out), Stdio::Null) {
+                    Spawned::Failed(e) => {
+                        process.close(to_child, from_child);
+                        why = buffer.append(heap, why, "acceptance:error");
+                    }
+                    Spawned::Ok(child) => {
+                        let (out, ran) = process.capture(heap, clock, child, to_child, from_child, "", most, timeout);
+                        buffer.drop(heap, said);
+                        said = out;
+                        match ran {
+                            process.Ran::Code(n) => {
+                                if n == 0 {
+                                    held = 0;
+                                } else {
+                                    held = 1;
+                                    borrow said as &sb in {
+                                        why = line_sig(heap, why, buffer.bytes(sb));
+                                    }
+                                }
+                            }
+                            process.Ran::TimedOut => {
+                                why = buffer.append(heap, why, "acceptance:timeout");
+                            }
+                            process.Ran::TooMuch => {
+                                why = buffer.append(heap, why, "acceptance:output");
+                            }
+                            process.Ran::Signaled(s) => {
+                                why = buffer.append(heap, why, "acceptance:signal");
+                            }
+                            process.Ran::Failed(e) => {
+                                why = buffer.append(heap, why, "acceptance:error");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    buffer.drop(heap, argv);
+    return Result { held: held, why: why, said: said };
+}
+
+// The note the agent reads: `out` after a header, written whole to `path`;
+// an empty `out` leaves the file empty (the acceptance held, or has not run).
+pub fn note[&h, &z, &p, &o](heap: &!h Heap, fs: &z Fs(""), path: &p [byte], out: &o [byte]) -> [heap, fs_write("")] int {
+    var b = buffer.empty(heap, len(out) + 64);
+    if len(out) > 0 {
+        b = buffer.append(heap, b, "The acceptance check failed. Its output:\n");
+        b = buffer.append(heap, b, out);
+        b = buffer.append(heap, b, "\n");
+    }
+    var r = -1;
+    borrow b as &bb in {
+        r = fs_write(fs, path, buffer.bytes(bb));
+    }
+    buffer.drop(heap, b);
+    return r;
+}

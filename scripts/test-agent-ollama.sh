@@ -21,11 +21,22 @@ d=$(mktemp -d -t cc-ollama-d-XXXXXX)
 cat > "$d/stub.py" <<'PY'
 import http.server, json, sys
 out = sys.argv[1]
+n_requests = 0
 class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         body = self.rfile.read(int(self.headers["Content-Length"]))
         open(out + "/request.json", "wb").write(body)
-        answer = {"response": "```cancho\nedition 7;\nfn fixed() -> [] int { return 1; }\n```\n", "eval_count": 7}
+        global n_requests
+        n_requests += 1
+        try:
+            reply = open(out + "/response.%d.txt" % n_requests).read()   # a case may script the answers in order
+        except OSError:
+            reply = None
+        try:
+            if reply is None: reply = open(out + "/response.txt").read()      # or set one answer
+        except OSError:
+            reply = "```cancho\nedition 7;\nfn fixed() -> [] int { return 1; }\n```\n"
+        answer = {"response": reply, "eval_count": 7}
         data = json.dumps(answer).encode()
         self.send_response(200); self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
@@ -77,6 +88,81 @@ printf 'edition 7;\nfn keep() -> [] int { return 2; }\n' > "$d/keep.cho"; cp "$d
 env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/keep.cho" >/dev/null 2>&1; rc=$?
 [ "$rc" != 0 ] || { echo "FAIL: away: exit code 0 with no server" >&2; fail=1; }
 expect "away: the file is untouched" "$(cat "$d/keep.cho")" "$(cat "$d/before.cho")"
+
+# bound: generation is capped (num_predict), because an unbounded generation held the first real acceptance run for 900 s on one turn
+expect "request: generation is bounded" "$(printf '%s' "$req" | python3 -c "import json,sys; print(json.load(sys.stdin)['options'].get('num_predict'))")" 4096
+
+# fences: a model often explains first; the file is the fenced block, not the prose around it
+python3 "$d/stub.py" "$d" & stub=$!
+rm -f "$d/port"; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
+printf 'Here is the corrected program:\n\n```cancho\nedition 7;\nfn good() -> [] int { return 3; }\n```\n\nIt returns three.\n' > "$d/response.txt"
+printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/prose.cho"
+env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/prose.cho" >/dev/null 2>&1
+expect "fences: prose around a fenced block" "$(cat "$d/prose.cho")" "edition 7;
+fn good() -> [] int { return 3; }"
+printf 'edition 7;\nfn plain() -> [] int { return 4; }\n' > "$d/response.txt"
+printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/plain.cho"
+env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/plain.cho" >/dev/null 2>&1
+expect "fences: an answer with no fence is the file" "$(cat "$d/plain.cho")" "edition 7;
+fn plain() -> [] int { return 4; }"
+# an unopened fence (code, then a closing fence) and an unclosed one (a fence, then code): the stray fence must not stay in the file
+printf 'edition 7;\nfn unopened() -> [] int { return 5; }\n```\n' > "$d/response.txt"
+printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/unopened.cho"
+env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/unopened.cho" >/dev/null 2>&1
+expect "fences: a closing fence with no opening one is dropped" "$(cat "$d/unopened.cho")" "edition 7;
+fn unopened() -> [] int { return 5; }"
+printf '```cancho\nedition 7;\nfn unclosed() -> [] int { return 6; }\n' > "$d/response.txt"
+printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/unclosed.cho"
+env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/unclosed.cho" >/dev/null 2>&1
+expect "fences: an opening fence with no closing one is dropped" "$(cat "$d/unclosed.cho")" "edition 7;
+fn unclosed() -> [] int { return 6; }"
+printf '```cancho\nedition 7;\nfn small() -> [] int { return 1; }\n```\nand also\n```\nedition 7;\nfn big() -> [] int { return 2; }\nfn main2() -> [] int { return 0; }\n```\n' > "$d/response.txt"
+printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/two.cho"
+env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/two.cho" >/dev/null 2>&1
+expect "fences: with several blocks the longest is the file" "$(sed -n 2p "$d/two.cho")" "fn big() -> [] int { return 2; }"
+kill $stub 2>/dev/null; wait $stub 2>/dev/null
+rm -f "$d/response.txt"
+
+# reasoning: a reply with no code in it (the model's own reasoning, cut off) is not a file. It is retried as a fresh sample; the project is
+# never overwritten with prose; and if every sample is prose the agent fails (the driver names that `agent_exit`)
+python3 "$d/stub.py" "$d" & stub=$!
+rm -f "$d/port" "$d"/response*.txt; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
+printf 'Wait, `option.None` and `option.Some` syntax.\nLet me think about the struct.\n' > "$d/response.1.txt"
+printf 'Hmm, one more detail about main.\n' > "$d/response.2.txt"
+printf 'edition 7;\nfn third() -> [] int { return 7; }\n' > "$d/response.3.txt"
+printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/retry.cho"
+env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/retry.cho" >/dev/null 2>&1; rc=$?
+expect "reasoning: exit code after two prose samples and one file" "$rc" 0
+expect "reasoning: the third sample is the file" "$(cat "$d/retry.cho")" "edition 7;
+fn third() -> [] int { return 7; }"
+kill $stub 2>/dev/null; wait $stub 2>/dev/null
+python3 "$d/stub.py" "$d" & stub=$!
+rm -f "$d/port" "$d"/response*.txt; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
+printf 'Wait, I think the answer is long.\n' > "$d/response.txt"
+printf 'edition 7;\nfn keep() -> [] int { return 8; }\n' > "$d/prose.cho"; cp "$d/prose.cho" "$d/prose.before"
+env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/prose.cho" >/dev/null 2>&1; rc=$?
+[ "$rc" != 0 ] || { echo "FAIL: reasoning: exit code 0 when every sample was prose" >&2; fail=1; }
+expect "reasoning: the file is untouched" "$(cat "$d/prose.cho")" "$(cat "$d/prose.before")"
+# a leaked reasoning marker: the program, then a closing fence and `</think>` (seen on the first real acceptance runs: it left a stray
+# backtick at the end of the file), or reasoning, `</think>`, then the program
+printf 'edition 7;\nfn before() -> [] int { return 10; }\n```\n</think>\n' > "$d/response.txt"
+printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/think1.cho"
+env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/think1.cho" >/dev/null 2>&1
+expect "think: a closing fence and </think> after the program are dropped" "$(cat "$d/think1.cho")" "edition 7;
+fn before() -> [] int { return 10; }"
+printf 'Let me think: edition 7; is the header.\n</think>\n\nedition 7;\nfn after_tag() -> [] int { return 11; }\n' > "$d/response.txt"
+printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/think2.cho"
+env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/think2.cho" >/dev/null 2>&1
+expect "think: the program after </think> is the file, not a mention in the reasoning" "$(cat "$d/think2.cho")" "edition 7;
+fn after_tag() -> [] int { return 11; }"
+# a preamble before the code, with no fence: the file starts at the edition line
+printf 'Here you go.\n\nedition 7;\nfn after() -> [] int { return 9; }\n' > "$d/response.txt"
+printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/pre.cho"
+env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/pre.cho" >/dev/null 2>&1
+expect "reasoning: a preamble before the code is cut" "$(cat "$d/pre.cho")" "edition 7;
+fn after() -> [] int { return 9; }"
+kill $stub 2>/dev/null; wait $stub 2>/dev/null
+rm -f "$d"/response*.txt
 
 # primer: OLLAMA_PRIMER names a file whose text goes first in the prompt (the intended one is `cancho agent-guidelines > file`: the
 # language's own page for an agent, generated from the binary); without it the prompt has no primer
