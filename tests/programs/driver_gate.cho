@@ -36,10 +36,14 @@ fn main(world: World) -> [] int {
     var mode = "";
     var checker_path = "";
     var dir = "";
+    var custom_agent = "";
     borrow args as &g in {
         mode = arg(g, 1);
         checker_path = arg(g, 2);
         dir = arg(g, 3);
+        if arg_count(g) > 4 {
+            custom_agent = arg(g, 4);
+        }
     }
     borrow exec as &x in {
         borrow clock as &c in {
@@ -74,6 +78,14 @@ fn main(world: World) -> [] int {
                                 agent = buffer.append(hh, agent, "/fixed.cho ");
                                 agent = buffer.append(hh, agent, dir);
                                 agent = buffer.append(hh, agent, "/project.cho\0");
+                            }
+                            if bytes.equal(mode, "custom") {
+                                // The agent is whatever shell text the harness hands in
+                                // (argv 4): one stand-in per case of the agent contract
+                                // (scripts/test-agent.sh), no fixture of its own.
+                                agent = buffer.append(hh, agent, "-c\0");
+                                agent = buffer.append(hh, agent, custom_agent);
+                                agent = buffer.append(hh, agent, "\0");
                             }
                             if bytes.equal(mode, "stuck") {
                                 agent = buffer.append(hh, agent, "-c\0true\0");

@@ -103,6 +103,17 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
                         let agent_ms = clock_ms(clock) - t0;
                         match agent_ran {
                             process.Ran::Code(n) => {
+                                if n != 0 {
+                                    // The agent itself failed (a script that could not run
+                                    // its model, a missing tool): named in its own verdict
+                                    // and in the trail, not read as a looping model.
+                                    borrow tpath as &tq in {
+                                        note(heap, fs, tq, attempts, agent_ms, "none", "", "agent_exit");
+                                    }
+                                    io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
+                                    ended = Ended::Unavailable;
+                                    going = false;
+                                } else {
                                 // The agent answered; the check is the oracle.
                                 let answer = checker.run(heap, exec, clock, file, check_cmd, 4096, 30000);
                                 let checker.Answer { outcome, sig } = answer;
@@ -247,23 +258,36 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p](heap: &!h Heap, exec: &x Ex
                                         attempts = attempts + 1;
                                     }
                                 }
-                            }
+                                                            }
+}
                             process.Ran::TimedOut => {
+                                borrow tpath as &tq in {
+                                    note(heap, fs, tq, attempts, agent_ms, "none", "", "agent_timeout");
+                                }
                                 io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
                                 ended = Ended::Unavailable;
                                 going = false;
                             }
                             process.Ran::TooMuch => {
+                                borrow tpath as &tq in {
+                                    note(heap, fs, tq, attempts, agent_ms, "none", "", "agent_output");
+                                }
                                 io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
                                 ended = Ended::Unavailable;
                                 going = false;
                             }
                             process.Ran::Signaled(s) => {
+                                borrow tpath as &tq in {
+                                    note(heap, fs, tq, attempts, agent_ms, "none", "", "agent_signal");
+                                }
                                 io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
                                 ended = Ended::Unavailable;
                                 going = false;
                             }
                             process.Ran::Failed(e) => {
+                                borrow tpath as &tq in {
+                                    note(heap, fs, tq, attempts, agent_ms, "none", "", "agent_failed");
+                                }
                                 io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
                                 ended = Ended::Unavailable;
                                 going = false;
