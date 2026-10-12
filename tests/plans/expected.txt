@@ -1,0 +1,21 @@
+# fixture            exit  the [PLAN_ERROR] lines, as rule:unit, in order ("-" = about the plan, or about a unit with no id)
+valid                0
+not-json             1     plan-json:-
+root-shape           1     plan-json:-
+missing-units        1     plan-json:-
+unit-field           1     unit-field:a
+unit-not-object      1     unit-field:-
+duplicate-id         1     duplicate-id:a
+bad-signature        1     bad-signature:a
+bad-signature-no-fn  1     bad-signature:a
+duplicate-function   1     duplicate-function:b
+no-example           1     no-example:a
+example-own          1     example-own:b
+example-callee       1     example-callee:a
+example-shape        1     example-shape:a
+tautology-same       1     tautology:a
+tautology-or-true    1     tautology:a
+unknown-dep          1     unknown-dep:a
+cycle                1     cycle:a
+self-cycle           1     cycle:a
+multi                1     bad-signature:a no-example:a unknown-dep:a
