@@ -65,5 +65,6 @@ jobs:
           sh scripts/test-trail.sh
           sh scripts/test-agent.sh
           sh scripts/test-agent-ollama.sh
+          sh scripts/test-fix.sh
           sh scripts/test-driver.sh
           sh scripts/test-provider.sh

@@ -21,8 +21,9 @@ Ollama agent, and the `fix` front door — all in cancho, all gated.
 
 # Fix a broken program with a local model (no key, no egress).
 ollama pull qwen3.8:27b
-export OLLAMA_MODEL=qwen3.8:27b
-./fix "$CANCHO" demo/wordcount.cho "$(pwd)/scripts/agent-ollama.sh" 4
+# The agent runs with no environment (no exported variable reaches it), so the model
+# is named inside the agent command. The last two arguments: attempts, seconds per turn.
+./fix "$CANCHO" demo/wordcount.cho "OLLAMA_MODEL=qwen3.8:27b $(pwd)/scripts/agent-ollama.sh" 4 300
 [ISSUE_VERDICT]	verified	attempts 2
 ```
 
@@ -55,6 +56,7 @@ CANCHO=<path> scripts/test-snapshot.sh
 CANCHO=<path> scripts/test-trail.sh
 CANCHO=<path> scripts/test-agent.sh
 scripts/test-agent-ollama.sh
+CANCHO=<path> scripts/test-fix.sh
 CANCHO=<path> scripts/test-driver.sh
 CANCHO=<path> CANCHO_PACKAGES=<compiler>/packages scripts/test-provider.sh build
 ```

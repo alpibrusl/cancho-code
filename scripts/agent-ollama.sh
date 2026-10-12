@@ -12,7 +12,10 @@
 # into the answer (issue #12), and the binary panics without a HOME, which the driver's agent does not have (issue #13). The API
 # is asked for the answer only (stream and think off), returns it as one JSON field, and needs no environment.
 #
-#   OLLAMA_MODEL    the model                      (default qwen3.8:27b)
+#   OLLAMA_MODEL    the model                      (default qwen3.8:27b). The driver's agent has NO environment, so
+#                   an exported variable never arrives: write it in the agent command, as
+#                   `fix ... "OLLAMA_MODEL=qwen3.8:27b-mlx scripts/agent-ollama.sh"`. Without it the default is used, and a
+#                   model that is not installed is a 404 and `agent_exit` (found on the first end-to-end run).
 #   OLLAMA_URL      the server                     (default http://localhost:11434)
 #   OLLAMA_NUM_CTX  the context window in tokens   (default 8192)
 #
