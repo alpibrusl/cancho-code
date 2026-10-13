@@ -7,6 +7,7 @@
 #   rewrite   the project file becomes the model's answer, with a markdown fence stripped
 #   env       it works with no environment at all (env -i): the driver gives its agent none, and ollama panics without a HOME
 #   task      <project>.task, when there is one, goes in the prompt ahead of the file (a project unit; docs/project.md)
+#   truncated a reply cut off by the generation bound (done_reason "length") is not a sample: retried, never written
 #   primer    OLLAMA_PRIMER names a file that goes first in the prompt; an unreadable one is an error, not a silent skip
 #   away      a server that is not there is a non-zero exit and the file is left as it was (the driver names it `agent_exit`)
 #
@@ -37,7 +38,11 @@ class H(http.server.BaseHTTPRequestHandler):
             if reply is None: reply = open(out + "/response.txt").read()      # or set one answer
         except OSError:
             reply = "```cancho\nedition 7;\nfn fixed() -> [] int { return 1; }\n```\n"
-        answer = {"response": reply, "eval_count": 7}
+        try:
+            reason = open(out + "/response.%d.reason" % n_requests).read().strip()   # a case may say why the model stopped
+        except OSError:
+            reason = "stop"
+        answer = {"response": reply, "eval_count": 7, "done_reason": reason}
         data = json.dumps(answer).encode()
         self.send_response(200); self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
@@ -109,7 +114,7 @@ expect "task: absent when there is none" "$(grep -c 'UNIT: refill' "$d/request.j
 kill $stub 2>/dev/null; wait $stub 2>/dev/null
 
 # bound: generation is capped (num_predict), because an unbounded generation held the first real acceptance run for 900 s on one turn
-expect "request: generation is bounded" "$(printf '%s' "$req" | python3 -c "import json,sys; print(json.load(sys.stdin)['options'].get('num_predict'))")" 4096
+expect "request: generation is bounded" "$(printf '%s' "$req" | python3 -c "import json,sys; print(json.load(sys.stdin)['options'].get('num_predict'))")" 8192
 
 # fences: a model often explains first; the file is the fenced block, not the prose around it
 python3 "$d/stub.py" "$d" & stub=$!
@@ -182,6 +187,29 @@ expect "reasoning: a preamble before the code is cut" "$(cat "$d/pre.cho")" "edi
 fn after() -> [] int { return 9; }"
 kill $stub 2>/dev/null; wait $stub 2>/dev/null
 rm -f "$d"/response*.txt
+
+# truncated: a reply that stopped because it hit the generation bound (done_reason "length") is cut off mid-program, not an answer. Written
+# to the project it left `expected ..., found end of file` as the refusal, which a model cannot act on (the first CSV runs: 7 of 12 units).
+python3 "$d/stub.py" "$d" & stub=$!
+rm -f "$d/port" "$d"/response*.txt "$d"/response*.reason; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
+printf 'edition 7;\nfn cut_off() -> [] int {\n    var i = 0;\n    while i < 3 {\n' > "$d/response.1.txt"; printf 'length' > "$d/response.1.reason"
+printf 'edition 7;\nfn also_cut() -> [] int {\n' > "$d/response.2.txt"; printf 'length' > "$d/response.2.reason"
+printf 'edition 7;\nfn whole() -> [] int { return 12; }\n' > "$d/response.3.txt"
+printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/trunc.cho"
+env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/trunc.cho" >/dev/null 2>&1; rc=$?
+expect "truncated: exit code after two cut-off samples and one whole one" "$rc" 0
+expect "truncated: the whole sample is the file" "$(cat "$d/trunc.cho")" "edition 7;
+fn whole() -> [] int { return 12; }"
+kill $stub 2>/dev/null; wait $stub 2>/dev/null
+python3 "$d/stub.py" "$d" & stub=$!
+rm -f "$d/port" "$d"/response*.txt "$d"/response*.reason; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
+printf 'edition 7;\nfn cut_off() -> [] int {\n' > "$d/response.txt"; printf 'length' > "$d/response.1.reason"; cp "$d/response.1.reason" "$d/response.2.reason"; cp "$d/response.1.reason" "$d/response.3.reason"
+printf 'edition 7;\nfn keep() -> [] int { return 13; }\n' > "$d/alltrunc.cho"; cp "$d/alltrunc.cho" "$d/alltrunc.before"
+env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/alltrunc.cho" >/dev/null 2>&1; rc=$?
+[ "$rc" != 0 ] || { echo "FAIL: truncated: exit code 0 when every sample was cut off" >&2; fail=1; }
+expect "truncated: the file is untouched when every sample was cut off" "$(cat "$d/alltrunc.cho")" "$(cat "$d/alltrunc.before")"
+kill $stub 2>/dev/null; wait $stub 2>/dev/null
+rm -f "$d"/response*.txt "$d"/response*.reason
 
 # primer: OLLAMA_PRIMER names a file whose text goes first in the prompt (the intended one is `cancho agent-guidelines > file`: the
 # language's own page for an agent, generated from the binary); without it the prompt has no primer
