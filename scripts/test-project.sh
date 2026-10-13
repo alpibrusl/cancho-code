@@ -10,6 +10,7 @@
 #   stuck       a never verifies: it fails, an independent unit (b) is still built, its dependent (c) is skipped; stuck, exit 1
 #   option      a unit whose examples are Option results: run as a match; a wrong Some value is refused, the right answer accepted
 #   described   a unit's description reaches the agent in the task, decoded, with the instruction not to write tests
+#   rawtests    a unit's own `tests` replace the example-derived ones; region parameters in a signature are accepted
 #   no plan     an invalid plan: its errors, then no_plan, exit 3, the agent never asked
 #   usage       no arguments, and a plan that is not there: exit 2
 #
@@ -133,6 +134,18 @@ out=$(run "$T/plan-described.json" "$wd" "$rc" "$lg"); r=$?
 expect "described: exit code" "$r" 0
 expect "described: verdict" "$(verdict "$out")" done
 grep -q '^DESCRIPTION:' "$wd/project.cho.task" || { echo "FAIL: described: no DESCRIPTION line in the task" >&2; fail=1; }
+rm -rf "$wd" "$rc"
+
+# rawtests: a unit's own `tests` (cancho source) are appended verbatim to its tests file and used in place of the example-derived ones; a
+# signature with region parameters is accepted. The stand-in's first answer is wrong for the empty string, which only the raw test 2 knows
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf 'printf "\\nfn first[&r](s: &r [byte]) -> [] int { return int_of(s[0]); }\\n" >> "$1"\n' > "$rc/a.1.sh"
+printf 'sed -i.bak "/fn first/d" "$1"; printf "\\nfn first[&r](s: &r [byte]) -> [] int {\\n    if len(s) == 0 {\\n        return -1;\\n    }\\n    return int_of(s[0]);\\n}\\n" >> "$1"\n' > "$rc/a.2.sh"
+out=$(run "$T/plan-rawtests.json" "$wd" "$rc" "$lg"); r=$?
+expect "rawtests: exit code" "$r" 0
+expect "rawtests: verdict" "$(verdict "$out")" done
+expect "rawtests: the empty-string test refused the first answer" "$(order "$lg")" "a a"
+grep -q 'test_a_raw_2' "$wd/tests-a.cho" || { echo "FAIL: rawtests: the unit's own test is not in its tests file" >&2; fail=1; }
 rm -rf "$wd" "$rc"
 
 # no plan

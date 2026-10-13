@@ -1,0 +1,1 @@
+{"name":"x","units":[{"id":"a","signature":"fn first[&r](s: &r [byte]) -> [] int","examples":["first(\"abc\") == 97"],"deps":[]},{"id":"b","signature":"fn dup[&h](heap: &!h Heap, n: int) -> [heap] int","tests":["pub fn test_b_1[&h](heap: &!h Heap) -> [heap] int { test.assert(dup(heap, 2) == 4); return 0; }"],"examples":["dup(heap, 2) == 4"],"deps":[]}]}

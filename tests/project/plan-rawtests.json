@@ -1,0 +1,5 @@
+{"name":"demo","units":[
+ {"id":"a","signature":"fn first[&r](s: &r [byte]) -> [] int","description":"The first byte of s as an int, or -1 for the empty string.",
+  "tests":["pub fn test_a_raw_1() -> [] int { test.assert(first(\"abc\") == 97); return 0; }","pub fn test_a_raw_2() -> [] int { test.assert(first(\"\") == -1); return 0; }"],
+  "examples":["first(\"abc\") == 97","first(\"\") == -1"],"deps":[]}
+]}

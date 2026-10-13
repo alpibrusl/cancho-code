@@ -46,6 +46,8 @@ A unit's **acceptance command** (the `fix` hook, docs: acceptance) is:
 
 The loop's **check command** is `<checker> check --std --output json --backend cranelift <workdir>/project.cho <workdir>/main.cho`.
 
+A unit that carries `tests` (docs/plan.md) uses them instead: each is decoded and appended verbatim to `tests-<id>.cho`, the examples are not turned into tests, and the legend only says the tests are the unit's own. The author is then responsible for unique test names and for what the file imports: the tests file already has `import std.test;`, and must not import what `project.cho` imports (files compiled together share their imports), so `std.result`, `std.buffer`, `std.bytes` are named by `project.cho` and used here as `result.`, `buffer.`, `bytes.`.
+
 ## The loop
 
 1. `plancheck` the plan (src/plan.cho, in process). Invalid: print its `[PLAN_ERROR]` lines and `[PLAN]<TAB>invalid`, then `[PROJECT_VERDICT]<TAB>no_plan`, exit 3. Valid: `[PLAN]<TAB>valid`.

@@ -50,6 +50,10 @@ out=$("$exe" "$root/eval/tokenbucket/plan.json" 2>&1); rc=$?
 expect "tokenbucket plan: exit code" "$rc" 0
 expect "tokenbucket plan: output" "$out" "$(printf '[PLAN]\tvalid')"
 
+out=$("$exe" "$root/eval/duration/plan.json" 2>&1); rc=$?
+expect "duration plan: exit code" "$rc" 0
+expect "duration plan: output" "$out" "$(printf '[PLAN]\tvalid')"
+
 # a plan of 1 MiB or more is refused as a usage error, never read in part (a truncated plan would be checked as if it were the whole)
 big=$(mktemp -t cc-plan-big-XXXXXX)
 python3 -c "
