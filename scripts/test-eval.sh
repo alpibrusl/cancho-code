@@ -8,6 +8,7 @@
 #              running, a behavioural break names the examples that fail
 #   duration   05-duration: the audit (reference 64/64, a mutation caught, a wrong shape scored apart) and the plan's own tests, which the
 #              reference passes through the whole driver and the mutation does not
+#   csv        03-csv: the same for the csv item (audit 50/50 for the reference, a mutation caught, the plan's tests through the driver)
 #   shapes     a real qwen3.8:27b output (eval/tokenbucket/fixtures/model-int-shapes.cho) whose arithmetic is right and whose
 #              shapes are not (int where the brief says Option and a record): strict 24/46, and the lenient line says take 10/10
 #
@@ -87,6 +88,30 @@ for which in reference mutated; do
         expect "duration plan: the reference passes its own tests (verdict)" "$(printf '%s\n' "$out" | grep PROJECT_VERDICT | cut -f2)" done
     else
         [ "$rc" != 0 ] || { echo "FAIL: duration plan: the mutated implementation passed the plan's tests" >&2; fail=1; }
+    fi
+    rm -rf "$wd" "$rcp"
+done
+# 03-csv (the untouched item): the audit, and the plan's own tests through the whole driver
+csv="python3 $root/eval/audit_csv.py"
+out=$($csv "$root/eval/csv/reference.cho" 2>&1); rc=$?
+expect "csv: the reference holds (exit)" "$rc" 0
+expect "csv: the reference scores" "$(printf '%s\n' "$out" | grep TOTAL)" "  TOTAL 50/50"
+sed "s/byte_of(',')/byte_of(';')/g" "$root/eval/csv/reference.cho" > "$d/csv-mutated.cho"
+cmp -s "$d/csv-mutated.cho" "$root/eval/csv/reference.cho" && { echo "FAIL: csv: the mutation changed nothing" >&2; fail=1; }
+out=$($csv "$d/csv-mutated.cho" 2>&1); rc=$?
+[ "$rc" != 0 ] || { echo "FAIL: csv: exit 0 for a broken implementation" >&2; fail=1; }
+case "$(printf '%s\n' "$out" | grep TOTAL)" in "  TOTAL 50/50") echo "FAIL: csv: the mutation scored 50/50" >&2; fail=1 ;; esac
+for which in reference mutated; do
+    wd=$(mktemp -d -t cc-eval-wd-XXXXXX); rcp=$(mktemp -d -t cc-eval-rc-XXXXXX); : > "$wd/agent.log"
+    [ "$which" = reference ] && src="$root/eval/csv/reference.cho" || src="$d/csv-mutated.cho"
+    printf 'cp "%s" "$1"\n' "$src" > "$rcp/parse.sh"; cp "$rcp/parse.sh" "$rcp/format.sh"
+    printf 'edition 7;\nimport std.list;\nimport std.result;\n' > "$wd/project.cho"
+    out=$("$pexe" "$CANCHO" "$root/eval/csv/plan.json" "$wd" "sh $root/tests/project/agent.sh $rcp $wd/agent.log" 2 60 2>&1); rc=$?
+    if [ "$which" = reference ]; then
+        expect "csv plan: the reference passes its own tests (exit)" "$rc" 0
+        expect "csv plan: the reference passes its own tests (verdict)" "$(printf '%s\n' "$out" | grep PROJECT_VERDICT | cut -f2)" done
+    else
+        [ "$rc" != 0 ] || { echo "FAIL: csv plan: the mutated implementation passed the plan's tests" >&2; fail=1; }
     fi
     rm -rf "$wd" "$rcp"
 done

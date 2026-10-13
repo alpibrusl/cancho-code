@@ -1,0 +1,169 @@
+edition 7;
+import std.list;
+import std.result;
+
+// csvline port (list elements are Box[Box[[byte]]]: the compiler cannot match-bind a fat Box[[byte]] through a reference): fields are owned byte boxes, a record is a List of them.
+
+fn drop_fields[&h](heap: &!h Heap, fields: list.List[Box[Box[[byte]]]]) -> [heap] int {
+    match fields {
+        list.List::Empty => { return 0; }
+        list.List::Cons(f, rest) => {
+            unbox_slice(heap, unbox(heap, f));
+            let tail = unbox(heap, rest);
+            return 1 + drop_fields(heap, tail);
+        }
+    }
+}
+
+// scan one field starting at i. Returns the index of the terminating comma or
+// end of line (after the closing quote for a quoted field), or a negative code:
+// -1 unclosed quote, -2 bad char in unquoted field, -3 junk after closing quote.
+fn scan_field[&r](line: &r [byte], i: int) -> [] int {
+    let n = len(line);
+    if i < n && line[i] == byte_of('"') {
+        var k = i + 1;
+        while true {
+            if k >= n { return -1; }
+            if line[k] == byte_of('"') {
+                if k + 1 < n && line[k + 1] == byte_of('"') { k = k + 2; }
+                else {
+                    let after = k + 1;
+                    if after < n && line[after] != byte_of(',') { return -3; }
+                    return after;
+                }
+            } else { k = k + 1; }
+        }
+    }
+    var j = i;
+    while j < n && line[j] != byte_of(',') {
+        if line[j] == byte_of('"') || line[j] == byte_of('\r') || line[j] == byte_of('\n') { return -2; }
+        j = j + 1;
+    }
+    return j;
+}
+
+// length of the decoded field occupying [i, j)
+fn field_len[&r](line: &r [byte], i: int, j: int) -> [] int {
+    if i < j && line[i] == byte_of('"') {
+        var k = i + 1;
+        var out = 0;
+        while k < j - 1 {
+            if line[k] == byte_of('"') { k = k + 2; } else { k = k + 1; }
+            out = out + 1;
+        }
+        return out;
+    }
+    return j - i;
+}
+
+fn make_field[&h, &r](heap: &!h Heap, line: &r [byte], i: int, j: int) -> [heap] Box[[byte]] {
+    let m = field_len(line, i, j);
+    let b = box_slice(heap, m, byte_of(0));
+    borrow mut b as &!w in {
+        let s = contents(w);
+        if i < j && line[i] == byte_of('"') {
+            var k = i + 1;
+            var o = 0;
+            while k < j - 1 {
+                s[o] = line[k];
+                if line[k] == byte_of('"') { k = k + 2; } else { k = k + 1; }
+                o = o + 1;
+            }
+        } else {
+            var k = i;
+            while k < j { s[k - i] = line[k]; k = k + 1; }
+        }
+    }
+    return b;
+}
+
+fn parse_from[&h, &r](heap: &!h Heap, line: &r [byte], i: int) -> [heap] result.Result[list.List[Box[Box[[byte]]]], int] {
+    let j = scan_field(line, i);
+    if j < 0 { return result.Result::Err(0 - j); }
+    let f = make_field(heap, line, i, j);
+    if j >= len(line) {
+        return result.Result::Ok(list.push(heap, list.List::Empty, box(heap, f)));
+    }
+    match parse_from(heap, line, j + 1) {
+        result.Result::Ok(rest) => { return result.Result::Ok(list.push(heap, rest, box(heap, f))); }
+        result.Result::Err(e) => { unbox_slice(heap, f); return result.Result::Err(e); }
+    }
+}
+
+// Err carries a code: 1 unclosed quote, 2 bad char in unquoted field, 3 junk after closing quote.
+fn csv_parse_line[&h, &r](heap: &!h Heap, line: &r [byte]) -> [heap] result.Result[list.List[Box[Box[[byte]]]], int] {
+    return parse_from(heap, line, 0);
+}
+
+fn needs_quote[&r](f: &r [byte]) -> [] bool {
+    var k = 0;
+    while k < len(f) {
+        let c = f[k];
+        if c == byte_of(',') || c == byte_of('"') || c == byte_of('\r') || c == byte_of('\n') { return true; }
+        k = k + 1;
+    }
+    return false;
+}
+
+fn quotes_in[&r](f: &r [byte]) -> [] int {
+    var k = 0;
+    var q = 0;
+    while k < len(f) { if f[k] == byte_of('"') { q = q + 1; } k = k + 1; }
+    return q;
+}
+
+fn out_len[&l](fields: &l list.List[Box[Box[[byte]]]]) -> [] int {
+    match fields {
+        list.List::Empty => { return 0; }
+        list.List::Cons(f, rest) => {
+            let s = contents(contents(f));
+            var m = len(s);
+            if needs_quote(s) { m = m + 2 + quotes_in(s); }
+            match contents(rest) {
+                list.List::Empty => { return m; }
+                list.List::Cons(_, _) => { return m + 1 + out_len(contents(rest)); }
+            }
+        }
+    }
+}
+
+fn write_all[&l, &w](fields: &l list.List[Box[Box[[byte]]]], out: &!w [byte], at: int) -> [] int {
+    match fields {
+        list.List::Empty => { return at; }
+        list.List::Cons(f, rest) => {
+            let s = contents(contents(f));
+            var o = at;
+            if needs_quote(s) {
+                out[o] = byte_of('"'); o = o + 1;
+                var k = 0;
+                while k < len(s) {
+                    out[o] = s[k]; o = o + 1;
+                    if s[k] == byte_of('"') { out[o] = byte_of('"'); o = o + 1; }
+                    k = k + 1;
+                }
+                out[o] = byte_of('"'); o = o + 1;
+            } else {
+                var k = 0;
+                while k < len(s) { out[o] = s[k]; o = o + 1; k = k + 1; }
+            }
+            match contents(rest) {
+                list.List::Empty => { return o; }
+                list.List::Cons(_, _) => {
+                    out[o] = byte_of(','); o = o + 1;
+                    return write_all(contents(rest), out, o);
+                }
+            }
+        }
+    }
+}
+
+fn csv_format_line[&h, &l](heap: &!h Heap, fields: &l list.List[Box[Box[[byte]]]]) -> [heap] Box[[byte]] {
+    let b = box_slice(heap, out_len(fields), byte_of(0));
+    borrow mut b as &!w in {
+        write_all(fields, contents(w), 0);
+    }
+    return b;
+}
+
+
+// ---- test helpers (generated file) ----
