@@ -1,0 +1,3 @@
+{"name":"opt","units":[
+ {"id":"p","signature":"fn pick(x: int) -> [] option.Option[int]","examples":["pick(5) == option.Option::Some(10)","pick(0) == option.Option::None","pick(-3) == option.Option::None"],"deps":[]}
+]}

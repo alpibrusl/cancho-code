@@ -146,6 +146,37 @@ fn set_note[&o, &m, &b, &x](notes: &!o [byte], meta: &!m [int], u: int, broke: &
 // ---- files ----------------------------------------------------------------
 
 // `edition 7;` and the unit's examples as tests, and the legend.
+// The body of one example's test: `() -> [] int { ...; return 0; }`. `CALL == EXPECTED` is `test.assert(CALL == EXPECTED)`, except when
+// EXPECTED is an Option (`option.Option::Some(X)` or `option.Option::None`): the compiler has no `==` on enums, so the call is matched
+// and X compared as a scalar. That is the one enum the examples can name. The tests file does NOT import std.option: files compiled together
+// share their imports, and the project file has to import it for the unit's signature to exist.
+fn example_body[&h, &e](heap: &!h Heap, out: buffer.Buffer, ex: &e [byte]) -> [heap] buffer.Buffer {
+    var b = out;
+    let at = bytes.find(ex, " == ");
+    if at >= 0 {
+        let call = ex[0..at];
+        let want = ex[at + 4..len(ex)];
+        if bytes.find(want, "option.Option::None") == 0 {
+            b = buffer.append(heap, b, "() -> [] int { match ");
+            b = buffer.append(heap, b, call);
+            b = buffer.append(heap, b, " { option.Option::Some(v) => { test.assert(false); } option.Option::None => { test.assert(true); } } return 0; }\n");
+            return b;
+        }
+        if bytes.find(want, "option.Option::Some(") == 0 && len(want) > 20 && int_of(want[len(want) - 1]) == 41 {
+            b = buffer.append(heap, b, "() -> [] int { match ");
+            b = buffer.append(heap, b, call);
+            b = buffer.append(heap, b, " { option.Option::Some(v) => { test.assert(v == ");
+            b = buffer.append(heap, b, want[20..len(want) - 1]);
+            b = buffer.append(heap, b, "); } option.Option::None => { test.assert(false); } } return 0; }\n");
+            return b;
+        }
+    }
+    b = buffer.append(heap, b, "() -> [] int { test.assert(");
+    b = buffer.append(heap, b, ex);
+    b = buffer.append(heap, b, "); return 0; }\n");
+    return b;
+}
+
 fn write_tests[&h, &z, &s, &t, &w](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], tape: &t [int], node: int, wd: &w [byte]) -> [heap, fs_write("")] int {
     let id = json.string_view(src, tape, json.get(src, tape, node, "id"));
     var sid = buffer.empty(heap, 32);
@@ -177,9 +208,7 @@ fn write_tests[&h, &z, &s, &t, &w](heap: &!h Heap, fs: &z Fs(""), src: &s [byte]
             borrow ex as &eb in {
                 tests = buffer.append(heap, tests, "pub fn ");
                 tests = buffer.append(heap, tests, buffer.bytes(nb));
-                tests = buffer.append(heap, tests, "() -> [] int { test.assert(");
-                tests = buffer.append(heap, tests, buffer.bytes(eb));
-                tests = buffer.append(heap, tests, "); return 0; }\n");
+                tests = example_body(heap, tests, buffer.bytes(eb));
                 legend = buffer.append(heap, legend, buffer.bytes(nb));
                 legend = buffer.append(heap, legend, " ");
                 legend = buffer.append(heap, legend, buffer.bytes(eb));
