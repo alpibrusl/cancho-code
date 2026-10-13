@@ -4,6 +4,7 @@
   {
    "id": "refill",
    "signature": "fn bucket_refill(tokens_milli: int, last_ms: int, now_ms: int, capacity: int, per_sec: int) -> [] int",
+   "description": "Amounts are kept in milli-tokens (1 token = 1000 milli-tokens) and times are whole milliseconds. Gaining per_sec tokens per second is exactly per_sec milli-tokens per elapsed millisecond. Returns tokens_milli plus (now_ms - last_ms) * per_sec, but never more than capacity * 1000. If now_ms is earlier than last_ms no time has passed: add nothing.",
    "examples": [
     "bucket_refill(0, 0, 1000, 10, 1) == 1000",
     "bucket_refill(9500, 0, 1000, 10, 1) == 10000",
@@ -15,6 +16,7 @@
   {
    "id": "take",
    "signature": "fn bucket_take(tokens_milli: int, cost: int) -> [] option.Option[int]",
+   "description": "Try to remove cost whole tokens (cost * 1000 milli-tokens). Returns Some(remaining milli-tokens) if tokens_milli is at least cost * 1000. Returns None if there are not enough, or if cost is less than 1.",
    "examples": [
     "bucket_take(5000, 5) == option.Option::Some(0)",
     "bucket_take(4999, 5) == option.Option::None",
@@ -25,6 +27,7 @@
   {
    "id": "retry",
    "signature": "fn retry_after_ms(tokens_milli: int, cost: int, per_sec: int, capacity: int) -> [] int",
+   "description": "How many milliseconds until cost tokens are available. Returns -1 if cost is less than 1 or greater than capacity (it can never succeed). Otherwise 0 if tokens_milli is already at least cost * 1000. Otherwise -1 if per_sec is 0 or less (it will never refill). Otherwise the missing milli-tokens (cost * 1000 minus tokens_milli) divided by per_sec, rounded UP to a whole millisecond.",
    "examples": [
     "retry_after_ms(0, 1, 1, 10) == 1000",
     "retry_after_ms(500, 1, 1, 10) == 500",
@@ -37,6 +40,7 @@
   {
    "id": "allow",
    "signature": "fn bucket_allow(tokens_milli: int, last_ms: int, now_ms: int, capacity: int, per_sec: int, cost: int) -> [] Allow",
+   "description": "Refill first (bucket_refill), then try to take (bucket_take). If cost is less than 1 or greater than capacity: not allowed, the refilled tokens, retry_ms -1. If the take succeeds: allowed true, the remaining milli-tokens, retry_ms 0. Otherwise: allowed false, the refilled tokens unchanged, and retry_ms from retry_after_ms. The record type Allow { allowed: bool, tokens_milli: int, retry_ms: int } is already declared in project.cho.",
    "examples": [
     "bucket_allow(0, 0, 429, 3, 7, 3).allowed == true",
     "bucket_allow(0, 0, 428, 3, 7, 3).tokens_milli == 2996",

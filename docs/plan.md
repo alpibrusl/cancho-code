@@ -20,6 +20,8 @@ A plan is a JSON file. It says what to build as **units** (one function each), w
 }
 ```
 
+A unit may also carry a `description` (a string): what the function means in the author's words, which the signature and the examples cannot say (units of measure, an edge rule). The project driver puts it in the task the agent reads (docs/project.md). It is optional and not checked beyond being a string.
+
 ## Output
 
 One line per problem, then the verdict:
@@ -34,7 +36,7 @@ Exit 0 valid, 1 invalid, 2 usage (no argument, or the file cannot be read). **Ev
 | rule | refused when |
 |---|---|
 | `plan-json` | the file is not JSON, or the root is not an object with a string `name` and an array `units` |
-| `unit-field` | a unit is not an object, or lacks a string `id`, a string `signature`, an array of strings `examples`, an array of strings `deps` |
+| `unit-field` | a unit is not an object, or lacks a string `id`, a string `signature`, an array of strings `examples`, an array of strings `deps`, or has a `description` that is not a string |
 | `duplicate-id` | two units have the same `id` |
 | `bad-signature` | the signature is not `fn NAME(...) -> [` effect row `] TYPE`. A function's effect row is required: `-> int` is refused, `-> [] int` is the pure form |
 | `duplicate-function` | two units declare the same function name ("a function is declared by exactly one unit") |

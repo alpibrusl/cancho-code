@@ -8,6 +8,8 @@
 #   regression  building b breaks a: after b verifies the sweep finds it (`a regressed`), a is rebuilt, the project ends done
 #   resume      the agent fails on c: provider_error, exit 4, the state keeps a and b; a second run keeps them (no rebuild) and builds c
 #   stuck       a never verifies: it fails, an independent unit (b) is still built, its dependent (c) is skipped; stuck, exit 1
+#   option      a unit whose examples are Option results: run as a match; a wrong Some value is refused, the right answer accepted
+#   described   a unit's description reaches the agent in the task, decoded, with the instruction not to write tests
 #   no plan     an invalid plan: its errors, then no_plan, exit 3, the agent never asked
 #   usage       no arguments, and a plan that is not there: exit 2
 #
@@ -107,6 +109,30 @@ expect "stuck: unit lines" "$(units "$out")" "a:building a:failed b:building b:v
 expect "stuck: agent order (b was still built)" "$(order "$lg")" "a a b"
 expect "stuck: the state has b only" "$(order "$wd/state.txt")" "verified b"
 expect "stuck: the failed unit's trail was kept (two records)" "$(wc -l < "$wd/trail-a.jsonl" 2>/dev/null | tr -d ' ')" 2
+rm -rf "$wd" "$rc"
+
+# option: an example whose result is an Option (`f(x) == option.Option::Some(y)` / `option.Option::None`) is run as a match, because the
+# compiler has no `==` on enums; a unit with such a result verifies, and one that answers wrongly on the None example does not
+set -- $(mk); wd=$1; rc=$2; lg=$3
+good='edition 7;\nimport std.option;\n\nfn pick(x: int) -> [] option.Option[int] {\n    if x > 0 {\n        return option.Option::Some(x * 2);\n    }\n    return option.Option::None;\n}\n'
+bad='edition 7;\nimport std.option;\n\nfn pick(x: int) -> [] option.Option[int] {\n    if x > 0 {\n        return option.Option::Some(x * 3);\n    }\n    return option.Option::None;\n}\n'
+printf 'printf "%s" > "$1"\n' "$bad" > "$rc/p.1.sh"
+printf 'printf "%s" > "$1"\n' "$good" > "$rc/p.2.sh"
+out=$(run "$T/plan-option.json" "$wd" "$rc" "$lg"); r=$?
+expect "option: exit code" "$r" 0
+expect "option: verdict" "$(verdict "$out")" done
+expect "option: the wrong answer was refused, then the right one accepted" "$(printf '%s\n' "$out" | grep ACCEPTANCE | cut -f2 | tr '\n' ' ')" "fail pass "
+expect "option: agent order" "$(order "$lg")" "p p"
+rm -rf "$wd" "$rc"
+
+# described: a unit's `description` reaches the agent in the task, decoded (the quote and the newline), and the task tells it not to write
+# tests (the first real run of the tokenbucket plan showed a model pasting `fn test_refill_1` from the feedback into its program)
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf 'grep -q "SENTINEL-DESC \\"quoted\\" word." "$1.task" || exit 3\ngrep -q "^second line of the description" "$1.task" || exit 3\ngrep -q "Do not write tests" "$1.task" || exit 3\nprintf "\\nfn double(x: int) -> [] int { return x * 2; }\\n" >> "$1"\n' > "$rc/a.sh"
+out=$(run "$T/plan-described.json" "$wd" "$rc" "$lg"); r=$?
+expect "described: exit code" "$r" 0
+expect "described: verdict" "$(verdict "$out")" done
+grep -q '^DESCRIPTION:' "$wd/project.cho.task" || { echo "FAIL: described: no DESCRIPTION line in the task" >&2; fail=1; }
 rm -rf "$wd" "$rc"
 
 # no plan
