@@ -6,6 +6,7 @@
 #             thinking is off and streaming is off (the answer is the file, not a trace)
 #   rewrite   the project file becomes the model's answer, with a markdown fence stripped
 #   env       it works with no environment at all (env -i): the driver gives its agent none, and ollama panics without a HOME
+#   task      <project>.task, when there is one, goes in the prompt ahead of the file (a project unit; docs/project.md)
 #   primer    OLLAMA_PRIMER names a file that goes first in the prompt; an unreadable one is an error, not a silent skip
 #   away      a server that is not there is a non-zero exit and the file is left as it was (the driver names it `agent_exit`)
 #
@@ -88,6 +89,24 @@ printf 'edition 7;\nfn keep() -> [] int { return 2; }\n' > "$d/keep.cho"; cp "$d
 env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/keep.cho" >/dev/null 2>&1; rc=$?
 [ "$rc" != 0 ] || { echo "FAIL: away: exit code 0 with no server" >&2; fail=1; }
 expect "away: the file is untouched" "$(cat "$d/keep.cho")" "$(cat "$d/before.cho")"
+
+# task: a project unit leaves <project>.task beside the file (docs/project.md): what to write, with the signature and the examples. It goes in
+# the prompt, ahead of the file; without one the prompt has no task
+python3 "$d/stub.py" "$d" & stub=$!
+rm -f "$d/port" "$d/request.json"; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
+printf 'UNIT: refill\nFUNCTION: bucket_refill\nSIGNATURE: fn bucket_refill(a: int) -> [] int\nEXAMPLES:\nbucket_refill(1) == 2\n' > "$d/unit.cho.task"
+printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$d/unit.cho"
+env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/unit.cho" >/dev/null 2>&1
+treq=$(python3 -c "
+import json; p = json.load(open('$d/request.json'))['prompt']
+i = p.find('UNIT: refill'); j = p.find('fn broken')
+print(i >= 0, j >= 0, 0 <= i < j, 'bucket_refill(1) == 2' in p)")
+expect "task: the task is in the prompt, ahead of the file" "$treq" "True True True True"
+rm -f "$d/unit.cho.task"
+printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$d/unit.cho"
+env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/unit.cho" >/dev/null 2>&1
+expect "task: absent when there is none" "$(grep -c 'UNIT: refill' "$d/request.json")" 0
+kill $stub 2>/dev/null; wait $stub 2>/dev/null
 
 # bound: generation is capped (num_predict), because an unbounded generation held the first real acceptance run for 900 s on one turn
 expect "request: generation is bounded" "$(printf '%s' "$req" | python3 -c "import json,sys; print(json.load(sys.stdin)['options'].get('num_predict'))")" 4096

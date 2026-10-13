@@ -447,3 +447,8 @@ pub fn check[&h, &s](heap: &!h Heap, src: &s [byte]) -> [heap] (buffer.Buffer, i
     }
     return (out, code);
 }
+
+// The byte range of the function name in a signature text, or (-1, -1) (for the project driver).
+pub fn name_range[&t](t: &t [byte]) -> [] (int, int) {
+    return sig_name(t);
+}

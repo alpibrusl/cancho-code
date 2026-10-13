@@ -128,7 +128,7 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q](heap: &!h Heap, exec: &
                 going = false;
             }
             process.Channels::Ok(to_child, child_in, from_child, child_out) => {
-                match exec_spawn(exec, "/bin/sh", agent, "", Stdio::Pipe(child_in), Stdio::Pipe(child_out), Stdio::Null) {
+                match exec_spawn(exec, "/bin/sh", agent, "PATH=/usr/local/bin:/usr/bin:/bin\0", Stdio::Pipe(child_in), Stdio::Pipe(child_out), Stdio::Null) {
                     Spawned::Failed(e) => {
                         process.close(to_child, from_child);
                         ended = Ended::Unavailable;

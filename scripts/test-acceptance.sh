@@ -7,6 +7,8 @@
 #             signature, and the next agent turn can read the acceptance output in <project>.feedback
 #   stuck     it never holds and says the same thing: the same-signature stop ends it (`failed signature`) in two turns; the output is
 #             in <project>.feedback
+#   noise     a varying first line (a linker warning with a temp directory) does not hide the failure: the signature is the failing test
+#   path      the acceptance command runs with an exported PATH, so what it launches (a compiler calling the linker) works
 #   hang      an acceptance that never answers is cut at its own cap and counts as a failure (`acceptance:timeout`), not a hang
 #
 # Stand-ins are one line of shell (tests/programs/driver_gate.cho, mode `custom`, args: agent, agent cap ms, acceptance, acceptance cap ms).
@@ -71,6 +73,24 @@ expect "stuck: records" "$(wc -l < "$t" | tr -d ' ')" 2
 expect "stuck: signature" "$(field "$t" sig 1)" "acceptance:nope"
 expect "stuck: last decision" "$(field "$t" decision 2)" signature
 case "$(cat "$d/project.cho.feedback" 2>/dev/null)" in *nope*) ;; *) echo "FAIL: stuck: the acceptance output is not in the feedback the agent reads" >&2; fail=1 ;; esac
+rm -rf "$d"
+
+# noise: the first line of an acceptance's output is often noise that changes on every run (the linker warns, with a temp directory in
+# its text, on macOS); the signature comes from the informative line, so the same failure twice is the same signature (found when a
+# project unit that was always wrong ran to the ceiling instead of stopping at the second identical failure)
+d=$(fresh)
+out=$(run "$d" "cp $d/fixed.cho $d/project.cho" "echo \"ld: warning: in /tmp/run-\$\$-\$RANDOM/x.o\"; echo \"running 1 test\"; echo \"test test_a_1 ... FAILED\"; false")
+expect "noise: verdict" "$(printf '%s\n' "$out" | grep ISSUE_VERDICT)" "$(printf '[ISSUE_VERDICT]\tfailed\tsignature')"
+t="$d/project.cho.trail.jsonl"
+expect "noise: records" "$(wc -l < "$t" | tr -d ' ')" 2
+expect "noise: signature is the failing test" "$(field "$t" sig 1)" "acceptance:test test_a_1 ... FAILED"
+rm -rf "$d"
+
+# path: the acceptance runs with a PATH that its children inherit. A shell has a default PATH it does not export, so a child (`cancho test`
+# calling `cc` to link) started with none and failed on Linux with "liblto_plugin.so not found" (found by the project gate on a Linux runner)
+d=$(fresh)
+out=$(run "$d" "cp $d/fixed.cho $d/project.cho" "env | grep -q '^PATH=.*/usr/bin' #")
+expect "path: the acceptance's children get a PATH" "$(printf '%s\n' "$out" | grep ACCEPTANCE | cut -f2)" pass
 rm -rf "$d"
 
 # hang

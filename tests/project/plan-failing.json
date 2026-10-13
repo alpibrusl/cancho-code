@@ -1,0 +1,5 @@
+{"name":"demo","units":[
+ {"id":"a","signature":"fn double(x: int) -> [] int","examples":["double(2) == 4"],"deps":[]},
+ {"id":"b","signature":"fn is_big(x: int) -> [] bool","examples":["is_big(11) == true","is_big(3) == false"],"deps":[]},
+ {"id":"c","signature":"fn big_double(x: int) -> [] bool","examples":["big_double(6) == true"],"deps":["a"]}
+]}

@@ -6,6 +6,7 @@
 # a red diff that only a commit of the new file turns green: that commit is the approval.
 #
 #   scripts/check-authority.sh             compare the `fix` front door to docs/authority.json
+#   scripts/check-authority.sh --project   compare the project driver (it spawns the checker and the agent, reads and writes the work directory; no network) to docs/authority-project.json
 #   scripts/check-authority.sh --plan      compare the plan checker (it reads one file and prints; no process, no network) to docs/authority-plan.json
 #   scripts/check-authority.sh --provider  compare the provider (the one reachable host class) to docs/authority-provider.json
 #   scripts/check-authority.sh --update    write the file (after reading what changed); combine with --provider
@@ -33,7 +34,8 @@ for arg in "$@"; do
     --prove) mode=prove ;;
     --provider) variant=provider ;;
     --plan) variant=plan ;;
-    *) echo "usage: $0 [--update | --prove] [--provider | --plan]" >&2; exit 2 ;;
+    --project) variant=project ;;
+    *) echo "usage: $0 [--update | --prove] [--provider | --plan | --project]" >&2; exit 2 ;;
   esac
 done
 
@@ -50,6 +52,10 @@ if [ "$variant" = provider ]; then
 elif [ "$variant" = plan ]; then
   pinned=$here/docs/authority-plan.json
   files=("$here/tests/programs/plancheck.cho" "$here/src/plan.cho")
+elif [ "$variant" = project ]; then
+  pinned=$here/docs/authority-project.json
+  files=("$here/tests/programs/project.cho" "$here/src/project.cho" "$here/src/plan.cho" "$here/src/driver.cho" "$here/src/checker.cho"
+    "$here/src/signature.cho" "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho" "$here/src/acceptance.cho")
 else
   pinned=$here/docs/authority.json
   files=("$here/tests/programs/fix.cho" "$here/src/driver.cho" "$here/src/checker.cho" "$here/src/signature.cho"
@@ -100,6 +106,6 @@ if diff -u "$pinned" "$work/report.json" > "$work/diff"; then
 fi
 cat "$work/diff"
 echo >&2
-echo "check-authority: the authority report changed. If it is intended, read the diff, run $0 --update$([ "$variant" = provider ] && echo " --provider")$([ "$variant" = plan ] && echo " --plan")" >&2
+echo "check-authority: the authority report changed. If it is intended, read the diff, run $0 --update$([ "$variant" = provider ] && echo " --provider")$([ "$variant" = plan ] && echo " --plan")$([ "$variant" = project ] && echo " --project")" >&2
 echo "and commit ${pinned#"$here"/}: that commit is the approval." >&2
 exit 1

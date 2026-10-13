@@ -9,6 +9,9 @@ module acceptance;
 // builds `verified`, none meeting the brief's shapes. The acceptance command
 // is where a brief's own examples go.
 //
+// The one thing the child is given besides its arguments is a PATH, exported: a shell has a default PATH it does not export, so a
+// child it started (`cancho test` calling `cc` to link) had none and failed on Linux with "liblto_plugin.so not found".
+//
 // It is a shell command with the project file appended, run like the agent
 // (`/bin/sh -c`, standard error folded into standard output, bounded output,
 // a deadline): exit 0 holds, anything else does not. A failure becomes a
@@ -18,6 +21,7 @@ module acceptance;
 // the feedback before the next turn.
 
 import std.buffer;
+import std.bytes;
 import std.process;
 
 // How one run of the acceptance command ended: `held` is 0 when it exited 0,
@@ -36,22 +40,64 @@ pub fn drop[&h](heap: &!h Heap, r: Result) -> [heap] int {
     return 0;
 }
 
-// `acceptance:` and the first line of `out` (at most 160 bytes), or
+// The line of `out` that names the failure: the first one that says `FAILED`
+// or `error`, else the first that is not linker noise (`ld:`), else the first.
+// The first line alone is often noise that changes on every run: on macOS the
+// linker warns before every test run, with a temp directory in its text, so no
+// two attempts had the same signature and the same-signature stop could never
+// fire (found when a project unit that was always wrong ran to its ceiling).
+// Returns the start and the end of that line.
+fn pick_line[&o](out: &o [byte]) -> [] (int, int) {
+    var best = -1;
+    var best_end = 0;
+    var fallback = -1;
+    var fallback_end = 0;
+    var first_end = 0;
+    var start = 0;
+    var i = 0;
+    while i <= len(out) {
+        if i == len(out) || int_of(out[i]) == 10 {
+            let line = out[start..i];
+            if len(line) > 0 {
+                if start == 0 || first_end == 0 {
+                    first_end = i;
+                }
+                if best < 0 && (bytes.find(line, "FAILED") >= 0 || bytes.find(line, "error") >= 0) {
+                    best = start;
+                    best_end = i;
+                }
+                if fallback < 0 && bytes.find(line, "ld:") != 0 {
+                    fallback = start;
+                    fallback_end = i;
+                }
+            }
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    if best >= 0 {
+        return (best, best_end);
+    }
+    if fallback >= 0 {
+        return (fallback, fallback_end);
+    }
+    return (0, first_end);
+}
+
+// `acceptance:` and the line `pick_line` chose (at most 160 bytes), or
 // `acceptance:exit` when it printed nothing.
 fn line_sig[&h, &o](heap: &!h Heap, sig: buffer.Buffer, out: &o [byte]) -> [heap] buffer.Buffer {
     var b = buffer.append(heap, sig, "acceptance:");
-    var i = 0;
+    let (from, to) = pick_line(out);
+    var i = from;
     var wrote = 0;
-    var going = true;
-    while going && i < len(out) && i < 160 {
+    while i < to && wrote < 160 {
         let c = int_of(out[i]);
-        if c == 10 || c == 13 {
-            going = false;
-        } else {
+        if c != 13 {
             b = buffer.push(heap, b, out[i]);
             wrote = wrote + 1;
-            i = i + 1;
         }
+        i = i + 1;
     }
     if wrote == 0 {
         b = buffer.append(heap, b, "exit");
@@ -75,7 +121,7 @@ pub fn run[&h, &x, &c, &k, &p](heap: &!h Heap, exec: &x Exec(""), clock: &c Cloc
         }
         process.Channels::Ok(to_child, child_in, from_child, child_out) => {
             borrow argv as &av in {
-                match exec_spawn(exec, "/bin/sh", buffer.bytes(av), "", Stdio::Pipe(child_in), Stdio::Pipe(child_out), Stdio::Null) {
+                match exec_spawn(exec, "/bin/sh", buffer.bytes(av), "PATH=/usr/local/bin:/usr/bin:/bin\0", Stdio::Pipe(child_in), Stdio::Pipe(child_out), Stdio::Null) {
                     Spawned::Failed(e) => {
                         process.close(to_child, from_child);
                         why = buffer.append(heap, why, "acceptance:error");
