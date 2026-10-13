@@ -61,6 +61,7 @@ footer { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(-
     <a href="#why">Why</a>
     <a href="#run">Run it</a>
     <a href="#ollama">Ollama walkthrough</a>
+    <a href="#cases">Run the cases</a>
     <a href="#contracts">Contracts</a>
     <a class="opt" href="https://github.com/alpibrusl/cancho-code">GitHub</a>
   </nav>
@@ -85,18 +86,18 @@ footer { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(-
 <section id="run">
 <h2>Run it</h2>
 <p>Build the <code>fix</code> tool from a checkout of this repository, with the compiler's packages beside it:</p>
-<pre><code>git clone https://github.com/alpibrusl/cancho-code.git
+<pre data-check="build" data-out="fix"><code>git clone https://github.com/alpibrusl/cancho-code.git
 cd cancho-code
-export CANCHO=&lt;path-to-the-cancho-binary&gt;
+export CANCHO=&lt;path-to-the-cancho-binary&gt;      # the commit named in .cancho-rev
 export CANCHO_PACKAGES=&lt;compiler-checkout&gt;/packages
 
 "$CANCHO" build tests/programs/fix.cho \
     src/driver.cho src/checker.cho src/signature.cho \
-    src/loop_check.cho src/snapshot.cho \
+    src/loop_check.cho src/snapshot.cho src/trail.cho src/acceptance.cho \
     --std --backend cranelift -o ./fix</code></pre>
 <p>Then point it at a broken program and an agent:</p>
-<pre><code>./fix "$CANCHO" project.cho "scripts/agent-ollama.sh" 4</code></pre>
-<p>The three arguments are the compiler (by its absolute path — the child of <code>exec_spawn</code> gets no <code>PATH</code> of its own), the file to fix, and the agent: any shell command that edits the file. The fourth is the attempt ceiling. Exit codes: 0 verified, 1 the budgets named a stop, 2 usage, 3 the checker or the agent is away — a wait, rerun.</p>
+<pre><code>./fix "$CANCHO" /abs/path/project.cho "$(pwd)/scripts/agent-ollama.sh" 4</code></pre>
+<p>The three arguments are the compiler (by its absolute path — the child of <code>exec_spawn</code> gets no <code>PATH</code> of its own), the file to fix, and the agent: any shell command that edits the file. The fourth is the attempt ceiling; an optional fifth is the seconds one agent turn may take (default 30), and a sixth is an acceptance command that must also hold before a file counts as verified. Exit codes: 0 verified, 1 the budgets named a stop, 2 usage, 3 the checker or the agent is away — a wait, rerun. Beside the file the run leaves <code>&lt;file&gt;.trail.jsonl</code> (one record per attempt), <code>&lt;file&gt;.feedback</code> (what the agent is shown) and, once verified, <code>&lt;file&gt;.snap0.cho</code>.</p>
 </section>
 
 <section id="ollama">
@@ -153,11 +154,12 @@ EOF</code></pre>
 <pre><code>"$CANCHO" check demo/wordcount.cho --output json --backend cranelift</code></pre>
 
 <h3>3. Run the loop with the local model as the agent</h3>
-<pre><code>export OLLAMA_MODEL=qwen3.8:27b
-./fix "$CANCHO" demo/wordcount.cho "$(pwd)/scripts/agent-ollama.sh" 4</code></pre>
+<pre><code>./fix "$CANCHO" "$(pwd)/demo/wordcount.cho" \
+    "OLLAMA_MODEL=qwen3.8:27b $(pwd)/scripts/agent-ollama.sh" 4 300</code></pre>
+<p class="note"><b>The agent has no environment.</b> Nothing you <code>export</code> reaches it: the driver passes it exactly one variable, <code>PATH</code>. The model name goes inside the agent command, as above (on Apple silicon the installed tag may be <code>qwen3.8:27b-mlx</code>; <code>ollama list</code> shows it). Paths must be absolute and may not contain <code>..</code>.</p>
 <p>What happens, turn by turn:</p>
 <ul>
-  <li>The driver runs <code>scripts/agent-ollama.sh demo/wordcount.cho</code>: the script pipes the file and the instruction ("reply with the complete corrected file") into <code>ollama run qwen3.8:27b</code>, strips any markdown fence, and overwrites the file with the answer.</li>
+  <li>The driver runs <code>scripts/agent-ollama.sh demo/wordcount.cho</code>: the script sends the file, the instruction ("reply with the complete corrected file") and the compiler's current refusals (the driver left them in <code>&lt;file&gt;.feedback</code>) to Ollama's HTTP API, keeps the program out of the reply (it cuts markdown fences and the model's reasoning, and retries a reply that has no program in it or was cut off), and overwrites the file with the answer.</li>
   <li>The driver runs the real <code>cancho check --output json</code> on the result. The model's word is worth nothing here; the checker's JSON is the only oracle.</li>
   <li><code>signature.of</code> turns the refusal into a failure signature — the <code>rule</code> verbatim, the message with its backticked spans kept and numbers normalised — and <code>loop_check.decide</code> decides with the §4 budgets: attempt ceiling 4, same-signature stop at K=2.</li>
   <li>If the model fixes <code>counts</code> and not <code>label</code>: the signature changes ("expected <code>int</code>, found <code>bool</code>" becomes "expected <code>int</code>, found a string"), the counter resets, the loop tries again — a struggling model gets its full budget.</li>
@@ -181,10 +183,107 @@ $ "$CANCHO" check demo/wordcount.cho --output json --backend cranelift
 <pre><code>[ISSUE_VERDICT]	failed	signature
 $ echo $?
 1</code></pre>
-<p>The snapshot ring beside the file (<code>demo/wordcount.cho.snapshots/</code>) holds the newest state that checked clean, so a stopped run loses nothing: fix the prompt, rerun, the loop resumes from what the checker last believed.</p>
+<p>Beside the file, <code>demo/wordcount.cho.trail.jsonl</code> has one line per attempt (how long the agent took, what the checker said, the signature the stop rule compared, what the loop decided), and a verified state is kept as <code>demo/wordcount.cho.snap0.cho</code>: a stopped run explains itself.</p>
 
 <h3>Cloud models</h3>
 <p>The same loop drives a cloud provider over native HTTPS — <code>scripts/test-provider.sh mistral</code> with <code>MISTRAL_API_KEY</code> in the environment runs the end-to-end gate against the real API, the checker still the oracle. The provider is written in cancho on <code>packages/http-client</code> and <code>packages/tls</code>; the key rides the <code>Authorization</code> header and exists nowhere else.</p>
+</section>
+
+<section id="cases">
+<h2>Run the cases: build a library from a plan, then audit it</h2>
+<p>The walkthrough above repairs one file. This section builds whole libraries from the <a href="https://github.com/alpibrusl/cancho-code/issues/9">lex-code backlog</a> with a local model, and grades them against a hidden oracle. Three cases are wired up: <code>07-tokenbucket</code>, <code>05-duration</code> and <code>03-csv</code>. Each is a <em>plan</em> (what to build, unit by unit), a <em>reference</em> (an implementation known to pass), and an <em>audit</em> (the oracle's cases, which the model never sees).</p>
+
+<h3>1. Build the two tools</h3>
+<pre data-check="build" data-out="project"><code>export CANCHO=&lt;path-to-the-cancho-binary&gt;      # the commit named in .cancho-rev
+
+"$CANCHO" build tests/programs/project.cho src/project.cho src/plan.cho \
+    src/driver.cho src/checker.cho src/signature.cho src/loop_check.cho \
+    src/snapshot.cho src/trail.cho src/acceptance.cho \
+    --std --backend cranelift -o ./project</code></pre>
+<pre data-check="build" data-out="plancheck"><code>"$CANCHO" build tests/programs/plancheck.cho src/plan.cho \
+    --std --backend cranelift -o ./plancheck</code></pre>
+
+<h3>2. Prepare the input</h3>
+<p>A run needs four things, none of which the model sees except the first three.</p>
+<table>
+<tr><th>Input</th><th>What it is</th><th>How you get it</th></tr>
+<tr><td>The primer</td><td>the language's own page for an agent, the single biggest lever measured</td><td><code>"$CANCHO" agent-guidelines &gt; guidelines.md</code></td></tr>
+<tr><td>The plan</td><td>units, each with a <code>signature</code>, a <code>description</code>, <code>examples</code> and <code>tests</code>, and <code>deps</code></td><td>written once from the brief; <code>eval/&lt;item&gt;/plan.json</code>. There is no generator yet (lex-code's <code>--package</code>, a model drafting the plan, is not built here): write it, then check it</td></tr>
+<tr><td>The scaffold</td><td>the starting <code>project.cho</code>: the imports and any record type the signatures name</td><td>one <code>printf</code> per item, below</td></tr>
+<tr><td>The audit's cases</td><td>the oracle's inputs and expected answers, as JSON lines</td><td><code>python3 eval/&lt;item&gt;/oracle.py</code></td></tr>
+</table>
+<p>A plan is JSON. This is the shape (a real one, shortened; <code>docs/plan.md</code> has the twelve rules the checker enforces):</p>
+<pre><code>{"name": "tokenbucket",
+ "units": [
+  {"id": "refill",
+   "signature": "fn bucket_refill(tokens_milli: int, last_ms: int, now_ms: int, capacity: int, per_sec: int) -&gt; [] int",
+   "description": "Amounts are milli-tokens... never more than capacity * 1000.",
+   "examples": ["bucket_refill(0, 0, 1000, 10, 1) == 1000"],
+   "deps": []},
+  {"id": "take",
+   "signature": "fn bucket_take(tokens_milli: int, cost: int) -&gt; [] option.Option[int]",
+   "examples": ["bucket_take(5000, 5) == option.Option::Some(0)",
+                "bucket_take(4999, 5) == option.Option::None"],
+   "deps": []}]}</code></pre>
+<ul>
+  <li><code>examples</code> are <code>CALL == EXPECTED</code> and become tests; <code>==</code> compares scalars, and an <code>Option</code> result is run as a <code>match</code>.</li>
+  <li>For a function an example cannot call (a result that is text, or a <code>Result</code>), a unit carries its own <code>tests</code>: cancho source appended verbatim to the unit's tests file.</li>
+  <li><code>description</code> says what the signature and the examples cannot: units of measure, edge rules. Without it the first tokenbucket runs failed on every unit.</li>
+</ul>
+<pre><code>./plancheck eval/duration/plan.json
+[PLAN]	valid</code></pre>
+<p>Every problem is reported, not the first, as <code>[PLAN_ERROR]&lt;TAB&gt;rule&lt;TAB&gt;unit&lt;TAB&gt;message</code>, with exit code 1.</p>
+
+<h3>3. Run a case</h3>
+<p>The work directory must exist, and every path must be absolute and free of <code>..</code>. The scaffold is the only file you write in it:</p>
+<pre><code># 07-tokenbucket (the brief names a record type, so the scaffold declares it)
+WORK=/abs/path/work-tokenbucket; mkdir -p "$WORK"
+printf 'edition 7;\nimport std.option;\n\nstruct Allow { allowed: bool, tokens_milli: int, retry_ms: int }\n' &gt; "$WORK/project.cho"
+PLAN="$(pwd)/eval/tokenbucket/plan.json"
+
+# 05-duration
+WORK=/abs/path/work-duration; mkdir -p "$WORK"
+printf 'edition 7;\nimport std.result;\nimport std.buffer;\n' &gt; "$WORK/project.cho"
+PLAN="$(pwd)/eval/duration/plan.json"
+
+# 03-csv
+WORK=/abs/path/work-csv; mkdir -p "$WORK"
+printf 'edition 7;\nimport std.list;\nimport std.result;\n' &gt; "$WORK/project.cho"
+PLAN="$(pwd)/eval/csv/plan.json"</code></pre>
+<p>Then the same command for each, with the model and the primer written <em>inside</em> the agent command (the agent has no environment). The numbers are the attempts per unit and the seconds one agent turn may take:</p>
+<pre><code>./project "$CANCHO" "$PLAN" "$WORK" \
+  "OLLAMA_MODEL=qwen3.8:27b OLLAMA_NUM_CTX=24576 OLLAMA_PRIMER=$(pwd)/guidelines.md $(pwd)/scripts/agent-ollama.sh" \
+  6 900</code></pre>
+<p>It prints one line per step and ends with a verdict (exit 0 <code>done</code>, 1 <code>stuck</code>, 3 <code>no_plan</code>, 4 <code>provider_error</code>):</p>
+<pre><code>[PLAN]	valid
+[UNIT]	refill	building
+[ACCEPTANCE]	pass
+[UNIT]	refill	verified
+...
+[PROJECT_VERDICT]	done</code></pre>
+<p>Rerun the same command after a stop: the verified units are kept (<code>state.txt</code>), re-checked, and only what is left is built. <code>trail-&lt;unit&gt;.jsonl</code> in the work directory shows every attempt.</p>
+
+<h3>4. Grade it against the hidden oracle</h3>
+<p><code>done</code> means the plan's own examples held. The audit is the oracle's full set, written before any run:</p>
+<pre><code>python3 eval/audit_tokenbucket.py "$WORK/project.cho"      # 46 cases
+python3 eval/audit_duration.py   "$WORK/project.cho"      # 64 cases
+python3 eval/audit_csv.py        "$WORK/project.cho"      # 50 cases</code></pre>
+<p>Each prints a line per function group and exits 0 only if every case holds. A function of the wrong shape costs its own group only.</p>
+
+<h3>5. Check the setup before spending GPU time</h3>
+<p>The reference implementation of each case must pass its plan's tests through the whole driver and score full marks on the audit, and a deliberately broken copy must not. This needs no model:</p>
+<pre><code>CANCHO="$CANCHO" sh scripts/test-eval.sh        # prints: eval gate: ok
+CANCHO="$CANCHO" sh scripts/test-project.sh     # the driver against a stand-in agent</code></pre>
+
+<h3>What these runs have shown so far</h3>
+<p>Three runs each, one model (qwen3.8:27b), the compiler's own page as the primer; the detail and the caveats are in <a href="https://github.com/alpibrusl/cancho-code/issues/9">issue #9</a>.</p>
+<table>
+<tr><th>Case</th><th>Result</th><th>What decided it</th></tr>
+<tr><td><code>07-tokenbucket</code></td><td>3 of 3 <code>done</code>, hidden audit 46/46</td><td>integer arithmetic, an <code>Option</code> shown in the task; the item was used to tune the setup, so this is not a held-out result</td></tr>
+<tr><td><code>05-duration</code></td><td>0 of 3 on the first try; 2 of 3 once the language page covered <code>Option</code>/<code>Result</code>, <code>break</code> and text</td><td>the model's guesses (<code>result.err(..)</code>, <code>break</code>) are not cancho; the page did not say so</td></tr>
+<tr><td><code>03-csv</code></td><td>0 of 3 on the first try</td><td>lists: the model guesses <code>list.nil()</code> and <code>List::Nil</code>; the real names are <code>list.List::Empty</code> and <code>list.List::Cons</code></td></tr>
+</table>
+<p class="note"><b>Read these as measurements of a setup, not of a model.</b> Samples are small, the plans were written by hand, and the lever that moved results every time was what the model was told about cancho's standard library.</p>
 </section>
 
 <section id="contracts">
@@ -204,8 +303,8 @@ $ echo $?
 <section id="status">
 <h2>Status and limits, stated plainly</h2>
 <ul>
-  <li>Built: the decision module, the failure signature, the subprocess checker driver, the snapshot ring, the composed loop with its verdict lines, the Mistral provider over native HTTPS, the Ollama agent script, the <code>fix</code> front door. All gates green in CI without a network or a key.</li>
-  <li>Not built: the typed-issue board (issue #2 — which issue is next, what regressed), the report (issue #5), the authority pin in CI (issue #6).</li>
+  <li>Built: the decision module, the failure signature, the subprocess checker driver, the snapshot of a verified state, the composed loop with its verdict lines, the per-attempt trail, the acceptance command, the Mistral provider over native HTTPS, the Ollama agent script (HTTP API, with the compiler's refusals in the prompt), the <code>fix</code> front door, the plan check (<code>plancheck</code>) and the project driver (<code>project</code>: dependency order, a sweep after every unit, resume). The authority reports are pinned in CI. All gates are green in CI without a network or a key.</li>
+  <li>Not built: a model that drafts the plan, hardening (invariants on generated inputs), acceptance scenarios for services, integration repair, an unattended supervisor with a report, lessons mined from trails, a dashboard. <a href="https://github.com/alpibrusl/cancho-code/blob/main/docs/parity.md">docs/parity.md</a> maps each to lex-code.</li>
   <li>The local-model path shells out to <code>ollama</code> through the <code>Exec</code> capability: the tool's authority report names the one directory its agents may live in.</li>
   <li>Measured on this repo's own gates, four silent false-passes were found and fixed by the gates themselves, not by review: a reversed-signature normalisation, a shell <code>$0</code> argv bug, an edition-less fixture, a negative ring position.</li>
 </ul>

@@ -79,6 +79,7 @@ jobs:
           sh scripts/test-plan.sh
           sh scripts/test-project.sh
           sh scripts/test-eval.sh
+          sh scripts/test-page.sh
           sh scripts/test-reference-ports.sh
           sh scripts/test-driver.sh
           sh scripts/test-provider.sh
