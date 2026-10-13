@@ -1,0 +1,59 @@
+{
+ "name": "csvline",
+ "units": [
+  {
+   "id": "parse",
+   "signature": "fn csv_parse_line[&h, &r](heap: &!h Heap, line: &r [byte]) -> [heap] result.Result[list.List[Box[Box[[byte]]]], int]",
+   "description": "Split one CSV record (RFC 4180 quoting) into its fields, or return Err if it is malformed. Fields are separated by a comma. A field is either unquoted or quoted. An unquoted field is the text up to the next comma (or the end), kept exactly, including leading and trailing spaces; it must not contain a double quote, a carriage return or a line feed, otherwise the record is malformed. A quoted field starts with a double quote as the very first character of the field. Inside it, two double quotes in a row stand for one literal double quote, and commas, carriage returns and line feeds are ordinary characters. The field ends at the first double quote that is not part of a doubled pair. Immediately after that closing quote there must be a comma or the end of the record; anything else (even a space) makes the record malformed. A quoted field that never closes is malformed. The empty record is one empty field. A trailing comma gives a final empty field: \"a,\" is two fields, \"a\" and \"\"; \",\" is two empty fields; \"a,,b\" is three. Non-ASCII text passes through unchanged. It must never panic, on any text. The field list is list.List[Box[Box[[byte]]]]: each field is a Box holding a Box of bytes, one more Box than looks needed, because the compiler cannot match a plain Box[[byte]] through a reference (alpibrusl/cancho#461). A parsed record is owned by the caller, who frees it. Err carries a small int code naming what was wrong. `fields(a, b)` in the examples means a list of those fields.",
+   "examples": [
+    "csv_parse_line(heap, \"a,\\\"b,c\\\",d\") == fields(\"a\", \"b,c\", \"d\")",
+    "csv_parse_line(heap, \"\") == fields(\"\")",
+    "csv_parse_line(heap, \"a,\") == fields(\"a\", \"\")",
+    "csv_parse_line(heap, \" a , b \") == fields(\" a \", \" b \")",
+    "csv_parse_line(heap, \"\\\"a\") == Err",
+    "csv_parse_line(heap, \"a\\\"b\") == Err",
+    "csv_parse_line(heap, \"\\\"a\\\"b,c\") == Err"
+   ],
+   "tests": [
+    "fn t_drop[&h](heap: &!h Heap, fields: list.List[Box[Box[[byte]]]]) -> [heap] int { match fields { list.List::Empty => { return 0; } list.List::Cons(f, rest) => { unbox_slice(heap, unbox(heap, f)); let tail = unbox(heap, rest); return 1 + t_drop(heap, tail); } } }",
+    "fn t_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var k = 0; while k < len(x) { if x[k] != y[k] { return false; } k = k + 1; } return true; }",
+    "fn t_nth_is[&l, &r](fields: &l list.List[Box[Box[[byte]]]], idx: int, want: &r [byte]) -> [] bool { match fields { list.List::Empty => { return false; } list.List::Cons(f, rest) => { if idx == 0 { return t_same(contents(contents(f)), want); } return t_nth_is(contents(rest), idx - 1, want); } } }",
+    "pub fn test_parse_ok_1[&h](heap: &!h Heap) -> [heap] int { match csv_parse_line(heap, \"a,\\\"b,c\\\",d\") { result.Result::Ok(fs) => { var ok = true; borrow fs as &r in { if list.length(r) != 3 { ok = false; } if !t_nth_is(r, 0, \"a\") { ok = false; } if !t_nth_is(r, 1, \"b,c\") { ok = false; } if !t_nth_is(r, 2, \"d\") { ok = false; } } t_drop(heap, fs); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parse_ok_2[&h](heap: &!h Heap) -> [heap] int { match csv_parse_line(heap, \"\\\"a\\\"\\\"b\\\",c\") { result.Result::Ok(fs) => { var ok = true; borrow fs as &r in { if list.length(r) != 2 { ok = false; } if !t_nth_is(r, 0, \"a\\\"b\") { ok = false; } if !t_nth_is(r, 1, \"c\") { ok = false; } } t_drop(heap, fs); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parse_ok_3[&h](heap: &!h Heap) -> [heap] int { match csv_parse_line(heap, \"\") { result.Result::Ok(fs) => { var ok = true; borrow fs as &r in { if list.length(r) != 1 { ok = false; } if !t_nth_is(r, 0, \"\") { ok = false; } } t_drop(heap, fs); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parse_ok_4[&h](heap: &!h Heap) -> [heap] int { match csv_parse_line(heap, \"\\\"a\\nb\\\",c\") { result.Result::Ok(fs) => { var ok = true; borrow fs as &r in { if list.length(r) != 2 { ok = false; } if !t_nth_is(r, 0, \"a\\nb\") { ok = false; } if !t_nth_is(r, 1, \"c\") { ok = false; } } t_drop(heap, fs); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parse_ok_5[&h](heap: &!h Heap) -> [heap] int { match csv_parse_line(heap, \" a , b \") { result.Result::Ok(fs) => { var ok = true; borrow fs as &r in { if list.length(r) != 2 { ok = false; } if !t_nth_is(r, 0, \" a \") { ok = false; } if !t_nth_is(r, 1, \" b \") { ok = false; } } t_drop(heap, fs); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parse_ok_6[&h](heap: &!h Heap) -> [heap] int { match csv_parse_line(heap, \"a,\") { result.Result::Ok(fs) => { var ok = true; borrow fs as &r in { if list.length(r) != 2 { ok = false; } if !t_nth_is(r, 0, \"a\") { ok = false; } if !t_nth_is(r, 1, \"\") { ok = false; } } t_drop(heap, fs); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parse_ok_7[&h](heap: &!h Heap) -> [heap] int { match csv_parse_line(heap, \",\") { result.Result::Ok(fs) => { var ok = true; borrow fs as &r in { if list.length(r) != 2 { ok = false; } if !t_nth_is(r, 0, \"\") { ok = false; } if !t_nth_is(r, 1, \"\") { ok = false; } } t_drop(heap, fs); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parse_ok_8[&h](heap: &!h Heap) -> [heap] int { match csv_parse_line(heap, \"a,,b\") { result.Result::Ok(fs) => { var ok = true; borrow fs as &r in { if list.length(r) != 3 { ok = false; } if !t_nth_is(r, 0, \"a\") { ok = false; } if !t_nth_is(r, 1, \"\") { ok = false; } if !t_nth_is(r, 2, \"b\") { ok = false; } } t_drop(heap, fs); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parse_err_1[&h](heap: &!h Heap) -> [heap] int { match csv_parse_line(heap, \"\\\"a\") { result.Result::Ok(fs) => { t_drop(heap, fs); return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_parse_err_2[&h](heap: &!h Heap) -> [heap] int { match csv_parse_line(heap, \"a\\\"b\") { result.Result::Ok(fs) => { t_drop(heap, fs); return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_parse_err_3[&h](heap: &!h Heap) -> [heap] int { match csv_parse_line(heap, \"\\\"a\\\"b,c\") { result.Result::Ok(fs) => { t_drop(heap, fs); return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_parse_err_4[&h](heap: &!h Heap) -> [heap] int { match csv_parse_line(heap, \"  \\\"a\\\"\") { result.Result::Ok(fs) => { t_drop(heap, fs); return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_parse_err_5[&h](heap: &!h Heap) -> [heap] int { match csv_parse_line(heap, \"a\\nb\") { result.Result::Ok(fs) => { t_drop(heap, fs); return 1; } result.Result::Err(_) => { return 0; } } }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "format",
+   "signature": "fn csv_format_line[&h, &l](heap: &!h Heap, fields: &l list.List[Box[Box[[byte]]]]) -> [heap] Box[[byte]]",
+   "description": "The CSV record for a list of fields. Fields are joined with a comma. A field is wrapped in double quotes if and only if it contains a comma, a double quote, a carriage return or a line feed; inside the quotes every double quote is doubled. Nothing else is quoted (a field with only spaces is written as it is). The empty list gives the empty text. The result is an owned Box of bytes; the caller frees it. For every non-empty list of fields, parsing the formatted record gives the fields back. The field list is list.List[Box[Box[[byte]]]]: each field is a Box holding a Box of bytes, one more Box than looks needed, because the compiler cannot match a plain Box[[byte]] through a reference (alpibrusl/cancho#461). A parsed record is owned by the caller, who frees it. Err carries a small int code naming what was wrong. `fields(a, b)` in the examples means a list of those fields.",
+   "examples": [
+    "csv_format_line(heap, fields(\"a,b\")) == \"\\\"a,b\\\"\"",
+    "csv_format_line(heap, fields(\"a\\\"b\")) == \"\\\"a\\\"\\\"b\\\"\"",
+    "csv_format_line(heap, fields(\"\", \"\")) == \",\"",
+    "csv_format_line(heap, fields(\"\")) == \"\""
+   ],
+   "tests": [
+    "fn t_drop[&h](heap: &!h Heap, fields: list.List[Box[Box[[byte]]]]) -> [heap] int { match fields { list.List::Empty => { return 0; } list.List::Cons(f, rest) => { unbox_slice(heap, unbox(heap, f)); let tail = unbox(heap, rest); return 1 + t_drop(heap, tail); } } }",
+    "fn t_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var k = 0; while k < len(x) { if x[k] != y[k] { return false; } k = k + 1; } return true; }",
+    "fn t_mk[&h, &r](heap: &!h Heap, s: &r [byte]) -> [heap] Box[[byte]] { let b = box_slice(heap, len(s), byte_of(0)); borrow mut b as &!w in { copy_into(contents(w), s); } return b; }",
+    "pub fn test_format_ok_1[&h](heap: &!h Heap) -> [heap] int { var l: list.List[Box[Box[[byte]]]] = list.List::Empty; l = list.push(heap, l, box(heap, t_mk(heap, \"a,b\"))); var ok = false; borrow l as &r in { let out = csv_format_line(heap, r); borrow out as &q in { ok = t_same(contents(q), \"\\\"a,b\\\"\"); } unbox_slice(heap, out); } t_drop(heap, l); if ok { return 0; } return 1; }",
+    "pub fn test_format_ok_2[&h](heap: &!h Heap) -> [heap] int { var l: list.List[Box[Box[[byte]]]] = list.List::Empty; l = list.push(heap, l, box(heap, t_mk(heap, \"a\\\"b\"))); var ok = false; borrow l as &r in { let out = csv_format_line(heap, r); borrow out as &q in { ok = t_same(contents(q), \"\\\"a\\\"\\\"b\\\"\"); } unbox_slice(heap, out); } t_drop(heap, l); if ok { return 0; } return 1; }",
+    "pub fn test_format_ok_3[&h](heap: &!h Heap) -> [heap] int { var l: list.List[Box[Box[[byte]]]] = list.List::Empty; l = list.push(heap, l, box(heap, t_mk(heap, \"\"))); l = list.push(heap, l, box(heap, t_mk(heap, \"\"))); var ok = false; borrow l as &r in { let out = csv_format_line(heap, r); borrow out as &q in { ok = t_same(contents(q), \",\"); } unbox_slice(heap, out); } t_drop(heap, l); if ok { return 0; } return 1; }",
+    "pub fn test_format_ok_4[&h](heap: &!h Heap) -> [heap] int { var l: list.List[Box[Box[[byte]]]] = list.List::Empty; l = list.push(heap, l, box(heap, t_mk(heap, \"\"))); var ok = false; borrow l as &r in { let out = csv_format_line(heap, r); borrow out as &q in { ok = t_same(contents(q), \"\"); } unbox_slice(heap, out); } t_drop(heap, l); if ok { return 0; } return 1; }"
+   ],
+   "deps": []
+  }
+ ]
+}
