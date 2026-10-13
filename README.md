@@ -80,6 +80,7 @@ CANCHO=<path> scripts/test-verdicts.sh
 CANCHO=<path> scripts/test-plan.sh
 CANCHO=<path> scripts/test-project.sh
 CANCHO=<path> scripts/test-eval.sh
+CANCHO=<path> scripts/test-page.sh
 CANCHO=<path> scripts/test-reference-ports.sh
 CANCHO=<path> scripts/test-driver.sh
 CANCHO=<path> CANCHO_PACKAGES=<compiler>/packages scripts/test-provider.sh build
