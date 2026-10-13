@@ -70,7 +70,18 @@ fn sig_name[&t](t: &t [byte]) -> [] (int, int) {
     if b == a {
         return (0 - 1, 0 - 1);
     }
-    let c = skip_sp(t, b);
+    var c = skip_sp(t, b);
+    // region and type parameters after the name: `fn f[&r, &h](...)`
+    if byte_at(t, c) == 91 {
+        var q = c + 1;
+        while q < len(t) && byte_at(t, q) != 93 {
+            q = q + 1;
+        }
+        if q >= len(t) {
+            return (0 - 1, 0 - 1);
+        }
+        c = skip_sp(t, q + 1);
+    }
     if byte_at(t, c) != 40 {
         return (0 - 1, 0 - 1);
     }
@@ -197,18 +208,20 @@ fn collect[&s, &t, &i](src: &s [byte], tape: &t [int], info: &!i [int], units: i
         var ex = 0 - 1;
         var dp = 0 - 1;
         var ds = 0 - 1;
+        var ts = 0 - 1;
         if isobj {
             idn = json.get(src, tape, j, "id");
             sg = json.get(src, tape, j, "signature");
             ex = json.get(src, tape, j, "examples");
             dp = json.get(src, tape, j, "deps");
             ds = json.get(src, tape, j, "description");
+            ts = json.get(src, tape, j, "tests");
         }
         if idn >= 0 && json.is_string(tape, idn) {
             set_f(info, u, f_id(), idn);
         }
         var ok = 0;
-        if isobj && get_f(info, u, f_id()) >= 0 && sg >= 0 && json.is_string(tape, sg) && all_strings(tape, ex) && all_strings(tape, dp) && (ds < 0 || json.is_string(tape, ds)) {
+        if isobj && get_f(info, u, f_id()) >= 0 && sg >= 0 && json.is_string(tape, sg) && all_strings(tape, ex) && all_strings(tape, dp) && (ds < 0 || json.is_string(tape, ds)) && (ts < 0 || all_strings(tape, ts)) {
             ok = 1;
         }
         set_f(info, u, f_ok(), ok);
@@ -292,7 +305,7 @@ fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte
     var b = out;
     let who = label(src, tape, info, u);
     if get_f(info, u, f_ok()) != 1 {
-        return emit(heap, b, "unit-field", who, "a unit must be an object with a string id, a string signature, an array of strings examples and an array of strings deps (and a description, if any, that is a string)");
+        return emit(heap, b, "unit-field", who, "a unit must be an object with a string id, a string signature, an array of strings examples and an array of strings deps (and a description, if any, that is a string, and tests, if any, an array of strings)");
     }
     if find_id(src, tape, info, n, who) != u {
         b = emit(heap, b, "duplicate-id", who, "another unit already has this id");

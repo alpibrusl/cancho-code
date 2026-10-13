@@ -22,6 +22,8 @@ A plan is a JSON file. It says what to build as **units** (one function each), w
 
 A unit may also carry a `description` (a string): what the function means in the author's words, which the signature and the examples cannot say (units of measure, an edge rule). The project driver puts it in the task the agent reads (docs/project.md). It is optional and not checked beyond being a string.
 
+A unit may carry `tests` (an array of strings): cancho source items, usually `pub fn test_...`, that the project driver appends verbatim to the unit's tests file and that **replace** the tests made from `examples` when present. This is for functions an example cannot call: a result that is text or a `Result` needs a heap or a match, which `CALL == EXPECTED` cannot say. The `examples` stay as documentation shown to the model and are still checked for shape. A signature may carry region and type parameters after the name: `fn f[&r](s: &r [byte]) -> [] int`.
+
 ## Output
 
 One line per problem, then the verdict:
@@ -36,7 +38,7 @@ Exit 0 valid, 1 invalid, 2 usage (no argument, or the file cannot be read). **Ev
 | rule | refused when |
 |---|---|
 | `plan-json` | the file is not JSON, or the root is not an object with a string `name` and an array `units` |
-| `unit-field` | a unit is not an object, or lacks a string `id`, a string `signature`, an array of strings `examples`, an array of strings `deps`, or has a `description` that is not a string |
+| `unit-field` | a unit is not an object, or lacks a string `id`, a string `signature`, an array of strings `examples`, an array of strings `deps`, or has a `description` that is not a string or `tests` that is not an array of strings |
 | `duplicate-id` | two units have the same `id` |
 | `bad-signature` | the signature is not `fn NAME(...) -> [` effect row `] TYPE`. A function's effect row is required: `-> int` is refused, `-> [] int` is the pure form |
 | `duplicate-function` | two units declare the same function name ("a function is declared by exactly one unit") |

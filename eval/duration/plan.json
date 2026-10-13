@@ -1,0 +1,62 @@
+{
+ "name": "duration",
+ "units": [
+  {
+   "id": "parse",
+   "signature": "fn duration_parse[&r](s: &r [byte]) -> [] result.Result[int, &static [byte]]",
+   "description": "Parse a human duration such as \"1h30m\" into whole seconds: Ok(seconds), or Err(message) if the text is not a valid duration. A duration is one or more parts written one after another with nothing between them; a part is a number of 1 to 9 ASCII digits (0-9 only) followed by one unit letter: w (604800 seconds), d (86400), h (3600), m (60) or s (1). Letters are lower case only. The units must appear in that order, from largest to smallest, and each unit at most once: \"1h30m\" and \"2d4h\" are valid; \"30m1h\" and \"1h1h\" are not. There is no sign, no decimal point, no spaces, no \"ms\", and no normalising: \"90m\" is valid and means 5400 seconds, \"00s\" is valid and means 0, \"007m\" means 420. The empty string, a bare number (\"1\", \"0\"), a bare unit (\"s\") and a number of 10 or more digits are invalid. It must never panic, on any text. The text is bytes (cancho has no string type): anything that is not an ASCII digit or a unit letter is invalid.",
+   "examples": [
+    "duration_parse(\"1h30m\") == result.Result::Ok(5400)",
+    "duration_parse(\"90m\") == result.Result::Ok(5400)",
+    "duration_parse(\"1w1d1h1m1s\") == result.Result::Ok(694861)",
+    "duration_parse(\"00s\") == result.Result::Ok(0)",
+    "duration_parse(\"999999999s\") == result.Result::Ok(999999999)",
+    "duration_parse(\"\") == result.Result::Err",
+    "duration_parse(\"30m1h\") == result.Result::Err",
+    "duration_parse(\"1000000000s\") == result.Result::Err"
+   ],
+   "tests": [
+    "fn parse_is(s: &static [byte], want: int) -> [] int { match duration_parse(s) { result.Result::Ok(v) => { if v == want { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "fn parse_err(s: &static [byte]) -> [] int { match duration_parse(s) { result.Result::Ok(_) => { return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_parse_ok_1() -> [] int { test.assert_eq(parse_is(\"1h30m\", 5400), 0); return 0; }",
+    "pub fn test_parse_ok_2() -> [] int { test.assert_eq(parse_is(\"90m\", 5400), 0); return 0; }",
+    "pub fn test_parse_ok_3() -> [] int { test.assert_eq(parse_is(\"1w1d1h1m1s\", 694861), 0); return 0; }",
+    "pub fn test_parse_ok_4() -> [] int { test.assert_eq(parse_is(\"00s\", 0), 0); return 0; }",
+    "pub fn test_parse_ok_5() -> [] int { test.assert_eq(parse_is(\"999999999s\", 999999999), 0); return 0; }",
+    "pub fn test_parse_err_1() -> [] int { test.assert_eq(parse_err(\"\"), 0); return 0; }",
+    "pub fn test_parse_err_2() -> [] int { test.assert_eq(parse_err(\"1\"), 0); return 0; }",
+    "pub fn test_parse_err_3() -> [] int { test.assert_eq(parse_err(\"30m1h\"), 0); return 0; }",
+    "pub fn test_parse_err_4() -> [] int { test.assert_eq(parse_err(\"1h1h\"), 0); return 0; }",
+    "pub fn test_parse_err_5() -> [] int { test.assert_eq(parse_err(\"1.5h\"), 0); return 0; }",
+    "pub fn test_parse_err_6() -> [] int { test.assert_eq(parse_err(\"1 h\"), 0); return 0; }",
+    "pub fn test_parse_err_7() -> [] int { test.assert_eq(parse_err(\"1H\"), 0); return 0; }",
+    "pub fn test_parse_err_8() -> [] int { test.assert_eq(parse_err(\"1ms\"), 0); return 0; }",
+    "pub fn test_parse_err_9() -> [] int { test.assert_eq(parse_err(\"1000000000s\"), 0); return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "format",
+   "signature": "fn duration_format[&h](heap: &!h Heap, seconds: int) -> [heap] result.Result[buffer.Buffer, &static [byte]]",
+   "description": "Format whole seconds as text: Ok(text), or Err(message) if seconds is negative. duration_format(0) is Ok(\"0s\"). Otherwise the seconds are split greedily into weeks (604800), days (86400), hours (3600), minutes (60) and seconds, largest first, and every unit that is zero is left out: 90061 seconds is \"1d1h1m1s\", 1209600 is \"2w\", 3600 is \"1h\". Anything of a week or more uses weeks (there are no months or years). The text is a heap-owned Buffer (cancho has no string type); the caller drops it.",
+   "examples": [
+    "duration_format(heap, 90061) == result.Result::Ok(\"1d1h1m1s\")",
+    "duration_format(heap, 0) == result.Result::Ok(\"0s\")",
+    "duration_format(heap, 59) == result.Result::Ok(\"59s\")",
+    "duration_format(heap, 604801) == result.Result::Ok(\"1w1s\")",
+    "duration_format(heap, -1) == result.Result::Err"
+   ],
+   "tests": [
+    "fn same_bytes[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var i = 0; while i < len(x) { if int_of(x[i]) != int_of(y[i]) { return false; } i = i + 1; } return true; }",
+    "fn fmt_is[&h](heap: &!h Heap, n: int, want: &static [byte]) -> [heap] int { match duration_format(heap, n) { result.Result::Ok(b) => { var same = false; borrow b as &x in { same = same_bytes(buffer.bytes(x), want); } buffer.drop(heap, b); if same { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "fn fmt_err[&h](heap: &!h Heap, n: int) -> [heap] int { match duration_format(heap, n) { result.Result::Ok(b) => { buffer.drop(heap, b); return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_format_ok_1[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(fmt_is(heap, 90061, \"1d1h1m1s\"), 0); return 0; }",
+    "pub fn test_format_ok_2[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(fmt_is(heap, 0, \"0s\"), 0); return 0; }",
+    "pub fn test_format_ok_3[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(fmt_is(heap, 59, \"59s\"), 0); return 0; }",
+    "pub fn test_format_ok_4[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(fmt_is(heap, 604801, \"1w1s\"), 0); return 0; }",
+    "pub fn test_format_err_1[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(fmt_err(heap, -1), 0); return 0; }"
+   ],
+   "deps": []
+  }
+ ]
+}

@@ -146,6 +146,22 @@ fn set_note[&o, &m, &b, &x](notes: &!o [byte], meta: &!m [int], u: int, broke: &
 // ---- files ----------------------------------------------------------------
 
 // `edition 7;` and the unit's examples as tests, and the legend.
+// The JSON string at node `i`, decoded (it may hold quotes and newlines), appended to `b`.
+fn add_decoded[&h, &s, &t](heap: &!h Heap, b: buffer.Buffer, src: &s [byte], tape: &t [int], i: int) -> [heap] buffer.Buffer {
+    var r = b;
+    let n = json.string_length(src, tape, i);
+    if n > 0 {
+        region dr {
+            let out = alloc_slice[dr](n + 1, byte_of(0));
+            let w = json.string_into(src, tape, i, out);
+            if w > 0 {
+                r = buffer.append(heap, r, out[0..w]);
+            }
+        }
+    }
+    return r;
+}
+
 // The body of one example's test: `() -> [] int { ...; return 0; }`. `CALL == EXPECTED` is `test.assert(CALL == EXPECTED)`, except when
 // EXPECTED is an Option (`option.Option::Some(X)` or `option.Option::None`): the compiler has no `==` on enums, so the call is matched
 // and X compared as a scalar. That is the one enum the examples can name. The tests file does NOT import std.option: files compiled together
@@ -192,9 +208,19 @@ fn write_tests[&h, &z, &s, &t, &w](heap: &!h Heap, fs: &z Fs(""), src: &s [byte]
     }
     var tests = buffer.append(heap, buffer.empty(heap, 512), "edition 7;\nimport std.test;\n");
     var legend = buffer.empty(heap, 256);
+    // A unit's own `tests` (docs/plan.md) are the executable form when it has any: the examples stay documentation, for a function
+    // an example cannot call (a result that is text, or a Result).
+    let rt = json.get(src, tape, node, "tests");
+    var raw = 0;
+    if rt >= 0 {
+        raw = json.count(tape, rt);
+    }
     let arr = json.get(src, tape, node, "examples");
     var j = arr + 1;
     var left = json.count(tape, arr);
+    if raw > 0 {
+        left = 0;
+    }
     var k = 1;
     while left > 0 {
         var ex = add_str(heap, buffer.empty(heap, 64), src, tape, j);
@@ -222,6 +248,17 @@ fn write_tests[&h, &z, &s, &t, &w](heap: &!h Heap, fs: &z Fs(""), src: &s [byte]
         k = k + 1;
     }
     buffer.drop(heap, sid);
+    if raw > 0 {
+        var rj = rt + 1;
+        var rleft = raw;
+        while rleft > 0 {
+            tests = add_decoded(heap, tests, src, tape, rj);
+            tests = buffer.append(heap, tests, "\n");
+            legend = buffer.append(heap, legend, "(the unit's own test, named in the output above)\n");
+            rj = json.skip(tape, rj);
+            rleft = rleft - 1;
+        }
+    }
     let tp = in_wd(heap, wd, "tests-", id, ".cho");
     let lp = in_wd(heap, wd, "legend-", id, ".txt");
     var r = 0;
@@ -260,15 +297,8 @@ fn write_task[&h, &z, &s, &t, &w, &x](heap: &!h Heap, fs: &z Fs(""), src: &s [by
     // The description, decoded (it holds quotes and newlines): what the signature and the examples cannot say.
     let dn = json.get(src, tape, node, "description");
     if dn >= 0 && json.is_string(tape, dn) {
-        let dl = json.string_length(src, tape, dn);
-        region dr {
-            let out = alloc_slice[dr](dl + 1, byte_of(0));
-            let w = json.string_into(src, tape, dn, out);
-            b = buffer.append(heap, b, "\nDESCRIPTION: ");
-            if w > 0 {
-                b = buffer.append(heap, b, out[0..w]);
-            }
-        }
+        b = buffer.append(heap, b, "\nDESCRIPTION: ");
+        b = add_decoded(heap, b, src, tape, dn);
     }
     b = buffer.append(heap, b, "\nEXAMPLES:\n");
     let arr = json.get(src, tape, node, "examples");
