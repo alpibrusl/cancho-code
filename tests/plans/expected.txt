@@ -19,3 +19,5 @@ unknown-dep          1     unknown-dep:a
 cycle                1     cycle:a
 self-cycle           1     cycle:a
 multi                1     bad-signature:a no-example:a unknown-dep:a
+valid-description    0
+description-not-string  1   unit-field:a

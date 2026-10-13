@@ -1,0 +1,1 @@
+{"name":"x","units":[{"id":"a","signature":"fn f(x: int) -> [] int","description":"Double it.\nAmounts are milli-tokens.","examples":["f(2) == 4"],"deps":[]}]}

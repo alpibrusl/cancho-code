@@ -30,9 +30,10 @@ Files without a `module` header share one namespace when compiled together, so t
 UNIT: <id>
 FUNCTION: <name>
 SIGNATURE: <signature, as in the plan>
+DESCRIPTION: <the unit's description, decoded; only when the plan has one>
 EXAMPLES:
 <one example per line, as in the plan>
-INSTRUCTIONS: Add this function to project.cho, keeping every other function as it is. The file has no main.
+INSTRUCTIONS: Add this function to project.cho, keeping every other function as it is. The file has no main. Do not write tests or examples of your own: the examples above are run for you.
 NOTE: <only after a regression: which unit broke, with the failing test output>
 ```
 

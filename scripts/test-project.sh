@@ -9,6 +9,7 @@
 #   resume      the agent fails on c: provider_error, exit 4, the state keeps a and b; a second run keeps them (no rebuild) and builds c
 #   stuck       a never verifies: it fails, an independent unit (b) is still built, its dependent (c) is skipped; stuck, exit 1
 #   option      a unit whose examples are Option results: run as a match; a wrong Some value is refused, the right answer accepted
+#   described   a unit's description reaches the agent in the task, decoded, with the instruction not to write tests
 #   no plan     an invalid plan: its errors, then no_plan, exit 3, the agent never asked
 #   usage       no arguments, and a plan that is not there: exit 2
 #
@@ -122,6 +123,16 @@ expect "option: exit code" "$r" 0
 expect "option: verdict" "$(verdict "$out")" done
 expect "option: the wrong answer was refused, then the right one accepted" "$(printf '%s\n' "$out" | grep ACCEPTANCE | cut -f2 | tr '\n' ' ')" "fail pass "
 expect "option: agent order" "$(order "$lg")" "p p"
+rm -rf "$wd" "$rc"
+
+# described: a unit's `description` reaches the agent in the task, decoded (the quote and the newline), and the task tells it not to write
+# tests (the first real run of the tokenbucket plan showed a model pasting `fn test_refill_1` from the feedback into its program)
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf 'grep -q "SENTINEL-DESC \\"quoted\\" word." "$1.task" || exit 3\ngrep -q "^second line of the description" "$1.task" || exit 3\ngrep -q "Do not write tests" "$1.task" || exit 3\nprintf "\\nfn double(x: int) -> [] int { return x * 2; }\\n" >> "$1"\n' > "$rc/a.sh"
+out=$(run "$T/plan-described.json" "$wd" "$rc" "$lg"); r=$?
+expect "described: exit code" "$r" 0
+expect "described: verdict" "$(verdict "$out")" done
+grep -q '^DESCRIPTION:' "$wd/project.cho.task" || { echo "FAIL: described: no DESCRIPTION line in the task" >&2; fail=1; }
 rm -rf "$wd" "$rc"
 
 # no plan

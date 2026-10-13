@@ -1,0 +1,3 @@
+{"name":"demo","units":[
+ {"id":"a","signature":"fn double(x: int) -> [] int","description":"Multiply by two. SENTINEL-DESC \"quoted\" word.\nsecond line of the description","examples":["double(2) == 4"],"deps":[]}
+]}
