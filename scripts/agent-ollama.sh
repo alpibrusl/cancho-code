@@ -18,7 +18,7 @@
 #                   model that is not installed is a 404 and `agent_exit` (found on the first end-to-end run).
 #   OLLAMA_URL      the server                     (default http://localhost:11434)
 #   OLLAMA_NUM_CTX  the context window in tokens   (default 8192; raise it with a primer: `cancho agent-guidelines` is about 5,500 tokens)
-#   OLLAMA_NUM_PREDICT  the most tokens one answer may take (default 4096; an unbounded generation held one turn for 900 s)
+#   OLLAMA_NUM_PREDICT  the most tokens one answer may take (default 8192; an unbounded generation held one turn for 900 s). A reply that hits it is a cut-off program, not an answer: it is retried, never written. Keep it well under OLLAMA_NUM_CTX minus the prompt.
 #   OLLAMA_PRIMER   a file whose text goes first in the prompt (optional)
 #
 # Exit codes: 0 the file was replaced; 1 the server or the model failed (the file is left as it was — the driver names that
@@ -80,10 +80,14 @@ if feedback:
 prompt += "---\n" + source + "---\n"
 
 body = json.dumps({"model": model, "prompt": prompt, "stream": False, "think": False,
-                   "options": {"num_ctx": num_ctx, "temperature": 0.2, "num_predict": int(os.environ.get("OLLAMA_NUM_PREDICT", "4096"))}}).encode()
+                   "options": {"num_ctx": num_ctx, "temperature": 0.2, "num_predict": int(os.environ.get("OLLAMA_NUM_PREDICT", "8192"))}}).encode()
 def ask():
+    """The reply, or None if the model stopped because it hit the generation bound: that reply is cut off mid-program."""
     request = urllib.request.Request(url + "/api/generate", body, {"Content-Type": "application/json"})
-    return json.load(urllib.request.urlopen(request, timeout=1800))["response"]
+    reply = json.load(urllib.request.urlopen(request, timeout=1800))
+    if reply.get("done_reason") == "length":
+        return None
+    return reply["response"]
 
 def program(answer):
     """The file in a model's answer, or None when there is no program in it."""
@@ -115,6 +119,9 @@ for attempt in range(3):
     except Exception as e:
         sys.stderr.write("agent-ollama: %s\n" % e)
         sys.exit(1)
+    if got is None:
+        sys.stderr.write("agent-ollama: sample %d was cut off by the generation bound (OLLAMA_NUM_PREDICT)\n" % (attempt + 1))
+        continue
     answer = program(got)
     if answer is not None:
         break
