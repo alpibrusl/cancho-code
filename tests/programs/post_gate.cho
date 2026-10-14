@@ -59,8 +59,10 @@ fn main(world: World) -> [] int {
                         var headers = buffer.empty(hh, 512);
                         var body = buffer.empty(hh, 4096);
                         var roots = buffer.empty(hh, 65536);
-                        region b {
-                            let probe = alloc_slice[b](32768, byte_of(0));
+                        // onto the heap: a region is one 64 KiB chunk, and the bodies here are not
+                        let store = box_slice(hh, 1048576, byte_of(0));
+                        borrow mut store as &!sw in {
+                            let probe = contents(sw);
                             let hn = fs_read(f, headers_path, probe);
                             if hn > 0 {
                                 headers = buffer.append(hh, headers, probe[0..hn]);
@@ -74,6 +76,7 @@ fn main(world: World) -> [] int {
                                 roots = buffer.append(hh, roots, probe[0..rn]);
                             }
                         }
+                        unbox_slice(hh, store);
                         region e {
                             let entropy = alloc_slice[e](32, byte_of(0));
                             fs_read(f, "/dev/urandom", entropy);

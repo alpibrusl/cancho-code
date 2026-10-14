@@ -6,6 +6,7 @@
 #   tls      a POST over TLS to a server whose CA is in the roots: the status and the body come back whole, and the server received exactly
 #            the header lines and the body the caller wrote (the key under `x-api-key`, and nowhere else)
 #   plain    the same over plain TCP (`secure` 0), for a local server
+#   big      a request body far bigger than the client's buffer (200 KB; the language page alone is 29 KB) arrives whole
 #   trust    roots that do not hold the server's CA: refused, and the request never reached the server
 #   name     a certificate for another name than the host asked for: refused, nothing reached the server
 #   away     nothing listening: a named refusal, not a hang
@@ -83,6 +84,16 @@ expect "tls: the body arrived whole" "$(cat "$d/got.body" 2>/dev/null)" "$(cat "
 got=$(python3 -c "import json; h = json.load(open('$d/got.headers')); print(h['path'], h['x-api-key'] == '$KEY', h['anthropic-version'], h['content-type'], h['authorization'], h['host'])" 2>&1)
 expect "tls: the headers arrived as written" "$got" "/v1/messages True 2023-06-01 application/json None localhost"
 
+# big: the client's output buffer is 16 KiB, so a body is fed over many turns of the pump
+python3 -c "import json; print(json.dumps({'model': 'stub', 'messages': [{'role': 'user', 'content': ('abc \\\\ \"q\" ' * 20000)}]}), end='')" > "$d/body.big"
+cp "$d/body" "$d/body.small"; cp "$d/body.big" "$d/body"
+BIGLEN=$(wc -c < "$d/body" | tr -d ' ')
+out=$(run localhost 1 "$d/ca.pem")
+expect "big: status and echoed length (tls)" "$out" "status 200
+{\"echo\": $BIGLEN, \"ok\": true}"
+cmp -s "$d/got.body" "$d/body" || { echo "FAIL: big: the body did not arrive whole (tls)" >&2; fail=1; }
+cp "$d/body.small" "$d/body"
+
 # trust: a bundle without the server's CA
 rm -f "$d/got.body" "$d/got.headers"
 out=$(run localhost 1 "$d/other.pem")
@@ -102,6 +113,12 @@ out=$(run localhost 0 /dev/null)
 expect "plain: status and body" "$out" "status 200
 {\"echo\": $BODYLEN, \"ok\": true}"
 expect "plain: the body arrived whole" "$(cat "$d/got.body" 2>/dev/null)" "$(cat "$d/body")"
+cp "$d/body.big" "$d/body"
+out=$(run localhost 0 /dev/null)
+expect "big: status and echoed length (plain)" "$out" "status 200
+{\"echo\": $BIGLEN, \"ok\": true}"
+cmp -s "$d/got.body" "$d/body" || { echo "FAIL: big: the body did not arrive whole (plain)" >&2; fail=1; }
+cp "$d/body.small" "$d/body"
 stop
 
 # away
