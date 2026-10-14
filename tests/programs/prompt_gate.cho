@@ -1,0 +1,85 @@
+edition 7;
+
+// `prompt_gate` — the gate program for `src/prompt.cho`.
+//
+//     prompt_gate <project-file> x x x
+//
+// Reads `<file>`, `<file>.task` and `<file>.feedback` (each may be missing)
+// and prints the prompt. The harness pads the arguments.
+
+import prompt;
+import std.buffer;
+import std.io;
+
+// The file's bytes onto the heap, or nothing when it is not there.
+fn slurp[&h, &f, &p](heap: &!h Heap, fs: &f Fs(""), path: &p [byte]) -> [heap, fs_read("")] buffer.Buffer {
+    let store = box_slice(heap, 262144, byte_of(0));
+    var out = buffer.empty(heap, 16);
+    borrow mut store as &!sw in {
+        let n = fs_read(fs, path, contents(sw));
+        if n > 0 {
+            out = buffer.append(heap, out, contents(sw)[0..n]);
+        }
+    }
+    unbox_slice(heap, store);
+    return out;
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(signals);
+    release(exec);
+    release(net);
+    release(clock);
+    var console = io;
+    var h = heap;
+    var path = "";
+    borrow args as &g in {
+        path = arg(g, 1);
+    }
+    borrow fs as &f in {
+        borrow mut console as &!i in {
+            borrow mut h as &!hh in {
+                var task_path = buffer.empty(hh, 256);
+                task_path = buffer.append(hh, task_path, path);
+                task_path = buffer.append(hh, task_path, ".task");
+                var fb_path = buffer.empty(hh, 256);
+                fb_path = buffer.append(hh, fb_path, path);
+                fb_path = buffer.append(hh, fb_path, ".feedback");
+                let source = slurp(hh, f, path);
+                var task = buffer.empty(hh, 16);
+                var feedback = buffer.empty(hh, 16);
+                borrow task_path as &tp in {
+                    buffer.drop(hh, task);
+                    task = slurp(hh, f, buffer.bytes(tp));
+                }
+                borrow fb_path as &fp in {
+                    buffer.drop(hh, feedback);
+                    feedback = slurp(hh, f, buffer.bytes(fp));
+                }
+                borrow source as &sr in {
+                    borrow task as &tr in {
+                        borrow feedback as &fr in {
+                            let p = prompt.build(hh, buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                            borrow p as &pr in {
+                                io.write_all(i, buffer.bytes(pr));
+                            }
+                            buffer.drop(hh, p);
+                        }
+                    }
+                }
+                buffer.drop(hh, source);
+                buffer.drop(hh, task);
+                buffer.drop(hh, feedback);
+                buffer.drop(hh, task_path);
+                buffer.drop(hh, fb_path);
+            }
+        }
+    }
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return 0;
+}
