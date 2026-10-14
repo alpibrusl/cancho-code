@@ -45,6 +45,9 @@ jobs:
       - name: The authority report of the front door is the committed one (no network, no foreign code)
         run: CANCHO=$HOME/cancho-bin/cancho scripts/check-authority.sh
 
+      - name: The authority report of the native agent is the committed one (net_out, files, no process)
+        run: CANCHO=$HOME/cancho-bin/cancho CANCHO_PACKAGES=$HOME/cancho-bin/packages scripts/check-authority.sh --agent
+
       - name: The authority report of the provider is the committed one (net_out, the one reachable host class)
         run: CANCHO=$HOME/cancho-bin/cancho CANCHO_PACKAGES=$HOME/cancho-bin/packages scripts/check-authority.sh --provider
 
@@ -88,3 +91,4 @@ jobs:
           sh scripts/test-anthropic-wire.sh
           sh scripts/test-reply.sh
           sh scripts/test-prompt.sh
+          sh scripts/test-agent-native.sh

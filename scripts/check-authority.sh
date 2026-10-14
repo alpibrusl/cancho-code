@@ -9,6 +9,7 @@
 #   scripts/check-authority.sh --project   compare the project driver (it spawns the checker and the agent, reads and writes the work directory; no network) to docs/authority-project.json
 #   scripts/check-authority.sh --plan      compare the plan checker (it reads one file and prints; no process, no network) to docs/authority-plan.json
 #   scripts/check-authority.sh --provider  compare the provider (the one reachable host class) to docs/authority-provider.json
+#   scripts/check-authority.sh --agent     compare the native agent (src/cancho_agent.cho: reads its files, writes the project, one TLS host class) to docs/authority-agent.json
 #   scripts/check-authority.sh --update    write the file (after reading what changed); combine with --provider
 #   scripts/check-authority.sh --prove     prove the pin can fail: perturb a copy of the pinned file and require a red diff
 #
@@ -33,9 +34,10 @@ for arg in "$@"; do
     --update) mode=update ;;
     --prove) mode=prove ;;
     --provider) variant=provider ;;
+    --agent) variant=agent ;;
     --plan) variant=plan ;;
     --project) variant=project ;;
-    *) echo "usage: $0 [--update | --prove] [--provider | --plan | --project]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--update | --prove] [--provider | --agent | --plan | --project]" >&2; exit 2 ;;
   esac
 done
 
@@ -46,6 +48,13 @@ if [ "$variant" = provider ]; then
   [ -d "$C" ] || { echo "check-authority: no cancho packages found; set CANCHO_PACKAGES" >&2; exit 2; }
   files=("$here/tests/programs/provider_gate.cho" "$here/src/provider.cho" "$here/vendor/fetch_io.cho"
     "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho)
+elif [ "$variant" = agent ]; then
+  pinned=$here/docs/authority-agent.json
+  C="${CANCHO_PACKAGES:-}"
+  [ -d "$C" ] || C="$(dirname "$(dirname "$(command -v "$CANCHO")")")/packages"
+  [ -d "$C" ] || { echo "check-authority: no cancho packages found; set CANCHO_PACKAGES" >&2; exit 2; }
+  files=("$here/src/cancho_agent.cho" "$here/src/anthropic.cho" "$here/src/prompt.cho" "$here/src/provider.cho" "$here/src/reply.cho"
+    "$here/vendor/fetch_io.cho" "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho)
 elif [ "$variant" = plan ]; then
   pinned=$here/docs/authority-plan.json
   files=("$here/tests/programs/plancheck.cho" "$here/src/plan.cho")
@@ -103,6 +112,6 @@ if diff -u "$pinned" "$work/report.json" > "$work/diff"; then
 fi
 cat "$work/diff"
 echo >&2
-echo "check-authority: the authority report changed. If it is intended, read the diff, run $0 --update$([ "$variant" = provider ] && echo " --provider")$([ "$variant" = plan ] && echo " --plan")$([ "$variant" = project ] && echo " --project")" >&2
+echo "check-authority: the authority report changed. If it is intended, read the diff, run $0 --update$([ "$variant" = provider ] && echo " --provider")$([ "$variant" = agent ] && echo " --agent")$([ "$variant" = plan ] && echo " --plan")$([ "$variant" = project ] && echo " --project")" >&2
 echo "and commit ${pinned#"$here"/}: that commit is the approval." >&2
 exit 1

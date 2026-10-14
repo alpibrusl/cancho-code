@@ -1,0 +1,396 @@
+edition 7;
+
+// `cancho-agent` — the agent the driver runs, written in cancho.
+//
+//     cancho-agent --provider anthropic --model <model> --key-file <path> \
+//                  --host <name> --ip <a.b.c.d> --roots <pem> <project.cho>
+//
+// An agent is a command the driver runs with the project file as its last
+// argument; it replaces that file with a better one, or exits non-zero and
+// leaves it as it was. This one asks a model through `provider.exchange`
+// (native TLS, no spawned `curl`, no Python), builds what it asks with
+// `prompt`, reads the answer with `reply`, and writes only a program.
+//
+// **No provider and no model is ever assumed**: `--provider` and `--model`
+// are required, and so is every name that decides where the key goes
+// (`--host`, `--ip`, `--roots`). Resolving the name is the caller's
+// (`provider.exchange`'s rule: a resolver is a policy); `scripts/cancho-agent.sh`
+// is the thin wrapper that does it.
+//
+// Options (each `--name value`):
+//   --provider      anthropic                                    required
+//   --model         the model, as the API spells it              required
+//   --key-file      a file holding the API key                   required
+//   --host          the API's name (certificate and Host:)       required
+//   --ip            where that name resolves, as text            required
+//   --roots         a PEM bundle of the CAs to trust             required
+//   --port          the TCP port                                 (443)
+//   --tls           on | off                                     (on)
+//   --max-tokens    the bound on one answer                      (8192)
+//   --primer        a file with the language page, cached        (none)
+//   --thinking      adaptive | disabled                          (the model's own)
+//   --effort        low | medium | high | xhigh | max            (the model's own)
+//   --workspace     a workspace id, for a key not scoped to one  (none)
+//   --save-raw      a file every raw reply is appended to        (none)
+//
+// Exit 0: the project file is the model's program. Exit 1: it was not
+// changed (the model was unreachable, refused, or never produced a program).
+// Exit 2: the command line was wrong; nothing was read or sent.
+
+import anthropic;
+import prompt;
+import provider;
+import reply;
+import std.buffer;
+import std.bytes;
+import std.io;
+
+// ---- the command line ----------------------------------------------------
+
+// The value after `--name`, or "" when the option is absent.
+fn opt[&g](g: &g Args, name: &static [byte]) -> [args] &static [byte] {
+    var found = "";
+    var i = 1;
+    while i + 1 < arg_count(g) {
+        if bytes.equal(arg(g, i), name) {
+            found = arg(g, i + 1);
+        }
+        i = i + 1;
+    }
+    return found;
+}
+
+fn number[&t](text: &t [byte]) -> [] int {
+    var n = 0;
+    var i = 0;
+    while i < len(text) {
+        n = n * 10 + int_of(text[i]) - 48;
+        i = i + 1;
+    }
+    return n;
+}
+
+fn say[&i, &m](io: &!i Io, message: &m [byte]) -> [err_write] int {
+    io.error_all(io, "cancho-agent: ");
+    io.error_all(io, message);
+    io.error_all(io, "\n");
+    return 0;
+}
+
+// ---- files ---------------------------------------------------------------
+
+// A file's bytes, on the heap; false when it cannot be read.
+fn slurp[&h, &f, &p](heap: &!h Heap, fs: &f Fs(""), path: &p [byte], cap: int) -> [heap, fs_read("")] (buffer.Buffer, bool) {
+    let store = box_slice(heap, cap, byte_of(0));
+    var out = buffer.empty(heap, 16);
+    var ok = false;
+    borrow mut store as &!sw in {
+        let n = fs_read(fs, path, contents(sw));
+        if n >= 0 {
+            ok = true;
+            out = buffer.append(heap, out, contents(sw)[0..n]);
+        }
+    }
+    unbox_slice(heap, store);
+    return (out, ok);
+}
+
+// `path` with `suffix` after it, on the heap.
+fn with_suffix[&h, &p, &s](heap: &!h Heap, path: &p [byte], suffix: &s [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.empty(heap, 256);
+    b = buffer.append(heap, b, path);
+    b = buffer.append(heap, b, suffix);
+    return b;
+}
+
+fn trimmed_key[&t](text: &t [byte]) -> [] &t [byte] {
+    var a = 0;
+    var b = len(text);
+    while a < b && (int_of(text[a]) == 32 || (int_of(text[a]) >= 9 && int_of(text[a]) <= 13)) {
+        a = a + 1;
+    }
+    while b > a && (int_of(text[b - 1]) == 32 || (int_of(text[b - 1]) >= 9 && int_of(text[b - 1]) <= 13)) {
+        b = b - 1;
+    }
+    return text[a..b];
+}
+
+// Every raw reply is kept whole, before anything is cut out of it: the trail
+// records only the verdict on it. Appended by reading what is there and
+// writing it back with the new reply.
+fn save_raw[&h, &f, &p, &t, &s](heap: &!h Heap, fs: &f Fs(""), path: &p [byte], text: &t [byte], why: &s [byte]) -> [heap, fs_read(""), fs_write("")] int {
+    if len(path) == 0 {
+        return 0;
+    }
+    let (old, ok) = slurp(heap, fs, path, 16777216);
+    var all = old;
+    all = buffer.append(heap, all, "=== reply (stopped because: ");
+    all = buffer.append(heap, all, why);
+    all = buffer.append(heap, all, ")\n");
+    all = buffer.append(heap, all, text);
+    all = buffer.append(heap, all, "\n");
+    borrow all as &ar in {
+        fs_write(fs, path, buffer.bytes(ar));
+    }
+    buffer.drop(heap, all);
+    return 0;
+}
+
+// ---- the work ------------------------------------------------------------
+
+fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, args: &g Args) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write, args] int {
+    let provider_name = opt(args, "--provider");
+    let model = opt(args, "--model");
+    let key_file = opt(args, "--key-file");
+    let host = opt(args, "--host");
+    let ip = opt(args, "--ip");
+    let roots_file = opt(args, "--roots");
+    if len(provider_name) == 0 {
+        say(io, "--provider is required (there is no default provider)");
+        return 2;
+    }
+    if bytes.equal(provider_name, "anthropic") == false {
+        say(io, "--provider must be anthropic");
+        return 2;
+    }
+    if len(model) == 0 {
+        say(io, "--model is required (there is no default model)");
+        return 2;
+    }
+    if len(key_file) == 0 || len(host) == 0 || len(ip) == 0 || len(roots_file) == 0 {
+        say(io, "--key-file, --host, --ip and --roots are required");
+        return 2;
+    }
+    let thinking = opt(args, "--thinking");
+    let effort = opt(args, "--effort");
+    if len(thinking) > 0 && bytes.equal(thinking, "adaptive") == false && bytes.equal(thinking, "disabled") == false {
+        say(io, "--thinking must be disabled or adaptive");
+        return 2;
+    }
+    if len(effort) > 0 && bytes.equal(effort, "low") == false && bytes.equal(effort, "medium") == false && bytes.equal(effort, "high") == false && bytes.equal(effort, "xhigh") == false && bytes.equal(effort, "max") == false {
+        say(io, "--effort must be one of low, medium, high, xhigh, max");
+        return 2;
+    }
+    var port = 443;
+    if len(opt(args, "--port")) > 0 {
+        port = number(opt(args, "--port"));
+    }
+    let secure = bytes.equal(opt(args, "--tls"), "off") == false;
+    var max_tokens = 8192;
+    if len(opt(args, "--max-tokens")) > 0 {
+        max_tokens = number(opt(args, "--max-tokens"));
+    }
+    if arg_count(args) < 2 {
+        say(io, "the project file is the last argument");
+        return 2;
+    }
+    let project = arg(args, arg_count(args) - 1);
+
+    // the key, the roots, the primer and the project's three files
+    let (key_raw, key_ok) = slurp(heap, fs, key_file, 4096);
+    let (roots, roots_ok) = slurp(heap, fs, roots_file, 4194304);
+    var primer = buffer.empty(heap, 16);
+    var primer_ok = true;
+    if len(opt(args, "--primer")) > 0 {
+        buffer.drop(heap, primer);
+        let (p, ok) = slurp(heap, fs, opt(args, "--primer"), 1048576);
+        primer = p;
+        primer_ok = ok;
+    }
+    let (source, source_ok) = slurp(heap, fs, project, 1048576);
+    let task_path = with_suffix(heap, project, ".task");
+    let feedback_path = with_suffix(heap, project, ".feedback");
+    var task = buffer.empty(heap, 16);
+    var feedback = buffer.empty(heap, 16);
+    borrow task_path as &tp in {
+        buffer.drop(heap, task);
+        let (t, ok) = slurp(heap, fs, buffer.bytes(tp), 65536);
+        task = t;
+    }
+    borrow feedback_path as &fp in {
+        buffer.drop(heap, feedback);
+        let (t, ok) = slurp(heap, fs, buffer.bytes(fp), 262144);
+        feedback = t;
+    }
+    buffer.drop(heap, task_path);
+    buffer.drop(heap, feedback_path);
+
+    var rc = 1;
+    var key_present = false;
+    borrow key_raw as &kq in {
+        key_present = len(trimmed_key(buffer.bytes(kq))) > 0;
+    }
+    if key_ok && key_present && roots_ok && primer_ok && source_ok {
+        // consumed: it drops all six
+        return ask_and_write(heap, fs, net, clock, io, args, project, model, host, ip, port, secure, max_tokens, thinking, effort, key_raw, roots, primer, source, task, feedback);
+    }
+    if key_ok == false {
+        say(io, "cannot read --key-file");
+    } else if key_present == false {
+        say(io, "--key-file is empty");
+    } else if roots_ok == false {
+        say(io, "cannot read --roots");
+    } else if primer_ok == false {
+        say(io, "cannot read --primer");
+    } else {
+        say(io, "cannot read the project file");
+    }
+    buffer.drop(heap, key_raw);
+    buffer.drop(heap, roots);
+    buffer.drop(heap, primer);
+    buffer.drop(heap, source);
+    buffer.drop(heap, task);
+    buffer.drop(heap, feedback);
+    return rc;
+}
+
+// Up to three samples: a reply without a program, or cut off, is retried and
+// never written over the project.
+fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, args: &g Args, project: &p [byte], model: &m [byte], host: &o [byte], ip: &q [byte], port: int, secure: bool, max_tokens: int, thinking: &y [byte], effort: &s [byte], key_raw: buffer.Buffer, roots: buffer.Buffer, primer: buffer.Buffer, source: buffer.Buffer, task: buffer.Buffer, feedback: buffer.Buffer) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write, args] int {
+    let workspace = opt(args, "--workspace");
+    let raw_path = opt(args, "--save-raw");
+    var asked = buffer.empty(heap, 16);
+    borrow source as &sr in {
+        borrow task as &tr in {
+            borrow feedback as &fr in {
+                buffer.drop(heap, asked);
+                asked = prompt.build(heap, buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+            }
+        }
+    }
+    var body = buffer.empty(heap, 16);
+    borrow asked as &ar in {
+        borrow primer as &pr in {
+            buffer.drop(heap, body);
+            body = anthropic.request_body(heap, model, max_tokens, buffer.bytes(pr), buffer.bytes(ar), thinking, effort);
+        }
+    }
+    buffer.drop(heap, asked);
+    var headers = buffer.empty(heap, 16);
+    borrow key_raw as &kr in {
+        buffer.drop(heap, headers);
+        headers = anthropic.headers(heap, trimmed_key(buffer.bytes(kr)), workspace);
+    }
+    var entropy = box_slice(heap, 32, byte_of(0));
+    borrow mut entropy as &!ew in {
+        fs_read(fs, "/dev/urandom", contents(ew));
+    }
+    var rc = 1;
+    var attempt = 0;
+    var finished = false;
+    while attempt < 3 && finished == false {
+        attempt = attempt + 1;
+        borrow headers as &hr in {
+            borrow body as &br in {
+              borrow roots as &rr in {
+                borrow mut entropy as &!ew in {
+                    match provider.exchange(heap, net, clock, io, host, port, secure, "/v1/messages", buffer.bytes(hr), buffer.bytes(br), buffer.bytes(rr), ip, contents(ew), 33554432, 1800000) {
+                        provider.Answered::Failed(tag) => {
+                            io.error_all(io, "cancho-agent: cannot reach the API: ");
+                            io.error_all(io, provider.tag_of(tag));
+                            io.error_all(io, "\n");
+                            finished = true;
+                        }
+                        provider.Answered::Ok(status, out) => {
+                            borrow out as &or in {
+                                let answer = buffer.bytes(or);
+                                if status != 200 {
+                                    let why = reply.error_message(heap, answer);
+                                    borrow why as &wr in {
+                                        io.error_all(io, "cancho-agent: HTTP error from the API (");
+                                        io.error_all(io, buffer.bytes(wr));
+                                        io.error_all(io, ")\n");
+                                    }
+                                    buffer.drop(heap, why);
+                                    finished = true;
+                                } else {
+                                    let text = reply.text(heap, answer);
+                                    let usage = reply.usage_line(heap, answer);
+                                    let cut = reply.stop_reason_is(heap, answer, "max_tokens");
+                                    borrow text as &xr in {
+                                        borrow usage as &ur in {
+                                            var why = buffer.empty(heap, 64);
+                                            if cut {
+                                                why = buffer.append(heap, why, "max_tokens; usage ");
+                                            } else {
+                                                why = buffer.append(heap, why, "end; usage ");
+                                            }
+                                            why = buffer.append(heap, why, buffer.bytes(ur));
+                                            borrow why as &yr in {
+                                                save_raw(heap, fs, raw_path, buffer.bytes(xr), buffer.bytes(yr));
+                                            }
+                                            buffer.drop(heap, why);
+                                        }
+                                        if cut {
+                                            io.error_all(io, "cancho-agent: a sample was cut off by the bound (--max-tokens)\n");
+                                        } else {
+                                            let (a, z) = reply.program_span(buffer.bytes(xr));
+                                            if a < 0 {
+                                                io.error_all(io, "cancho-agent: a sample has no program in it (reasoning, not a file)\n");
+                                            } else {
+                                                // the program and one final newline, as the Python agent writes it
+                                                var file = buffer.empty(heap, z - a + 2);
+                                                file = buffer.append(heap, file, buffer.bytes(xr)[a..z]);
+                                                file = buffer.push(heap, file, byte_of(10));
+                                                borrow file as &fr in {
+                                                    fs_write(fs, project, buffer.bytes(fr));
+                                                }
+                                                buffer.drop(heap, file);
+                                                rc = 0;
+                                                finished = true;
+                                            }
+                                        }
+                                    }
+                                    buffer.drop(heap, text);
+                                    buffer.drop(heap, usage);
+                                }
+                            }
+                            buffer.drop(heap, out);
+                        }
+                    }
+                }
+              }
+            }
+        }
+    }
+    unbox_slice(heap, entropy);
+    buffer.drop(heap, headers);
+    buffer.drop(heap, body);
+    buffer.drop(heap, key_raw);
+    buffer.drop(heap, roots);
+    buffer.drop(heap, primer);
+    buffer.drop(heap, source);
+    buffer.drop(heap, task);
+    buffer.drop(heap, feedback);
+    return rc;
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(signals);
+    release(exec);
+    var console = io;
+    var h = heap;
+    var rc = 1;
+    borrow args as &g in {
+        borrow net as &n in {
+            borrow clock as &c in {
+                borrow fs as &f in {
+                    borrow mut console as &!i in {
+                        borrow mut h as &!hh in {
+                            rc = go(hh, f, n, c, i, g);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    release(net);
+    release(clock);
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return rc;
+}
