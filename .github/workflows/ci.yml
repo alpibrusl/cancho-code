@@ -73,6 +73,7 @@ jobs:
           sh scripts/test-trail.sh
           sh scripts/test-agent.sh
           sh scripts/test-agent-ollama.sh
+          sh scripts/test-agent-anthropic.sh
           sh scripts/test-fix.sh
           sh scripts/test-acceptance.sh
           sh scripts/test-verdicts.sh
