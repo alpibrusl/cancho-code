@@ -1,0 +1,112 @@
+edition 7;
+import std.result;
+import std.buffer;
+
+fn b64_char(v: int) -> [] byte {
+    if v < 26 { return byte_of(65 + v); }
+    if v < 52 { return byte_of(97 + v - 26); }
+    if v < 62 { return byte_of(48 + v - 52); }
+    if v == 62 { return byte_of(43); }
+    return byte_of(47);
+}
+
+fn b64_val(c: int) -> [] int {
+    if c >= 65 && c <= 90 { return c - 65; }
+    if c >= 97 && c <= 122 { return c - 97 + 26; }
+    if c >= 48 && c <= 57 { return c - 48 + 52; }
+    if c == 43 { return 62; }
+    if c == 47 { return 63; }
+    return 0 - 1;
+}
+
+fn base64_encode[&h, &r](heap: &!h Heap, data: &r [byte]) -> [heap] buffer.Buffer {
+    let n = len(data);
+    var out = buffer.empty(heap, (n + 2) / 3 * 4 + 1);
+    var i = 0;
+    while i + 3 <= n {
+        let a = int_of(data[i]);
+        let b = int_of(data[i + 1]);
+        let c = int_of(data[i + 2]);
+        out = buffer.push(heap, out, b64_char(a / 4));
+        out = buffer.push(heap, out, b64_char((a % 4) * 16 + b / 16));
+        out = buffer.push(heap, out, b64_char((b % 16) * 4 + c / 64));
+        out = buffer.push(heap, out, b64_char(c % 64));
+        i = i + 3;
+    }
+    let rest = n - i;
+    if rest == 1 {
+        let a = int_of(data[i]);
+        out = buffer.push(heap, out, b64_char(a / 4));
+        out = buffer.push(heap, out, b64_char((a % 4) * 16));
+        out = buffer.push(heap, out, byte_of(61));
+        out = buffer.push(heap, out, byte_of(61));
+    }
+    if rest == 2 {
+        let a = int_of(data[i]);
+        let b = int_of(data[i + 1]);
+        out = buffer.push(heap, out, b64_char(a / 4));
+        out = buffer.push(heap, out, b64_char((a % 4) * 16 + b / 16));
+        out = buffer.push(heap, out, b64_char((b % 16) * 4));
+        out = buffer.push(heap, out, byte_of(61));
+    }
+    return out;
+}
+
+// 0 when text is canonical padded base64, otherwise a code for the first rule it breaks.
+fn b64_problem[&r](text: &r [byte]) -> [] int {
+    let n = len(text);
+    if n % 4 != 0 { return 1; }
+    var i = 0;
+    while i < n {
+        let c = int_of(text[i]);
+        if c == 61 {
+            if i < n - 2 { return 3; }
+        } else {
+            if b64_val(c) < 0 { return 2; }
+        }
+        i = i + 1;
+    }
+    if n == 0 { return 0; }
+    let last = int_of(text[n - 1]);
+    let prev = int_of(text[n - 2]);
+    if prev == 61 && last != 61 { return 3; }
+    if prev == 61 {
+        if b64_val(int_of(text[n - 3])) % 16 != 0 { return 4; }
+    } else {
+        if last == 61 {
+            if b64_val(prev) % 4 != 0 { return 4; }
+        }
+    }
+    return 0;
+}
+
+fn b64_pad_value(c: int) -> [] int {
+    if c == 61 { return 0; }
+    return b64_val(c);
+}
+
+fn base64_decode[&h, &r](heap: &!h Heap, text: &r [byte]) -> [heap] result.Result[buffer.Buffer, &static [byte]] {
+    let problem = b64_problem(text);
+    if problem == 1 { return result.Result::Err("length is not a multiple of 4"); }
+    if problem == 2 { return result.Result::Err("character outside the base64 alphabet"); }
+    if problem == 3 { return result.Result::Err("misplaced or missing padding"); }
+    if problem == 4 { return result.Result::Err("non-zero trailing bits"); }
+    let n = len(text);
+    var out = buffer.empty(heap, n / 4 * 3 + 1);
+    var i = 0;
+    while i < n {
+        let v0 = b64_val(int_of(text[i]));
+        let v1 = b64_val(int_of(text[i + 1]));
+        let v2 = b64_pad_value(int_of(text[i + 2]));
+        let v3 = b64_pad_value(int_of(text[i + 3]));
+        out = buffer.push(heap, out, byte_of(v0 * 4 + v1 / 16));
+        if int_of(text[i + 2]) != 61 {
+            out = buffer.push(heap, out, byte_of((v1 % 16) * 16 + v2 / 4));
+        }
+        if int_of(text[i + 3]) != 61 {
+            out = buffer.push(heap, out, byte_of((v2 % 4) * 64 + v3));
+        }
+        i = i + 4;
+    }
+    return result.Result::Ok(out);
+}

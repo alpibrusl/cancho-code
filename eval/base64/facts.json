@@ -1,0 +1,31 @@
+{
+ "item": "base64",
+ "units": 2,
+ "oracle_cases": 329,
+ "reference_loc": 106,
+ "reference_fns": 6,
+ "needs": [
+  "bytes in, bytes out (&[byte] to buffer.Buffer)",
+  "buffer.Buffer built with push in a loop (ownership moves round)",
+  "Result with a static message, buffer dropped on no path that returns Err",
+  "integer bit arithmetic by / and % (no shifts needed)",
+  "alphabet mapping both ways without a string table (byte arithmetic on ranges)",
+  "remainder handling of the last 1 or 2 bytes",
+  "strict validation before or while decoding",
+  "heap row [heap]"
+ ],
+ "pitfalls": [
+  "padding left off (length 2 or 3 mod 4) accepted",
+  "URL-safe - and _ accepted",
+  "whitespace/newlines skipped (the lenient habit of most decoders)",
+  "non-zero trailing bits accepted (Python's own b64decode(validate=True) accepts them)",
+  "'=' accepted in the middle, or three '=', or 'A=AA'",
+  "'==' with a non-'=' after it, or a pad where the last group has 3 data chars and 2 pads",
+  "bytes of 128 or more in the text (int_of gives 128..255, negative-looking bugs if a signed compare is assumed)",
+  "encode: forgetting the padding, or using the wrong low bits for the last character",
+  "decode Err path leaking a half-built Buffer",
+  "reading text[i+3] past the end when length is not a multiple of 4",
+  "int_of(byte) values 128-255 in the data when encoding (a / 4 on a wrong sign would corrupt)"
+ ],
+ "difficulty_notes": "L2: two functions, no data structure, but strictness is a list of separate rules that a model tends to apply from the lenient decoder it knows (skip whitespace, optional padding, url-safe). 115 of the 329 oracle cases probe the trailing-bits rule, 43 length, 21 alphabet, 21 padding; the expected answers were cross-checked between Python base64, an independent regex built from the RFC, and hand-typed RFC 4648 section 10 vectors. Oracle also runs lengths 0..8 and every possible penultimate character before '==' and '='."
+}

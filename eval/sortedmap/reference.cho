@@ -1,0 +1,65 @@
+edition 7;
+import std.option;
+
+fn sm_lower_bound[&k](keys: &k [int], n: int, key: int) -> [] int {
+    var lo = 0;
+    var hi = n;
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if keys[mid] < key {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo;
+}
+
+fn sm_get[&k, &v](keys: &k [int], vals: &v [int], n: int, key: int) -> [] option.Option[int] {
+    let i = sm_lower_bound(keys, n, key);
+    if i < n && keys[i] == key {
+        return option.Option::Some(vals[i]);
+    }
+    return option.Option::None;
+}
+
+fn sm_count_in_range[&k](keys: &k [int], n: int, lo: int, hi: int) -> [] int {
+    if lo >= hi {
+        return 0;
+    }
+    return sm_lower_bound(keys, n, hi) - sm_lower_bound(keys, n, lo);
+}
+
+fn sm_insert[&k, &v](keys: &!k [int], vals: &!v [int], n: int, key: int, value: int) -> [] int {
+    let i = sm_lower_bound(keys, n, key);
+    if i < n && keys[i] == key {
+        vals[i] = value;
+        return n;
+    }
+    if n >= len(keys) {
+        return -1;
+    }
+    var j = n;
+    while j > i {
+        keys[j] = keys[j - 1];
+        vals[j] = vals[j - 1];
+        j = j - 1;
+    }
+    keys[i] = key;
+    vals[i] = value;
+    return n + 1;
+}
+
+fn sm_remove[&k, &v](keys: &!k [int], vals: &!v [int], n: int, key: int) -> [] int {
+    let i = sm_lower_bound(keys, n, key);
+    if i >= n || keys[i] != key {
+        return n;
+    }
+    var j = i;
+    while j < n - 1 {
+        keys[j] = keys[j + 1];
+        vals[j] = vals[j + 1];
+        j = j + 1;
+    }
+    return n - 1;
+}

@@ -1,0 +1,34 @@
+{
+ "item": "08-ini",
+ "units": 9,
+ "oracle_cases": 76,
+ "oracle_cases_note": "49 vendored oracle cases (40 ini_parse, 9 ini_get) + 27 audit-only extras (15 error line numbers, 12 get)",
+ "reference_loc": 186,
+ "reference_fns": 11,
+ "needs": [
+  "Result",
+  "Option inside Result",
+  "buffer.Buffer (owned, dropped on every path incl. Err)",
+  "loops over bytes",
+  "slices and sub-slices (&r [byte] returned from a function)",
+  "bytes.trim / bytes.is_alpha",
+  "line splitting without a split function",
+  "text representation of a list (newline-terminated entries in one Buffer)",
+  "borrow ... as &x in",
+  "state in vars across a loop (current section, line number)"
+ ],
+ "pitfalls": [
+  "split at the FIRST '=' only (values may contain '=')",
+  "no trailing comments: ';' mid-line is part of the value",
+  "comments only at the start of the trimmed line",
+  "duplicate name: last value, first position",
+  "quote strip needs >= 2 bytes (a lone '\"' is not a pair); only one pair; inside kept exactly",
+  "section name trimmed and may not contain [ ] =; text after ']' is malformed; lone '[' malformed",
+  "key must be ASCII only: non-ASCII key is malformed but non-ASCII value/section is fine",
+  "Err line number is 1-based and counts blank/comment lines and the first malformed line, not the last",
+  "final line without line feed still parsed; CR before LF ignored",
+  "buffer leaks / double drop on the Err path",
+  "ini_get must treat section '' as no prefix, and match the full name exactly (not as suffix)"
+ ],
+ "difficulty_notes": "The shapes are pinned in the plan: a list of settings is one Buffer of 'name=value\\n' entries and Err carries the line number (the brief's List[Str] and message strings do not exist in cancho). The hard parts are ownership of Buffers across the raw/dedupe/parse chain and getting borrows right, not the INI grammar, which is fully specified in the plan. The vendored oracle only checks Err-ness; the audit adds line-number checks and a few extra get cases (single quote char, empty value, last-wins across re-opened sections)."
+}

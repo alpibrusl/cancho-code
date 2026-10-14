@@ -1,0 +1,62 @@
+{
+ "name": "base64",
+ "units": [
+  {
+   "id": "encode",
+   "signature": "fn base64_encode[&h, &r](heap: &!h Heap, data: &r [byte]) -> [heap] buffer.Buffer",
+   "description": "Encode data as RFC 4648 base64 (section 4: the standard alphabet A-Z a-z 0-9 + /, WITH padding): the text, as ASCII bytes in a heap-owned Buffer (cancho has no string type); the caller drops it. Values 0-25 are A-Z, 26-51 are a-z, 52-61 are 0-9, 62 is '+', 63 is '/'. Every full group of 3 input bytes becomes 4 characters; a final group of 2 bytes becomes 3 characters and one '=', a final group of 1 byte becomes 2 characters and '=='; the empty input gives the empty Buffer. The unused low bits of the last character are zero. No line breaks. Input bytes are 0-255 (int_of(b) is the value). It never fails, and the output length is always 4 * ceil(len(data) / 3).",
+   "examples": [
+    "base64_encode(heap, \"foobar\") == \"Zm9vYmFy\"",
+    "base64_encode(heap, \"foob\") == \"Zm9vYg==\"",
+    "base64_encode(heap, \"fo\") == \"Zm8=\"",
+    "base64_encode(heap, \"\") == \"\""
+   ],
+   "tests": [
+    "fn same_bytes[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var i = 0; while i < len(x) { if int_of(x[i]) != int_of(y[i]) { return false; } i = i + 1; } return true; }",
+    "fn enc_is[&h](heap: &!h Heap, data: &static [byte], want: &static [byte]) -> [heap] int { let b = base64_encode(heap, data); var same = false; borrow b as &x in { same = same_bytes(buffer.bytes(x), want); } buffer.drop(heap, b); if same { return 0; } return 1; }",
+    "pub fn test_encode_1[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(enc_is(heap, \"\", \"\"), 0); return 0; }",
+    "pub fn test_encode_2[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(enc_is(heap, \"f\", \"Zg==\"), 0); return 0; }",
+    "pub fn test_encode_3[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(enc_is(heap, \"fo\", \"Zm8=\"), 0); return 0; }",
+    "pub fn test_encode_4[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(enc_is(heap, \"foo\", \"Zm9v\"), 0); return 0; }",
+    "pub fn test_encode_5[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(enc_is(heap, \"foob\", \"Zm9vYg==\"), 0); return 0; }",
+    "pub fn test_encode_6[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(enc_is(heap, \"fooba\", \"Zm9vYmE=\"), 0); return 0; }",
+    "pub fn test_encode_7[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(enc_is(heap, \"foobar\", \"Zm9vYmFy\"), 0); return 0; }",
+    "pub fn test_encode_8[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(enc_is(heap, \"Man\", \"TWFu\"), 0); return 0; }",
+    "pub fn test_encode_9[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(enc_is(heap, \"Ma\", \"TWE=\"), 0); return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "decode",
+   "signature": "fn base64_decode[&h, &r](heap: &!h Heap, text: &r [byte]) -> [heap] result.Result[buffer.Buffer, &static [byte]]",
+   "description": "Strictly decode RFC 4648 base64 (standard alphabet, padded): Ok(the original bytes in a heap-owned Buffer, which the caller drops) exactly when text is what base64_encode would produce for some data, otherwise Err(message). The empty text is Ok(empty). Every one of these is Err, and it must never panic on any bytes: (1) length not a multiple of 4, which includes missing padding (\"Zg\", \"Zm8\"); (2) any byte outside A-Z a-z 0-9 + / and the padding '=': '-' and '_' (URL-safe) are outside, and so are space, tab, '\\r', '\\n' (whitespace is not skipped, anywhere), NUL and bytes of 128 or more; (3) misplaced or wrong padding: '=' anywhere but the last one or two characters of the whole text (\"Zg==Zg==\", \"=AAA\", \"A=AA\"), three or four '=' (\"A===\", \"====\"), a lone '=' in third place (\"AA=A\"); a last group with two data characters must end in exactly \"==\", one with three in exactly one '='; (4) non-zero trailing bits: in a last group \"xy==\" the low 4 bits of y's value must be 0 (y is one of A Q g w) and in \"xyz=\" the low 2 bits of z's value must be 0 (z is one of A E I M Q U Y c g k o s w 0 4 8); \"Zh==\" and \"Zm9=\" are Err, \"Zg==\" and \"Zm8=\" are Ok. Err carries a static message; it does not matter which. The signature cannot say that decode must not leak: on every Err path nothing is left allocated.",
+   "examples": [
+    "base64_decode(heap, \"Zm9vYmFy\") == result.Result::Ok(\"foobar\")",
+    "base64_decode(heap, \"Zg==\") == result.Result::Ok(\"f\")",
+    "base64_decode(heap, \"\") == result.Result::Ok(\"\")",
+    "base64_decode(heap, \"Zg\") == result.Result::Err",
+    "base64_decode(heap, \"Zh==\") == result.Result::Err"
+   ],
+   "tests": [
+    "fn same_bytes[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var i = 0; while i < len(x) { if int_of(x[i]) != int_of(y[i]) { return false; } i = i + 1; } return true; }",
+    "fn dec_is[&h](heap: &!h Heap, text: &static [byte], want: &static [byte]) -> [heap] int { match base64_decode(heap, text) { result.Result::Ok(b) => { var same = false; borrow b as &x in { same = same_bytes(buffer.bytes(x), want); } buffer.drop(heap, b); if same { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "fn dec_err[&h](heap: &!h Heap, text: &static [byte]) -> [heap] int { match base64_decode(heap, text) { result.Result::Ok(b) => { buffer.drop(heap, b); return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_decode_ok_1[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dec_is(heap, \"\", \"\"), 0); return 0; }",
+    "pub fn test_decode_ok_2[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dec_is(heap, \"Zg==\", \"f\"), 0); return 0; }",
+    "pub fn test_decode_ok_3[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dec_is(heap, \"Zm8=\", \"fo\"), 0); return 0; }",
+    "pub fn test_decode_ok_4[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dec_is(heap, \"Zm9vYmFy\", \"foobar\"), 0); return 0; }",
+    "pub fn test_decode_ok_5[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dec_is(heap, \"TWFu\", \"Man\"), 0); return 0; }",
+    "pub fn test_decode_err_1[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dec_err(heap, \"Zg\"), 0); return 0; }",
+    "pub fn test_decode_err_2[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dec_err(heap, \"Zm9vYg=\"), 0); return 0; }",
+    "pub fn test_decode_err_3[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dec_err(heap, \"Zg==\\n\"), 0); return 0; }",
+    "pub fn test_decode_err_4[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dec_err(heap, \"Zm 9v\"), 0); return 0; }",
+    "pub fn test_decode_err_5[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dec_err(heap, \"Zm9-\"), 0); return 0; }",
+    "pub fn test_decode_err_6[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dec_err(heap, \"Zg==Zg==\"), 0); return 0; }",
+    "pub fn test_decode_err_7[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dec_err(heap, \"A===\"), 0); return 0; }",
+    "pub fn test_decode_err_8[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dec_err(heap, \"Zh==\"), 0); return 0; }",
+    "pub fn test_decode_err_9[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dec_err(heap, \"Zm9=\"), 0); return 0; }"
+   ],
+   "deps": []
+  }
+ ]
+}

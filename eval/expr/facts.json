@@ -1,0 +1,30 @@
+{
+ "item": "expr",
+ "units": 6,
+ "oracle_cases": 385,
+ "reference_loc": 133,
+ "reference_fns": 8,
+ "needs": [
+  "Result (result.Result::Ok / Err, matched by the caller)",
+  "loops over bytes with int_of and a position, no break/continue (flags in the loop condition)",
+  "state in a slice (alloc_slice[a](2, 0) in a region, passed as &!q [int]): position and error flag shared by recursive calls",
+  "recursion: a recursive-descent parser, 10000 levels of parentheses or unary minus deep",
+  "overflow-safe int arithmetic without trapping: pre-check against the limits, or wrapping_mul plus a division check",
+  "truncating division and C remainder (cancho / and % already truncate toward zero; no work needed, but must be known)"
+ ],
+ "pitfalls": [
+  "cancho int + - * and unary minus TRAP on overflow (SIGILL); the overflow test must run before the operation, never after",
+  "the minimum -9223372036854775808 has no literal: 9223372036854775808 does not parse in cancho, so write -9223372036854775807 - 1",
+  "literal accumulation v*10+d overflows at the 19th digit: compare against (MAX - d) / 10 first; 9223372036854775808 and 18446744073709551616 must be Err, 0000000000000000000009223372036854775807 must be Ok",
+  "the brief makes '-9223372036854775808' an Err (the literal is checked before the minus); a solver that accumulates negatively would accept it",
+  "product overflow check by p / b == a is wrong for MIN * -1 and -1 * MIN (the division traps or lies): -1 needs a special case",
+  "MIN / -1 is Err but MIN % -1 is 0 (not Err); in cancho the remainder does not trap (docs/defined-behaviour.md 2.3)",
+  "an intermediate overflow is an Err even when a later step brings the value back in range (9223372036854775807+1-1)",
+  "left associativity of - / % (10-4-3, 100/10/5, 7%4*2): a right-recursive grammar gets it wrong",
+  "unary minus must also work after a binary operator (2*-3, 2--3) and repeat (--3); no unary plus",
+  "trailing garbage ('1+2)', '1 2', '(1)(2)', tab, newline, non-ASCII digits) and empty / only-spaces text are Err",
+  "after an error the parser must stop (a flag in loop conditions) or it may loop or read past the end",
+  "deep nesting: recursion depth 10000 works with the native stack (checked to 20000; 100000 overflows the stack and is outside the brief)"
+ ],
+ "difficulty_notes": "L4. The grammar is small, but cancho adds three obstacles an ordinary expression-evaluator exercise does not have: no closures or structs-with-slices so the parser state must be a slice (or an int-packed position), arithmetic that traps so every overflow check has to be written ahead of the operation, and the MIN/-1 asymmetry (/ is Err, % is 0). Recursion and mutual recursion are both accepted by cancho (verified: reference.cho uses the single self-recursive parse_level(s, st, level); an alternative with parse_primary/parse_unary/parse_term/parse_expr calling each other forward passes the same 385/385). The plan uses the single-function form because units are built in dependency order and a plan cannot express a dependency cycle between units; the natural mutually recursive design therefore cannot be given to the unit-by-unit builder as separate units (only as one unit). A shunting-yard or explicit-stack design is also expressible with int slices. Result[int, &static [byte]] is expressible. Unit examples for read_number and parse_level cannot construct the state slice, so their examples use a placeholder `st` for a fresh [0, 0] state and the real checks are in the unit tests; plancheck accepts this shape. Overlap with the oracle: the plan's examples and tests reuse a few canonical oracle inputs (1+2*3, (1+2)*3, -(-(3)), 1 2, 1/0, 9223372036854775807+1, 9223372036854775807+1-1, -9223372036854775808, MIN/-1); the oracle's other ~370 cases (precedence traps, 10000-deep nesting, long chains, 3000-space padding, random expressions, overflow edges) are hidden. Oracle evaluator is a tokenizer plus precedence climbing over Python big ints with a range check after each operation, a different shape from the reference, and its self-check against hand-computed values caught a real bug (it range-checked MIN % -1)."
+}

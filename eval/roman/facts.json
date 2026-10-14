@@ -1,0 +1,26 @@
+{
+ "item": "roman",
+ "units": 2,
+ "oracle_cases": 439,
+ "reference_loc": 94,
+ "reference_fns": 6,
+ "needs": [
+  "Result",
+  "buffer (owned output, push, drop by caller)",
+  "loops over bytes",
+  "multi-way table lookups without arrays (if-chains or a lookup fn)",
+  "borrow of a text parameter",
+  "integer arithmetic"
+ ],
+ "pitfalls": [
+  "from_roman accepting loose numerals (IIII, VX, IC, MMMM, CDC, IXI) because the letter values add up to something in range",
+  "subtractive pair validation: only IV IX XL XC CD CM; IL, IC, XM, VX must fail",
+  "repetition limits: 3 for I X C M, 1 for V L D",
+  "rejecting values > 3999 (MMMM) and the empty string",
+  "to_roman range edges 0, -1, 3999, 4000",
+  "non-ASCII/other bytes and lower case must be Err, never a panic or out-of-bounds index",
+  "reading text[i+1] past the end",
+  "buffer ownership: the Ok Buffer is heap-owned"
+ ],
+ "difficulty_notes": "Target L2. Two independent units, no state. to_roman is a standard greedy table; the discriminating part is from_roman canonicality. Reference validates by comparing the text against the on-the-fly re-encoding of the parsed value (no heap needed, so from_roman stays pure). Oracle: 192 to_roman cases (1..40, boundaries, samples across the range, 7 out-of-range), 246 from_roman (canonical samples + 59 invalid strings), plus one exhaustive round trip over all 3999 values counted as one case. Plan examples overlap the oracle on a few canonical values (1, 4, 14, 1994, 3999, XIV, MCMXCIV, MMMCMXCIX) and a few invalid strings (IIII, VX, MMMM, empty, ' X', 'XIV ', VV, IXI); the rest of the 59 invalid strings are hidden."
+}

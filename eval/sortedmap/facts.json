@@ -1,0 +1,29 @@
+{
+ "item": "sortedmap",
+ "units": 5,
+ "oracle_cases": 124,
+ "reference_loc": 60,
+ "reference_fns": 5,
+ "needs": [
+  "state in caller-provided int slices (&k [int] to read, &!k [int] to mutate, two of them with distinct regions)",
+  "binary search over a prefix of a slice (n, not len)",
+  "in-place shifting loops (right on insert, left on remove) with while only, no break",
+  "option.Option[int] result",
+  "a fixed capacity read from len(keys)",
+  "a count passed in and returned; -1 as the full signal"
+ ],
+ "pitfalls": [
+  "`val` is a keyword in cancho: a parameter or local named `val` does not parse (the brief says `value`)",
+  "replace-on-equal-key must win over the full check: replacing in a full map returns n, not -1",
+  "a full-map insert must leave keys[0..n) and vals[0..n) untouched (no half-shift before discovering it)",
+  "shifting must move vals together with keys, in the right direction (insert from the top down, remove from the bottom up)",
+  "searching len(keys) instead of n reads the garbage tail (the audit fills it with -999, below every key)",
+  "lower_bound is the first key >= k, not > k; count_in_range is lo-inclusive hi-exclusive and 0 when lo >= hi",
+  "mid = (lo + hi) / 2 and key subtraction overflow at the int extremes (the oracle uses +-9223372036854775807 and 2^62)",
+  "capacity 0: insert returns -1, nothing may index keys[0]",
+  "remove of the last entry must not read keys[n] / vals[n]; remove of an absent key returns n",
+  "a stored value 0 or -1 must still come back as Some, not be confused with a not-found sentinel",
+  "no break/continue; mutating slice params need &! in the signature"
+ ],
+ "difficulty_notes": "L3 stateful data structure. Five small functions, 60 reference lines. The state is the caller's two int slices plus a count that the mutating calls return, chosen because it is how cancho passes state (no &mut self, no struct field of type [T]) and keeps every function a small pure-ish unit checkable from a literal pre-state. The audit resets the arrays to the oracle's pre-state before every op (tail = -999) so a wrong function costs only its own group; the oracle (25 sequences, 879 ops: 9 hand-built edge sequences incl. capacity 0/1, full+replace, extremes, plus 16 seeded random runs over caps 3/8/16) is a dict cross-checked against a bisect twin and hand asserts. Plan examples/tests overlap the brief's capacity-4 worked example {10,20,30} with the oracle only in a few canonical points."
+}

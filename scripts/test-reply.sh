@@ -26,10 +26,10 @@ import agent_lib
 fails = 0
 tmp = tempfile.mkdtemp(prefix="cc-reply-cases-")
 
-def run(mode, data):
+def run(mode, data, name="x"):
     path = os.path.join(tmp, "case")
     open(path, "wb").write(data)
-    p = subprocess.run([gate, mode, path, "x", "x", "x"], capture_output=True)
+    p = subprocess.run([gate, mode, path, name, "x", "x"], capture_output=True)
     return p.returncode, p.stdout
 
 def fail(msg):
@@ -98,8 +98,8 @@ def msg(content, stop="end_turn", usage=None):
     return {"id": "msg_x", "type": "message", "role": "assistant", "model": "m", "content": content, "stop_reason": stop,
             "usage": usage if usage is not None else {"input_tokens": 1, "output_tokens": 1}}
 
-def expect(name, mode, body, want):
-    code, out = run(mode, body if isinstance(body, bytes) else json.dumps(body).encode("utf-8"))
+def expect(name, mode, body, want, field="x"):
+    code, out = run(mode, body if isinstance(body, bytes) else json.dumps(body).encode("utf-8"), field)
     if code != 0 or out != want.encode("utf-8"):
         fail("reply: %s: wanted %r, got %r (exit %d)" % (name, want[:100], out[:100].decode("utf-8", "replace"), code))
 
@@ -135,7 +135,15 @@ expect("ollama: no done_reason", "length", {"response": "x"}, "no")
 expect("ollama: error body", "generate-error", {"error": "model 'x' not found"}, "model 'x' not found")
 expect("ollama: no error field", "generate-error", {"response": "x"}, "no message")
 expect("ollama: error from a non-JSON body", "generate-error", b"oops", "no message")
-print("reply: 26 cases")
+U = {"input_tokens": 12, "output_tokens": 345, "cache_creation_input_tokens": 11408, "cache_read_input_tokens": 7}
+for f, v in (("input_tokens", 12), ("output_tokens", 345), ("cache_creation_input_tokens", 11408), ("cache_read_input_tokens", 7), ("nope", 0)):
+    expect("usage count " + f, "usage-count", msg([], usage=U), str(v), f)
+expect("usage count of a non-JSON body", "usage-count", b"x", "0", "input_tokens")
+expect("usage count with no usage object", "usage-count", {"content": []}, "0", "input_tokens")
+expect("top count (ollama)", "top-count", {"response": "x", "eval_count": 77, "prompt_eval_count": 1234}, "77", "eval_count")
+expect("top count (ollama) prompt", "top-count", {"response": "x", "eval_count": 77, "prompt_eval_count": 1234}, "1234", "prompt_eval_count")
+expect("top count absent", "top-count", {"response": "x"}, "0", "eval_count")
+print("reply: 36 cases")
 sys.exit(1 if fails else 0)
 PY
 rc=$?

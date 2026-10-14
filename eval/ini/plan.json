@@ -1,0 +1,190 @@
+{
+ "name": "ini",
+ "units": [
+  {
+   "id": "key",
+   "signature": "fn ini_key_ok[&r](key: &r [byte]) -> [] bool",
+   "description": "Is this text a valid setting key? True when it is non-empty and every byte is an ASCII letter (a-z, A-Z), an ASCII digit, an underscore, a dot or a hyphen. Anything else (a space, '=', a non-ASCII byte such as the bytes of \"é\") makes it invalid. The empty text is invalid. The key is passed already trimmed; do not trim it here.",
+   "examples": [
+    "ini_key_ok(\"a\") == true",
+    "ini_key_ok(\"key-with.dash_1\") == true",
+    "ini_key_ok(\"\") == false",
+    "ini_key_ok(\"a b\") == false",
+    "ini_key_ok(\"a=b\") == false"
+   ],
+   "deps": []
+  },
+  {
+   "id": "section",
+   "signature": "fn ini_section_name_ok[&r](name: &r [byte]) -> [] bool",
+   "description": "Is this text a valid section name? True when it is non-empty and contains none of the bytes '[', ']' and '='. Every other byte is allowed (spaces, dots, non-ASCII text). The name is passed already trimmed; do not trim it here.",
+   "examples": [
+    "ini_section_name_ok(\"s\") == true",
+    "ini_section_name_ok(\"a.b c\") == true",
+    "ini_section_name_ok(\"\") == false",
+    "ini_section_name_ok(\"a]b\") == false",
+    "ini_section_name_ok(\"a=b\") == false"
+   ],
+   "deps": []
+  },
+  {
+   "id": "unquote",
+   "signature": "fn ini_unquote[&r](value: &r [byte]) -> [] &r [byte]",
+   "description": "Remove one outer pair of double quotes from an already trimmed value. If the value has at least two bytes and its first and last bytes are both '\"', return the part between them (kept exactly, spaces included, even when empty); otherwise return the value unchanged. Only one pair is removed: the value \"\"\"\" is the text \"\" (two quotes). A single '\"' is not a pair.",
+   "examples": [
+    "ini_unquote(\"\\\"ab\\\"\") == \"ab\"",
+    "ini_unquote(\"ab\") == \"ab\"",
+    "ini_unquote(\"\\\"\") == \"\\\"\"",
+    "ini_unquote(\"\\\"\\\"\") == \"\""
+   ],
+   "tests": [
+    "fn uq_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] int { if len(x) != len(y) { return 1; } var i = 0; while i < len(x) { if int_of(x[i]) != int_of(y[i]) { return 1; } i = i + 1; } return 0; }",
+    "pub fn test_unquote_1() -> [] int { test.assert_eq(uq_same(ini_unquote(\"\\\"ab\\\"\"), \"ab\"), 0); return 0; }",
+    "pub fn test_unquote_2() -> [] int { test.assert_eq(uq_same(ini_unquote(\"ab\"), \"ab\"), 0); return 0; }",
+    "pub fn test_unquote_3() -> [] int { test.assert_eq(uq_same(ini_unquote(\"\\\"  padded  \\\"\"), \"  padded  \"), 0); return 0; }",
+    "pub fn test_unquote_4() -> [] int { test.assert_eq(uq_same(ini_unquote(\"\\\"\"), \"\\\"\"), 0); return 0; }",
+    "pub fn test_unquote_5() -> [] int { test.assert_eq(uq_same(ini_unquote(\"\\\"\\\"\"), \"\"), 0); return 0; }",
+    "pub fn test_unquote_6() -> [] int { test.assert_eq(uq_same(ini_unquote(\"\\\"half\"), \"\\\"half\"), 0); return 0; }",
+    "pub fn test_unquote_7() -> [] int { test.assert_eq(uq_same(ini_unquote(\"\\\"\\\"\\\"\"), \"\\\"\"), 0); return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "kind",
+   "signature": "fn ini_line_kind[&r](line: &r [byte]) -> [] int",
+   "description": "Classify ONE line of the file (no line feed inside; it may still have spaces, tabs or a trailing carriage return around it). First trim whitespace (space, tab, CR, LF, vertical tab, form feed) from both ends. Return 0 for a line to skip: a blank line, or a line whose first byte is ';' or '#' (comments only start at the beginning of the trimmed line: \"a = x ; y\" is a setting). Return 1 for a valid section header: starts with '[', ends with ']' (a lone \"[\" is not a header), and the text between the brackets, trimmed, is a valid section name (ini_section_name_ok); anything after the closing bracket makes the line malformed. Return 2 for a valid setting: split at the FIRST '=', the key (trimmed) must be valid (ini_key_ok); a line without '=' is malformed; the value is not looked at (it may be empty or contain '='). Return 3 for a malformed line.",
+   "examples": [
+    "ini_line_kind(\"\") == 0",
+    "ini_line_kind(\"  ; note\") == 0",
+    "ini_line_kind(\"[s]\") == 1",
+    "ini_line_kind(\" a = x ; y \") == 2",
+    "ini_line_kind(\"a=b=c\") == 2",
+    "ini_line_kind(\"just text\") == 3",
+    "ini_line_kind(\"[s] x\") == 3",
+    "ini_line_kind(\"[]\") == 3"
+   ],
+   "deps": [
+    "key",
+    "section"
+   ]
+  },
+  {
+   "id": "raw",
+   "signature": "fn ini_raw[&h, &t](heap: &!h Heap, text: &t [byte]) -> [heap] result.Result[buffer.Buffer, int]",
+   "description": "Read the whole text and return every setting in file order, duplicates NOT collapsed: Ok(entries) or Err(n), where n is the 1-based number of the FIRST malformed line. A list of settings is represented as ONE text holding the entries \"name=value\", each followed by a line feed (\"\\n\"); a value never contains a line feed, so this is unambiguous. The empty list is the empty text. The text is split at line feeds (a final line with no line feed still counts; the empty text is one blank line). Use ini_line_kind for each line: skip kind 0; kind 1 sets the current section to the trimmed name between the brackets (the section stays until the next header; before any header there is none); kind 2 adds an entry whose name is \"section.key\" (or just \"key\" when there is no section), key and value trimmed, the value passed through ini_unquote, e.g. \"[s]\\na = 1\" gives \"s.a=1\\n\"; kind 3 stops with Err(line number). The text is borrowed; the returned Buffer is heap-owned and the caller drops it (on Err nothing is leaked).",
+   "examples": [
+    "ini_raw(heap, \"a = 1\") == result.Result::Ok(\"a=1\\n\")",
+    "ini_raw(heap, \"[s]\\na=1\\n[t]\\na=2\") == result.Result::Ok(\"s.a=1\\nt.a=2\\n\")",
+    "ini_raw(heap, \"k=1\\nk=2\") == result.Result::Ok(\"k=1\\nk=2\\n\")",
+    "ini_raw(heap, \"a=1\\njust text\") == result.Result::Err(2)"
+   ],
+   "tests": [
+    "fn raw_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var i = 0; while i < len(x) { if int_of(x[i]) != int_of(y[i]) { return false; } i = i + 1; } return true; }",
+    "fn raw_is[&h](heap: &!h Heap, text: &static [byte], want: &static [byte]) -> [heap] int { match ini_raw(heap, text) { result.Result::Ok(b) => { var same = false; borrow b as &x in { same = raw_same(buffer.bytes(x), want); } buffer.drop(heap, b); if same { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "fn raw_err[&h](heap: &!h Heap, text: &static [byte], line: int) -> [heap] int { match ini_raw(heap, text) { result.Result::Ok(b) => { buffer.drop(heap, b); return 1; } result.Result::Err(n) => { if n == line { return 0; } return 3; } } }",
+    "pub fn test_raw_ok_1[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(raw_is(heap, \"a = 1\", \"a=1\\n\"), 0); return 0; }",
+    "pub fn test_raw_ok_2[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(raw_is(heap, \"[s]\\na=1\\n[t]\\na=2\", \"s.a=1\\nt.a=2\\n\"), 0); return 0; }",
+    "pub fn test_raw_ok_3[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(raw_is(heap, \"k=1\\nk=2\", \"k=1\\nk=2\\n\"), 0); return 0; }",
+    "pub fn test_raw_ok_4[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(raw_is(heap, \"; note\\n\\n# note\\na=1\\r\\nb=2\\r\\n\", \"a=1\\nb=2\\n\"), 0); return 0; }",
+    "pub fn test_raw_ok_5[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(raw_is(heap, \"a=b=c\\nq=\\\"  x  \\\"\", \"a=b=c\\nq=  x  \\n\"), 0); return 0; }",
+    "pub fn test_raw_ok_6[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(raw_is(heap, \"\", \"\"), 0); return 0; }",
+    "pub fn test_raw_err_1[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(raw_err(heap, \"a=1\\njust text\", 2), 0); return 0; }",
+    "pub fn test_raw_err_2[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(raw_err(heap, \"[unclosed\\na=1\", 1), 0); return 0; }",
+    "pub fn test_raw_err_3[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(raw_err(heap, \"a=1\\n\\n; c\\n=x\\nbad\", 4), 0); return 0; }"
+   ],
+   "deps": [
+    "unquote",
+    "kind"
+   ]
+  },
+  {
+   "id": "dedupe",
+   "signature": "fn ini_dedupe[&h, &r](heap: &!h Heap, raw: &r [byte]) -> [heap] buffer.Buffer",
+   "description": "Collapse repeated names in a list of settings. A list of settings is represented as ONE text holding the entries \"name=value\", each followed by a line feed (\"\\n\"); a value never contains a line feed, so this is unambiguous. The empty list is the empty text. The input is such a list that may repeat a name (the part before the first '=' of an entry). In the result each name appears once, at the position of its FIRST appearance in the input, carrying the value of its LAST appearance: \"k=1\\nj=2\\nk=3\\n\" becomes \"k=3\\nj=2\\n\". Names are compared exactly (\"a\" and \"s.a\" are different). Values may contain '='; only the first '=' of an entry ends its name. The result is a new heap-owned Buffer; the caller drops it. The input is borrowed and left untouched.",
+   "examples": [
+    "ini_dedupe(heap, \"k=1\\nj=2\\nk=3\\n\") == \"k=3\\nj=2\\n\"",
+    "ini_dedupe(heap, \"a=1\\n\") == \"a=1\\n\"",
+    "ini_dedupe(heap, \"\") == \"\""
+   ],
+   "tests": [
+    "fn dd_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var i = 0; while i < len(x) { if int_of(x[i]) != int_of(y[i]) { return false; } i = i + 1; } return true; }",
+    "fn dd_is[&h](heap: &!h Heap, raw: &static [byte], want: &static [byte]) -> [heap] int { let b = ini_dedupe(heap, raw); var same = false; borrow b as &x in { same = dd_same(buffer.bytes(x), want); } buffer.drop(heap, b); if same { return 0; } return 1; }",
+    "pub fn test_dedupe_1[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dd_is(heap, \"k=1\\nj=2\\nk=3\\n\", \"k=3\\nj=2\\n\"), 0); return 0; }",
+    "pub fn test_dedupe_2[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dd_is(heap, \"a=1\\n\", \"a=1\\n\"), 0); return 0; }",
+    "pub fn test_dedupe_3[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dd_is(heap, \"\", \"\"), 0); return 0; }",
+    "pub fn test_dedupe_4[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dd_is(heap, \"s.k=1\\nk=2\\ns.k=3\\nk=4\\n\", \"s.k=3\\nk=4\\n\"), 0); return 0; }",
+    "pub fn test_dedupe_5[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(dd_is(heap, \"a=x=y\\nb=\\na=\\n\", \"a=\\nb=\\n\"), 0); return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "parse",
+   "signature": "fn ini_parse[&h, &t](heap: &!h Heap, text: &t [byte]) -> [heap] result.Result[buffer.Buffer, int]",
+   "description": "The settings of an INI text, from the brief: Ok(list) or Err(n). A list of settings is represented as ONE text holding the entries \"name=value\", each followed by a line feed (\"\\n\"); a value never contains a line feed, so this is unambiguous. The empty list is the empty text. Err(n) carries the 1-based number of the first malformed line (the brief asks for the message to name the line; cancho has no cheap text formatting, so the line number itself is the error). Ok is ini_raw followed by ini_dedupe (the LAST value of a repeated name wins, at the position of its FIRST appearance); the intermediate buffer is dropped. Example: \"[s]\\na=1\\n[t]\\na=2\" is Ok(\"s.a=1\\nt.a=2\\n\"); \"k=1\\nj=2\\nk=3\" is Ok(\"k=3\\nj=2\\n\"); \"a=1\\njust text\" is Err(2). It must never panic, on any text; non-ASCII text in values and section names passes through unchanged. The returned Buffer is heap-owned and the caller drops it.",
+   "examples": [
+    "ini_parse(heap, \"a = 1\") == result.Result::Ok(\"a=1\\n\")",
+    "ini_parse(heap, \"k=1\\nj=2\\nk=3\") == result.Result::Ok(\"k=3\\nj=2\\n\")",
+    "ini_parse(heap, \"a=b=c\") == result.Result::Ok(\"a=b=c\\n\")",
+    "ini_parse(heap, \"[]\\na=1\") == result.Result::Err(1)",
+    "ini_parse(heap, \"a=1\\njust text\") == result.Result::Err(2)"
+   ],
+   "tests": [
+    "fn pa_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var i = 0; while i < len(x) { if int_of(x[i]) != int_of(y[i]) { return false; } i = i + 1; } return true; }",
+    "fn pa_is[&h](heap: &!h Heap, text: &static [byte], want: &static [byte]) -> [heap] int { match ini_parse(heap, text) { result.Result::Ok(b) => { var same = false; borrow b as &x in { same = pa_same(buffer.bytes(x), want); } buffer.drop(heap, b); if same { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "fn pa_err[&h](heap: &!h Heap, text: &static [byte], line: int) -> [heap] int { match ini_parse(heap, text) { result.Result::Ok(b) => { buffer.drop(heap, b); return 1; } result.Result::Err(n) => { if n == line { return 0; } return 3; } } }",
+    "pub fn test_parse_ok_1[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(pa_is(heap, \"a = 1\", \"a=1\\n\"), 0); return 0; }",
+    "pub fn test_parse_ok_2[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(pa_is(heap, \"[s]\\na=1\\n[t]\\na=2\", \"s.a=1\\nt.a=2\\n\"), 0); return 0; }",
+    "pub fn test_parse_ok_3[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(pa_is(heap, \"k=1\\nj=2\\nk=3\", \"k=3\\nj=2\\n\"), 0); return 0; }",
+    "pub fn test_parse_ok_4[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(pa_is(heap, \"a=b=c\", \"a=b=c\\n\"), 0); return 0; }",
+    "pub fn test_parse_ok_5[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(pa_is(heap, \"a=\\\"  padded  \\\"\", \"a=  padded  \\n\"), 0); return 0; }",
+    "pub fn test_parse_ok_6[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(pa_is(heap, \"; note\\n\\n# note\\na=1\\r\\nb=2\\r\\n\", \"a=1\\nb=2\\n\"), 0); return 0; }",
+    "pub fn test_parse_err_1[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(pa_err(heap, \"a=1\\njust text\", 2), 0); return 0; }",
+    "pub fn test_parse_err_2[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(pa_err(heap, \"[]\\na=1\", 1), 0); return 0; }",
+    "pub fn test_parse_err_3[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(pa_err(heap, \"=novalue\", 1), 0); return 0; }"
+   ],
+   "deps": [
+    "raw",
+    "dedupe"
+   ]
+  },
+  {
+   "id": "find",
+   "signature": "fn ini_find[&r, &k](entries: &r [byte], full: &k [byte]) -> [] int",
+   "description": "Look a setting up in a list of settings that has no repeated name. A list of settings is represented as ONE text holding the entries \"name=value\", each followed by a line feed (\"\\n\"); a value never contains a line feed, so this is unambiguous. The empty list is the empty text. Returns the byte index, in entries, where the VALUE of the entry named exactly `full` starts (the byte after its first '='), or -1 if no entry has that name. The value runs to the next line feed. The name must match whole: \"a\" does not find \"ab=1\\n\" or \"s.a=1\\n\". Example: in \"a=1\\nb=2\\n\", `full` \"b\" is found at index 6.",
+   "examples": [
+    "ini_find(\"a=1\\nb=2\\n\", \"b\") == 6",
+    "ini_find(\"a=1\\nb=2\\n\", \"a\") == 2",
+    "ini_find(\"a=1\\nb=2\\n\", \"c\") == -1",
+    "ini_find(\"ab=1\\n\", \"a\") == -1",
+    "ini_find(\"\", \"a\") == -1"
+   ],
+   "deps": []
+  },
+  {
+   "id": "get",
+   "signature": "fn ini_get[&h, &t, &s, &k](heap: &!h Heap, text: &t [byte], section: &s [byte], key: &k [byte]) -> [heap] result.Result[option.Option[buffer.Buffer], int]",
+   "description": "Look one setting up in an INI text: Err(n) if the text is malformed (n is the same line number ini_parse gives), otherwise Ok(Some(value)) of the setting in `section` with name `key`, or Ok(None) if there is no such setting. The empty section \"\" means before any section header and the full name is just the key; otherwise the full name is \"section.key\". It is the value after ini_parse: the last assignment wins, quotes are removed. The value is a heap-owned Buffer (possibly empty) that the caller drops; nothing else may leak. Use ini_parse and ini_find. Example: in \"a=1\\n[s]\\nk=v\", section \"s\" key \"k\" is Ok(Some(\"v\")); section \"\" key \"a\" is Ok(Some(\"1\")); section \"s\" key \"x\" is Ok(None); the text \"[bad\" is an Err for any section and key.",
+   "examples": [
+    "ini_get(heap, \"a=1\\n[s]\\nk=v\", \"s\", \"k\") == result.Result::Ok(option.Option::Some(\"v\"))",
+    "ini_get(heap, \"a=1\\n[s]\\nk=v\", \"\", \"a\") == result.Result::Ok(option.Option::Some(\"1\"))",
+    "ini_get(heap, \"a=1\\n[s]\\nk=v\", \"s\", \"x\") == result.Result::Ok(option.Option::None)",
+    "ini_get(heap, \"[bad\", \"\", \"a\") == result.Result::Err(1)"
+   ],
+   "tests": [
+    "fn ge_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var i = 0; while i < len(x) { if int_of(x[i]) != int_of(y[i]) { return false; } i = i + 1; } return true; }",
+    "fn ge_some[&h](heap: &!h Heap, text: &static [byte], s: &static [byte], k: &static [byte], want: &static [byte]) -> [heap] int { match ini_get(heap, text, s, k) { result.Result::Ok(o) => { match o { option.Option::Some(b) => { var same = false; borrow b as &x in { same = ge_same(buffer.bytes(x), want); } buffer.drop(heap, b); if same { return 0; } return 1; } option.Option::None => { return 3; } } } result.Result::Err(_) => { return 2; } } }",
+    "fn ge_none[&h](heap: &!h Heap, text: &static [byte], s: &static [byte], k: &static [byte]) -> [heap] int { match ini_get(heap, text, s, k) { result.Result::Ok(o) => { match o { option.Option::Some(b) => { buffer.drop(heap, b); return 1; } option.Option::None => { return 0; } } } result.Result::Err(_) => { return 2; } } }",
+    "fn ge_err[&h](heap: &!h Heap, text: &static [byte], s: &static [byte], k: &static [byte]) -> [heap] int { match ini_get(heap, text, s, k) { result.Result::Ok(o) => { match o { option.Option::Some(b) => { buffer.drop(heap, b); return 1; } option.Option::None => { return 1; } } } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_get_1[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(ge_some(heap, \"a=1\\n[s]\\nk=v\", \"s\", \"k\", \"v\"), 0); return 0; }",
+    "pub fn test_get_2[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(ge_some(heap, \"a=1\\n[s]\\nk=v\", \"\", \"a\", \"1\"), 0); return 0; }",
+    "pub fn test_get_3[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(ge_none(heap, \"a=1\\n[s]\\nk=v\", \"s\", \"x\"), 0); return 0; }",
+    "pub fn test_get_4[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(ge_err(heap, \"[bad\", \"\", \"a\"), 0); return 0; }",
+    "pub fn test_get_5[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(ge_some(heap, \"[t]\\nk=1\\nk=\\\" two \\\"\", \"t\", \"k\", \" two \"), 0); return 0; }"
+   ],
+   "deps": [
+    "parse",
+    "find"
+   ]
+  }
+ ]
+}

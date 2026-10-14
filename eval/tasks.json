@@ -1,0 +1,156 @@
+{
+ "_note": "level is an a-priori rating from the rubric and the size facts of each item (units, reference lines, hidden cases, features). It was assigned after the first baseline runs had started, and I had seen that almost every run passed, so it is NOT independent of those results; it is a hypothesis to test with weaker models and with no plan. Measured numbers come from eval/report.py, never from this file.",
+ "rubric": {
+  "1": "Pure integer functions. No heap, no text, no Result. One idea per function. A solver fails only on integer edge cases (overflow, negatives, zero).",
+  "2": "Bytes in, Result or owned buffer out, one algorithmic idea, a strict contract (what is invalid is part of the task). Up to ~110 reference lines.",
+  "3": "Several interacting units, or state in slices, or UTF-8 / lists / DP, or two directions that must agree. ~60-150 reference lines.",
+  "4": "A grammar or rule system with several interacting phases and many edge rules (ranges, quoting, precedence, sections). 130+ reference lines, 6+ units, hundreds of hidden cases.",
+  "5": "More than one module, effects (storage, network, clock) or an external contract, acceptance that needs a running service. Not a single plan of pure functions: it needs a breakdown first. (09-12 services; `bank`.)"
+ },
+ "tasks": [
+  {
+   "id": "basics",
+   "name": "integer basics (clamp, gcd, lcm, leap year, isqrt, pow_mod)",
+   "level": 1,
+   "source": "new",
+   "status": "runnable",
+   "why": "pure ints; the traps are overflow and negatives (isqrt near 2^63, pow_mod with a negative base)"
+  },
+  {
+   "id": "tokenbucket",
+   "name": "token bucket arithmetic",
+   "level": 2,
+   "source": "lex-code 07",
+   "status": "runnable",
+   "why": "pure ints in milli-units; 4 small units; the shapes (Option, record) are the difficulty"
+  },
+  {
+   "id": "roman",
+   "name": "roman numerals both ways, canonical only",
+   "level": 2,
+   "source": "new",
+   "status": "runnable",
+   "why": "Result + buffer; strictness of from_roman is the whole task"
+  },
+  {
+   "id": "base64",
+   "name": "base64 encode / strict decode",
+   "level": 2,
+   "source": "new",
+   "status": "runnable",
+   "why": "Result + buffer; non-zero trailing bits and padding rules are 35% of the cases"
+  },
+  {
+   "id": "duration",
+   "name": "human duration parse / format",
+   "level": 3,
+   "source": "lex-code 05",
+   "status": "runnable",
+   "why": "two directions that must agree; strict grammar; Result of buffer"
+  },
+  {
+   "id": "editdistance",
+   "name": "Levenshtein on code points, similarity, closest",
+   "level": 3,
+   "source": "new-plan of lex-code 06",
+   "status": "runnable",
+   "why": "UTF-8 decoding, region DP table, vec of slices, tie-break rule"
+  },
+  {
+   "id": "sortedmap",
+   "name": "sorted int map in caller slices",
+   "level": 3,
+   "source": "new",
+   "status": "runnable",
+   "why": "state in slices with a count; capacity and replace-vs-full ordering"
+  },
+  {
+   "id": "jsonptr",
+   "name": "JSON Pointer parse / format / append / parent",
+   "level": 3,
+   "source": "lex-code 04",
+   "status": "runnable",
+   "why": "escape rules, lists of owned text, sub-slices"
+  },
+  {
+   "id": "expr",
+   "name": "integer expression evaluator",
+   "level": 4,
+   "source": "new",
+   "status": "runnable",
+   "why": "precedence, unary minus, i64 range checks before every operation, deep nesting; mutual recursion cannot be expressed as separate plan units"
+  },
+  {
+   "id": "glob",
+   "name": "glob matching with classes and UTF-8",
+   "level": 4,
+   "source": "lex-code 02",
+   "status": "runnable",
+   "why": "token walk + table, ranges, reversed ranges invalid, multi-byte characters"
+  },
+  {
+   "id": "semver",
+   "name": "semver parse / compare / range satisfaction",
+   "level": 4,
+   "source": "lex-code 01",
+   "status": "runnable",
+   "why": "numeric vs lexical prerelease ids, caret/tilde desugaring; 300 of 492 cases are ranges"
+  },
+  {
+   "id": "ini",
+   "name": "INI parse with quoting, sections, duplicates, line numbers",
+   "level": 4,
+   "source": "lex-code 08",
+   "status": "runnable",
+   "why": "9 units; Err carries a line number; entries as one buffer by design (no list of strings)"
+  },
+  {
+   "id": "csv",
+   "name": "CSV parse / format with quoting",
+   "level": 4,
+   "source": "lex-code 03",
+   "status": "runnable",
+   "why": "lists of lists of owned text (codegen bug cancho#461 forces Box[Box[..]]); quoting rules"
+  },
+  {
+   "id": "09-jobs",
+   "name": "job queue service",
+   "level": 5,
+   "source": "lex-code 09",
+   "status": "not-runnable",
+   "why": "service: needs acceptance for services (P7), not built"
+  },
+  {
+   "id": "10-invoices",
+   "name": "invoices service",
+   "level": 5,
+   "source": "lex-code 10",
+   "status": "not-runnable",
+   "why": "service: P7"
+  },
+  {
+   "id": "11-webhooks",
+   "name": "webhooks service",
+   "level": 5,
+   "source": "lex-code 11",
+   "status": "not-runnable",
+   "why": "service: P7"
+  },
+  {
+   "id": "12-kvstore",
+   "name": "key-value store service",
+   "level": 5,
+   "source": "lex-code 12",
+   "status": "not-runnable",
+   "why": "service: P7; persistence"
+  },
+  {
+   "id": "bank",
+   "name": "'create a bank' (an unbounded request)",
+   "level": 5,
+   "source": "proposed",
+   "status": "not-built",
+   "why": "the decomposition case: no signature, no examples, no oracle; see docs/decomposition.md"
+  }
+ ]
+}

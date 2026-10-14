@@ -1,0 +1,138 @@
+edition 7;
+import std.utf8;
+
+// Code point of the character that starts at byte `at`. A malformed byte becomes 0x110000 + byte,
+// which no pattern character equals.
+fn glob_cp_at[&r](s: &r [byte], at: int) -> [] int {
+    match utf8.decode(s, at) {
+        utf8.Step::Code(c, w) => { return c; }
+        utf8.Step::Invalid(w) => { return 0x110000 + int_of(s[at]); }
+    }
+}
+
+// Width in bytes of the character at `at`; always at least 1.
+fn glob_cp_len[&r](s: &r [byte], at: int) -> [] int {
+    match utf8.decode(s, at) {
+        utf8.Step::Code(c, w) => { return w; }
+        utf8.Step::Invalid(w) => { return w; }
+    }
+}
+
+// Does the set body pat[s..e) hold code point c? 1 / 0, or -1 if a range in it is reversed.
+fn glob_set_has[&r](pat: &r [byte], s: int, e: int, c: int) -> [] int {
+    var q = s;
+    var hit = 0;
+    while q < e {
+        let lo = glob_cp_at(pat, q);
+        let w = glob_cp_len(pat, q);
+        if q + w + 1 < e && int_of(pat[q + w]) == '-' {
+            let hi = glob_cp_at(pat, q + w + 1);
+            if lo > hi { return -1; }
+            if lo <= c && c <= hi { hit = 1; }
+            q = q + w + 1 + glob_cp_len(pat, q + w + 1);
+        } else {
+            if lo == c { hit = 1; }
+            q = q + w;
+        }
+    }
+    return hit;
+}
+
+// Index just after the token that starts at p, or -1 if that token is malformed.
+fn glob_tok_end[&r](pat: &r [byte], p: int) -> [] int {
+    let b = int_of(pat[p]);
+    if b == '*' {
+        if p + 1 < len(pat) && int_of(pat[p + 1]) == '*' { return p + 2; }
+        return p + 1;
+    }
+    if b == '?' { return p + 1; }
+    if b == '\\' {
+        if p + 1 >= len(pat) { return -1; }
+        return p + 1 + glob_cp_len(pat, p + 1);
+    }
+    if b == '[' {
+        var s = p + 1;
+        if s < len(pat) && int_of(pat[s]) == '!' { s = s + 1; }
+        var k = s;
+        while k < len(pat) && int_of(pat[k]) != ']' { k = k + 1; }
+        if k >= len(pat) { return -1; }
+        if k == s { return -1; }
+        if glob_set_has(pat, s, k, 0) < 0 { return -1; }
+        return k + 1;
+    }
+    return p + glob_cp_len(pat, p);
+}
+
+pub fn glob_valid[&r](pattern: &r [byte]) -> [] bool {
+    var p = 0;
+    while p < len(pattern) {
+        let e = glob_tok_end(pattern, p);
+        if e < 0 { return false; }
+        p = e;
+    }
+    return true;
+}
+
+// Does the one-character token at p (not * or **) accept code point c?
+fn glob_one[&r](pat: &r [byte], p: int, c: int) -> [] bool {
+    let b = int_of(pat[p]);
+    if b == '?' { return c != '/'; }
+    if b == '\\' { return c == glob_cp_at(pat, p + 1); }
+    if b == '[' {
+        if c == '/' { return false; }
+        var s = p + 1;
+        var neg = false;
+        if int_of(pat[s]) == '!' { neg = true; s = s + 1; }
+        var k = s;
+        while int_of(pat[k]) != ']' { k = k + 1; }
+        let h = glob_set_has(pat, s, k, c);
+        if neg { return h == 0; }
+        return h == 1;
+    }
+    return c == glob_cp_at(pat, p);
+}
+
+pub fn glob_match[&r, &t](pattern: &r [byte], text: &t [byte]) -> [] bool {
+    if !glob_valid(pattern) { return false; }
+    let n = len(text);
+    var result = false;
+    region a {
+        let cur = alloc_slice[a](n + 1, 0);
+        let nxt = alloc_slice[a](n + 1, 0);
+        cur[0] = 1;
+        var p = 0;
+        while p < len(pattern) {
+            let e = glob_tok_end(pattern, p);
+            let star = int_of(pattern[p]) == '*';
+            let dbl = star && e == p + 2;
+            var i = 0;
+            while i <= n { nxt[i] = 0; i = i + 1; }
+            if star {
+                var carry = false;
+                i = 0;
+                while i <= n {
+                    if cur[i] == 1 { carry = true; }
+                    if carry { nxt[i] = 1; }
+                    if i < n {
+                        if glob_cp_at(text, i) == '/' && !dbl { carry = false; }
+                        i = i + glob_cp_len(text, i);
+                    } else {
+                        i = i + 1;
+                    }
+                }
+            } else {
+                i = 0;
+                while i < n {
+                    let w = glob_cp_len(text, i);
+                    if cur[i] == 1 && glob_one(pattern, p, glob_cp_at(text, i)) { nxt[i + w] = 1; }
+                    i = i + w;
+                }
+            }
+            p = e;
+            i = 0;
+            while i <= n { cur[i] = nxt[i]; i = i + 1; }
+        }
+        result = cur[n] == 1;
+    }
+    return result;
+}

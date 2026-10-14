@@ -1,0 +1,80 @@
+{
+ "name": "basics",
+ "units": [
+  {
+   "id": "clamp",
+   "signature": "fn clamp(x: int, lo: int, hi: int) -> [] int",
+   "description": "Limit x to the range lo..hi: lo if x < lo, hi if x > hi, otherwise x. The caller guarantees lo <= hi (lo == hi is allowed and then the answer is that value). Any x is allowed, including the extremes of int. Never panics.",
+   "examples": [
+    "clamp(5, 0, 10) == 5",
+    "clamp(-5, 0, 10) == 0",
+    "clamp(15, 0, 10) == 10",
+    "clamp(7, 3, 3) == 3"
+   ],
+   "deps": []
+  },
+  {
+   "id": "gcd",
+   "signature": "fn gcd(a: int, b: int) -> [] int",
+   "description": "The greatest common divisor of a and b, always >= 0: the sign of a and of b never matters. gcd(a, 0) and gcd(0, a) are |a|, and gcd(0, 0) is 0. Domain: |a| <= 4611686018427387904 (2^62) and |b| <= 4611686018427387904; no operation may overflow inside it. int is 64-bit and overflow is an error, not a wrap.",
+   "examples": [
+    "gcd(12, 18) == 6",
+    "gcd(-12, 18) == 6",
+    "gcd(0, 5) == 5",
+    "gcd(0, 0) == 0",
+    "gcd(17, 13) == 1"
+   ],
+   "deps": []
+  },
+  {
+   "id": "lcm",
+   "signature": "fn lcm(a: int, b: int) -> [] int",
+   "description": "The least common multiple, always >= 0, sign ignored like gcd. It is 0 if either argument is 0. Domain: |a| <= 3000000000 and |b| <= 3000000000, so the result always fits an int. Use gcd.",
+   "examples": [
+    "lcm(4, 6) == 12",
+    "lcm(-4, 6) == 12",
+    "lcm(0, 5) == 0",
+    "lcm(7, 7) == 7"
+   ],
+   "deps": [
+    "gcd"
+   ]
+  },
+  {
+   "id": "leap",
+   "signature": "fn is_leap_year(y: int) -> [] bool",
+   "description": "The proleptic Gregorian rule applied to the integer y exactly as given: a leap year is divisible by 4, except that a year divisible by 100 is not, unless it is also divisible by 400. Domain: any int, negative years and 0 included (year 0 is a leap year, -4 is a leap year, -100 is not). Beware: % on a negative int can be negative; compare it with == 0 only.",
+   "examples": [
+    "is_leap_year(2024) == true",
+    "is_leap_year(1900) == false",
+    "is_leap_year(2000) == true",
+    "is_leap_year(2023) == false"
+   ],
+   "deps": []
+  },
+  {
+   "id": "isqrt",
+   "signature": "fn isqrt(n: int) -> [] int",
+   "description": "The integer square root floor(sqrt(n)): the largest r with r * r <= n. Domain: 0 <= n <= 9223372036854775807, exact for the whole range. r * r and (r + 1) * (r + 1) can overflow near the top of the range (the answer there is 3037000499, whose square fits but whose successor's square does not), and a floating point square root is not exact there; compare with a division, or bound the search. n < 0 is outside the domain.",
+   "examples": [
+    "isqrt(0) == 0",
+    "isqrt(15) == 3",
+    "isqrt(16) == 4",
+    "isqrt(17) == 4"
+   ],
+   "deps": []
+  },
+  {
+   "id": "pow_mod",
+   "signature": "fn pow_mod(base: int, exp: int, modulus: int) -> [] int",
+   "description": "base to the power exp, modulo modulus, always in 0 .. modulus - 1 (a negative base still gives a non-negative answer). pow_mod(b, 0, m) is 1 % m, so it is 0 when m is 1. Domain: |base| <= 4611686018427387904, 0 <= exp <= 4611686018427387904, 1 <= modulus <= 3000000000. The power itself is far too large to compute: reduce as you go (square and multiply), so that no intermediate value overflows the 64-bit int.",
+   "examples": [
+    "pow_mod(2, 10, 1000) == 24",
+    "pow_mod(3, 0, 7) == 1",
+    "pow_mod(5, 3, 1) == 0",
+    "pow_mod(-2, 3, 7) == 6"
+   ],
+   "deps": []
+  }
+ ]
+}

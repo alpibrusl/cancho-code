@@ -1,0 +1,91 @@
+{
+ "name": "sortedmap",
+ "units": [
+  {
+   "id": "lower_bound",
+   "signature": "fn sm_lower_bound[&k](keys: &k [int], n: int, key: int) -> [] int",
+   "description": "The state is the caller's: keys and vals are slices of int of the same length (the length is the capacity, possibly 0) and n is the count of entries in use (0 <= n <= len(keys)); entry i is (keys[i], vals[i]) for i < n. On entry keys[0] < keys[1] < ... < keys[n-1] (strictly ascending, each key once). Slots at index >= n hold unspecified garbage and must never be read for a decision. Keys and values are any int up to the extremes of the int range, so never decide order by subtracting two keys. Returns the index of the first entry whose key is >= key, or n if every live key is smaller. Binary search over keys[0..n) only.",
+   "examples": [
+    "sm_lower_bound(keys, 3, 20) == 1",
+    "sm_lower_bound(keys, 3, 21) == 2",
+    "sm_lower_bound(keys, 3, 31) == 3",
+    "sm_lower_bound(keys, 0, 5) == 0"
+   ],
+   "tests": [
+    "fn lb_set[&k, &v](keys: &!k [int], vals: &!v [int]) -> [] int { keys[0] = 10; vals[0] = 100; keys[1] = 20; vals[1] = 200; keys[2] = 30; vals[2] = 300;  return 0; }",
+    "pub fn test_lb_1() -> [] int { region r { let keys = alloc_slice[r](4, 0); let vals = alloc_slice[r](4, 0); lb_set(keys, vals); test.assert_eq(sm_lower_bound(keys, 3, 20), 1); test.assert_eq(sm_lower_bound(keys, 3, 21), 2); test.assert_eq(sm_lower_bound(keys, 3, 31), 3); test.assert_eq(sm_lower_bound(keys, 3, 5), 0); test.assert_eq(sm_lower_bound(keys, 0, 5), 0); } return 0; }",
+    "pub fn test_lb_2() -> [] int { region r { let keys = alloc_slice[r](4, 0 - 999); let vals = alloc_slice[r](4, 0); lb_set(keys, vals); test.assert_eq(sm_lower_bound(keys, 3, 10), 0); test.assert_eq(sm_lower_bound(keys, 3, 30), 2); } return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "get",
+   "signature": "fn sm_get[&k, &v](keys: &k [int], vals: &v [int], n: int, key: int) -> [] option.Option[int]",
+   "description": "The state is the caller's: keys and vals are slices of int of the same length (the length is the capacity, possibly 0) and n is the count of entries in use (0 <= n <= len(keys)); entry i is (keys[i], vals[i]) for i < n. On entry keys[0] < keys[1] < ... < keys[n-1] (strictly ascending, each key once). Slots at index >= n hold unspecified garbage and must never be read for a decision. Keys and values are any int up to the extremes of the int range, so never decide order by subtracting two keys. Returns Some(value) if the key is present among the live entries, None if not. A stored value of 0 or -1 is still Some.",
+   "examples": [
+    "sm_get(keys, vals, 3, 20) == option.Option::Some(200)",
+    "sm_get(keys, vals, 3, 25) == option.Option::None"
+   ],
+   "tests": [
+    "fn gt_set[&k, &v](keys: &!k [int], vals: &!v [int]) -> [] int { keys[0] = 10; vals[0] = 100; keys[1] = 20; vals[1] = 200; keys[2] = 30; vals[2] = 300;  return 0; }",
+    "fn gt_is[&k, &v](keys: &k [int], vals: &v [int], n: int, key: int, want: int) -> [] int { match sm_get(keys, vals, n, key) { option.Option::Some(x) => { if x == want { return 0; } return 1; } option.Option::None => { return 2; } } }",
+    "fn gt_none[&k, &v](keys: &k [int], vals: &v [int], n: int, key: int) -> [] int { match sm_get(keys, vals, n, key) { option.Option::Some(x) => { return 1; } option.Option::None => { return 0; } } }",
+    "pub fn test_get_1() -> [] int { region r { let keys = alloc_slice[r](4, 0); let vals = alloc_slice[r](4, 0); gt_set(keys, vals); test.assert_eq(gt_is(keys, vals, 3, 20, 200), 0); test.assert_eq(gt_is(keys, vals, 3, 30, 300), 0); test.assert_eq(gt_none(keys, vals, 3, 25), 0); test.assert_eq(gt_none(keys, vals, 3, 5), 0); test.assert_eq(gt_none(keys, vals, 0, 10), 0); } return 0; }"
+   ],
+   "deps": [
+    "lower_bound"
+   ]
+  },
+  {
+   "id": "count",
+   "signature": "fn sm_count_in_range[&k](keys: &k [int], n: int, lo: int, hi: int) -> [] int",
+   "description": "The state is the caller's: keys and vals are slices of int of the same length (the length is the capacity, possibly 0) and n is the count of entries in use (0 <= n <= len(keys)); entry i is (keys[i], vals[i]) for i < n. On entry keys[0] < keys[1] < ... < keys[n-1] (strictly ascending, each key once). Slots at index >= n hold unspecified garbage and must never be read for a decision. Keys and values are any int up to the extremes of the int range, so never decide order by subtracting two keys. Returns how many live entries have lo <= key < hi: lo is inclusive, hi exclusive. Returns 0 when lo >= hi.",
+   "examples": [
+    "sm_count_in_range(keys, 3, 10, 30) == 2",
+    "sm_count_in_range(keys, 3, 30, 10) == 0"
+   ],
+   "tests": [
+    "fn ct_set[&k, &v](keys: &!k [int], vals: &!v [int]) -> [] int { keys[0] = 10; vals[0] = 100; keys[1] = 20; vals[1] = 200; keys[2] = 30; vals[2] = 300;  return 0; }",
+    "pub fn test_count_1() -> [] int { region r { let keys = alloc_slice[r](4, 0); let vals = alloc_slice[r](4, 0); ct_set(keys, vals); test.assert_eq(sm_count_in_range(keys, 3, 10, 30), 2); test.assert_eq(sm_count_in_range(keys, 3, 0, 100), 3); test.assert_eq(sm_count_in_range(keys, 3, 30, 10), 0); test.assert_eq(sm_count_in_range(keys, 3, 20, 20), 0); test.assert_eq(sm_count_in_range(keys, 0, 0, 100), 0); } return 0; }"
+   ],
+   "deps": [
+    "lower_bound"
+   ]
+  },
+  {
+   "id": "insert",
+   "signature": "fn sm_insert[&k, &v](keys: &!k [int], vals: &!v [int], n: int, key: int, value: int) -> [] int",
+   "description": "The state is the caller's: keys and vals are slices of int of the same length (the length is the capacity, possibly 0) and n is the count of entries in use (0 <= n <= len(keys)); entry i is (keys[i], vals[i]) for i < n. On entry keys[0] < keys[1] < ... < keys[n-1] (strictly ascending, each key once). Slots at index >= n hold unspecified garbage and must never be read for a decision. Keys and values are any int up to the extremes of the int range, so never decide order by subtracting two keys. Sets key to value and returns the new count. Key already present: replace its value only and return n, even when the map is full. Key absent and n < len(keys): insert at the sorted position, shifting later entries one place right, and return n + 1. Key absent and n == len(keys) (full): change nothing in keys[0..n) or vals[0..n) and return -1. Afterwards keys[0..new count) and vals[0..new count) are exactly the ascending entries, values travelling with their keys.",
+   "examples": [
+    "sm_insert(keys, vals, 3, 15, 150) == 4",
+    "sm_insert(keys, vals, 3, 20, 7) == 3"
+   ],
+   "tests": [
+    "fn in_set[&k, &v](keys: &!k [int], vals: &!v [int]) -> [] int { keys[0] = 10; vals[0] = 100; keys[1] = 20; vals[1] = 200; keys[2] = 30; vals[2] = 300; return 0; }",
+    "pub fn test_insert_1() -> [] int { region r { let keys = alloc_slice[r](4, 0); let vals = alloc_slice[r](4, 0); in_set(keys, vals); test.assert_eq(sm_insert(keys, vals, 3, 15, 150), 4); test.assert_eq(keys[0], 10); test.assert_eq(keys[1], 15); test.assert_eq(vals[1], 150); test.assert_eq(keys[2], 20); test.assert_eq(vals[2], 200); test.assert_eq(keys[3], 30); test.assert_eq(vals[3], 300); } return 0; }",
+    "pub fn test_insert_2() -> [] int { region r { let keys = alloc_slice[r](4, 0); let vals = alloc_slice[r](4, 0); in_set(keys, vals); test.assert_eq(sm_insert(keys, vals, 3, 20, 7), 3); test.assert_eq(vals[1], 7); test.assert_eq(keys[1], 20); test.assert_eq(vals[0], 100); test.assert_eq(vals[2], 300); } return 0; }",
+    "pub fn test_insert_3() -> [] int { region r { let keys = alloc_slice[r](3, 0); let vals = alloc_slice[r](3, 0); in_set(keys, vals); test.assert_eq(sm_insert(keys, vals, 3, 99, 1), 0 - 1); test.assert_eq(keys[2], 30); test.assert_eq(vals[2], 300); test.assert_eq(sm_insert(keys, vals, 3, 30, 5), 3); test.assert_eq(vals[2], 5); } return 0; }"
+   ],
+   "deps": [
+    "lower_bound"
+   ]
+  },
+  {
+   "id": "remove",
+   "signature": "fn sm_remove[&k, &v](keys: &!k [int], vals: &!v [int], n: int, key: int) -> [] int",
+   "description": "The state is the caller's: keys and vals are slices of int of the same length (the length is the capacity, possibly 0) and n is the count of entries in use (0 <= n <= len(keys)); entry i is (keys[i], vals[i]) for i < n. On entry keys[0] < keys[1] < ... < keys[n-1] (strictly ascending, each key once). Slots at index >= n hold unspecified garbage and must never be read for a decision. Keys and values are any int up to the extremes of the int range, so never decide order by subtracting two keys. Deletes the key and returns the new count, shifting later entries one place left so entries 0..new count are contiguous, ascending, values travelling with their keys. If the key is absent change nothing and return n.",
+   "examples": [
+    "sm_remove(keys, vals, 3, 10) == 2",
+    "sm_remove(keys, vals, 3, 11) == 3"
+   ],
+   "tests": [
+    "fn rm_set[&k, &v](keys: &!k [int], vals: &!v [int]) -> [] int { keys[0] = 10; vals[0] = 100; keys[1] = 20; vals[1] = 200; keys[2] = 30; vals[2] = 300; return 0; }",
+    "pub fn test_remove_1() -> [] int { region r { let keys = alloc_slice[r](4, 0); let vals = alloc_slice[r](4, 0); rm_set(keys, vals); test.assert_eq(sm_remove(keys, vals, 3, 10), 2); test.assert_eq(keys[0], 20); test.assert_eq(vals[0], 200); test.assert_eq(keys[1], 30); test.assert_eq(vals[1], 300); } return 0; }",
+    "pub fn test_remove_2() -> [] int { region r { let keys = alloc_slice[r](4, 0); let vals = alloc_slice[r](4, 0); rm_set(keys, vals); test.assert_eq(sm_remove(keys, vals, 3, 11), 3); test.assert_eq(keys[1], 20); test.assert_eq(sm_remove(keys, vals, 3, 30), 2); test.assert_eq(sm_remove(keys, vals, 2, 20), 1); test.assert_eq(keys[0], 10); test.assert_eq(vals[0], 100); test.assert_eq(sm_remove(keys, vals, 1, 10), 0); test.assert_eq(sm_remove(keys, vals, 0, 10), 0); } return 0; }"
+   ],
+   "deps": [
+    "lower_bound"
+   ]
+  }
+ ]
+}
