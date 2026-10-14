@@ -1,6 +1,6 @@
 #!/bin/sh
-# The native agent gate: src/cancho_agent.cho against a TLS stub of the Messages API. The cases are scripts/test-agent-anthropic.sh's, for the
-# program that replaces scripts/agent-anthropic.sh: what the agent promises must not change when the Python goes.
+# The native agent gate: src/cancho_agent.cho against a TLS stub of the Messages API. The cases are those of the Python agent this program
+# replaced (scripts/agent-anthropic.sh, removed): what the agent promises did not change when the Python went.
 #
 #   request   key as x-api-key, anthropic-version, content-type; model, max_tokens, one user message holding the file and the checker's
 #             refusal; the primer a cached `system` block and not repeated in the message; no primer, no system block
@@ -32,7 +32,7 @@ expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail
 
 d=$(mktemp -d -t cc-native-agent-XXXXXX)
 exe="$d/agent"
-"$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/prompt.cho" "$root/src/provider.cho" "$root/src/reply.cho" \
+"$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" "$root/src/prompt.cho" "$root/src/provider.cho" "$root/src/reply.cho" \
     "$root/vendor/fetch_io.cho" "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho --std --backend cranelift -o "$exe" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }
 

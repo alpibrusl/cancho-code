@@ -75,8 +75,6 @@ jobs:
           sh scripts/test-snapshot.sh
           sh scripts/test-trail.sh
           sh scripts/test-agent.sh
-          sh scripts/test-agent-ollama.sh
-          sh scripts/test-agent-anthropic.sh
           sh scripts/test-fix.sh
           sh scripts/test-acceptance.sh
           sh scripts/test-verdicts.sh
@@ -92,3 +90,4 @@ jobs:
           sh scripts/test-reply.sh
           sh scripts/test-prompt.sh
           sh scripts/test-agent-native.sh
+          sh scripts/test-agent-native-ollama.sh

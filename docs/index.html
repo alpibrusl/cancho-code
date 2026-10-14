@@ -96,7 +96,7 @@ export CANCHO_PACKAGES=&lt;compiler-checkout&gt;/packages
     src/loop_check.cho src/snapshot.cho src/trail.cho src/acceptance.cho \
     --std --backend cranelift -o ./fix</code></pre>
 <p>Then point it at a broken program and an agent:</p>
-<pre><code>./fix "$CANCHO" /abs/path/project.cho "$(pwd)/scripts/agent-ollama.sh" 4</code></pre>
+<pre><code>./fix "$CANCHO" /abs/path/project.cho "$(pwd)/scripts/cancho-agent.sh --provider ollama --model qwen3.8:27b" 4</code></pre>
 <p>The three arguments are the compiler (by its absolute path — the child of <code>exec_spawn</code> gets no <code>PATH</code> of its own), the file to fix, and the agent: any shell command that edits the file. The fourth is the attempt ceiling; an optional fifth is the seconds one agent turn may take (default 30), and a sixth is an acceptance command that must also hold before a file counts as verified. Exit codes: 0 verified, 1 the budgets named a stop, 2 usage, 3 the checker or the agent is away — a wait, rerun. Beside the file the run leaves <code>&lt;file&gt;.trail.jsonl</code> (one record per attempt), <code>&lt;file&gt;.feedback</code> (what the agent is shown) and, once verified, <code>&lt;file&gt;.snap0.cho</code>.</p>
 </section>
 
@@ -155,11 +155,11 @@ EOF</code></pre>
 
 <h3>3. Run the loop with the local model as the agent</h3>
 <pre><code>./fix "$CANCHO" "$(pwd)/demo/wordcount.cho" \
-    "OLLAMA_MODEL=qwen3.8:27b $(pwd)/scripts/agent-ollama.sh" 4 300</code></pre>
+    "$(pwd)/scripts/cancho-agent.sh --provider ollama --model qwen3.8:27b" 4 300</code></pre>
 <p class="note"><b>The agent has no environment.</b> Nothing you <code>export</code> reaches it: the driver passes it exactly one variable, <code>PATH</code>. The model name goes inside the agent command, as above (on Apple silicon the installed tag may be <code>qwen3.8:27b-mlx</code>; <code>ollama list</code> shows it). Paths must be absolute and may not contain <code>..</code>.</p>
 <p>What happens, turn by turn:</p>
 <ul>
-  <li>The driver runs <code>scripts/agent-ollama.sh demo/wordcount.cho</code>: the script sends the file, the instruction ("reply with the complete corrected file") and the compiler's current refusals (the driver left them in <code>&lt;file&gt;.feedback</code>) to Ollama's HTTP API, keeps the program out of the reply (it cuts markdown fences and the model's reasoning, and retries a reply that has no program in it or was cut off), and overwrites the file with the answer.</li>
+  <li>The driver runs <code>scripts/cancho-agent.sh --provider ollama --model qwen3.8:27b demo/wordcount.cho</code>: the agent (a cancho program) sends the file, the instruction ("reply with the complete corrected file") and the compiler's current refusals (the driver left them in <code>&lt;file&gt;.feedback</code>) to Ollama's HTTP API, keeps the program out of the reply (it cuts markdown fences and the model's reasoning, and retries a reply that has no program in it or was cut off), and overwrites the file with the answer.</li>
   <li>The driver runs the real <code>cancho check --output json</code> on the result. The model's word is worth nothing here; the checker's JSON is the only oracle.</li>
   <li><code>signature.of</code> turns the refusal into a failure signature — the <code>rule</code> verbatim, the message with its backticked spans kept and numbers normalised — and <code>loop_check.decide</code> decides with the §4 budgets: attempt ceiling 4, same-signature stop at K=2.</li>
   <li>If the model fixes <code>counts</code> and not <code>label</code>: the signature changes ("expected <code>int</code>, found <code>bool</code>" becomes "expected <code>int</code>, found a string"), the counter resets, the loop tries again — a struggling model gets its full budget.</li>
@@ -168,7 +168,7 @@ EOF</code></pre>
 </ul>
 
 <h3>4. What a good run looks like</h3>
-<pre><code>$ ./fix "$CANCHO" demo/wordcount.cho "$(pwd)/scripts/agent-ollama.sh" 4
+<pre><code>$ ./fix "$CANCHO" demo/wordcount.cho "$(pwd)/scripts/cancho-agent.sh --provider ollama --model qwen3.8:27b" 4
 [ISSUE_VERDICT]	verified	attempts 2
 $ echo $?
 0
@@ -252,7 +252,7 @@ printf 'edition 7;\nimport std.list;\nimport std.result;\n' &gt; "$WORK/project.
 PLAN="$(pwd)/eval/csv/plan.json"</code></pre>
 <p>Then the same command for each, with the model and the primer written <em>inside</em> the agent command (the agent has no environment). The numbers are the attempts per unit and the seconds one agent turn may take:</p>
 <pre><code>./project "$CANCHO" "$PLAN" "$WORK" \
-  "OLLAMA_MODEL=qwen3.8:27b OLLAMA_NUM_CTX=24576 OLLAMA_PRIMER=$(pwd)/guidelines.md $(pwd)/scripts/agent-ollama.sh" \
+  "$(pwd)/scripts/cancho-agent.sh --provider ollama --model qwen3.8:27b --num-ctx 24576 --primer $(pwd)/guidelines.md" \
   6 900</code></pre>
 <p>It prints one line per step and ends with a verdict (exit 0 <code>done</code>, 1 <code>stuck</code>, 3 <code>no_plan</code>, 4 <code>provider_error</code>):</p>
 <pre><code>[PLAN]	valid

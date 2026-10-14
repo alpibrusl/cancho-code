@@ -6,7 +6,7 @@ docs/parity.md P5. `fix` drives one issue against one file. A **project** is a p
 project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds]]
 ```
 
-`checker` and `workdir` are absolute paths (a relative checker is exit 2: the first implementation died with SIGILL on one); `workdir` must exist. The agent command is the same shell command `fix` takes: it is run with the project file appended as its last argument and reads `<project.cho>.task` to learn what to write (scripts/agent-ollama.sh does). `attempts` is the ceiling per unit (default 4), `agent-seconds` the cap on one agent turn (default 30).
+`checker` and `workdir` are absolute paths (a relative checker is exit 2: the first implementation died with SIGILL on one); `workdir` must exist. The agent command is the same shell command `fix` takes: it is run with the project file appended as its last argument and reads `<project.cho>.task` to learn what to write (scripts/cancho-agent.sh does). `attempts` is the ceiling per unit (default 4), `agent-seconds` the cap on one agent turn (default 30).
 
 ## Layout (flat: a program cannot make directories)
 

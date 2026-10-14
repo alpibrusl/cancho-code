@@ -1,7 +1,7 @@
 #!/bin/sh
 # The reply gate: src/reply.cho (a model's reply, and the program inside an answer) held to the Python it replaces.
 #
-#   program   `reply.program_span` and `scripts/agent_lib.py`'s `program()` give the SAME answer (byte for byte, or both none) on a corpus:
+#   program   `reply.program_span` and `tests/reference/agent_lib.py`'s `program()` give the SAME answer (byte for byte, or both none) on a corpus:
 #             hand-made edge cases (fences, prose around them, `</think>` in its several places, no edition line, CRLF, ...) and the real
 #             replies in tests/fixtures/replies.txt (qwen3.8 and Claude, from the runs reported on issue #9)
 #   reply     the text blocks of a Messages reply are put together in order and `thinking` blocks are not text; escapes and non-ASCII text
@@ -20,7 +20,7 @@ d=$(mktemp -d -t cc-reply-XXXXXX)
 python3 - "$d/gate" "$root" <<'PY' || { echo "reply gate: FAILED" >&2; exit 1; }
 import json, os, re, subprocess, sys, tempfile
 gate, root = sys.argv[1], sys.argv[2]
-sys.path.insert(0, os.path.join(root, "scripts"))
+sys.path.insert(0, os.path.join(root, "tests", "reference"))
 import agent_lib
 
 fails = 0
@@ -125,7 +125,17 @@ expect("usage", "usage", msg([], usage={"input_tokens": 12, "output_tokens": 345
 expect("usage, absent counts are 0", "usage", msg([], usage={"input_tokens": 5}),
        "input_tokens=5 output_tokens=0 cache_creation_input_tokens=0 cache_read_input_tokens=0")
 expect("usage, absent", "usage", {"content": []}, "input_tokens=0 output_tokens=0 cache_creation_input_tokens=0 cache_read_input_tokens=0")
-print("reply: 16 cases")
+expect("ollama: response", "generated", {"model": "q", "response": hard, "done": True, "done_reason": "stop", "eval_count": 7}, hard)
+expect("ollama: a response bigger than a region", "generated", {"response": big, "done_reason": "stop"}, big)
+expect("ollama: no response field", "generated", {"done": True}, "")
+expect("ollama: not JSON", "generated", b"nope", "")
+expect("ollama: done_reason length", "length", {"response": "x", "done_reason": "length"}, "yes")
+expect("ollama: done_reason stop", "length", {"response": "x", "done_reason": "stop"}, "no")
+expect("ollama: no done_reason", "length", {"response": "x"}, "no")
+expect("ollama: error body", "generate-error", {"error": "model 'x' not found"}, "model 'x' not found")
+expect("ollama: no error field", "generate-error", {"response": "x"}, "no message")
+expect("ollama: error from a non-JSON body", "generate-error", b"oops", "no message")
+print("reply: 26 cases")
 sys.exit(1 if fails else 0)
 PY
 rc=$?
