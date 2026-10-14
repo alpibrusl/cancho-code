@@ -86,3 +86,4 @@ jobs:
           sh scripts/test-provider.sh
           sh scripts/test-native.sh
           sh scripts/test-anthropic-wire.sh
+          sh scripts/test-reply.sh

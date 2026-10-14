@@ -1,0 +1,390 @@
+edition 7;
+
+module reply;
+
+// `reply` — what comes back from a model, and the program inside it.
+//
+// Two jobs, both pure (no capability):
+//
+//   1. The API's reply (`text`, `stop_reason_is`, `error_message`,
+//      `usage_line`): the text blocks of an Anthropic Messages reply, put
+//      together; whether the model stopped at its bound; the API's own
+//      message for an error; what the call cost in tokens.
+//   2. `program_span`: the file in a model's answer, or none. This is
+//      `scripts/agent_lib.py`'s `program()` ported rule for rule, and the
+//      gate (scripts/test-reply.sh) holds the two to the same answer on a
+//      corpus that includes real replies from the runs reported on
+//      issue #9. A reply with no program in it is the model's own
+//      reasoning: not a file, never written over a project.
+//
+// The span is two offsets into the answer, not a copy: nothing here
+// allocates a second program.
+
+import std.buffer;
+import std.json;
+
+// ---- bytes ---------------------------------------------------------------
+
+fn match_at[&s, &l](s: &s [byte], i: int, lit: &l [byte]) -> [] bool {
+    if i < 0 || i + len(lit) > len(s) {
+        return false;
+    }
+    var k = 0;
+    var ok = true;
+    while k < len(lit) {
+        if int_of(s[i + k]) != int_of(lit[k]) {
+            ok = false;
+        }
+        k = k + 1;
+    }
+    return ok;
+}
+
+// The first place in [from, to) where `lit` starts and ends inside it, or -1.
+fn find_in[&s, &l](s: &s [byte], from: int, to: int, lit: &l [byte]) -> [] int {
+    var i = from;
+    var found = 0 - 1;
+    while found < 0 && i + len(lit) <= to {
+        if match_at(s, i, lit) {
+            found = i;
+        }
+        i = i + 1;
+    }
+    return found;
+}
+
+// The last such place in [from, to), or -1.
+fn rfind_in[&s, &l](s: &s [byte], from: int, to: int, lit: &l [byte]) -> [] int {
+    var i = to - len(lit);
+    var found = 0 - 1;
+    while found < 0 && i >= from {
+        if match_at(s, i, lit) {
+            found = i;
+        }
+        i = i - 1;
+    }
+    return found;
+}
+
+// Python's `str.isspace` on ASCII: space, \t \n \v \f \r.
+fn is_space(c: int) -> [] bool {
+    return c == 32 || (c >= 9 && c <= 13);
+}
+
+fn blank[&s](s: &s [byte], lo: int, hi: int) -> [] bool {
+    var i = lo;
+    var all = true;
+    while i < hi {
+        if is_space(int_of(s[i])) == false {
+            all = false;
+        }
+        i = i + 1;
+    }
+    return all;
+}
+
+// [A-Za-z0-9_+-]: what a fence's language tag is made of.
+fn is_info(c: int) -> [] bool {
+    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95 || c == 43 || c == 45;
+}
+
+// ---- the program in an answer --------------------------------------------
+
+// A fenced block that starts at or after `from`: (where its text starts, where
+// it ends, where to look for the next one), or (-1, 0, 0). An opener is three
+// backticks, a language tag, spaces or tabs, and a newline; the block ends at
+// the next three backticks, wherever they are.
+fn next_block[&s](s: &s [byte], lo: int, hi: int, from: int) -> [] (int, int, int) {
+    var p = from;
+    var result = (0 - 1, 0, 0);
+    var searching = true;
+    while searching {
+        let i = find_in(s, p, hi, "```");
+        if i < 0 {
+            searching = false;
+        } else {
+            var j = i + 3;
+            while j < hi && is_info(int_of(s[j])) {
+                j = j + 1;
+            }
+            while j < hi && (int_of(s[j]) == 32 || int_of(s[j]) == 9) {
+                j = j + 1;
+            }
+            if j < hi && int_of(s[j]) == 10 {
+                let close = find_in(s, j + 1, hi, "```");
+                if close >= 0 {
+                    result = (j + 1, close, close + 3);
+                    searching = false;
+                } else {
+                    p = i + 1;
+                }
+            } else {
+                p = i + 1;
+            }
+        }
+    }
+    return result;
+}
+
+// The program in one stretch [lo, hi) of the answer (no `</think>` inside it):
+// the longest fenced block if there is one, else the stretch with a stray fence
+// cut off either end; then from its first `edition N;` line to the end, without
+// the newlines around it. (-1, -1) when no line starts with `edition N;`.
+fn segment_program[&s](s: &s [byte], lo: int, hi: int) -> [] (int, int) {
+    var a = lo;
+    var b = hi;
+    // the longest fenced block (the first of equal length)
+    var best = 0 - 1;
+    var best_a = 0;
+    var best_b = 0;
+    var from = lo;
+    var scanning = true;
+    while scanning {
+        let (cs, ce, resume) = next_block(s, lo, hi, from);
+        if cs < 0 {
+            scanning = false;
+        } else {
+            if best < 0 || ce - cs > best {
+                best = ce - cs;
+                best_a = cs;
+                best_b = ce;
+            }
+            from = resume;
+        }
+    }
+    if best >= 0 {
+        a = best_a;
+        b = best_b;
+    }
+    // an unopened or unclosed fence left at either end
+    var k = a;
+    while k < b && is_space(int_of(s[k])) {
+        k = k + 1;
+    }
+    if match_at(s, k, "```") && k + 3 <= b {
+        var j = k + 3;
+        while j < b && is_info(int_of(s[j])) {
+            j = j + 1;
+        }
+        while j < b && (int_of(s[j]) == 32 || int_of(s[j]) == 9) {
+            j = j + 1;
+        }
+        if j < b && int_of(s[j]) == 10 {
+            a = j + 1;
+        }
+    }
+    var e = b;
+    while e > a && is_space(int_of(s[e - 1])) {
+        e = e - 1;
+    }
+    if e - 3 >= a && match_at(s, e - 3, "```") {
+        var q = e - 3;
+        while q > a && (int_of(s[q - 1]) == 32 || int_of(s[q - 1]) == 9) {
+            q = q - 1;
+        }
+        if q > a && int_of(s[q - 1]) == 10 {
+            b = q - 1;
+        }
+    }
+    // the first line that begins `edition <digits>;`
+    var start = 0 - 1;
+    var i = a;
+    while start < 0 && i < b {
+        var at_line = i == a || int_of(s[i - 1]) == 10;
+        if at_line == false && i - 7 >= a && match_at(s, i - 7, "<think>") && (i - 7 == a || int_of(s[i - 8]) == 10) {
+            at_line = true;
+        }
+        if at_line && match_at(s, i, "edition ") && i + 8 <= b {
+            var d = i + 8;
+            while d < b && int_of(s[d]) >= 48 && int_of(s[d]) <= 57 {
+                d = d + 1;
+            }
+            if d > i + 8 && d < b && int_of(s[d]) == 59 {
+                start = i;
+            }
+        }
+        i = i + 1;
+    }
+    if start < 0 {
+        return (0 - 1, 0 - 1);
+    }
+    var end = b;
+    while end > start && int_of(s[end - 1]) == 10 {
+        end = end - 1;
+    }
+    return (start, end);
+}
+
+// The file in a model's answer: where it starts and ends in `answer`, or
+// (-1, -1). Models leak their reasoning markers into the answer; what follows
+// the last `</think>` is the answer, and when nothing there is a program the
+// program is what precedes it (the reply ended on the tag, after a closing
+// fence).
+pub fn program_span[&s](answer: &s [byte]) -> [] (int, int) {
+    var hi = len(answer);
+    var result = (0 - 1, 0 - 1);
+    var searching = true;
+    while searching {
+        let t = rfind_in(answer, 0, hi, "</think>");
+        if t < 0 {
+            result = segment_program(answer, 0, hi);
+            searching = false;
+        } else {
+            if blank(answer, t + 8, hi) == false {
+                let (a, b) = segment_program(answer, t + 8, hi);
+                if a >= 0 {
+                    result = (a, b);
+                    searching = false;
+                }
+            }
+            hi = t;
+        }
+    }
+    return result;
+}
+
+// ---- the API's reply -----------------------------------------------------
+
+// The reply parsed to a tape on the heap (a reply of 20,000 tokens is far over
+// a region's 64 KiB). The tape is a box the caller drops; `nodes` is negative
+// when the body is not JSON.
+fn new_tape[&h, &b](heap: &!h Heap, body: &b [byte]) -> [heap] Box[[int]] {
+    return box_slice(heap, json.tape_len(body), 0);
+}
+
+// The decoded string at node `n`, appended to `out`.
+fn append_string[&h, &b, &t](heap: &!h Heap, out: buffer.Buffer, body: &b [byte], tape: &t [int], n: int) -> [heap] buffer.Buffer {
+    let piece = box_slice(heap, json.string_length(body, tape, n) + 1, byte_of(0));
+    var o = out;
+    borrow mut piece as &!pw in {
+        let got = json.string_into(body, tape, n, contents(pw));
+        o = buffer.append(heap, o, contents(pw)[0..got]);
+    }
+    unbox_slice(heap, piece);
+    return o;
+}
+
+// All the `text` blocks of a Messages reply, in order, as one buffer (empty
+// when there are none, or the body is not a reply). `thinking` blocks are not
+// text: they are not part of the answer.
+pub fn text[&h, &b](heap: &!h Heap, body: &b [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 1024);
+    let tape_box = new_tape(heap, body);
+    borrow mut tape_box as &!tw in {
+        let tape = contents(tw);
+        let nodes = json.parse(body, tape);
+        if nodes >= 0 {
+            let content = json.get(body, tape, 0, "content");
+            if content >= 0 && json.is_array(tape, content) {
+                var n = 0;
+                while n < json.count(tape, content) {
+                    let block = json.at(tape, content, n);
+                    let kind = json.get(body, tape, block, "type");
+                    let t = json.get(body, tape, block, "text");
+                    if kind >= 0 && json.string_equals(body, tape, kind, "text") && t >= 0 && json.is_string(tape, t) {
+                        out = append_string(heap, out, body, tape, t);
+                    }
+                    n = n + 1;
+                }
+            }
+        }
+    }
+    unbox_slice(heap, tape_box);
+    return out;
+}
+
+// Did the model stop for the reason `reason` (`max_tokens`: its bound, so the
+// program in the text is cut off)?
+pub fn stop_reason_is[&h, &b, &r](heap: &!h Heap, body: &b [byte], reason: &r [byte]) -> [heap] bool {
+    var yes = false;
+    let tape_box = new_tape(heap, body);
+    borrow mut tape_box as &!tw in {
+        let tape = contents(tw);
+        let nodes = json.parse(body, tape);
+        if nodes >= 0 {
+            let s = json.get(body, tape, 0, "stop_reason");
+            if s >= 0 && json.is_string(tape, s) && json.string_equals(body, tape, s, reason) {
+                yes = true;
+            }
+        }
+    }
+    unbox_slice(heap, tape_box);
+    return yes;
+}
+
+// The API's own message for a refused call: `type: message`, or `no message`.
+// Never the request, which holds the key.
+pub fn error_message[&h, &b](heap: &!h Heap, body: &b [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 128);
+    var found = false;
+    let tape_box = new_tape(heap, body);
+    borrow mut tape_box as &!tw in {
+        let tape = contents(tw);
+        let nodes = json.parse(body, tape);
+        if nodes >= 0 {
+            let err = json.get(body, tape, 0, "error");
+            if err >= 0 && json.is_object(tape, err) {
+                let kind = json.get(body, tape, err, "type");
+                let msg = json.get(body, tape, err, "message");
+                if kind >= 0 && json.is_string(tape, kind) && msg >= 0 && json.is_string(tape, msg) {
+                    out = append_string(heap, out, body, tape, kind);
+                    out = buffer.append(heap, out, ": ");
+                    out = append_string(heap, out, body, tape, msg);
+                    found = true;
+                }
+            }
+        }
+    }
+    unbox_slice(heap, tape_box);
+    if found == false {
+        out = buffer.append(heap, out, "no message");
+    }
+    return out;
+}
+
+fn put_count[&h, &b, &t](heap: &!h Heap, out: buffer.Buffer, body: &b [byte], tape: &t [int], usage: int, key: &static [byte]) -> [heap] buffer.Buffer {
+    var o = buffer.append(heap, out, key);
+    o = buffer.append(heap, o, "=");
+    var n = 0;
+    let node = json.get(body, tape, usage, key);
+    if node >= 0 && json.is_int(tape, node) {
+        n = json.to_int(body, tape, node);
+    }
+    var scale = 1;
+    while n / scale >= 10 {
+        scale = scale * 10;
+    }
+    var rest = n;
+    while scale >= 1 {
+        let d = rest / scale;
+        o = buffer.push(heap, o, byte_of(48 + d));
+        rest = rest - d * scale;
+        scale = scale / 10;
+    }
+    return o;
+}
+
+// What the call cost, in the tokens the API reports (0 for one it does not):
+// `input_tokens=N output_tokens=N cache_creation_input_tokens=N
+// cache_read_input_tokens=N`.
+pub fn usage_line[&h, &b](heap: &!h Heap, body: &b [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 160);
+    let tape_box = new_tape(heap, body);
+    borrow mut tape_box as &!tw in {
+        let tape = contents(tw);
+        let nodes = json.parse(body, tape);
+        var usage = 0 - 1;
+        if nodes >= 0 {
+            usage = json.get(body, tape, 0, "usage");
+        }
+        out = put_count(heap, out, body, tape, usage, "input_tokens");
+        out = buffer.append(heap, out, " ");
+        out = put_count(heap, out, body, tape, usage, "output_tokens");
+        out = buffer.append(heap, out, " ");
+        out = put_count(heap, out, body, tape, usage, "cache_creation_input_tokens");
+        out = buffer.append(heap, out, " ");
+        out = put_count(heap, out, body, tape, usage, "cache_read_input_tokens");
+    }
+    unbox_slice(heap, tape_box);
+    return out;
+}
