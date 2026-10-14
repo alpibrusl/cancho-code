@@ -1,0 +1,88 @@
+edition 7;
+
+// `reply_gate` — the gate program for `src/reply.cho`.
+//
+//     reply_gate <mode> <file> x x x
+//
+// `span` prints the program in the file (the model's answer) or `NONE`;
+// `text`, `max`, `error` and `usage` read the file as an API reply. The file
+// is read onto the heap (a reply is bigger than a region). The harness pads
+// the arguments (reading one that is not there is a trap).
+
+import reply;
+import std.buffer;
+import std.bytes;
+import std.io;
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(signals);
+    release(exec);
+    release(net);
+    release(clock);
+    var console = io;
+    var h = heap;
+    var mode = "";
+    var path = "";
+    borrow args as &g in {
+        mode = arg(g, 1);
+        path = arg(g, 2);
+    }
+    borrow fs as &f in {
+        borrow mut console as &!i in {
+            borrow mut h as &!hh in {
+                let store = box_slice(hh, 262144, byte_of(0));
+                borrow mut store as &!sw in {
+                var n = fs_read(f, path, contents(sw));
+                if n < 0 {
+                    n = 0;
+                }
+                let body = contents(sw)[0..n];
+                if bytes.equal(mode, "span") {
+                    let (a, b) = reply.program_span(body);
+                    if a < 0 {
+                        io.write_all(i, "NONE");
+                    } else {
+                        io.write_all(i, body[a..b]);
+                    }
+                }
+                if bytes.equal(mode, "text") {
+                    let t = reply.text(hh, body);
+                    borrow t as &tr in {
+                        io.write_all(i, buffer.bytes(tr));
+                    }
+                    buffer.drop(hh, t);
+                }
+                if bytes.equal(mode, "max") {
+                    if reply.stop_reason_is(hh, body, "max_tokens") {
+                        io.write_all(i, "yes");
+                    } else {
+                        io.write_all(i, "no");
+                    }
+                }
+                if bytes.equal(mode, "error") {
+                    let t = reply.error_message(hh, body);
+                    borrow t as &tr in {
+                        io.write_all(i, buffer.bytes(tr));
+                    }
+                    buffer.drop(hh, t);
+                }
+                if bytes.equal(mode, "usage") {
+                    let t = reply.usage_line(hh, body);
+                    borrow t as &tr in {
+                        io.write_all(i, buffer.bytes(tr));
+                    }
+                    buffer.drop(hh, t);
+                }
+                }
+                unbox_slice(hh, store);
+            }
+        }
+    }
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return 0;
+}
