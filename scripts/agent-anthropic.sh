@@ -14,7 +14,7 @@
 # not in its output, not in an error, not in the saved raw replies. An HTTP error shows the API's own message and the status.
 #
 #   ANTHROPIC_KEY_FILE   the key file                      (required)
-#   ANTHROPIC_MODEL      the model                         (default claude-haiku-5-5, the cheapest to test with)
+#   ANTHROPIC_MODEL      the model: REQUIRED, no default   (e.g. claude-haiku-5-5)
 #   ANTHROPIC_URL        the API host                      (default https://api.anthropic.com)
 #   ANTHROPIC_MAX_TOKENS the most tokens one answer may take (default 8192); a reply that stops there is a program cut off: retried, never written
 #   ANTHROPIC_WORKSPACE_ID the workspace id, sent as anthropic-workspace-id: needed when the key is not scoped to a workspace (the API answers 400
@@ -43,9 +43,9 @@ import agent_lib
 
 NAME = "agent-anthropic"
 
-def fail(message):
+def fail(message, code=1):
     sys.stderr.write("%s: %s\n" % (NAME, message))
-    sys.exit(1)
+    sys.exit(code)
 
 # The key: from a file only the owner can read. Checked before anything is sent.
 path = os.environ.get("ANTHROPIC_KEY_FILE")
@@ -74,7 +74,9 @@ if thinking not in (None, "", "disabled", "adaptive"):
 if effort not in (None, "", "low", "medium", "high", "xhigh", "max"):
     fail("ANTHROPIC_EFFORT must be one of low, medium, high, xhigh, max, not %r" % effort)
 
-model = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-5-5")
+model = os.environ.get("ANTHROPIC_MODEL", "")
+if not model:
+    fail("ANTHROPIC_MODEL is not set; name the model (there is no default), e.g. ANTHROPIC_MODEL=claude-haiku-5-5", 2)
 url = os.environ.get("ANTHROPIC_URL", "https://api.anthropic.com").rstrip("/")
 max_tokens = int(os.environ.get("ANTHROPIC_MAX_TOKENS", "8192"))
 

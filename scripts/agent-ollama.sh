@@ -12,9 +12,9 @@
 # into the answer (issue #12), and the binary panics without a HOME, which the driver's agent does not have (issue #13). The API
 # is asked for the answer only (stream and think off), returns it as one JSON field, and needs no environment.
 #
-#   OLLAMA_MODEL    the model                      (default qwen3.8:27b). The driver's agent has NO environment, so
+#   OLLAMA_MODEL    the model: REQUIRED, no default. The driver's agent has NO environment, so
 #                   an exported variable never arrives: write it in the agent command, as
-#                   `fix ... "OLLAMA_MODEL=qwen3.8:27b-mlx scripts/agent-ollama.sh"`. Without it the default is used, and a
+#                   `fix ... "OLLAMA_MODEL=qwen3.8:27b-mlx scripts/agent-ollama.sh"`. Without it the agent exits 2 before any request; a
 #                   model that is not installed is a 404 and `agent_exit` (found on the first end-to-end run).
 #   OLLAMA_URL      the server                     (default http://localhost:11434)
 #   OLLAMA_NUM_CTX  the context window in tokens   (default 8192; raise it with a primer: `cancho agent-guidelines` is about 5,500 tokens)
@@ -29,7 +29,9 @@ set -u
 file="${1:?usage: agent-ollama.sh <project.cho>}"
 here=$(cd "$(dirname "$0")" && pwd)
 
-exec python3 - "$here" "$file" "${OLLAMA_MODEL:-qwen3.8:27b}" "${OLLAMA_URL:-http://localhost:11434}" "${OLLAMA_NUM_CTX:-8192}" <<'PY'
+[ -n "${OLLAMA_MODEL:-}" ] || { echo "agent-ollama: OLLAMA_MODEL is not set; name the model (there is no default), e.g. OLLAMA_MODEL=qwen3.8:27b" >&2; exit 2; }
+
+exec python3 - "$here" "$file" "$OLLAMA_MODEL" "${OLLAMA_URL:-http://localhost:11434}" "${OLLAMA_NUM_CTX:-8192}" <<'PY'
 import json, os, sys, urllib.request
 
 here, file, model, url, num_ctx = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4].rstrip("/"), int(sys.argv[5])

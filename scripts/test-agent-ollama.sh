@@ -9,6 +9,7 @@
 #   task      <project>.task, when there is one, goes in the prompt ahead of the file (a project unit; docs/project.md)
 #   truncated a reply cut off by the generation bound (done_reason "length") is not a sample: retried, never written
 #   primer    OLLAMA_PRIMER names a file that goes first in the prompt; an unreadable one is an error, not a silent skip
+#   model     no OLLAMA_MODEL (unset or empty) is a refusal before any request, naming the variable: there is no default model
 #   away      a server that is not there is a non-zero exit and the file is left as it was (the driver names it `agent_exit`)
 #
 # Needs python3 (the stub, and the script's own HTTP call; standard library only).
@@ -91,9 +92,22 @@ fn fixed() -> [] int { return 1; }"
 kill $stub 2>/dev/null; wait $stub 2>/dev/null
 # away: nothing listens on that port any more
 printf 'edition 7;\nfn keep() -> [] int { return 2; }\n' > "$d/keep.cho"; cp "$d/keep.cho" "$d/before.cho"
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/keep.cho" >/dev/null 2>&1; rc=$?
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/keep.cho" >/dev/null 2>&1; rc=$?
 [ "$rc" != 0 ] || { echo "FAIL: away: exit code 0 with no server" >&2; fail=1; }
 expect "away: the file is untouched" "$(cat "$d/keep.cho")" "$(cat "$d/before.cho")"
+
+# model: there is no default model. Unset or empty is exit 2, the variable named, the file untouched, and not one request made
+python3 "$d/stub.py" "$d" & stub=$!
+rm -f "$d/port" "$d/request.json"; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
+printf 'edition 7;\nfn keep() -> [] int { return 2; }\n' > "$d/nm.cho"; cp "$d/nm.cho" "$d/nm.before"
+for setting in "" "OLLAMA_MODEL="; do
+    env -i $setting OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/nm.cho" >/dev/null 2>"$d/nm.err"; rc=$?
+    expect "model ('$setting'): exit code" "$rc" 2
+    grep -q OLLAMA_MODEL "$d/nm.err" || { echo "FAIL: model ('$setting'): the refusal does not name OLLAMA_MODEL" >&2; fail=1; }
+    [ ! -e "$d/request.json" ] || { echo "FAIL: model ('$setting'): a request was made" >&2; fail=1; }
+    expect "model ('$setting'): the file is untouched" "$(cat "$d/nm.cho")" "$(cat "$d/nm.before")"
+done
+kill $stub 2>/dev/null; wait $stub 2>/dev/null
 
 # task: a project unit leaves <project>.task beside the file (docs/project.md): what to write, with the signature and the examples. It goes in
 # the prompt, ahead of the file; without one the prompt has no task
@@ -101,7 +115,7 @@ python3 "$d/stub.py" "$d" & stub=$!
 rm -f "$d/port" "$d/request.json"; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
 printf 'UNIT: refill\nFUNCTION: bucket_refill\nSIGNATURE: fn bucket_refill(a: int) -> [] int\nEXAMPLES:\nbucket_refill(1) == 2\n' > "$d/unit.cho.task"
 printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$d/unit.cho"
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/unit.cho" >/dev/null 2>&1
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/unit.cho" >/dev/null 2>&1
 treq=$(python3 -c "
 import json; p = json.load(open('$d/request.json'))['prompt']
 i = p.find('UNIT: refill'); j = p.find('fn broken')
@@ -109,7 +123,7 @@ print(i >= 0, j >= 0, 0 <= i < j, 'bucket_refill(1) == 2' in p)")
 expect "task: the task is in the prompt, ahead of the file" "$treq" "True True True True"
 rm -f "$d/unit.cho.task"
 printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$d/unit.cho"
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/unit.cho" >/dev/null 2>&1
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/unit.cho" >/dev/null 2>&1
 expect "task: absent when there is none" "$(grep -c 'UNIT: refill' "$d/request.json")" 0
 kill $stub 2>/dev/null; wait $stub 2>/dev/null
 
@@ -121,28 +135,28 @@ python3 "$d/stub.py" "$d" & stub=$!
 rm -f "$d/port"; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
 printf 'Here is the corrected program:\n\n```cancho\nedition 7;\nfn good() -> [] int { return 3; }\n```\n\nIt returns three.\n' > "$d/response.txt"
 printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/prose.cho"
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/prose.cho" >/dev/null 2>&1
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/prose.cho" >/dev/null 2>&1
 expect "fences: prose around a fenced block" "$(cat "$d/prose.cho")" "edition 7;
 fn good() -> [] int { return 3; }"
 printf 'edition 7;\nfn plain() -> [] int { return 4; }\n' > "$d/response.txt"
 printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/plain.cho"
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/plain.cho" >/dev/null 2>&1
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/plain.cho" >/dev/null 2>&1
 expect "fences: an answer with no fence is the file" "$(cat "$d/plain.cho")" "edition 7;
 fn plain() -> [] int { return 4; }"
 # an unopened fence (code, then a closing fence) and an unclosed one (a fence, then code): the stray fence must not stay in the file
 printf 'edition 7;\nfn unopened() -> [] int { return 5; }\n```\n' > "$d/response.txt"
 printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/unopened.cho"
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/unopened.cho" >/dev/null 2>&1
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/unopened.cho" >/dev/null 2>&1
 expect "fences: a closing fence with no opening one is dropped" "$(cat "$d/unopened.cho")" "edition 7;
 fn unopened() -> [] int { return 5; }"
 printf '```cancho\nedition 7;\nfn unclosed() -> [] int { return 6; }\n' > "$d/response.txt"
 printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/unclosed.cho"
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/unclosed.cho" >/dev/null 2>&1
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/unclosed.cho" >/dev/null 2>&1
 expect "fences: an opening fence with no closing one is dropped" "$(cat "$d/unclosed.cho")" "edition 7;
 fn unclosed() -> [] int { return 6; }"
 printf '```cancho\nedition 7;\nfn small() -> [] int { return 1; }\n```\nand also\n```\nedition 7;\nfn big() -> [] int { return 2; }\nfn main2() -> [] int { return 0; }\n```\n' > "$d/response.txt"
 printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/two.cho"
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/two.cho" >/dev/null 2>&1
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/two.cho" >/dev/null 2>&1
 expect "fences: with several blocks the longest is the file" "$(sed -n 2p "$d/two.cho")" "fn big() -> [] int { return 2; }"
 kill $stub 2>/dev/null; wait $stub 2>/dev/null
 rm -f "$d/response.txt"
@@ -155,7 +169,7 @@ printf 'Wait, `option.None` and `option.Some` syntax.\nLet me think about the st
 printf 'Hmm, one more detail about main.\n' > "$d/response.2.txt"
 printf 'edition 7;\nfn third() -> [] int { return 7; }\n' > "$d/response.3.txt"
 printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/retry.cho"
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/retry.cho" >/dev/null 2>&1; rc=$?
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/retry.cho" >/dev/null 2>&1; rc=$?
 expect "reasoning: exit code after two prose samples and one file" "$rc" 0
 expect "reasoning: the third sample is the file" "$(cat "$d/retry.cho")" "edition 7;
 fn third() -> [] int { return 7; }"
@@ -164,25 +178,25 @@ python3 "$d/stub.py" "$d" & stub=$!
 rm -f "$d/port" "$d"/response*.txt; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
 printf 'Wait, I think the answer is long.\n' > "$d/response.txt"
 printf 'edition 7;\nfn keep() -> [] int { return 8; }\n' > "$d/prose.cho"; cp "$d/prose.cho" "$d/prose.before"
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/prose.cho" >/dev/null 2>&1; rc=$?
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/prose.cho" >/dev/null 2>&1; rc=$?
 [ "$rc" != 0 ] || { echo "FAIL: reasoning: exit code 0 when every sample was prose" >&2; fail=1; }
 expect "reasoning: the file is untouched" "$(cat "$d/prose.cho")" "$(cat "$d/prose.before")"
 # a leaked reasoning marker: the program, then a closing fence and `</think>` (seen on the first real acceptance runs: it left a stray
 # backtick at the end of the file), or reasoning, `</think>`, then the program
 printf 'edition 7;\nfn before() -> [] int { return 10; }\n```\n</think>\n' > "$d/response.txt"
 printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/think1.cho"
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/think1.cho" >/dev/null 2>&1
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/think1.cho" >/dev/null 2>&1
 expect "think: a closing fence and </think> after the program are dropped" "$(cat "$d/think1.cho")" "edition 7;
 fn before() -> [] int { return 10; }"
 printf 'Let me think: edition 7; is the header.\n</think>\n\nedition 7;\nfn after_tag() -> [] int { return 11; }\n' > "$d/response.txt"
 printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/think2.cho"
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/think2.cho" >/dev/null 2>&1
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/think2.cho" >/dev/null 2>&1
 expect "think: the program after </think> is the file, not a mention in the reasoning" "$(cat "$d/think2.cho")" "edition 7;
 fn after_tag() -> [] int { return 11; }"
 # a preamble before the code, with no fence: the file starts at the edition line
 printf 'Here you go.\n\nedition 7;\nfn after() -> [] int { return 9; }\n' > "$d/response.txt"
 printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/pre.cho"
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/pre.cho" >/dev/null 2>&1
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/pre.cho" >/dev/null 2>&1
 expect "reasoning: a preamble before the code is cut" "$(cat "$d/pre.cho")" "edition 7;
 fn after() -> [] int { return 9; }"
 kill $stub 2>/dev/null; wait $stub 2>/dev/null
@@ -194,9 +208,9 @@ python3 "$d/stub.py" "$d" & stub=$!
 rm -f "$d/port" "$d"/response*.txt "$d"/response*.reason; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
 printf 'Some prose first.\n\nedition 7;\nfn raw_one() -> [] int { return 14; }\n\n- a trailing note\n' > "$d/response.txt"
 printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/raw.cho"; rm -f "$d/raw.out"
-env -i OLLAMA_URL="http://127.0.0.1:$port" OLLAMA_SAVE_RAW="$d/raw.out" /bin/sh "$root/scripts/agent-ollama.sh" "$d/raw.cho" >/dev/null 2>&1
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" OLLAMA_SAVE_RAW="$d/raw.out" /bin/sh "$root/scripts/agent-ollama.sh" "$d/raw.cho" >/dev/null 2>&1
 case "$(cat "$d/raw.out" 2>/dev/null)" in *"Some prose first."*"- a trailing note"*) ;; *) echo "FAIL: raw: the raw reply was not saved whole ('$(cat "$d/raw.out" 2>/dev/null | head -c 80)')" >&2; fail=1 ;; esac
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/raw.cho" >/dev/null 2>&1
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/raw.cho" >/dev/null 2>&1
 expect "raw: nothing is saved unless asked" "$(grep -c 'Some prose first' "$d/raw.out")" 1
 kill $stub 2>/dev/null; wait $stub 2>/dev/null
 rm -f "$d"/response*.txt "$d"/response*.reason
@@ -209,7 +223,7 @@ printf 'edition 7;\nfn cut_off() -> [] int {\n    var i = 0;\n    while i < 3 {\
 printf 'edition 7;\nfn also_cut() -> [] int {\n' > "$d/response.2.txt"; printf 'length' > "$d/response.2.reason"
 printf 'edition 7;\nfn whole() -> [] int { return 12; }\n' > "$d/response.3.txt"
 printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/trunc.cho"
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/trunc.cho" >/dev/null 2>&1; rc=$?
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/trunc.cho" >/dev/null 2>&1; rc=$?
 expect "truncated: exit code after two cut-off samples and one whole one" "$rc" 0
 expect "truncated: the whole sample is the file" "$(cat "$d/trunc.cho")" "edition 7;
 fn whole() -> [] int { return 12; }"
@@ -218,7 +232,7 @@ python3 "$d/stub.py" "$d" & stub=$!
 rm -f "$d/port" "$d"/response*.txt "$d"/response*.reason; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
 printf 'edition 7;\nfn cut_off() -> [] int {\n' > "$d/response.txt"; printf 'length' > "$d/response.1.reason"; cp "$d/response.1.reason" "$d/response.2.reason"; cp "$d/response.1.reason" "$d/response.3.reason"
 printf 'edition 7;\nfn keep() -> [] int { return 13; }\n' > "$d/alltrunc.cho"; cp "$d/alltrunc.cho" "$d/alltrunc.before"
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/alltrunc.cho" >/dev/null 2>&1; rc=$?
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/alltrunc.cho" >/dev/null 2>&1; rc=$?
 [ "$rc" != 0 ] || { echo "FAIL: truncated: exit code 0 when every sample was cut off" >&2; fail=1; }
 expect "truncated: the file is untouched when every sample was cut off" "$(cat "$d/alltrunc.cho")" "$(cat "$d/alltrunc.before")"
 kill $stub 2>/dev/null; wait $stub 2>/dev/null
@@ -230,11 +244,11 @@ python3 "$d/stub.py" "$d" & stub=$!
 rm -f "$d/port"; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
 printf 'PRIMER-SENTINEL: a function is written fn name() -> [] int\n' > "$d/primer.md"
 printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/with.cho"; cp "$d/with.cho" "$d/without.cho"
-env -i OLLAMA_URL="http://127.0.0.1:$port" OLLAMA_PRIMER="$d/primer.md" /bin/sh "$root/scripts/agent-ollama.sh" "$d/with.cho" >/dev/null 2>&1
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" OLLAMA_PRIMER="$d/primer.md" /bin/sh "$root/scripts/agent-ollama.sh" "$d/with.cho" >/dev/null 2>&1
 expect "primer: in the prompt when named" "$(grep -c PRIMER-SENTINEL "$d/request.json")" 1
-env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/without.cho" >/dev/null 2>&1
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/without.cho" >/dev/null 2>&1
 expect "primer: absent when not named" "$(grep -c PRIMER-SENTINEL "$d/request.json")" 0
-env -i OLLAMA_URL="http://127.0.0.1:$port" OLLAMA_PRIMER="$d/nope.md" /bin/sh "$root/scripts/agent-ollama.sh" "$d/without.cho" >/dev/null 2>&1; rc=$?
+env -i OLLAMA_MODEL=stub-model:1b OLLAMA_URL="http://127.0.0.1:$port" OLLAMA_PRIMER="$d/nope.md" /bin/sh "$root/scripts/agent-ollama.sh" "$d/without.cho" >/dev/null 2>&1; rc=$?
 [ "$rc" != 0 ] || { echo "FAIL: primer: a primer file that cannot be read must not be silently skipped" >&2; fail=1; }
 kill $stub 2>/dev/null; wait $stub 2>/dev/null
 

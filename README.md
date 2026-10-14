@@ -68,7 +68,7 @@ A key file that group or others can read is refused before any request; the key 
 - **An acceptance command** (optional sixth argument, seconds as the seventh) runs on the file after the checker verifies it: exit 0 prints `[ACCEPTANCE] pass`; anything else is `[ACCEPTANCE] fail`, a retryable failure whose output the agent reads in `<project.cho>.feedback`. `verified` then means "meets this check", not only "type-checks": on the first audit, three builds were `verified` and none met the brief's shapes.
 - **A failing agent is named**: a non-zero exit, a timeout, a signal each end `unavailable agent` and are recorded in `<project.cho>.trail.jsonl` (`agent_exit`, `agent_timeout`, ...). The file is left as it was.
 
-`scripts/agent-ollama.sh` is the local-model agent (Ollama's HTTP API; `scripts/test-agent-ollama.sh` runs it against a stub server).
+`scripts/agent-ollama.sh` is the local-model agent (Ollama's HTTP API; `OLLAMA_MODEL` is required, there is no default model or provider: the script you name is the provider, the variable is the model; `scripts/test-agent-ollama.sh` runs it against a stub server).
 
 **Give a local model the language's own page.** A model that has never seen cancho repeats the same refusal: on a trivial task (`clamp`), 6 of 6 baseline runs ended `failed signature` on `-> int` without the effect row, with or without the offending source line shown. With `OLLAMA_PRIMER` naming the output of `cancho agent-guidelines` (about 5,500 tokens, generated from the binary), 3 of 3 verified in one turn:
 

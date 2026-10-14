@@ -8,6 +8,7 @@
 #   rewrite   the project file becomes the reply's program (a fence is cut)
 #   key       the key is in no output of the agent (stdout, stderr, the saved raw replies); a key file that others can read is refused
 #             BEFORE any request; a missing, empty or unnamed key file is an error that names ANTHROPIC_KEY_FILE
+#   model     no ANTHROPIC_MODEL (unset or empty) is a refusal before any request, naming the variable: there is no default model
 #   cut off   a reply that stopped at max_tokens is retried, never written
 #   tls       the server is verified, and a CA bundle is found when the Python has none; a bundle without the CA still fails
 #   error     an HTTP error is a non-zero exit with the API's own message, and the file is left as it was
@@ -161,6 +162,18 @@ expect "cut off: exit code" "$rc" 0
 expect "cut off: the whole sample is the file" "$(cat "$d/project.cho")" "edition 7;
 fn whole() -> [] int { return 2; }"
 rm -f "$d/response"*
+stop
+
+# model: there is no default model. Unset or empty is exit 2, the variable named, the file untouched, and not one request made
+start
+printf 'edition 7;\nfn keep() -> [] int { return 2; }\n' > "$d/nm.cho"; cp "$d/nm.cho" "$d/nm.before"
+for setting in "" "ANTHROPIC_MODEL="; do
+    env -i $setting ANTHROPIC_URL="http://127.0.0.1:$port" ANTHROPIC_KEY_FILE="$d/key" /bin/sh "$root/scripts/agent-anthropic.sh" "$d/nm.cho" >/dev/null 2>"$d/nm.err"; rc=$?
+    expect "model ('$setting'): exit code" "$rc" 2
+    grep -q ANTHROPIC_MODEL "$d/nm.err" || { echo "FAIL: model ('$setting'): the refusal does not name ANTHROPIC_MODEL" >&2; fail=1; }
+    [ ! -e "$d/request.json" ] || { echo "FAIL: model ('$setting'): a request was made" >&2; fail=1; }
+    expect "model ('$setting'): the file is untouched" "$(cat "$d/nm.cho")" "$(cat "$d/nm.before")"
+done
 stop
 
 # a key file others can read is refused before any request
