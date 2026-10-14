@@ -1,0 +1,73 @@
+edition 7;
+
+// `planprompt_gate <guide> <brief> <contract> <feedback> x` prints the planner's prompt; a file that is not there reads as empty.
+
+import planprompt;
+import std.buffer;
+import std.io;
+
+fn slurp[&h, &f, &p](heap: &!h Heap, fs: &f Fs(""), path: &p [byte]) -> [heap, fs_read("")] buffer.Buffer {
+    let store = box_slice(heap, 262144, byte_of(0));
+    var out = buffer.empty(heap, 16);
+    borrow mut store as &!sw in {
+        let n = fs_read(fs, path, contents(sw));
+        if n > 0 {
+            out = buffer.append(heap, out, contents(sw)[0..n]);
+        }
+    }
+    unbox_slice(heap, store);
+    return out;
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(signals);
+    release(exec);
+    release(net);
+    release(clock);
+    var console = io;
+    var h = heap;
+    var pg = "";
+    var pb = "";
+    var pc = "";
+    var pf = "";
+    borrow args as &g in {
+        pg = arg(g, 1);
+        pb = arg(g, 2);
+        pc = arg(g, 3);
+        pf = arg(g, 4);
+    }
+    borrow fs as &f in {
+        borrow mut console as &!i in {
+            borrow mut h as &!hh in {
+                let guide = slurp(hh, f, pg);
+                let brief = slurp(hh, f, pb);
+                let contract = slurp(hh, f, pc);
+                let feedback = slurp(hh, f, pf);
+                borrow guide as &gr in {
+                    borrow brief as &br in {
+                        borrow contract as &cr in {
+                            borrow feedback as &fr in {
+                                let p = planprompt.build(hh, buffer.bytes(gr), buffer.bytes(br), buffer.bytes(cr), buffer.bytes(fr));
+                                borrow p as &pr in {
+                                    io.write_all(i, buffer.bytes(pr));
+                                }
+                                buffer.drop(hh, p);
+                            }
+                        }
+                    }
+                }
+                buffer.drop(hh, guide);
+                buffer.drop(hh, brief);
+                buffer.drop(hh, contract);
+                buffer.drop(hh, feedback);
+            }
+        }
+    }
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return 0;
+}

@@ -41,13 +41,14 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--attempts", default="6")
     ap.add_argument("--agent-seconds", default="300")
+    ap.add_argument("--plan", help="a plan to build instead of eval/<item>/plan.json (e.g. one a model wrote)")
     ap.add_argument("--tools", default="/tmp/evaltools")
     ap.add_argument("--timeout", type=int, default=3600)
     a = ap.parse_args()
     cancho = os.environ.get("CANCHO")
     if not cancho:
         sys.exit("run_item: set CANCHO to the compiler")
-    plan_path = os.path.join(HERE, a.item, "plan.json")
+    plan_path = os.path.abspath(a.plan) if a.plan else os.path.join(HERE, a.item, "plan.json")
     audit = os.path.join(HERE, "audit_%s.py" % a.item)
     plan = json.load(open(plan_path))
     scaffold = scaffold_for(plan)
@@ -78,7 +79,7 @@ def main():
         open(os.path.join(wd, "run.log"), "w").write(out)
         json.dump({"item": a.item, "label": a.label, "run": i, "provider": a.provider, "model": a.model, "scaffold_chars": len(scaffold),
                    "seconds": seconds, "exit": rc, "cancho": cancho, "primer": a.primer, "max_tokens": a.max_tokens,
-                   "thinking": a.thinking, "effort": a.effort}, open(os.path.join(wd, "run.json"), "w"), indent=1)
+                   "thinking": a.thinking, "effort": a.effort, "plan": plan_path}, open(os.path.join(wd, "run.json"), "w"), indent=1)
         env = dict(os.environ, CANCHO=cancho)
         ap_ = subprocess.run([sys.executable, audit, os.path.join(wd, "project.cho")], capture_output=True, text=True, env=env)
         open(os.path.join(wd, "audit.txt"), "w").write(ap_.stdout + ap_.stderr)

@@ -486,3 +486,90 @@ pub fn top_count[&h, &b](heap: &!h Heap, body: &b [byte], name: &static [byte]) 
     unbox_slice(heap, tape_box);
     return n;
 }
+
+// ---- a JSON object inside a reply ----------------------------------------
+
+// Where the object that opens at `start` closes (one past its `}`), or -1 when
+// it never does. Braces inside strings do not count, and a backslash in a
+// string escapes the next byte.
+fn balanced_end[&s](s: &s [byte], start: int) -> [] int {
+    var depth = 0;
+    var in_string = false;
+    var escaped = false;
+    var i = start;
+    var end = 0 - 1;
+    while end < 0 && i < len(s) {
+        let c = int_of(s[i]);
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if c == 92 {
+                escaped = true;
+            } else if c == 34 {
+                in_string = false;
+            }
+        } else if c == 34 {
+            in_string = true;
+        } else if c == 123 {
+            depth = depth + 1;
+        } else if c == 125 {
+            depth = depth - 1;
+            if depth == 0 {
+                end = i + 1;
+            }
+        }
+        i = i + 1;
+    }
+    return end;
+}
+
+// The first complete JSON object in `text`, as offsets, or (-1, -1): a plan
+// comes back inside prose and fences, and a `{name}` in the prose before it is
+// not the plan. A candidate is taken only if it is balanced AND parses.
+pub fn json_span[&h, &s](heap: &!h Heap, text: &s [byte]) -> [heap] (int, int) {
+    var found_a = 0 - 1;
+    var found_b = 0 - 1;
+    var i = 0;
+    while found_a < 0 && i < len(text) {
+        if int_of(text[i]) == 123 {
+            let e = balanced_end(text, i);
+            if e > 0 {
+                let candidate = text[i..e];
+                let tape_box = box_slice(heap, json.tape_len(candidate), 0);
+                borrow mut tape_box as &!tw in {
+                    let nodes = json.parse(candidate, contents(tw));
+                    if nodes >= 0 {
+                        found_a = i;
+                        found_b = e;
+                    }
+                }
+                unbox_slice(heap, tape_box);
+            }
+        }
+        i = i + 1;
+    }
+    return (found_a, found_b);
+}
+
+// Is the top-level string field `name` of the object `body` equal to `value`?
+pub fn field_is[&h, &b, &n, &v](heap: &!h Heap, body: &b [byte], name: &n [byte], value: &v [byte]) -> [heap] bool {
+    var yes = false;
+    let nm = buffer.append(heap, buffer.empty(heap, 32), name);
+    borrow nm as &nr in {
+        // top_string takes a literal name; look the field up by hand
+        let tape_box = new_tape(heap, body);
+        borrow mut tape_box as &!tw in {
+            let tape = contents(tw);
+            let nodes = json.parse(body, tape);
+            if nodes >= 0 && json.is_object(tape, 0) {
+                let n2 = json.get(body, tape, 0, buffer.bytes(nr));
+                if n2 >= 0 && json.is_string(tape, n2) && json.string_equals(body, tape, n2, value) {
+                    yes = true;
+                }
+            }
+        }
+        unbox_slice(heap, tape_box);
+    }
+    buffer.drop(heap, nm);
+    return yes;
+}

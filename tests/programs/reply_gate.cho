@@ -91,6 +91,26 @@ fn main(world: World) -> [] int {
                     }
                     buffer.drop(hh, t);
                 }
+                if bytes.equal(mode, "json") {
+                    let (a, b) = reply.json_span(hh, body);
+                    if a < 0 {
+                        io.write_all(i, "NONE");
+                    } else {
+                        io.write_all(i, body[a..b]);
+                    }
+                }
+                if bytes.equal(mode, "field-is") {
+                    // name is "field=value"
+                    var eq = 0;
+                    while eq < len(name) && int_of(name[eq]) != 61 {
+                        eq = eq + 1;
+                    }
+                    if reply.field_is(hh, body, name[0..eq], name[eq + 1..len(name)]) {
+                        io.write_all(i, "yes");
+                    } else {
+                        io.write_all(i, "no");
+                    }
+                }
                 if bytes.equal(mode, "usage-count") || bytes.equal(mode, "top-count") {
                     var n = 0;
                     if bytes.equal(mode, "usage-count") {
