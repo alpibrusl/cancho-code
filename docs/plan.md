@@ -49,6 +49,7 @@ Exit 0 valid, 1 invalid, 2 usage (no argument, or the file cannot be read). **Ev
 | `tautology` | an example's two sides are the same text, or it contains `|| true` or `or true`: it checks nothing |
 | `unknown-dep` | a `deps` entry is not the `id` of any unit |
 | `needs-tests` | the function takes a heap, or its result holds text, a buffer or a list (alone or inside a `Result`/`Option`), and the unit has no `tests`: an example `CALL == EXPECTED` cannot run for it (`==` compares scalars; a test has no heap). A `Result` or `Option` of scalars is not flagged |
+| `bad-test` | one of the unit's `tests` is a `pub fn test_...` that takes a `World` or calls `split`: that is not a test form (tests take `Heap`/`Io` references directly), so the unit's test file could never build |
 | `cycle` | the dependencies form a cycle (reported once, on the first unit of it in the file) |
 
 ## What this does not check

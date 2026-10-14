@@ -28,3 +28,5 @@ needs-tests-heap  1     needs-tests:a
 needs-tests-two  1     needs-tests:a needs-tests:b
 valid-needs-tests-met  0
 valid-scalar-option  0
+bad-test-world  1     bad-test:a
+valid-heap-test  0

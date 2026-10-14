@@ -409,6 +409,25 @@ fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte
             b = emit(heap, b, "needs-tests", who, "this function takes a heap, or returns text, a buffer or a list (alone or inside a Result or Option): an example `CALL == EXPECTED` cannot run for it (`==` compares scalars, a test has no heap); give `tests`, cancho test functions that call it through a helper");
         }
     }
+    // A test is `pub fn test_NAME[regions](caps) -> [row] int` whose parameters are unique `Heap` or `Io` references (docs/testing.md §3). The
+    // form models reach for instead, `(world: World)` and a `split(world)` in the body, is not a test: the file then does not build, whatever the unit.
+    if ns >= 0 {
+        let tn2 = json.get(src, tape, get_f(info, u, f_node()), "tests");
+        if tn2 >= 0 && json.is_array(tape, tn2) {
+            var k = 0;
+            var bad = false;
+            while k < json.count(tape, tn2) {
+                let tt = node_text(src, tape, json.at(tape, tn2, k));
+                if bytes.starts_with(tt, "pub fn test_") && (bytes.find(tt, "World") >= 0 || bytes.find(tt, "split(") >= 0) {
+                    bad = true;
+                }
+                k = k + 1;
+            }
+            if bad {
+                b = emit(heap, b, "bad-test", who, "a test cannot take a `World` or call `split`: write `pub fn test_NAME[&h](heap: &!h Heap) -> [heap] int { ...; return 0; }` (and `io: &!i Io` the same way) and answer 0 to pass");
+            }
+        }
+    }
     let deps = get_f(info, u, f_dep());
     q = 0;
     while q < json.count(tape, deps) {
