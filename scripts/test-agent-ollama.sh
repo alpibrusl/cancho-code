@@ -188,6 +188,19 @@ fn after() -> [] int { return 9; }"
 kill $stub 2>/dev/null; wait $stub 2>/dev/null
 rm -f "$d"/response*.txt
 
+# raw: OLLAMA_SAVE_RAW=<file> appends every raw reply (before anything is cut out of it) to that file, so what a model actually wrote can be
+# read afterwards; the trail records only what the checker said about the result
+python3 "$d/stub.py" "$d" & stub=$!
+rm -f "$d/port" "$d"/response*.txt "$d"/response*.reason; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
+printf 'Some prose first.\n\nedition 7;\nfn raw_one() -> [] int { return 14; }\n\n- a trailing note\n' > "$d/response.txt"
+printf 'edition 7;\nfn a() -> [] int { return true; }\n' > "$d/raw.cho"; rm -f "$d/raw.out"
+env -i OLLAMA_URL="http://127.0.0.1:$port" OLLAMA_SAVE_RAW="$d/raw.out" /bin/sh "$root/scripts/agent-ollama.sh" "$d/raw.cho" >/dev/null 2>&1
+case "$(cat "$d/raw.out" 2>/dev/null)" in *"Some prose first."*"- a trailing note"*) ;; *) echo "FAIL: raw: the raw reply was not saved whole ('$(cat "$d/raw.out" 2>/dev/null | head -c 80)')" >&2; fail=1 ;; esac
+env -i OLLAMA_URL="http://127.0.0.1:$port" /bin/sh "$root/scripts/agent-ollama.sh" "$d/raw.cho" >/dev/null 2>&1
+expect "raw: nothing is saved unless asked" "$(grep -c 'Some prose first' "$d/raw.out")" 1
+kill $stub 2>/dev/null; wait $stub 2>/dev/null
+rm -f "$d"/response*.txt "$d"/response*.reason
+
 # truncated: a reply that stopped because it hit the generation bound (done_reason "length") is cut off mid-program, not an answer. Written
 # to the project it left `expected ..., found end of file` as the refusal, which a model cannot act on (the first CSV runs: 7 of 12 units).
 python3 "$d/stub.py" "$d" & stub=$!

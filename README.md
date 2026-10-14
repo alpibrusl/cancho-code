@@ -44,6 +44,18 @@ real API, the checker still the oracle.
 
 `project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds]]` builds a plan unit by unit: dependencies first, each unit verified by its own examples, everything that had verified re-checked after every unit, a killed run resumed from `state.txt`. Ends `[PROJECT_VERDICT] done|stuck|no_plan|provider_error|gate_failed`, exit 0, 1, 3, 4. Spec: [docs/project.md](docs/project.md); gate: `scripts/test-project.sh` (a stand-in agent, no model). The Ollama agent reads the unit's task from `<project.cho>.task`.
 
+## A Claude agent
+
+`scripts/agent-anthropic.sh` is the same agent over Anthropic's Messages API. **Its key comes from a file**, never from the environment or the command line: the driver's agent has no environment, and a key in the agent command would be in the process list.
+
+```sh
+install -m 600 /dev/null ~/.config/cancho-code/anthropic.key     # then put the key in it (e.g. pbpaste > that file)
+./project "$CANCHO" "$PLAN" "$WORK" \
+  "ANTHROPIC_KEY_FILE=$HOME/.config/cancho-code/anthropic.key ANTHROPIC_MODEL=claude-haiku-5-5 ANTHROPIC_PRIMER=$(pwd)/guidelines.md $(pwd)/scripts/agent-anthropic.sh" 6 900
+```
+
+A key file that group or others can read is refused before any request; the key is printed nowhere. The language page is sent as a cached `system` block, so every call after the first pays the cached-input price for it. Gate: `scripts/test-agent-anthropic.sh` (a stub of the API; no key, no spend).
+
 ## The agent contract
 
 `fix <checker> <project.cho> <agent-command> [attempts [agent-seconds]]` runs the agent as a shell command with the project file as its argument. Each promise below has its own gate (`scripts/test-agent.sh`):
@@ -75,6 +87,7 @@ CANCHO=<path> scripts/test-trail.sh
 CANCHO=<path> scripts/test-agent.sh
 scripts/test-agent-ollama.sh
 CANCHO=<path> scripts/test-fix.sh
+scripts/test-agent-anthropic.sh
 CANCHO=<path> scripts/test-acceptance.sh
 CANCHO=<path> scripts/test-verdicts.sh
 CANCHO=<path> scripts/test-plan.sh
