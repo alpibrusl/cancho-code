@@ -1,0 +1,1 @@
+{"name":"x","units":[{"id":"a","signature":"fn f[&r](s: &r [byte]) -> [] result.Result[int, &static [byte]]","examples":["f(\"1\") == result.Result::Ok(1)"],"deps":[]}]}

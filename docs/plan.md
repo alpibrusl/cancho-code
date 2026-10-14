@@ -48,6 +48,7 @@ Exit 0 valid, 1 invalid, 2 usage (no argument, or the file cannot be read). **Ev
 | `example-shape` | an example is not `CALL == EXPECTED` (the call first, once, a `==`, something after it) |
 | `tautology` | an example's two sides are the same text, or it contains `|| true` or `or true`: it checks nothing |
 | `unknown-dep` | a `deps` entry is not the `id` of any unit |
+| `needs-tests` | the function takes a heap, or its result holds text, a buffer or a list (alone or inside a `Result`/`Option`), and the unit has no `tests`: an example `CALL == EXPECTED` cannot run for it (`==` compares scalars; a test has no heap). A `Result` or `Option` of scalars is not flagged |
 | `cycle` | the dependencies form a cycle (reported once, on the first unit of it in the file) |
 
 ## What this does not check

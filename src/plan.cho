@@ -384,6 +384,31 @@ fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte
         }
         q = q + 1;
     }
+    // A function that takes a heap, or whose result holds text, a buffer or a list (a Result with a text error, an Option of a slice), cannot
+    // be called from `CALL == EXPECTED`: `==` compares scalars and a test has no heap in scope. Its examples are documentation; without `tests`
+    // nothing can check the unit. (An Option or a Result of scalars compares fine and is not flagged.)
+    if ns >= 0 {
+        let sig = node_text(src, tape, get_f(info, u, f_sig()));
+        let arrow = bytes.find(sig, "->");
+        var heavy = false;
+        if arrow >= 0 {
+            if bytes.find(sig[0..arrow], "Heap") >= 0 {
+                heavy = true;
+            }
+            let close = bytes.find(sig[arrow..len(sig)], "]");
+            if close >= 0 {
+                let ty = bytes.trim(sig[arrow + close + 1..len(sig)]);
+                if bytes.find(ty, "buffer.") >= 0 || bytes.find(ty, "list.") >= 0 || bytes.find(ty, "vec.") >= 0 || bytes.find(ty, "[byte]") >= 0 {
+                    heavy = true;
+                }
+            }
+        }
+        let tn = json.get(src, tape, get_f(info, u, f_node()), "tests");
+        let has_tests = tn >= 0 && json.is_array(tape, tn) && json.count(tape, tn) > 0;
+        if heavy && !has_tests {
+            b = emit(heap, b, "needs-tests", who, "this function takes a heap, or returns text, a buffer or a list (alone or inside a Result or Option): an example `CALL == EXPECTED` cannot run for it (`==` compares scalars, a test has no heap); give `tests`, cancho test functions that call it through a helper");
+        }
+    }
     let deps = get_f(info, u, f_dep());
     q = 0;
     while q < json.count(tape, deps) {

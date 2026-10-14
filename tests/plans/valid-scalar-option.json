@@ -1,0 +1,1 @@
+{"name": "x", "units": [{"id": "a", "signature": "fn f(n: int) -> [] option.Option[int]", "examples": ["f(1) == option.Option::Some(1)"], "deps": []}, {"id": "b", "signature": "fn g(n: int) -> [] result.Result[int, int]", "examples": ["g(1) == result.Result::Ok(1)"], "deps": ["a"]}]}

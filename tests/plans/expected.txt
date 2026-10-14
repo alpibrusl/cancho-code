@@ -23,3 +23,8 @@ valid-description    0
 description-not-string  1   unit-field:a
 valid-generic        0
 tests-not-strings    1     unit-field:a
+needs-tests-result  1     needs-tests:a
+needs-tests-heap  1     needs-tests:a
+needs-tests-two  1     needs-tests:a needs-tests:b
+valid-needs-tests-met  0
+valid-scalar-option  0
