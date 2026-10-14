@@ -4,6 +4,8 @@ edition 7;
 //
 //     anthropic_gate body <model> <max_tokens> <primer-file> <prompt-file> <thinking> <effort>
 //     anthropic_gate headers <key-file> <workspace> x x x x
+//     anthropic_gate ollama <model> <num_ctx> <primer-file> <prompt-file> <num_predict> x
+//     anthropic_gate ollama-headers x x x x x x
 //
 // Every mode is given seven arguments: reading one that is not there is a
 // trap, so the harness pads (`x`).
@@ -14,6 +16,7 @@ edition 7;
 // API's documentation and the Python agent send.
 
 import anthropic;
+import ollama;
 import std.buffer;
 import std.bytes;
 import std.io;
@@ -67,7 +70,7 @@ fn main(world: World) -> [] int {
                 var prompt = buffer.empty(hh, 4096);
                 region b {
                     let probe = alloc_slice[b](32768, byte_of(0));
-                    if bytes.equal(mode, "body") {
+                    if bytes.equal(mode, "body") || bytes.equal(mode, "ollama") {
                         let pn = fs_read(f, a4, probe);
                         if pn > 0 {
                             primer = buffer.append(hh, primer, probe[0..pn]);
@@ -88,7 +91,23 @@ fn main(world: World) -> [] int {
                         }
                     }
                 }
-                if bytes.equal(mode, "body") {
+                if bytes.equal(mode, "ollama") {
+                    borrow primer as &pr in {
+                        borrow prompt as &qr in {
+                            let out = ollama.request_body(hh, a2, number(a3), number(a6), buffer.bytes(pr), buffer.bytes(qr));
+                            borrow out as &ou in {
+                                io.write_all(i, buffer.bytes(ou));
+                            }
+                            buffer.drop(hh, out);
+                        }
+                    }
+                } else if bytes.equal(mode, "ollama-headers") {
+                    let out = ollama.headers(hh);
+                    borrow out as &ou in {
+                        io.write_all(i, buffer.bytes(ou));
+                    }
+                    buffer.drop(hh, out);
+                } else if bytes.equal(mode, "body") {
                     borrow primer as &pr in {
                         borrow prompt as &qr in {
                             let out = anthropic.request_body(hh, a2, number(a3), buffer.bytes(pr), buffer.bytes(qr), dash(a6), dash(a7));

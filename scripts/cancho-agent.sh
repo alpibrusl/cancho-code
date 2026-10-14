@@ -6,8 +6,8 @@
 # the provider's host and a PEM bundle and puts them in front of the arguments. A flag the caller wrote after them wins (the agent takes
 # the last value), so `--ip` / `--host` / `--roots` in the command are honoured.
 #
-# There is no default provider and no default model: both are the caller's. The only provider-to-host mapping here is that anthropic is
-# api.anthropic.com. The driver gives its agent no environment, so these variables are for tests and unusual installs, not for normal use:
+# There is no default provider and no default model: both are the caller's. The only provider-to-host mappings here are that anthropic is
+# api.anthropic.com and ollama is the local server (localhost:11434, no TLS). The driver gives its agent no environment, so these variables are for tests and unusual installs, not for normal use:
 #   CANCHO_AGENT_BIN    the built agent             (build/cancho-agent, from scripts/build-agent.sh)
 #   CANCHO_AGENT_HOST   the host to reach instead of the provider's own
 #   CANCHO_AGENT_ROOTS  a PEM bundle to trust instead of the system's
@@ -24,6 +24,8 @@ for a in "$@"; do
 done
 case "$provider" in
     anthropic) host="${CANCHO_AGENT_HOST:-api.anthropic.com}" ;;
+    # a local server needs no name service and no trust store: plain TCP to localhost, port 11434 (flags after these win)
+    ollama) exec "$bin" --host localhost --ip 127.0.0.1 --tls off "$@" ;;
     *) exec "$bin" "$@" ;;   # the agent refuses a missing or unknown provider itself (exit 2)
 esac
 

@@ -1,10 +1,11 @@
 #!/bin/sh
 # The request a native Anthropic agent sends (src/anthropic.cho), built by tests/programs/anthropic_gate.cho and compared, as parsed JSON,
-# with what the Messages API takes and what scripts/agent-anthropic.sh sends. Pure: no network, no key.
+# with what the Messages API takes and what the Python agent it replaced sent. Pure: no network, no key.
 #
 #   full      model, max_tokens, one user message, thinking, output_config.effort, and the primer as a cached `system` block
 #   bare      no primer, no thinking, no effort: those three keys are ABSENT, not empty (an empty value is a value the API may refuse)
 #   escapes   a prompt with quotes, backslashes, newlines, tabs, control bytes and non-ASCII text arrives byte for byte once parsed
+#   ollama    /api/generate: model, the primer then the prompt as one `prompt`, stream and think off, options (num_ctx, temperature 0.2, num_predict)
 #   headers   x-api-key, anthropic-version, content-type; anthropic-workspace-id only when named; every line ends CRLF; the key appears once
 set -u
 
@@ -14,7 +15,7 @@ command -v python3 >/dev/null 2>&1 || { echo "no python3 on PATH" >&2; exit 2; }
 root=$(cd "$(dirname "$0")/.." && pwd)
 fail=0
 d=$(mktemp -d -t cc-wire-XXXXXX)
-"$CANCHO" build "$root/tests/programs/anthropic_gate.cho" "$root/src/anthropic.cho" --std --backend cranelift -o "$d/gate" >/dev/null 2>"$d/build.err" \
+"$CANCHO" build "$root/tests/programs/anthropic_gate.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" --std --backend cranelift -o "$d/gate" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }
 
 python3 - "$d" <<'PY'
@@ -53,6 +54,14 @@ check bare "{'model': 'm-1', 'max_tokens': 8192, 'messages': [{'role': 'user', '
     "$d/gate" body m-1 8192 /dev/null "$d/plain.txt" - -
 check escapes "{'model': 'm-1', 'max_tokens': 1, 'messages': [{'role': 'user', 'content': hard}]}" \
     "$d/gate" body m-1 1 /dev/null "$d/hard.txt" - -
+
+check ollama "{'model': 'q:1', 'prompt': primer + hard, 'stream': False, 'think': False, 'options': {'num_ctx': 16384, 'temperature': 0.2, 'num_predict': 4096}}" \
+    "$d/gate" ollama q:1 16384 "$d/primer.md" "$d/hard.txt" 4096 x
+check ollama-bare "{'model': 'q:1', 'prompt': plain, 'stream': False, 'think': False, 'options': {'num_ctx': 8192, 'temperature': 0.2, 'num_predict': 8192}}" \
+    "$d/gate" ollama q:1 8192 /dev/null "$d/plain.txt" 8192 x
+"$d/gate" ollama-headers x x x x x x > "$d/oh"
+printf 'content-type: application/json\r\n' > "$d/oh.want"
+cmp -s "$d/oh" "$d/oh.want" || { echo "FAIL: ollama headers: wanted only a content type" >&2; fail=1; }
 
 KEY=$(tr -d '\n' < "$d/key")
 "$d/gate" headers "$d/key" - x x x x > "$d/h1"

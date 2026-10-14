@@ -388,3 +388,59 @@ pub fn usage_line[&h, &b](heap: &!h Heap, body: &b [byte]) -> [heap] buffer.Buff
     unbox_slice(heap, tape_box);
     return out;
 }
+
+// ---- Ollama's reply ------------------------------------------------------
+
+// The string field `name` of the reply's top-level object, as a buffer
+// (empty when it is absent or not a string).
+fn top_string[&h, &b](heap: &!h Heap, body: &b [byte], name: &static [byte]) -> [heap] (buffer.Buffer, bool) {
+    var out = buffer.empty(heap, 1024);
+    var found = false;
+    let tape_box = new_tape(heap, body);
+    borrow mut tape_box as &!tw in {
+        let tape = contents(tw);
+        let nodes = json.parse(body, tape);
+        if nodes >= 0 {
+            let n = json.get(body, tape, 0, name);
+            if n >= 0 && json.is_string(tape, n) {
+                out = append_string(heap, out, body, tape, n);
+                found = true;
+            }
+        }
+    }
+    unbox_slice(heap, tape_box);
+    return (out, found);
+}
+
+// What `/api/generate` answered: the `response` field (empty when there is none).
+pub fn generated_text[&h, &b](heap: &!h Heap, body: &b [byte]) -> [heap] buffer.Buffer {
+    let (out, found) = top_string(heap, body, "response");
+    return out;
+}
+
+// Why Ollama stopped (`done_reason`): `length` means the generation bound, so
+// the program in the text is cut off.
+pub fn done_reason_is[&h, &b, &r](heap: &!h Heap, body: &b [byte], reason: &r [byte]) -> [heap] bool {
+    var yes = false;
+    let (got, found) = top_string(heap, body, "done_reason");
+    borrow got as &gr in {
+        yes = found && bytes_equal(buffer.bytes(gr), reason);
+    }
+    buffer.drop(heap, got);
+    return yes;
+}
+
+fn bytes_equal[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool {
+    return len(x) == len(y) && match_at(x, 0, y);
+}
+
+// Ollama's own message for a refused call: its `error` field, or `no message`.
+pub fn generate_error[&h, &b](heap: &!h Heap, body: &b [byte]) -> [heap] buffer.Buffer {
+    let (out, found) = top_string(heap, body, "error");
+    if found {
+        return out;
+    }
+    var none = out;
+    none = buffer.append(heap, none, "no message");
+    return none;
+}

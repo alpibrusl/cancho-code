@@ -68,6 +68,27 @@ fn main(world: World) -> [] int {
                     }
                     buffer.drop(hh, t);
                 }
+                if bytes.equal(mode, "generated") {
+                    let t = reply.generated_text(hh, body);
+                    borrow t as &tr in {
+                        io.write_all(i, buffer.bytes(tr));
+                    }
+                    buffer.drop(hh, t);
+                }
+                if bytes.equal(mode, "length") {
+                    if reply.done_reason_is(hh, body, "length") {
+                        io.write_all(i, "yes");
+                    } else {
+                        io.write_all(i, "no");
+                    }
+                }
+                if bytes.equal(mode, "generate-error") {
+                    let t = reply.generate_error(hh, body);
+                    borrow t as &tr in {
+                        io.write_all(i, buffer.bytes(tr));
+                    }
+                    buffer.drop(hh, t);
+                }
                 if bytes.equal(mode, "usage") {
                     let t = reply.usage_line(hh, body);
                     borrow t as &tr in {

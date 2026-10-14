@@ -1,7 +1,7 @@
 edition 7;
 
 // `fix` — the tool's front door for one issue: drive the loop over one
-// project file with a real agent (a shell command: `scripts/agent-ollama.sh`
+// project file with a real agent (a shell command: `scripts/cancho-agent.sh`
 // for a local model, a curl one-liner for a cloud one) and the real
 // `cancho check` as the only oracle. Every ending prints its §6 verdict
 // line; there is no state in which it runs silently.

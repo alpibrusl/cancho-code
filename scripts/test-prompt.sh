@@ -1,6 +1,6 @@
 #!/bin/sh
 # The prompt gate: src/prompt.cho held to the Python it replaces. For each case the harness lays out a project file, its `.task` and its
-# `.feedback` as the driver would, and `scripts/agent_lib.py`'s `build_prompt` and the cancho prompt must give the SAME bytes:
+# `.feedback` as the driver would, and `tests/reference/agent_lib.py`'s `build_prompt` and the cancho prompt must give the SAME bytes:
 #
 #   fix       no task: the instruction to fix; the checker's refusals with the source line and a caret under the column
 #   task      a unit's task goes ahead of the file, trimmed; the refusals still follow
@@ -20,7 +20,7 @@ d=$(mktemp -d -t cc-prompt-XXXXXX)
 python3 - "$d" "$root" <<'PY'
 import json, os, subprocess, sys
 d, root = sys.argv[1:3]
-sys.path.insert(0, os.path.join(root, "scripts"))
+sys.path.insert(0, os.path.join(root, "tests", "reference"))
 import agent_lib
 fails = 0
 SRC = "edition 7;\nfn broken() -> [] int { return true; }\nfn other() -> [] int {\n\treturn 1;\n}\n"

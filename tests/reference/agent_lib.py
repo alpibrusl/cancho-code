@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""The part of a cancho-code agent that is not a particular model API (scripts/agent-ollama.sh, scripts/agent-mistral.sh).
+"""REFERENCE ONLY, not used at run time. The Python agent this repository started with, kept as the oracle that scripts/test-reply.sh and
+scripts/test-prompt.sh hold src/reply.cho and src/prompt.cho to, byte for byte. The agent that runs is src/cancho_agent.cho.
+
+The part of a cancho-code agent that is not a particular model API (it was scripts/agent-ollama.sh and scripts/agent-anthropic.sh).
 
 An agent is a command the driver runs with the project file as its argument; it must replace that file with a better one or exit
 non-zero. What is shared, and gated once (scripts/test-agent-ollama.sh, scripts/test-agent-mistral.sh):

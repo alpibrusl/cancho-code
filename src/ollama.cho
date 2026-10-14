@@ -1,0 +1,53 @@
+edition 7;
+
+module ollama;
+
+// `ollama` — what Ollama's `/api/generate` is sent. The server is local and
+// has no key; the model, the context window and the bound on one answer are
+// the caller's to name.
+//
+// `think` is off and `stream` is off: the answer is the file, not a trace.
+// The primer goes first in the prompt (Ollama has no cached system block).
+
+import std.buffer;
+import std.json;
+
+// The request body. `temperature` is 0.2, the value the Python agent sent;
+// `num_ctx` is the window in tokens (the language page is about 5,500 of
+// them), `num_predict` the most tokens one answer may take.
+pub fn request_body[&h, &m, &p, &q](heap: &!h Heap, model: &m [byte], num_ctx: int, num_predict: int, primer: &p [byte], prompt: &q [byte]) -> [heap] buffer.Buffer {
+    var text = buffer.empty(heap, 4096);
+    text = buffer.append(heap, text, primer);
+    text = buffer.append(heap, text, prompt);
+    var w = json.writer(heap, 4096);
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "model");
+    w = json.put_string(heap, w, model);
+    w = json.put_key(heap, w, "prompt");
+    borrow text as &tr in {
+        w = json.put_string(heap, w, buffer.bytes(tr));
+    }
+    buffer.drop(heap, text);
+    w = json.put_key(heap, w, "stream");
+    w = json.put_bool(heap, w, false);
+    w = json.put_key(heap, w, "think");
+    w = json.put_bool(heap, w, false);
+    w = json.put_key(heap, w, "options");
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "num_ctx");
+    w = json.put_int(heap, w, num_ctx);
+    w = json.put_key(heap, w, "temperature");
+    w = json.put_float(heap, w, 0.2);
+    w = json.put_key(heap, w, "num_predict");
+    w = json.put_int(heap, w, num_predict);
+    w = json.end_object(heap, w);
+    w = json.end_object(heap, w);
+    return json.finish(w);
+}
+
+// The header lines: the content type, and nothing else.
+pub fn headers[&h](heap: &!h Heap) -> [heap] buffer.Buffer {
+    var b = buffer.empty(heap, 64);
+    b = buffer.append(heap, b, "content-type: application/json\r\n");
+    return b;
+}

@@ -21,9 +21,10 @@ Ollama agent, and the `fix` front door — all in cancho, all gated.
 
 # Fix a broken program with a local model (no key, no egress).
 ollama pull qwen3.8:27b
-# The agent runs with no environment (no exported variable reaches it), so the model
-# is named inside the agent command. The last two arguments: attempts, seconds per turn.
-./fix "$CANCHO" demo/wordcount.cho "OLLAMA_MODEL=qwen3.8:27b $(pwd)/scripts/agent-ollama.sh" 4 300
+# The agent runs with no environment (no exported variable reaches it), so the provider
+# and the model are named inside the agent command (there is no default for either). The last two arguments: attempts, seconds per turn.
+scripts/build-agent.sh        # the agent is a cancho program (src/cancho_agent.cho)
+./fix "$CANCHO" demo/wordcount.cho "$(pwd)/scripts/cancho-agent.sh --provider ollama --model qwen3.8:27b" 4 300
 [ISSUE_VERDICT]	verified	attempts 2
 ```
 
@@ -46,17 +47,18 @@ real API, the checker still the oracle.
 
 ## A Claude agent
 
-`scripts/agent-anthropic.sh` is the same agent over Anthropic's Messages API. **Its key comes from a file**, never from the environment or the command line: the driver's agent has no environment, and a key in the agent command would be in the process list.
+`scripts/cancho-agent.sh --provider anthropic` is the same agent over Anthropic's Messages API. **Its key comes from a file**, never from the environment or the command line: the driver's agent has no environment, and a key in the agent command would be in the process list. The agent verifies the server's certificate against the system's CA bundle (native TLS) and prints the key nowhere.
 
 ```sh
 install -m 600 /dev/null ~/.config/cancho-code/anthropic.key     # then put the key in it (e.g. pbpaste > that file)
+scripts/build-agent.sh
 ./project "$CANCHO" "$PLAN" "$WORK" \
-  "ANTHROPIC_KEY_FILE=$HOME/.config/cancho-code/anthropic.key ANTHROPIC_MODEL=claude-haiku-5-5 ANTHROPIC_PRIMER=$(pwd)/guidelines.md $(pwd)/scripts/agent-anthropic.sh" 6 900
+  "$(pwd)/scripts/cancho-agent.sh --provider anthropic --model claude-haiku-5-5 --key-file $HOME/.config/cancho-code/anthropic.key --primer $(pwd)/guidelines.md --max-tokens 16000" 6 900
 ```
 
-Claude thinks before it answers and **the thinking counts against `ANTHROPIC_MAX_TOKENS`**: on a long prompt a model can spend the whole bound thinking and leave no answer (every reply of the first long runs). `ANTHROPIC_THINKING=disabled|adaptive` and `ANTHROPIC_EFFORT=low|medium|high|xhigh|max` (the API's own values) control it, and `ANTHROPIC_MAX_TOKENS=16000` gives it room. `ANTHROPIC_WORKSPACE_ID` is needed for a key that is not scoped to a workspace.
+Claude thinks before it answers and **the thinking counts against `--max-tokens`**: on a long prompt a model can spend the whole bound thinking and leave no answer (every reply of the first long runs). `--thinking disabled|adaptive` and `--effort low|medium|high|xhigh|max` (the API's own values) control it, and `--max-tokens 16000` gives it room. `--workspace <id>` is sent for a key that is not scoped to one workspace. `--save-raw <file>` appends every raw reply, whole, with the tokens the API reported (input, output, cache write, cache read).
 
-A key file that group or others can read is refused before any request; the key is printed nowhere. The language page is sent as a cached `system` block, so every call after the first pays the cached-input price for it. Gate: `scripts/test-agent-anthropic.sh` (a stub of the API; no key, no spend).
+The language page is sent as a cached `system` block, so every call after the first pays the cached-input price for it. Gate: `scripts/test-agent-native.sh` (a TLS stub of the API; no key, no spend).
 
 ## The agent contract
 
@@ -68,15 +70,15 @@ A key file that group or others can read is refused before any request; the key 
 - **An acceptance command** (optional sixth argument, seconds as the seventh) runs on the file after the checker verifies it: exit 0 prints `[ACCEPTANCE] pass`; anything else is `[ACCEPTANCE] fail`, a retryable failure whose output the agent reads in `<project.cho>.feedback`. `verified` then means "meets this check", not only "type-checks": on the first audit, three builds were `verified` and none met the brief's shapes.
 - **A failing agent is named**: a non-zero exit, a timeout, a signal each end `unavailable agent` and are recorded in `<project.cho>.trail.jsonl` (`agent_exit`, `agent_timeout`, ...). The file is left as it was.
 
-**The agent written in cancho** (`src/cancho_agent.cho`, no Python): `scripts/build-agent.sh` builds it, `scripts/cancho-agent.sh --provider anthropic --model <model> --key-file <file> [--primer <file>] [--thinking disabled|adaptive] [--effort ...] [--max-tokens N] [--save-raw <file>]` is the agent command. Provider and model are required (no defaults). It reads the key from a file, verifies the server's certificate against the system's CA bundle (native TLS), writes only a program, and its authority is pinned in `docs/authority-agent.json`. Gate: `scripts/test-agent-native.sh` (the Python agent's cases, against a TLS stub). Anthropic only so far; the Python agents stay until Ollama is ported.
+**The agent is written in cancho** (`src/cancho_agent.cho`, no Python): `scripts/build-agent.sh` builds it to `build/cancho-agent`, and `scripts/cancho-agent.sh` is the agent command. **`--provider` (`anthropic` or `ollama`) and `--model` are required; there is no default for either**, and neither is a thing the driver's empty environment could carry. The wrapper only resolves the provider's host and finds a CA bundle (a resolver and a trust store are the operator's policy); the agent does everything else: it builds the prompt, asks through native TLS or plain TCP, reads the reply, and writes only a program, retrying up to three samples. Its authority is pinned in `docs/authority-agent.json`. Gates: `scripts/test-agent-native.sh` (Anthropic) and `scripts/test-agent-native-ollama.sh`, with the byte-for-byte checks of the prompt and the reply parser against the Python they replaced (`tests/reference/agent_lib.py`, kept as the oracle only).
 
-`scripts/agent-ollama.sh` is the local-model agent (Ollama's HTTP API; `scripts/test-agent-ollama.sh` runs it against a stub server).
+`--provider ollama` is the local-model agent (Ollama's HTTP API on localhost:11434, no key, no TLS). Options: `--num-ctx` (8192), `--num-predict` (8192), `--primer`, `--save-raw`.
 
-**Give a local model the language's own page.** A model that has never seen cancho repeats the same refusal: on a trivial task (`clamp`), 6 of 6 baseline runs ended `failed signature` on `-> int` without the effect row, with or without the offending source line shown. With `OLLAMA_PRIMER` naming the output of `cancho agent-guidelines` (about 5,500 tokens, generated from the binary), 3 of 3 verified in one turn:
+**Give a local model the language's own page.** A model that has never seen cancho repeats the same refusal: on a trivial task (`clamp`), 6 of 6 baseline runs ended `failed signature` on `-> int` without the effect row, with or without the offending source line shown. With `--primer` naming the output of `cancho agent-guidelines` (about 5,500 tokens, generated from the binary), 3 of 3 verified in one turn:
 
 ```sh
 cancho agent-guidelines > guidelines.md
-./fix "$CANCHO" project.cho "OLLAMA_MODEL=qwen3.8:27b OLLAMA_NUM_CTX=16384 OLLAMA_PRIMER=$(pwd)/guidelines.md $(pwd)/scripts/agent-ollama.sh" 6 900
+./fix "$CANCHO" project.cho "$(pwd)/scripts/cancho-agent.sh --provider ollama --model qwen3.8:27b --num-ctx 16384 --primer $(pwd)/guidelines.md" 6 900
 ```
 
 `verified` means the checker accepts the file, nothing more: see the audit numbers in alpibrusl/cancho-code#9.
@@ -89,9 +91,13 @@ CANCHO=<path> scripts/test-checker.sh
 CANCHO=<path> scripts/test-snapshot.sh
 CANCHO=<path> scripts/test-trail.sh
 CANCHO=<path> scripts/test-agent.sh
-scripts/test-agent-ollama.sh
+CANCHO=<path> scripts/test-agent-native-ollama.sh
 CANCHO=<path> scripts/test-fix.sh
-scripts/test-agent-anthropic.sh
+CANCHO=<path> scripts/test-agent-native.sh
+CANCHO=<path> scripts/test-reply.sh
+CANCHO=<path> scripts/test-prompt.sh
+CANCHO=<path> scripts/test-native.sh
+CANCHO=<path> scripts/test-anthropic-wire.sh
 CANCHO=<path> scripts/test-acceptance.sh
 CANCHO=<path> scripts/test-verdicts.sh
 CANCHO=<path> scripts/test-plan.sh
