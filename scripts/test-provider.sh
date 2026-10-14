@@ -31,15 +31,7 @@ C="${CANCHO_PACKAGES:-}"
 "$CANCHO" build "$root/tests/programs/provider_gate.cho" \
     "$root/src/provider.cho" \
     "$P/fetch_io.cho" \
-    "$C/http-client/slot.cho" "$C/http-client/wire.cho" \
-    "$C/http-client/client.cho" \
-    "$C/tls/tls.cho" "$C/tls/record.cho" \
-    "$C/tls/message.cho" "$C/tls/slot.cho" \
-    "$C/tls/client12.cho" "$C/tls/client.cho" \
-    "$C/tls/hello.cho" "$C/tls/identity.cho" \
-    "$C/tls/server.cho" \
-    "$C/x509/verify.cho" "$C/x509/names.cho" \
-    "$C/x509/x509.cho" "$C/x509/key.cho" \
+    "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho \
     --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 fail=0

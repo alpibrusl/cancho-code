@@ -1,0 +1,122 @@
+edition 7;
+
+// `post_gate` — the gate program for `provider.exchange`, the transport
+// every native agent shares: one POST over TLS or plain TCP, to a host the
+// caller names, with header lines the caller wrote, answering the status
+// and the body.
+//
+//     post_gate <host> <ip> <port> <secure 0|1> <path> <roots-file> <headers-file> <body-file>
+//
+// It prints `status <n>` and then the body, or `failed <tag>`. The harness
+// is the policy (it resolves the name, chooses the roots); this program is
+// the transport and takes both as arguments.
+
+import provider;
+import std.buffer;
+import std.bytes;
+import std.io;
+
+fn number[&t](text: &t [byte]) -> [] int {
+    var n = 0;
+    var i = 0;
+    while i < len(text) {
+        n = n * 10 + int_of(text[i]) - 48;
+        i = i + 1;
+    }
+    return n;
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(signals);
+    release(exec);
+    var console = io;
+    var h = heap;
+    var host = "";
+    var ip_text = "";
+    var port = 0;
+    var secure = false;
+    var path = "";
+    var roots_path = "";
+    var headers_path = "";
+    var body_path = "";
+    borrow args as &g in {
+        host = arg(g, 1);
+        ip_text = arg(g, 2);
+        port = number(arg(g, 3));
+        secure = number(arg(g, 4)) == 1;
+        path = arg(g, 5);
+        roots_path = arg(g, 6);
+        headers_path = arg(g, 7);
+        body_path = arg(g, 8);
+    }
+    borrow net as &n in {
+        borrow clock as &c in {
+            borrow fs as &f in {
+                borrow mut console as &!i in {
+                    borrow mut h as &!hh in {
+                        var headers = buffer.empty(hh, 512);
+                        var body = buffer.empty(hh, 4096);
+                        var roots = buffer.empty(hh, 65536);
+                        region b {
+                            let probe = alloc_slice[b](32768, byte_of(0));
+                            let hn = fs_read(f, headers_path, probe);
+                            if hn > 0 {
+                                headers = buffer.append(hh, headers, probe[0..hn]);
+                            }
+                            let bn = fs_read(f, body_path, probe);
+                            if bn > 0 {
+                                body = buffer.append(hh, body, probe[0..bn]);
+                            }
+                            let rn = fs_read(f, roots_path, probe);
+                            if rn > 0 {
+                                roots = buffer.append(hh, roots, probe[0..rn]);
+                            }
+                        }
+                        region e {
+                            let entropy = alloc_slice[e](32, byte_of(0));
+                            fs_read(f, "/dev/urandom", entropy);
+                            if true {
+                                let ip = ip_text;
+                                borrow headers as &hd in {
+                                    borrow body as &bd in {
+                                        borrow roots as &rt in {
+                                            match provider.exchange(hh, n, c, i, host, port, secure, path, buffer.bytes(hd), buffer.bytes(bd), buffer.bytes(rt), ip, entropy, 1048576, 20000) {
+                                                provider.Answered::Ok(status, out) => {
+                                                    io.write_all(i, "status ");
+                                                    io.print_int(i, status);
+                                                    io.newline(i);
+                                                    borrow out as &ou in {
+                                                        io.write_all(i, buffer.bytes(ou));
+                                                    }
+                                                    io.newline(i);
+                                                    buffer.drop(hh, out);
+                                                }
+                                                provider.Answered::Failed(tag) => {
+                                                    io.write_all(i, "failed ");
+                                                    io.write_all(i, provider.tag_of(tag));
+                                                    io.newline(i);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        buffer.drop(hh, headers);
+                        buffer.drop(hh, body);
+                        buffer.drop(hh, roots);
+                    }
+                }
+            }
+        }
+    }
+    release(net);
+    release(clock);
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return 0;
+}

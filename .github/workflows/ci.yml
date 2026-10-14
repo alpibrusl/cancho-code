@@ -84,3 +84,5 @@ jobs:
           sh scripts/test-reference-ports.sh
           sh scripts/test-driver.sh
           sh scripts/test-provider.sh
+          sh scripts/test-native.sh
+          sh scripts/test-anthropic-wire.sh

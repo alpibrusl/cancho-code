@@ -1,0 +1,120 @@
+edition 7;
+
+// `anthropic_gate` — the gate program for `src/anthropic.cho`.
+//
+//     anthropic_gate body <model> <max_tokens> <primer-file> <prompt-file> <thinking> <effort>
+//     anthropic_gate headers <key-file> <workspace> x x x x
+//
+// Every mode is given seven arguments: reading one that is not there is a
+// trap, so the harness pads (`x`).
+//
+// `body` prints the request body; `headers` prints the header lines. A
+// "-" for thinking, effort or workspace means empty (an argument cannot be
+// empty in every shell). The harness compares the output with what the
+// API's documentation and the Python agent send.
+
+import anthropic;
+import std.buffer;
+import std.bytes;
+import std.io;
+
+fn number[&t](text: &t [byte]) -> [] int {
+    var n = 0;
+    var i = 0;
+    while i < len(text) {
+        n = n * 10 + int_of(text[i]) - 48;
+        i = i + 1;
+    }
+    return n;
+}
+
+fn dash[&t](text: &t [byte]) -> [] &t [byte] {
+    if len(text) == 1 && int_of(text[0]) == 45 {
+        return text[0..0];
+    }
+    return text;
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(signals);
+    release(exec);
+    release(net);
+    release(clock);
+    var console = io;
+    var h = heap;
+    var mode = "";
+    var a2 = "";
+    var a3 = "";
+    var a4 = "";
+    var a5 = "";
+    var a6 = "";
+    var a7 = "";
+    borrow args as &g in {
+        mode = arg(g, 1);
+        a2 = arg(g, 2);
+        a3 = arg(g, 3);
+        a4 = arg(g, 4);
+        a5 = arg(g, 5);
+        a6 = arg(g, 6);
+        a7 = arg(g, 7);
+    }
+    borrow fs as &f in {
+        borrow mut console as &!i in {
+            borrow mut h as &!hh in {
+                var primer = buffer.empty(hh, 4096);
+                var prompt = buffer.empty(hh, 4096);
+                region b {
+                    let probe = alloc_slice[b](32768, byte_of(0));
+                    if bytes.equal(mode, "body") {
+                        let pn = fs_read(f, a4, probe);
+                        if pn > 0 {
+                            primer = buffer.append(hh, primer, probe[0..pn]);
+                        }
+                        let qn = fs_read(f, a5, probe);
+                        if qn > 0 {
+                            prompt = buffer.append(hh, prompt, probe[0..qn]);
+                        }
+                    } else {
+                        let kn = fs_read(f, a2, probe);
+                        if kn > 0 {
+                            // the key file's text, without its final newline
+                            var end = kn;
+                            while end > 0 && int_of(probe[end - 1]) == 10 {
+                                end = end - 1;
+                            }
+                            prompt = buffer.append(hh, prompt, probe[0..end]);
+                        }
+                    }
+                }
+                if bytes.equal(mode, "body") {
+                    borrow primer as &pr in {
+                        borrow prompt as &qr in {
+                            let out = anthropic.request_body(hh, a2, number(a3), buffer.bytes(pr), buffer.bytes(qr), dash(a6), dash(a7));
+                            borrow out as &ou in {
+                                io.write_all(i, buffer.bytes(ou));
+                            }
+                            buffer.drop(hh, out);
+                        }
+                    }
+                } else {
+                    borrow prompt as &kr in {
+                        let out = anthropic.headers(hh, buffer.bytes(kr), dash(a3));
+                        borrow out as &ou in {
+                            io.write_all(i, buffer.bytes(ou));
+                        }
+                        buffer.drop(hh, out);
+                    }
+                }
+                buffer.drop(hh, primer);
+                buffer.drop(hh, prompt);
+            }
+        }
+    }
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return 0;
+}
