@@ -27,45 +27,6 @@ import std.bytes;
 import std.io;
 import std.json;
 
-// "a.b.c.d" into `out` (four bytes), which the caller owns. Answers
-// true if the text was a dotted quad, false if `out` now holds zeros.
-fn octets_into[&t, &o](text: &t [byte], out: &!o [byte]) -> [] bool {
-    var part = 0;
-    var value = 0 - 1;
-    var dot = 0;
-    var ok = true;
-    var i = 0;
-    while i < len(text) {
-        let c = int_of(text[i]);
-        if c >= 48 && c <= 57 {
-            if value < 0 {
-                value = 0;
-            }
-            value = value * 10 + c - 48;
-        } else {
-            if c == 46 {
-                if value < 0 || value > 255 || part > 3 {
-                    ok = false;
-                } else {
-                    out[part] = byte_of(value);
-                    part = part + 1;
-                    value = 0 - 1;
-                    dot = dot + 1;
-                }
-            } else {
-                ok = false;
-            }
-        }
-        i = i + 1;
-    }
-    if value < 0 || value > 255 || part != 3 || dot != 3 {
-        ok = false;
-    } else {
-        out[3] = byte_of(value);
-    }
-    return ok;
-}
-
 fn main(world: World) -> [] int {
     let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
     release(ffi);
@@ -106,7 +67,7 @@ fn main(world: World) -> [] int {
                                 var text = buffer.empty(hh, 4096);
                                 var roots = buffer.empty(hh, 65536);
                                 region b {
-                                    let probe = alloc_slice[b](131072, byte_of(0));
+                                    let probe = alloc_slice[b](32768, byte_of(0));
                                     borrow file as &fe in {
                                         let n = fs_read(f, buffer.bytes(fe), probe);
                                         if n > 0 {
@@ -129,14 +90,8 @@ fn main(world: World) -> [] int {
                                 region e {
                                     let entropy = alloc_slice[e](32, byte_of(0));
                                     fs_read(f, "/dev/urandom", entropy);
-                                    region ipr {
-                                        let ip = alloc_slice[ipr](4, byte_of(0));
-                                        if octets_into(ip_text, ip) == false {
-                                            ip[0] = byte_of(0);
-                                            ip[1] = byte_of(0);
-                                            ip[2] = byte_of(0);
-                                            ip[3] = byte_of(0);
-                                        }
+                                    if true {
+                                        let ip = ip_text;
                                         borrow body as &bd in {
                                             borrow roots as &rt in {
                                                 match provider.complete(hh, n, c, i, api_key, buffer.bytes(bd), buffer.bytes(rt), ip, entropy, 65536, 90000) {

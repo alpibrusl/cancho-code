@@ -59,6 +59,8 @@ pub fn tag_of(tag: int) -> [] &static [byte] {
     if tag == 3 { return "timeout"; }
     if tag == 4 { return "too-much"; }
     if tag == 5 { return "no-roots"; }
+    // 100 + the client's own failure code: its tag says what it refused
+    if tag > 100 { return hc.refusal_tag(tag - 100); }
     return "transport";
 }
 
@@ -70,7 +72,7 @@ pub fn tag_of(tag: int) -> [] &static [byte] {
 //   `roots`   the PEM bundle to trust; nothing is built in, the same
 //             rule as `http_fetch_nb`: an https call is checked against
 //             what the operator handed it or refused
-//   `ip`      four bytes: where `api.mistral.ai` resolved to — resolving
+//   `ip`      the IPv4 literal as text ("203.0.113.7"): where `api.mistral.ai` resolved to — resolving
 //             is the caller's, exactly `http-client.md` §3.8, because a
 //             resolver is a policy
 //   `entropy` 32 bytes for the TLS engine
@@ -85,15 +87,60 @@ pub fn host_for() -> [] &static [byte] {
 }
 
 pub fn complete[&h, &n, &c, &i, &k, &b, &r, &a, &e](heap: &!h Heap, net: &n Net(""), clock: &c Clock, io: &!i Io, key: &k [byte], body: &b [byte], roots: &r [byte], ip: &a [byte], entropy: &e [byte], most: int, wait_ms: int) -> [heap, net_out(""), conn_read, conn_write, poll, clock] Answered {
-    match fio.open(heap, 1, true) {
+    // Mistral's headers: the key as a bearer token, the body as JSON. Each
+    // line ends CRLF (http-client.md: `extra` is `Name: value` lines).
+    var headers = buffer.empty(heap, 256);
+    headers = buffer.append(heap, headers, "Authorization: Bearer ");
+    headers = buffer.append(heap, headers, key);
+    headers = buffer.append(heap, headers, "\r\nContent-Type: application/json\r\n");
+    var status = 0;
+    var tag = 0;
+    var got = false;
+    var out = buffer.empty(heap, 16);
+    borrow headers as &hb in {
+        match exchange(heap, net, clock, io, host_for(), 443, true, "/v1/chat/completions", buffer.bytes(hb), body, roots, ip, entropy, most, wait_ms) {
+            Answered::Ok(st, o) => {
+                status = st;
+                got = true;
+                buffer.drop(heap, out);
+                out = o;
+            }
+            Answered::Failed(t) => {
+                tag = t;
+            }
+        }
+    }
+    buffer.drop(heap, headers);
+    if got {
+        return Answered::Ok(status, out);
+    }
+    buffer.drop(heap, out);
+    return Answered::Failed(tag);
+}
+
+// One POST to any host, over TLS or plain TCP — the transport every
+// provider shares. The caller names everything (nothing is a default):
+//
+//   `host`     the `Host:` header and, over TLS, the name the certificate
+//              must carry and the SNI
+//   `port`     the TCP port
+//   `secure`   TLS on or off; off is for a local server (Ollama)
+//   `path`     the request target
+//   `headers`  zero or more `Name: value` lines each ending CRLF, none of
+//              `Host` or `Content-Length` (the client writes those)
+//   the rest   as `complete` above
+pub fn exchange[&h, &n, &c, &i, &t, &p, &x, &b, &r, &a, &e](heap: &!h Heap, net: &n Net(""), clock: &c Clock, io: &!i Io, host: &t [byte], port: int, secure: bool, path: &p [byte], headers: &x [byte], body: &b [byte], roots: &r [byte], ip: &a [byte], entropy: &e [byte], most: int, wait_ms: int) -> [heap, net_out(""), conn_read, conn_write, poll, clock] Answered {
+    match fio.open(heap, 1, secure) {
         fio.Started::Failed(e) => {
             return Answered::Failed(r_tls());
         }
         fio.Started::Ok(opened) => {
-            var trust = 0;
+            var trust = 1;
             borrow mut opened as &!ioh in {
-                trust = fio.trust(ioh, roots);
-                fio.seed(ioh, entropy);
+                if secure {
+                    trust = fio.trust(ioh, roots);
+                    fio.seed(ioh, entropy);
+                }
             }
             if trust < 1 {
                 fio.close(heap, opened);
@@ -101,17 +148,13 @@ pub fn complete[&h, &n, &c, &i, &k, &b, &r, &a, &e](heap: &!h Heap, net: &n Net(
             }
             var up = -1;
             borrow mut opened as &!ouh in {
-                up = fio.add_upstream(ouh, ip, 443, true, host_for());
+                up = fio.add_upstream(ouh, ip, port, secure, host);
             }
             if up < 0 {
                 fio.close(heap, opened);
                 return Answered::Failed(r_connect());
             }
-            // The request and the pump live in `pump`, which takes the
-            // loop's whole state by value: the dial gives it back changed
-            // and a match binding cannot be reassigned (the same shape
-            // `fetch.cho`'s `run` uses: `var iov = iox`).
-            return pump(heap, net, clock, io, opened, key, body, most, wait_ms);
+            return pump(heap, net, clock, io, opened, host, path, headers, body, most, wait_ms);
         }
     }
 }
@@ -119,7 +162,7 @@ pub fn complete[&h, &n, &c, &i, &k, &b, &r, &a, &e](heap: &!h Heap, net: &n Net(
 // The request, the send, and the read, until Done or the deadline. No
 // hang: `wait_ms` is the whole attempt's ceiling, and every stop is
 // named.
-fn pump[&h, &n, &c, &i, &x, &k, &b](heap: &!h Heap, net: &n Net(""), clock: &c Clock, io: &!i Io, iox: fio.Loop, key: &k [byte], body: &b [byte], most: int, wait_ms: int) -> [heap, net_out(""), conn_read, conn_write, poll, clock] Answered {
+fn pump[&h, &n, &c, &i, &t, &p, &x, &b](heap: &!h Heap, net: &n Net(""), clock: &c Clock, io: &!i Io, iox: fio.Loop, host: &t [byte], path: &p [byte], headers: &x [byte], body: &b [byte], most: int, wait_ms: int) -> [heap, net_out(""), conn_read, conn_write, poll, clock] Answered {
     // The loop's whole state travels by value (`var iov = iox`, the shape
     // `fetch.cho`'s `run` uses): the dial gives it back changed, and the
     // borrows are taken per call, not held — a held `&!` borrow freezes
@@ -129,17 +172,15 @@ fn pump[&h, &n, &c, &i, &x, &k, &b](heap: &!h Heap, net: &n Net(""), clock: &c C
     var status = 0;
     var ok_done = false;
     var refused = 0;
+    var why = 0;
     var out = buffer.empty(heap, 1024);
     borrow mut client as &!cw in {
         region hd {
-            var auth = buffer.empty(heap, 256);
-            auth = buffer.append(heap, auth, "Bearer ");
-            auth = buffer.append(heap, auth, key);
-            // One request: POST /v1/chat/completions, the JSON body sized
-            // by its length, the auth header beside it. The key rides that
-            // header and exists nowhere else.
-            borrow auth as &ab in {
-                let t = hc.request(cw, clock_ms(clock), 0, "POST", "/v1/chat/completions", host_for(), buffer.bytes(ab), len(body), 0);
+            // One request: POST, the JSON body sized by its length, the
+            // caller's header lines beside it. A key rides a header and
+            // exists nowhere else.
+            if true {
+                let t = hc.request(cw, clock_ms(clock), 0, "POST", path, host, headers, len(body), 0);
                 if t < 0 {
                     refused = r_connect();
                 } else {
@@ -216,6 +257,7 @@ fn pump[&h, &n, &c, &i, &x, &k, &b](heap: &!h Heap, net: &n Net(""), clock: &c C
                                 }
                                 hc.Event::Failed(tk) => {
                                     failed = true;
+                                    why = hc.failure(cw, tk);
                                 }
                                 _ => {
                                     going = false;
@@ -228,13 +270,15 @@ fn pump[&h, &n, &c, &i, &x, &k, &b](heap: &!h Heap, net: &n Net(""), clock: &c C
                     } else {
                         if failed {
                             refused = r_too_much();
+                            if why != 0 {
+                                refused = 100 + why;
+                            }
                         } else {
                             refused = r_timeout();
                         }
                     }
                 }
             }
-            buffer.drop(heap, auth);
         }
     }
     hc.close(heap, client);

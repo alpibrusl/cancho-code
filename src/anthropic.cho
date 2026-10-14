@@ -1,0 +1,91 @@
+edition 7;
+
+module anthropic;
+
+// `anthropic` — what the Anthropic Messages API is sent, built with
+// `std.json`'s writer (which escapes), and nothing else: the transport is
+// `provider.exchange`, the reply is read in `reply` (next).
+//
+// Nothing here has a default. The model, the bound, the thinking and the
+// effort are the caller's to name, and an empty `thinking` or `effort`
+// means "send neither" (the model's own behaviour), not a value picked here.
+// The key is a header line built here and handed to the transport, and it
+// is in no other output.
+
+import std.buffer;
+import std.json;
+
+// The request body: `POST /v1/messages`.
+//
+//   `model`       the model's name, as the API spells it
+//   `max_tokens`  the bound on one answer; thinking tokens count against it
+//   `primer`      the language page, sent as a `system` block marked for
+//                 caching; empty means no system block at all
+//   `prompt`      the one user message
+//   `thinking`    "adaptive" or "disabled" (the API's own values), or empty
+//   `effort`      "low" | "medium" | "high" | "xhigh" | "max", or empty
+pub fn request_body[&h, &m, &p, &q, &t, &e](heap: &!h Heap, model: &m [byte], max_tokens: int, primer: &p [byte], prompt: &q [byte], thinking: &t [byte], effort: &e [byte]) -> [heap] buffer.Buffer {
+    var w = json.writer(heap, 4096);
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "model");
+    w = json.put_string(heap, w, model);
+    w = json.put_key(heap, w, "max_tokens");
+    w = json.put_int(heap, w, max_tokens);
+    w = json.put_key(heap, w, "messages");
+    w = json.begin_array(heap, w);
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "role");
+    w = json.put_string(heap, w, "user");
+    w = json.put_key(heap, w, "content");
+    w = json.put_string(heap, w, prompt);
+    w = json.end_object(heap, w);
+    w = json.end_array(heap, w);
+    if len(thinking) > 0 {
+        w = json.put_key(heap, w, "thinking");
+        w = json.begin_object(heap, w);
+        w = json.put_key(heap, w, "type");
+        w = json.put_string(heap, w, thinking);
+        w = json.end_object(heap, w);
+    }
+    if len(effort) > 0 {
+        w = json.put_key(heap, w, "output_config");
+        w = json.begin_object(heap, w);
+        w = json.put_key(heap, w, "effort");
+        w = json.put_string(heap, w, effort);
+        w = json.end_object(heap, w);
+    }
+    if len(primer) > 0 {
+        w = json.put_key(heap, w, "system");
+        w = json.begin_array(heap, w);
+        w = json.begin_object(heap, w);
+        w = json.put_key(heap, w, "type");
+        w = json.put_string(heap, w, "text");
+        w = json.put_key(heap, w, "text");
+        w = json.put_string(heap, w, primer);
+        w = json.put_key(heap, w, "cache_control");
+        w = json.begin_object(heap, w);
+        w = json.put_key(heap, w, "type");
+        w = json.put_string(heap, w, "ephemeral");
+        w = json.end_object(heap, w);
+        w = json.end_object(heap, w);
+        w = json.end_array(heap, w);
+    }
+    w = json.end_object(heap, w);
+    return json.finish(w);
+}
+
+// The header lines (each ends CRLF; `Host` and `Content-Length` are the
+// client's): the key, the API version, the content type, and the workspace
+// when the key is not scoped to one (empty means none).
+pub fn headers[&h, &k, &w](heap: &!h Heap, key: &k [byte], workspace: &w [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.empty(heap, 256);
+    b = buffer.append(heap, b, "x-api-key: ");
+    b = buffer.append(heap, b, key);
+    b = buffer.append(heap, b, "\r\nanthropic-version: 2023-06-01\r\ncontent-type: application/json\r\n");
+    if len(workspace) > 0 {
+        b = buffer.append(heap, b, "anthropic-workspace-id: ");
+        b = buffer.append(heap, b, workspace);
+        b = buffer.append(heap, b, "\r\n");
+    }
+    return b;
+}
