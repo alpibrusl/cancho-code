@@ -54,6 +54,8 @@ install -m 600 /dev/null ~/.config/cancho-code/anthropic.key     # then put the 
   "ANTHROPIC_KEY_FILE=$HOME/.config/cancho-code/anthropic.key ANTHROPIC_MODEL=claude-haiku-5-5 ANTHROPIC_PRIMER=$(pwd)/guidelines.md $(pwd)/scripts/agent-anthropic.sh" 6 900
 ```
 
+Claude thinks before it answers and **the thinking counts against `ANTHROPIC_MAX_TOKENS`**: on a long prompt a model can spend the whole bound thinking and leave no answer (every reply of the first long runs). `ANTHROPIC_THINKING=disabled|adaptive` and `ANTHROPIC_EFFORT=low|medium|high|xhigh|max` (the API's own values) control it, and `ANTHROPIC_MAX_TOKENS=16000` gives it room. `ANTHROPIC_WORKSPACE_ID` is needed for a key that is not scoped to a workspace.
+
 A key file that group or others can read is refused before any request; the key is printed nowhere. The language page is sent as a cached `system` block, so every call after the first pays the cached-input price for it. Gate: `scripts/test-agent-anthropic.sh` (a stub of the API; no key, no spend).
 
 ## The agent contract

@@ -19,6 +19,9 @@
 #   ANTHROPIC_MAX_TOKENS the most tokens one answer may take (default 8192); a reply that stops there is a program cut off: retried, never written
 #   ANTHROPIC_WORKSPACE_ID the workspace id, sent as anthropic-workspace-id: needed when the key is not scoped to a workspace (the API answers 400
 #                        and says so); not needed for a workspace-scoped key
+#   ANTHROPIC_THINKING   disabled | adaptive: how the model thinks before answering (default: the model's own). Thinking tokens count against
+#                        ANTHROPIC_MAX_TOKENS; on a long prompt they can use all of it and leave no answer
+#   ANTHROPIC_EFFORT     low | medium | high | xhigh | max: sent as output_config.effort (default: the model's own)
 #   ANTHROPIC_PRIMER     a file whose text goes first, as a cached system block (optional; `cancho agent-guidelines > file`)
 #   ANTHROPIC_SAVE_RAW   a file that every raw reply is appended to, whole (default: none)
 #
@@ -61,6 +64,16 @@ except OSError as e:
 if not key:
     fail("ANTHROPIC_KEY_FILE %s is empty" % path)
 
+# Thinking counts against max_tokens: a long prompt can make a model spend the whole bound thinking and leave no answer (every reply of the
+# first long runs). These are the API's own values (found by probing it): thinking is `adaptive` or `disabled` (a fixed budget is refused for
+# these models), effort is one of low medium high xhigh max. Unset: neither is sent and the model's default applies.
+thinking = os.environ.get("ANTHROPIC_THINKING")
+effort = os.environ.get("ANTHROPIC_EFFORT")
+if thinking not in (None, "", "disabled", "adaptive"):
+    fail("ANTHROPIC_THINKING must be disabled or adaptive, not %r" % thinking)
+if effort not in (None, "", "low", "medium", "high", "xhigh", "max"):
+    fail("ANTHROPIC_EFFORT must be one of low, medium, high, xhigh, max, not %r" % effort)
+
 model = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-5-5")
 url = os.environ.get("ANTHROPIC_URL", "https://api.anthropic.com").rstrip("/")
 max_tokens = int(os.environ.get("ANTHROPIC_MAX_TOKENS", "8192"))
@@ -68,6 +81,10 @@ max_tokens = int(os.environ.get("ANTHROPIC_MAX_TOKENS", "8192"))
 def ask(primer, rest):
     """(reply, cut_off): cut_off when the model stopped because it hit max_tokens, which leaves a program cut off mid-way."""
     body = {"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": rest}]}
+    if thinking:
+        body["thinking"] = {"type": thinking}
+    if effort:
+        body["output_config"] = {"effort": effort}
     if primer:
         body["system"] = [{"type": "text", "text": primer, "cache_control": {"type": "ephemeral"}}]
     headers = {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01"}
@@ -89,7 +106,10 @@ def ask(primer, rest):
     text = "".join(b.get("text", "") for b in reply.get("content", []) if b.get("type") == "text")
     # the usage the API reports (input, output, and the cached-prefix tokens) is kept with the reply: it is what a call cost
     agent_lib.save_raw("ANTHROPIC_SAVE_RAW", text, "%s; usage %s" % (reply.get("stop_reason"), json.dumps(reply.get("usage"))))
-    return text, reply.get("stop_reason") == "max_tokens"
+    cut_off = reply.get("stop_reason") == "max_tokens"
+    if cut_off and not text.strip():
+        sys.stderr.write("%s: the whole bound (%d tokens) went to thinking and left no answer: set ANTHROPIC_THINKING=disabled, lower ANTHROPIC_EFFORT, or raise ANTHROPIC_MAX_TOKENS\n" % (NAME, max_tokens))
+    return text, cut_off
 
 agent_lib.run(file, ask, NAME, "ANTHROPIC_PRIMER", "ANTHROPIC_SAVE_RAW", "ANTHROPIC_MAX_TOKENS")
 PY
