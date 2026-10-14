@@ -1,0 +1,1 @@
+{"name": "x", "units": [{"id": "a", "signature": "fn f[&h](heap: &!h Heap) -> [heap] buffer.Buffer", "examples": ["f(heap) == 1"], "tests": ["pub fn test_a(world: World) -> [] int { let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world); return 0; }"], "deps": []}]}

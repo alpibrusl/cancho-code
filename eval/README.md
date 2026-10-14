@@ -26,3 +26,6 @@ A reference port is not an audit of a build: the audit must be written before th
   audits it, and writes per run `usage.jsonl` (one line per API call), `raw.txt`, `audit.txt` and `result.json`.
 - `metrics.py` defines the numbers (tokens, cost from `prices.json`, `efficiency_calls`, `efficiency`); `report.py DIR [--catalog tasks.json]` tabulates;
   `reanalyze.py DIR` re-reads old runs after a definition changes. Gate: `scripts/test-metrics.sh`, numbers computed on paper.
+- `plan_item.py <item> ...` asks a model to PLAN an item from its brief and the signatures of its public functions (`docs/plan-guide.md`), `run_item.py --plan`
+  builds that plan, `plan_vs_reference.py` runs a plan's tests against the item's reference, `probe_planner.py` sends vague and huge requests.
+  Results and the analysis: `results/2026-10-15-plan-generator.md`.

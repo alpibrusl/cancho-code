@@ -1,0 +1,55 @@
+edition 7;
+
+module planprompt;
+
+// `planprompt` — what a model is asked when the job is to PLAN, not to write
+// code (docs/decomposition.md). Pure, like `prompt`: the caller reads the
+// files. The guide (how a plan is written, with a worked example) is a file
+// the caller names, so it can be edited and compared without a rebuild and the
+// run records which one it used.
+//
+//   guide     docs/plan-guide.md or another: the format, the rules, the example
+//   brief     the task, in the requester's words
+//   contract  the exact signatures of the public functions, when the requester
+//             has already fixed them (may be empty)
+//   feedback  after a rejected plan: the plan and the plan check's report
+//             (empty on the first round)
+
+import std.buffer;
+
+fn is_space(c: int) -> [] bool {
+    return c == 32 || (c >= 9 && c <= 13);
+}
+
+fn trimmed[&t](text: &t [byte]) -> [] &t [byte] {
+    var a = 0;
+    var b = len(text);
+    while a < b && is_space(int_of(text[a])) {
+        a = a + 1;
+    }
+    while b > a && is_space(int_of(text[b - 1])) {
+        b = b - 1;
+    }
+    return text[a..b];
+}
+
+pub fn build[&h, &g, &b, &c, &f](heap: &!h Heap, guide: &g [byte], brief: &b [byte], contract: &c [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
+    var p = buffer.empty(heap, 8192);
+    p = buffer.append(heap, p, trimmed(guide));
+    p = buffer.append(heap, p, "\n\n=== THE TASK ===\n");
+    p = buffer.append(heap, p, trimmed(brief));
+    p = buffer.append(heap, p, "\n");
+    if len(trimmed(contract)) > 0 {
+        p = buffer.append(heap, p, "\n=== REQUIRED PUBLIC FUNCTIONS (use these signatures exactly) ===\n");
+        p = buffer.append(heap, p, trimmed(contract));
+        p = buffer.append(heap, p, "\n");
+    }
+    if len(trimmed(feedback)) > 0 {
+        p = buffer.append(heap, p, "\n=== YOUR PREVIOUS REPLY WAS REJECTED ===\n");
+        p = buffer.append(heap, p, trimmed(feedback));
+        p = buffer.append(heap, p, "\n\nReply again with the corrected JSON object only.\n");
+    } else {
+        p = buffer.append(heap, p, "\nReply with the JSON object only.\n");
+    }
+    return p;
+}

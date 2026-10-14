@@ -54,6 +54,12 @@ out=$("$exe" "$root/eval/duration/plan.json" 2>&1); rc=$?
 expect "duration plan: exit code" "$rc" 0
 expect "duration plan: output" "$out" "$(printf '[PLAN]\tvalid')"
 
+# every hand-written eval plan stays valid under every rule
+for p in "$root"/eval/*/plan.json; do
+    out=$("$exe" "$p" 2>&1); rc=$?
+    expect "$(basename "$(dirname "$p")") plan: valid" "$out" "$(printf '[PLAN]\tvalid')"
+done
+
 out=$("$exe" "$root/eval/csv/plan.json" 2>&1); rc=$?
 expect "csv plan: exit code" "$rc" 0
 expect "csv plan: output" "$out" "$(printf '[PLAN]\tvalid')"

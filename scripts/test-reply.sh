@@ -143,7 +143,36 @@ expect("usage count with no usage object", "usage-count", {"content": []}, "0", 
 expect("top count (ollama)", "top-count", {"response": "x", "eval_count": 77, "prompt_eval_count": 1234}, "77", "eval_count")
 expect("top count (ollama) prompt", "top-count", {"response": "x", "eval_count": 77, "prompt_eval_count": 1234}, "1234", "prompt_eval_count")
 expect("top count absent", "top-count", {"response": "x"}, "0", "eval_count")
-print("reply: 36 cases")
+# json_span: the first complete, parseable JSON object in a reply (a plan comes back inside prose and fences)
+def span_case(name, text, want):
+    code, out = run("json", text.encode("utf-8"))
+    wantb = b"NONE" if want is None else want.encode("utf-8")
+    if code != 0 or out != wantb:
+        fail("json_span: %s: wanted %r, got %r (exit %d)" % (name, wantb[:100], out[:100], code))
+obj = '{"name": "x", "units": [{"id": "a", "n": 1}], "s": "brace } and \\" quote { in a string"}'
+span_case("bare object", obj, obj)
+span_case("fenced with prose", "Here is the plan:\n```json\n" + obj + "\n```\nHope it helps.", obj)
+span_case("prose with braces first", "Use {name} like this. " + obj, obj)
+span_case("two objects, the first wins", '{"a": 1} then {"b": 2}', '{"a": 1}')
+span_case("nested", '{"a": {"b": {"c": []}}} tail', '{"a": {"b": {"c": []}}}')
+span_case("truncated is none", '{"name": "x", "units": [{"id": "a"', None)
+span_case("no object", "I cannot plan this without knowing the currency.", None)
+span_case("array is not an object", '[1, 2, 3]', None)
+span_case("empty", "", None)
+span_case("braces only in a string", '"{"', None)
+span_case("unbalanced then good", '{ oops ' + obj, obj)
+span_case("unicode", '{"s": "é 日本 \U0001F600"}', '{"s": "é 日本 \U0001F600"}')
+# field_is: a top-level string field has a given value
+def field_case(name, body, field, value, want):
+    code, out = run("field-is", json.dumps(body).encode("utf-8"), field + "=" + value)
+    if code != 0 or out != want.encode():
+        fail("field_is: %s: wanted %r, got %r" % (name, want, out))
+field_case("match", {"status": "unclear", "questions": []}, "status", "unclear", "yes")
+field_case("other value", {"status": "too_big"}, "status", "unclear", "no")
+field_case("absent", {"name": "x"}, "status", "unclear", "no")
+field_case("not a string", {"status": 3}, "status", "unclear", "no")
+field_case("nested does not count", {"plan": {"status": "unclear"}}, "status", "unclear", "no")
+print("reply: 53 cases")
 sys.exit(1 if fails else 0)
 PY
 rc=$?

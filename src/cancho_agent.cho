@@ -34,6 +34,11 @@ edition 7;
 //   --effort        low | medium | high | xhigh | max            (the model's own)
 //   --workspace     a workspace id, for a key not scoped to one  (none)
 //   --save-raw      a file every raw reply is appended to        (none)
+//   --mode          edit (default): rewrite the project file; plan: ask for a PLAN (docs/plan.md) instead. In plan mode the last
+//                   argument is where the plan is written, and --guide <file> (how to write a plan) and --brief <file> (the task)
+//                   are required; --contract <file> (exact signatures) and --rounds N (3) are optional. The plan check
+//                   (src/plan.cho, in process) decides: a rejected plan is fed back with its report; {"status": "unclear" |
+//                   "too_big"} exits 3 and is saved as <out>.questions.json; nothing is written unless the check passes.
 //   --usage-log     a file that gets one JSON line per API call: tokens in, out,
 //                   cache write, cache read, stop reason, outcome, sizes, ms (none)
 //
@@ -43,6 +48,8 @@ edition 7;
 
 import anthropic;
 import ollama;
+import plan;
+import planprompt;
 import prompt;
 import provider;
 import reply;
@@ -239,6 +246,16 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
         say(io, "--key-file and --roots are required");
         return 2;
     }
+    let mode = opt(args, "--mode");
+    if len(mode) > 0 && bytes.equal(mode, "edit") == false && bytes.equal(mode, "plan") == false {
+        say(io, "--mode must be edit or plan");
+        return 2;
+    }
+    let plan_mode = bytes.equal(mode, "plan");
+    if plan_mode && (len(opt(args, "--guide")) == 0 || len(opt(args, "--brief")) == 0) {
+        say(io, "--mode plan needs --guide (how to write a plan) and --brief (the task)");
+        return 2;
+    }
     let thinking = opt(args, "--thinking");
     let effort = opt(args, "--effort");
     if len(thinking) > 0 && bytes.equal(thinking, "adaptive") == false && bytes.equal(thinking, "disabled") == false {
@@ -309,23 +326,54 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
         primer = p;
         primer_ok = ok;
     }
-    let (source, source_ok) = slurp(heap, fs, project, 1048576);
-    let task_path = with_suffix(heap, project, ".task");
-    let feedback_path = with_suffix(heap, project, ".feedback");
+    var source = buffer.empty(heap, 16);
+    var source_ok = true;
     var task = buffer.empty(heap, 16);
     var feedback = buffer.empty(heap, 16);
-    borrow task_path as &tp in {
-        buffer.drop(heap, task);
-        let (t, ok) = slurp(heap, fs, buffer.bytes(tp), 65536);
-        task = t;
+    var guide = buffer.empty(heap, 16);
+    var guide_ok = true;
+    if plan_mode {
+        // the brief is the "source", the contract the "task"; nothing is read from the output path
+        buffer.drop(heap, source);
+        let (b, bok) = slurp(heap, fs, opt(args, "--brief"), 1048576);
+        source = b;
+        source_ok = bok;
+        buffer.drop(heap, guide);
+        let (gd, gok) = slurp(heap, fs, opt(args, "--guide"), 1048576);
+        guide = gd;
+        guide_ok = gok;
+        if len(opt(args, "--contract")) > 0 {
+            buffer.drop(heap, task);
+            let (t, tok) = slurp(heap, fs, opt(args, "--contract"), 262144);
+            task = t;
+            if tok == false {
+                source_ok = false;
+            }
+        }
+    } else {
+        buffer.drop(heap, source);
+        let (src, sok) = slurp(heap, fs, project, 1048576);
+        source = src;
+        source_ok = sok;
+        let task_path = with_suffix(heap, project, ".task");
+        let feedback_path = with_suffix(heap, project, ".feedback");
+        borrow task_path as &tp in {
+            buffer.drop(heap, task);
+            let (t, ok) = slurp(heap, fs, buffer.bytes(tp), 65536);
+            task = t;
+        }
+        borrow feedback_path as &fp in {
+            buffer.drop(heap, feedback);
+            let (t, ok) = slurp(heap, fs, buffer.bytes(fp), 262144);
+            feedback = t;
+        }
+        buffer.drop(heap, task_path);
+        buffer.drop(heap, feedback_path);
     }
-    borrow feedback_path as &fp in {
-        buffer.drop(heap, feedback);
-        let (t, ok) = slurp(heap, fs, buffer.bytes(fp), 262144);
-        feedback = t;
+    var rounds = 3;
+    if len(opt(args, "--rounds")) > 0 {
+        rounds = number(opt(args, "--rounds"));
     }
-    buffer.drop(heap, task_path);
-    buffer.drop(heap, feedback_path);
 
     var rc = 1;
     var key_present = local;
@@ -334,9 +382,9 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
             key_present = len(trimmed_key(buffer.bytes(kq))) > 0;
         }
     }
-    if key_ok && key_present && roots_ok && primer_ok && source_ok {
+    if key_ok && key_present && roots_ok && primer_ok && source_ok && guide_ok {
         // consumed: it drops all six
-        return ask_and_write(heap, fs, net, clock, io, args, project, model, host, ip, port, secure, local, num_ctx, max_tokens, thinking, effort, key_raw, roots, primer, source, task, feedback);
+        return ask_and_write(heap, fs, net, clock, io, args, project, model, host, ip, port, secure, local, num_ctx, max_tokens, thinking, effort, plan_mode, rounds, key_raw, roots, primer, guide, source, task, feedback);
     }
     if key_ok == false {
         say(io, "cannot read --key-file");
@@ -346,9 +394,14 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
         say(io, "cannot read --roots");
     } else if primer_ok == false {
         say(io, "cannot read --primer");
+    } else if guide_ok == false {
+        say(io, "cannot read --guide");
+    } else if plan_mode {
+        say(io, "cannot read --brief or --contract");
     } else {
         say(io, "cannot read the project file");
     }
+    buffer.drop(heap, guide);
     buffer.drop(heap, key_raw);
     buffer.drop(heap, roots);
     buffer.drop(heap, primer);
@@ -358,32 +411,35 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
     return rc;
 }
 
-// Up to three samples: a reply without a program, or cut off, is retried and
-// never written over the project.
-fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, args: &g Args, project: &p [byte], model: &m [byte], host: &o [byte], ip: &q [byte], port: int, secure: bool, local: bool, num_ctx: int, max_tokens: int, thinking: &y [byte], effort: &s [byte], key_raw: buffer.Buffer, roots: buffer.Buffer, primer: buffer.Buffer, source: buffer.Buffer, task: buffer.Buffer, feedback: buffer.Buffer) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write, args] int {
-    let workspace = opt(args, "--workspace");
-    let raw_path = opt(args, "--save-raw");
+// The request body for this round: the prompt (to fix a program, or to write a plan) in the provider's wire form.
+fn make_body[&h, &m, &y, &s, &p, &g, &r, &k, &f](heap: &!h Heap, local: bool, plan_mode: bool, model: &m [byte], num_ctx: int, max_tokens: int, thinking: &y [byte], effort: &s [byte], primer: &p [byte], guide: &g [byte], source: &r [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
     var asked = buffer.empty(heap, 16);
-    borrow source as &sr in {
-        borrow task as &tr in {
-            borrow feedback as &fr in {
-                buffer.drop(heap, asked);
-                asked = prompt.build(heap, buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
-            }
-        }
+    buffer.drop(heap, asked);
+    if plan_mode {
+        asked = planprompt.build(heap, guide, source, task, feedback);
+    } else {
+        asked = prompt.build(heap, source, task, feedback);
     }
     var body = buffer.empty(heap, 16);
     borrow asked as &ar in {
-        borrow primer as &pr in {
-            buffer.drop(heap, body);
-            if local {
-                body = ollama.request_body(heap, model, num_ctx, max_tokens, buffer.bytes(pr), buffer.bytes(ar));
-            } else {
-                body = anthropic.request_body(heap, model, max_tokens, buffer.bytes(pr), buffer.bytes(ar), thinking, effort);
-            }
+        buffer.drop(heap, body);
+        if local {
+            body = ollama.request_body(heap, model, num_ctx, max_tokens, primer, buffer.bytes(ar));
+        } else {
+            body = anthropic.request_body(heap, model, max_tokens, primer, buffer.bytes(ar), thinking, effort);
         }
     }
     buffer.drop(heap, asked);
+    return body;
+}
+
+// Up to `rounds` samples: a reply without a program, or cut off, is retried and
+// never written over the project.
+fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, args: &g Args, project: &p [byte], model: &m [byte], host: &o [byte], ip: &q [byte], port: int, secure: bool, local: bool, num_ctx: int, max_tokens: int, thinking: &y [byte], effort: &s [byte], plan_mode: bool, rounds: int, key_raw: buffer.Buffer, roots: buffer.Buffer, primer: buffer.Buffer, guide: buffer.Buffer, source: buffer.Buffer, task: buffer.Buffer, feedback0: buffer.Buffer) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write, args] int {
+    var feedback = feedback0;
+    let workspace = opt(args, "--workspace");
+    let raw_path = opt(args, "--save-raw");
+    var body = buffer.empty(heap, 16);
     var headers = buffer.empty(heap, 16);
     borrow key_raw as &kr in {
         buffer.drop(heap, headers);
@@ -409,8 +465,21 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
     var rc = 1;
     var attempt = 0;
     var finished = false;
-    while attempt < 3 && finished == false {
+    while attempt < rounds && finished == false {
         attempt = attempt + 1;
+        // the request is built each round: after a rejected plan the prompt carries the report
+        borrow primer as &pr in {
+            borrow guide as &gdr in {
+                borrow source as &sr in {
+                    borrow task as &tr in {
+                        borrow feedback as &fr in {
+                            buffer.drop(heap, body);
+                            body = make_body(heap, local, plan_mode, model, num_ctx, max_tokens, thinking, effort, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                        }
+                    }
+                }
+            }
+        }
         borrow headers as &hr in {
             borrow body as &br in {
               borrow roots as &rr in {
@@ -484,6 +553,113 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                             }
                                             buffer.drop(heap, why);
                                         }
+                                        if plan_mode {
+                                            // A PLAN: the first parseable JSON object in the reply, then the plan check (in process, no model).
+                                            // Nothing is written unless the check passes.
+                                            let (ja, jz) = reply.json_span(heap, buffer.bytes(xr));
+                                            var po = "no_plan";
+                                            var report = buffer.empty(heap, 16);
+                                            var asks = false;
+                                            var accepted = false;
+                                            if cut {
+                                                po = "cut_off";
+                                            } else if ja >= 0 {
+                                                let obj = buffer.bytes(xr)[ja..jz];
+                                                if reply.field_is(heap, obj, "status", "unclear") || reply.field_is(heap, obj, "status", "too_big") {
+                                                    po = "needs_input";
+                                                    asks = true;
+                                                } else {
+                                                    let (rep, code) = plan.check(heap, obj);
+                                                    buffer.drop(heap, report);
+                                                    report = rep;
+                                                    if code == 0 {
+                                                        po = "written";
+                                                        accepted = true;
+                                                    } else {
+                                                        po = "rejected";
+                                                    }
+                                                }
+                                            }
+                                            var tin = 0;
+                                            var tout = 0;
+                                            var tcw = 0;
+                                            var tcr = 0;
+                                            if local {
+                                                tin = reply.top_count(heap, answer, "prompt_eval_count");
+                                                tout = reply.top_count(heap, answer, "eval_count");
+                                            } else {
+                                                tin = reply.usage_count(heap, answer, "input_tokens");
+                                                tout = reply.usage_count(heap, answer, "output_tokens");
+                                                tcw = reply.usage_count(heap, answer, "cache_creation_input_tokens");
+                                                tcr = reply.usage_count(heap, answer, "cache_read_input_tokens");
+                                            }
+                                            var pstop = "end_turn";
+                                            if local {
+                                                pstop = "stop";
+                                            }
+                                            if cut {
+                                                pstop = "max_tokens";
+                                                if local {
+                                                    pstop = "length";
+                                                }
+                                            }
+                                            var jlen = 0;
+                                            if ja >= 0 {
+                                                jlen = jz - ja;
+                                            }
+                                            borrow task as &lt in {
+                                                log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, tin, tout, tcw, tcr, pstop, po, status, len(buffer.bytes(xr)), jlen, clock_ms(clock) - t0);
+                                            }
+                                            if cut {
+                                                io.error_all(io, "cancho-agent: a sample was cut off by the bound (--max-tokens / --num-predict)\n");
+                                                buffer.drop(heap, feedback);
+                                                feedback = buffer.append(heap, buffer.empty(heap, 256), "Your reply was cut off before the JSON object ended. Reply with a SHORTER plan: fewer units or shorter descriptions.");
+                                            } else if ja < 0 {
+                                                io.error_all(io, "cancho-agent: a sample has no JSON object in it\n");
+                                                buffer.drop(heap, feedback);
+                                                feedback = buffer.append(heap, buffer.empty(heap, 256), "Your reply contained no JSON object. Reply with the JSON object only.");
+                                            } else if asks {
+                                                var qpath = with_suffix(heap, project, ".questions.json");
+                                                var qfile = buffer.empty(heap, jz - ja + 2);
+                                                qfile = buffer.append(heap, qfile, buffer.bytes(xr)[ja..jz]);
+                                                qfile = buffer.push(heap, qfile, byte_of(10));
+                                                borrow qpath as &qp in {
+                                                    borrow qfile as &qf in {
+                                                        fs_write(fs, buffer.bytes(qp), buffer.bytes(qf));
+                                                    }
+                                                }
+                                                buffer.drop(heap, qpath);
+                                                buffer.drop(heap, qfile);
+                                                io.error_all(io, "cancho-agent: the model needs a decision, not a plan: see the .questions.json beside the output\n");
+                                                rc = 3;
+                                                finished = true;
+                                            } else if accepted {
+                                                var file = buffer.empty(heap, jz - ja + 2);
+                                                file = buffer.append(heap, file, buffer.bytes(xr)[ja..jz]);
+                                                file = buffer.push(heap, file, byte_of(10));
+                                                borrow file as &fr in {
+                                                    fs_write(fs, project, buffer.bytes(fr));
+                                                }
+                                                buffer.drop(heap, file);
+                                                rc = 0;
+                                                finished = true;
+                                            } else {
+                                                borrow report as &rr in {
+                                                    io.error_all(io, "cancho-agent: the plan was rejected:\n");
+                                                    io.error_all(io, buffer.bytes(rr));
+                                                }
+                                                var nf = buffer.empty(heap, 1024);
+                                                nf = buffer.append(heap, nf, "Your previous plan:\n");
+                                                nf = buffer.append(heap, nf, buffer.bytes(xr)[ja..jz]);
+                                                nf = buffer.append(heap, nf, "\n\nThe plan check (a program, not a person) says:\n");
+                                                borrow report as &rr2 in {
+                                                    nf = buffer.append(heap, nf, buffer.bytes(rr2));
+                                                }
+                                                buffer.drop(heap, feedback);
+                                                feedback = nf;
+                                            }
+                                            buffer.drop(heap, report);
+                                        } else {
                                         var pa = 0 - 1;
                                         var pz = 0 - 1;
                                         if cut == false {
@@ -546,6 +722,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                                 finished = true;
                                             }
                                         }
+                                        }
                                     }
                                     buffer.drop(heap, text);
                                     buffer.drop(heap, usage);
@@ -565,6 +742,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
     buffer.drop(heap, key_raw);
     buffer.drop(heap, roots);
     buffer.drop(heap, primer);
+    buffer.drop(heap, guide);
     buffer.drop(heap, source);
     buffer.drop(heap, task);
     buffer.drop(heap, feedback);
