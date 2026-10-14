@@ -120,6 +120,31 @@ printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$d/project.cho"
 agent ANTHROPIC_WORKSPACE_ID=wrkspc_test_123 >/dev/null 2>&1
 expect "workspace: the id is sent as anthropic-workspace-id" "$(python3 -c "import json; print(json.load(open('$d/headers.json'))['workspace'])")" wrkspc_test_123
 
+# thinking: Claude thinks before it answers and the thinking counts against max_tokens. On the first long runs every reply spent its whole
+# bound (8192 tokens) thinking and left no answer. ANTHROPIC_THINKING (disabled or adaptive) and ANTHROPIC_EFFORT (low medium high xhigh
+# max, the API's own values) are sent when named, and not otherwise; a bad value is refused before any request.
+req() { python3 -c "import json; r = json.load(open('$d/request.json')); print(json.dumps([r.get('thinking'), r.get('output_config')]))"; }
+printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$d/project.cho"; agent >/dev/null 2>&1
+expect "thinking: by default neither is sent" "$(req)" "[null, null]"
+printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$d/project.cho"; agent ANTHROPIC_THINKING=disabled >/dev/null 2>&1
+expect "thinking: disabled is sent" "$(req)" '[{"type": "disabled"}, null]'
+printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$d/project.cho"; agent ANTHROPIC_THINKING=adaptive ANTHROPIC_EFFORT=low >/dev/null 2>&1
+expect "thinking: adaptive with an effort is sent" "$(req)" '[{"type": "adaptive"}, {"effort": "low"}]'
+rm -f "$d/count"; agent ANTHROPIC_EFFORT=bogus >"$d/out.txt" 2>"$d/err.txt"; rc=$?
+[ "$rc" != 0 ] || { echo "FAIL: thinking: a bad effort was accepted" >&2; fail=1; }
+case "$(cat "$d/err.txt")" in *low*medium*high*) ;; *) echo "FAIL: thinking: a bad effort does not list the valid ones ('$(cat "$d/err.txt")')" >&2; fail=1 ;; esac
+expect "thinking: a bad effort sends no request" "$(cat "$d/count" 2>/dev/null || echo 0)" 0
+rm -f "$d/count"; agent ANTHROPIC_THINKING=sometimes >"$d/out.txt" 2>"$d/err.txt"; rc=$?
+[ "$rc" != 0 ] || { echo "FAIL: thinking: a bad thinking mode was accepted" >&2; fail=1; }
+# a reply cut off with NO visible text: the bound was spent thinking, and the message says what to do
+rm -f "$d/response"*; : > "$d/response.1.txt"; printf 'max_tokens' > "$d/response.1.stop"; : > "$d/response.2.txt"; printf 'max_tokens' > "$d/response.2.stop"; : > "$d/response.3.txt"; printf 'max_tokens' > "$d/response.3.stop"
+stop; start
+printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$d/project.cho"
+agent >"$d/out.txt" 2>"$d/err.txt"; rc=$?
+[ "$rc" != 0 ] || { echo "FAIL: thinking: exit 0 when every reply was cut off with no text" >&2; fail=1; }
+case "$(cat "$d/err.txt")" in *thinking*ANTHROPIC_THINKING*|*ANTHROPIC_THINKING*thinking*) ;; *) echo "FAIL: thinking: an all-thinking reply does not say so ('$(cat "$d/err.txt")')" >&2; fail=1 ;; esac
+rm -f "$d/response"*; stop; start
+
 # no primer: no system block
 printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$d/project.cho"
 agent >/dev/null 2>&1
