@@ -1,0 +1,5501 @@
+{
+ "gen": {
+  "plans": [
+   {
+    "item": "base64",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 7,
+    "seconds": 38.1,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 9121,
+    "cost_usd": 0.00512,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "base64",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 7,
+    "seconds": 38.3,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 9413,
+    "cost_usd": 0.005266,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "base64",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 5,
+    "seconds": 100.2,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 22967,
+    "cost_usd": 0.01343,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "basics",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 6,
+    "seconds": 20.8,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 4972,
+    "cost_usd": 0.003068,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "basics",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 7,
+    "seconds": 39.2,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 11142,
+    "cost_usd": 0.007109,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "basics",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 7,
+    "seconds": 19.1,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 5298,
+    "cost_usd": 0.003231,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "csv",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 9,
+    "seconds": 50.9,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 11771,
+    "cost_usd": 0.006422,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "csv",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 10,
+    "seconds": 46.8,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 10689,
+    "cost_usd": 0.005881,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "csv",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 8,
+    "seconds": 54.3,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 12054,
+    "cost_usd": 0.006564,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "duration",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 8,
+    "seconds": 54.3,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 13147,
+    "cost_usd": 0.007094,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "duration",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 8,
+    "seconds": 44.0,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 10311,
+    "cost_usd": 0.005676,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "duration",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 10,
+    "seconds": 54.1,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 13668,
+    "cost_usd": 0.007355,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "editdistance",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 6,
+    "seconds": 26.6,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 5929,
+    "cost_usd": 0.003478,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "editdistance",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 6,
+    "seconds": 38.3,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 8579,
+    "cost_usd": 0.004803,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "editdistance",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 6,
+    "seconds": 52.4,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 12077,
+    "cost_usd": 0.006552,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "expr",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 2,
+    "seconds": 118.9,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 27175,
+    "cost_usd": 0.015509,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "expr",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 7,
+    "seconds": 72.5,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 19499,
+    "cost_usd": 0.011457,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "expr",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 8,
+    "seconds": 138.0,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 34183,
+    "cost_usd": 0.019283,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "glob",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 8,
+    "seconds": 44.3,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 9941,
+    "cost_usd": 0.005505,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "glob",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 6,
+    "seconds": 90.4,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 20856,
+    "cost_usd": 0.011504,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "glob",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 6,
+    "seconds": 100.0,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 22022,
+    "cost_usd": 0.012087,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "ini",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 7,
+    "seconds": 152.6,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 34275,
+    "cost_usd": 0.019084,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "ini",
+    "run": 2,
+    "exit": 1,
+    "valid": false,
+    "rounds": 3,
+    "units": 0,
+    "seconds": 105.4,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "rejected"
+    ],
+    "out_tokens": 25099,
+    "cost_usd": 0.014492,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "ini",
+    "run": 3,
+    "exit": 1,
+    "valid": false,
+    "rounds": 3,
+    "units": 0,
+    "seconds": 116.2,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "rejected"
+    ],
+    "out_tokens": 27063,
+    "cost_usd": 0.015438,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "jsonptr",
+    "run": 1,
+    "exit": 1,
+    "valid": false,
+    "rounds": 3,
+    "units": 0,
+    "seconds": 109.6,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "rejected"
+    ],
+    "out_tokens": 25716,
+    "cost_usd": 0.014758,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "jsonptr",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 6,
+    "seconds": 107.9,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 26047,
+    "cost_usd": 0.01493,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "jsonptr",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 8,
+    "seconds": 41.4,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 9807,
+    "cost_usd": 0.005446,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "roman",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 6,
+    "seconds": 60.4,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 13882,
+    "cost_usd": 0.007457,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "roman",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 8,
+    "seconds": 63.8,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 15245,
+    "cost_usd": 0.008139,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "roman",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 4,
+    "seconds": 112.0,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 25161,
+    "cost_usd": 0.014359,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "semver",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 11,
+    "seconds": 101.4,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 23789,
+    "cost_usd": 0.013089,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "semver",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 11,
+    "seconds": 117.8,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 29738,
+    "cost_usd": 0.017165,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "semver",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 8,
+    "seconds": 110.6,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 26073,
+    "cost_usd": 0.014231,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "sortedmap",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 5,
+    "seconds": 62.4,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 16769,
+    "cost_usd": 0.010168,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "sortedmap",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 5,
+    "seconds": 34.8,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 9207,
+    "cost_usd": 0.005181,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "sortedmap",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 5,
+    "seconds": 66.0,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 19404,
+    "cost_usd": 0.011568,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "tokenbucket",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 4,
+    "seconds": 37.6,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 9831,
+    "cost_usd": 0.005507,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "tokenbucket",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 4,
+    "seconds": 21.5,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 5603,
+    "cost_usd": 0.003393,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "tokenbucket",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 7,
+    "seconds": 57.4,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 14947,
+    "cost_usd": 0.008065,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   }
+  ],
+  "builds": [
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 7,
+    "units_verified": 5,
+    "tokens": {
+     "in": 13517,
+     "out": 16097,
+     "cache_write": 0,
+     "cache_read": 120366
+    },
+    "calls": 9,
+    "outcomes": {
+     "written": 9
+    },
+    "agent_ms": 61972,
+    "seconds": 76.1,
+    "cost_usd": 0.010605,
+    "over_limit_calls": 0,
+    "kept_out": 5753,
+    "efficiency_calls": 0.3574,
+    "efficiency": 0.1685,
+    "cost_per_verified_unit": 0.002121,
+    "audit": {
+     "passed": 0,
+     "of": 329
+    },
+    "item": "base64",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 7,
+    "units_verified": 5,
+    "tokens": {
+     "in": 11455,
+     "out": 14303,
+     "cache_write": 0,
+     "cache_read": 120366
+    },
+    "calls": 9,
+    "outcomes": {
+     "written": 9
+    },
+    "agent_ms": 59267,
+    "seconds": 69.4,
+    "cost_usd": 0.009502,
+    "over_limit_calls": 0,
+    "kept_out": 4294,
+    "efficiency_calls": 0.3002,
+    "efficiency": 0.1589,
+    "cost_per_verified_unit": 0.0019,
+    "audit": {
+     "passed": 0,
+     "of": 329
+    },
+    "item": "base64",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 3,
+    "tokens": {
+     "in": 8631,
+     "out": 13288,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 55961,
+    "seconds": 58.4,
+    "cost_usd": 0.008444,
+    "over_limit_calls": 0,
+    "kept_out": 4139,
+    "efficiency_calls": 0.3115,
+    "efficiency": 0.2098,
+    "cost_per_verified_unit": 0.002815,
+    "audit": {
+     "passed": 0,
+     "of": 329
+    },
+    "item": "base64",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 6,
+    "units_verified": 4,
+    "tokens": {
+     "in": 6705,
+     "out": 6223,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 8
+    },
+    "agent_ms": 29766,
+    "seconds": 40.2,
+    "cost_usd": 0.004852,
+    "over_limit_calls": 0,
+    "kept_out": 2037,
+    "efficiency_calls": 0.3273,
+    "efficiency": 0.1569,
+    "cost_per_verified_unit": 0.001213,
+    "audit": {
+     "passed": 0,
+     "of": 221
+    },
+    "item": "basics",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 7,
+    "units_verified": 7,
+    "tokens": {
+     "in": 4212,
+     "out": 3480,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 18778,
+    "seconds": 50.1,
+    "cost_usd": 0.003096,
+    "over_limit_calls": 0,
+    "kept_out": 3480,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.3306,
+    "cost_per_verified_unit": 0.000442,
+    "audit": {
+     "passed": 221,
+     "of": 221
+    },
+    "cost_per_audit_point": 1.401e-05,
+    "output_tokens_per_audit_point": 15.75,
+    "item": "basics",
+    "run": 2,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 7,
+    "units_verified": 6,
+    "tokens": {
+     "in": 5813,
+     "out": 6036,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 8
+    },
+    "agent_ms": 37592,
+    "seconds": 57.9,
+    "cost_usd": 0.004669,
+    "over_limit_calls": 0,
+    "kept_out": 2700,
+    "efficiency_calls": 0.4473,
+    "efficiency": 0.1593,
+    "cost_per_verified_unit": 0.000778,
+    "audit": {
+     "passed": 179,
+     "of": 221
+    },
+    "cost_per_audit_point": 2.608e-05,
+    "output_tokens_per_audit_point": 33.72,
+    "item": "basics",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 7,
+    "units_verified": 4,
+    "tokens": {
+     "in": 12148,
+     "out": 15006,
+     "cache_write": 0,
+     "cache_read": 160488
+    },
+    "calls": 12,
+    "outcomes": {
+     "written": 12
+    },
+    "agent_ms": 65473,
+    "seconds": 69.0,
+    "cost_usd": 0.010324,
+    "over_limit_calls": 0,
+    "kept_out": 2552,
+    "efficiency_calls": 0.1701,
+    "efficiency": 0.0899,
+    "cost_per_verified_unit": 0.002581,
+    "audit": {
+     "passed": 0,
+     "of": 50
+    },
+    "item": "csv",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 6,
+    "units_verified": 4,
+    "tokens": {
+     "in": 8850,
+     "out": 10988,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 8
+    },
+    "agent_ms": 47406,
+    "seconds": 50.4,
+    "cost_usd": 0.00745,
+    "over_limit_calls": 0,
+    "kept_out": 3386,
+    "efficiency_calls": 0.3082,
+    "efficiency": 0.1544,
+    "cost_per_verified_unit": 0.001863,
+    "audit": {
+     "passed": 0,
+     "of": 50
+    },
+    "item": "csv",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 7,
+    "units_verified": 5,
+    "tokens": {
+     "in": 10406,
+     "out": 18511,
+     "cache_write": 0,
+     "cache_read": 120366
+    },
+    "calls": 9,
+    "outcomes": {
+     "written": 9
+    },
+    "agent_ms": 83087,
+    "seconds": 87.2,
+    "cost_usd": 0.011499,
+    "over_limit_calls": 0,
+    "kept_out": 4900,
+    "efficiency_calls": 0.2647,
+    "efficiency": 0.1275,
+    "cost_per_verified_unit": 0.0023,
+    "audit": {
+     "passed": 0,
+     "of": 50
+    },
+    "item": "csv",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 7,
+    "units_verified": 6,
+    "tokens": {
+     "in": 7213,
+     "out": 7834,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 8
+    },
+    "agent_ms": 35343,
+    "seconds": 40.6,
+    "cost_usd": 0.005708,
+    "over_limit_calls": 0,
+    "kept_out": 4786,
+    "efficiency_calls": 0.6109,
+    "efficiency": 0.2693,
+    "cost_per_verified_unit": 0.000951,
+    "audit": {
+     "passed": 42,
+     "of": 64
+    },
+    "cost_per_audit_point": 0.0001359,
+    "output_tokens_per_audit_point": 186.52,
+    "item": "duration",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 6,
+    "units_verified": 2,
+    "tokens": {
+     "in": 6547,
+     "out": 6678,
+     "cache_write": 0,
+     "cache_read": 133740
+    },
+    "calls": 10,
+    "outcomes": {
+     "written": 10
+    },
+    "agent_ms": 40393,
+    "seconds": 42.6,
+    "cost_usd": 0.005331,
+    "over_limit_calls": 0,
+    "kept_out": 635,
+    "efficiency_calls": 0.0951,
+    "efficiency": 0.0464,
+    "cost_per_verified_unit": 0.002665,
+    "audit": {
+     "passed": 0,
+     "of": 64
+    },
+    "item": "duration",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 9,
+    "units_verified": 8,
+    "tokens": {
+     "in": 11168,
+     "out": 11684,
+     "cache_write": 0,
+     "cache_read": 133740
+    },
+    "calls": 10,
+    "outcomes": {
+     "written": 10
+    },
+    "agent_ms": 47159,
+    "seconds": 55.2,
+    "cost_usd": 0.008297,
+    "over_limit_calls": 0,
+    "kept_out": 8295,
+    "efficiency_calls": 0.7099,
+    "efficiency": 0.1963,
+    "cost_per_verified_unit": 0.001037,
+    "audit": {
+     "passed": 42,
+     "of": 64
+    },
+    "cost_per_audit_point": 0.00019755,
+    "output_tokens_per_audit_point": 278.19,
+    "item": "duration",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 6,
+    "units_verified": 5,
+    "tokens": {
+     "in": 21543,
+     "out": 28530,
+     "cache_write": 0,
+     "cache_read": 133740
+    },
+    "calls": 10,
+    "outcomes": {
+     "written": 10
+    },
+    "agent_ms": 102772,
+    "seconds": 106.9,
+    "cost_usd": 0.017758,
+    "over_limit_calls": 0,
+    "kept_out": 12070,
+    "efficiency_calls": 0.4231,
+    "efficiency": 0.1544,
+    "cost_per_verified_unit": 0.003552,
+    "audit": {
+     "passed": 45,
+     "of": 54
+    },
+    "cost_per_audit_point": 0.00039462,
+    "output_tokens_per_audit_point": 634.0,
+    "item": "editdistance",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 6,
+    "units_verified": 5,
+    "tokens": {
+     "in": 10509,
+     "out": 13414,
+     "cache_write": 0,
+     "cache_read": 120366
+    },
+    "calls": 9,
+    "outcomes": {
+     "written": 9
+    },
+    "agent_ms": 59392,
+    "seconds": 91.2,
+    "cost_usd": 0.008961,
+    "over_limit_calls": 0,
+    "kept_out": 6546,
+    "efficiency_calls": 0.488,
+    "efficiency": 0.2228,
+    "cost_per_verified_unit": 0.001792,
+    "audit": {
+     "passed": 45,
+     "of": 54
+    },
+    "cost_per_audit_point": 0.00019913,
+    "output_tokens_per_audit_point": 298.09,
+    "item": "editdistance",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 6,
+    "units_verified": 5,
+    "tokens": {
+     "in": 16438,
+     "out": 20361,
+     "cache_write": 0,
+     "cache_read": 133740
+    },
+    "calls": 10,
+    "outcomes": {
+     "written": 10
+    },
+    "agent_ms": 81435,
+    "seconds": 125.7,
+    "cost_usd": 0.013162,
+    "over_limit_calls": 0,
+    "kept_out": 9077,
+    "efficiency_calls": 0.4458,
+    "efficiency": 0.2056,
+    "cost_per_verified_unit": 0.002632,
+    "audit": {
+     "passed": 45,
+     "of": 54
+    },
+    "cost_per_audit_point": 0.00029249,
+    "output_tokens_per_audit_point": 452.47,
+    "item": "editdistance",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "provider_error",
+    "units_total": 2,
+    "units_verified": 1,
+    "tokens": {
+     "in": 4599,
+     "out": 52200,
+     "cache_write": 0,
+     "cache_read": 53496
+    },
+    "calls": 4,
+    "outcomes": {
+     "written": 1,
+     "cut_off": 3
+    },
+    "agent_ms": 248884,
+    "seconds": 252.1,
+    "cost_usd": 0.027095,
+    "over_limit_calls": 0,
+    "kept_out": 4200,
+    "efficiency_calls": 0.0805,
+    "efficiency": 0.0783,
+    "cost_per_verified_unit": 0.027095,
+    "audit": {
+     "passed": 0,
+     "of": 385
+    },
+    "item": "expr",
+    "run": 1,
+    "exit": 4
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 7,
+    "units_verified": 7,
+    "tokens": {
+     "in": 8760,
+     "out": 19214,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 78201,
+    "seconds": 95.7,
+    "cost_usd": 0.011418,
+    "over_limit_calls": 0,
+    "kept_out": 19214,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.4241,
+    "cost_per_verified_unit": 0.001631,
+    "audit": {
+     "passed": 385,
+     "of": 385
+    },
+    "cost_per_audit_point": 2.966e-05,
+    "output_tokens_per_audit_point": 49.91,
+    "item": "expr",
+    "run": 2,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 8,
+    "units_verified": 8,
+    "tokens": {
+     "in": 10103,
+     "out": 27303,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 8
+    },
+    "agent_ms": 111314,
+    "seconds": 120.7,
+    "cost_usd": 0.015731,
+    "over_limit_calls": 0,
+    "kept_out": 27303,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.4684,
+    "cost_per_verified_unit": 0.001966,
+    "audit": {
+     "passed": 385,
+     "of": 385
+    },
+    "cost_per_audit_point": 4.086e-05,
+    "output_tokens_per_audit_point": 70.92,
+    "item": "expr",
+    "run": 3,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 2,
+    "units_verified": 1,
+    "tokens": {
+     "in": 1992,
+     "out": 4163,
+     "cache_write": 0,
+     "cache_read": 40122
+    },
+    "calls": 3,
+    "outcomes": {
+     "written": 3
+    },
+    "agent_ms": 19642,
+    "seconds": 20.3,
+    "cost_usd": 0.002682,
+    "over_limit_calls": 0,
+    "kept_out": 1346,
+    "efficiency_calls": 0.3233,
+    "efficiency": 0.3135,
+    "cost_per_verified_unit": 0.002682,
+    "audit": {
+     "passed": 0,
+     "of": 87
+    },
+    "item": "glob",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 3,
+    "units_verified": 2,
+    "tokens": {
+     "in": 5799,
+     "out": 12365,
+     "cache_write": 0,
+     "cache_read": 53496
+    },
+    "calls": 4,
+    "outcomes": {
+     "written": 4
+    },
+    "agent_ms": 47794,
+    "seconds": 49.8,
+    "cost_usd": 0.007297,
+    "over_limit_calls": 0,
+    "kept_out": 5288,
+    "efficiency_calls": 0.4277,
+    "efficiency": 0.3252,
+    "cost_per_verified_unit": 0.003648,
+    "audit": {
+     "passed": 0,
+     "of": 87
+    },
+    "item": "glob",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 6,
+    "units_verified": 6,
+    "tokens": {
+     "in": 7748,
+     "out": 21796,
+     "cache_write": 0,
+     "cache_read": 80244
+    },
+    "calls": 6,
+    "outcomes": {
+     "written": 6
+    },
+    "agent_ms": 90637,
+    "seconds": 96.9,
+    "cost_usd": 0.012476,
+    "over_limit_calls": 0,
+    "kept_out": 21796,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.449,
+    "cost_per_verified_unit": 0.002079,
+    "audit": {
+     "passed": 87,
+     "of": 87
+    },
+    "cost_per_audit_point": 0.0001434,
+    "output_tokens_per_audit_point": 250.53,
+    "item": "glob",
+    "run": 3,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "provider_error",
+    "units_total": 6,
+    "units_verified": 5,
+    "tokens": {
+     "in": 7424,
+     "out": 51369,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 5,
+     "cut_off": 3
+    },
+    "agent_ms": 231319,
+    "seconds": 235.4,
+    "cost_usd": 0.027496,
+    "over_limit_calls": 0,
+    "kept_out": 3369,
+    "efficiency_calls": 0.0656,
+    "efficiency": 0.0276,
+    "cost_per_verified_unit": 0.005499,
+    "audit": {
+     "passed": 0,
+     "of": 76
+    },
+    "item": "ini",
+    "run": 1,
+    "exit": 4
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 6,
+    "units_verified": 3,
+    "tokens": {
+     "in": 10492,
+     "out": 19290,
+     "cache_write": 0,
+     "cache_read": 120366
+    },
+    "calls": 9,
+    "outcomes": {
+     "written": 9
+    },
+    "agent_ms": 79293,
+    "seconds": 83.4,
+    "cost_usd": 0.011898,
+    "over_limit_calls": 0,
+    "kept_out": 2980,
+    "efficiency_calls": 0.1545,
+    "efficiency": 0.0822,
+    "cost_per_verified_unit": 0.003966,
+    "audit": {
+     "passed": 0,
+     "of": 160
+    },
+    "item": "jsonptr",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 3,
+    "tokens": {
+     "in": 7815,
+     "out": 10978,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 48766,
+    "seconds": 50.9,
+    "cost_usd": 0.007207,
+    "over_limit_calls": 0,
+    "kept_out": 4066,
+    "efficiency_calls": 0.3704,
+    "efficiency": 0.1901,
+    "cost_per_verified_unit": 0.002402,
+    "audit": {
+     "passed": 0,
+     "of": 160
+    },
+    "item": "jsonptr",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 4,
+    "tokens": {
+     "in": 5768,
+     "out": 9876,
+     "cache_write": 0,
+     "cache_read": 80244
+    },
+    "calls": 6,
+    "outcomes": {
+     "written": 6
+    },
+    "agent_ms": 41190,
+    "seconds": 44.0,
+    "cost_usd": 0.006317,
+    "over_limit_calls": 0,
+    "kept_out": 7088,
+    "efficiency_calls": 0.7177,
+    "efficiency": 0.3855,
+    "cost_per_verified_unit": 0.001579,
+    "audit": {
+     "passed": 246,
+     "of": 439
+    },
+    "cost_per_audit_point": 2.568e-05,
+    "output_tokens_per_audit_point": 40.15,
+    "item": "roman",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 7,
+    "units_verified": 5,
+    "tokens": {
+     "in": 8394,
+     "out": 13733,
+     "cache_write": 0,
+     "cache_read": 120366
+    },
+    "calls": 9,
+    "outcomes": {
+     "written": 9
+    },
+    "agent_ms": 61230,
+    "seconds": 90.2,
+    "cost_usd": 0.008908,
+    "over_limit_calls": 0,
+    "kept_out": 9613,
+    "efficiency_calls": 0.7,
+    "efficiency": 0.3158,
+    "cost_per_verified_unit": 0.001782,
+    "audit": {
+     "passed": 246,
+     "of": 439
+    },
+    "cost_per_audit_point": 3.621e-05,
+    "output_tokens_per_audit_point": 55.83,
+    "item": "roman",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 4,
+    "units_verified": 3,
+    "tokens": {
+     "in": 5867,
+     "out": 10932,
+     "cache_write": 0,
+     "cache_read": 66870
+    },
+    "calls": 5,
+    "outcomes": {
+     "written": 5
+    },
+    "agent_ms": 46553,
+    "seconds": 62.0,
+    "cost_usd": 0.00672,
+    "over_limit_calls": 0,
+    "kept_out": 7309,
+    "efficiency_calls": 0.6686,
+    "efficiency": 0.4532,
+    "cost_per_verified_unit": 0.00224,
+    "audit": {
+     "passed": 246,
+     "of": 439
+    },
+    "cost_per_audit_point": 2.732e-05,
+    "output_tokens_per_audit_point": 44.44,
+    "item": "roman",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 11,
+    "units_verified": 11,
+    "tokens": {
+     "in": 23305,
+     "out": 38824,
+     "cache_write": 0,
+     "cache_read": 147114
+    },
+    "calls": 11,
+    "outcomes": {
+     "written": 11
+    },
+    "agent_ms": 134220,
+    "seconds": 149.7,
+    "cost_usd": 0.023212,
+    "over_limit_calls": 0,
+    "kept_out": 38824,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.2522,
+    "cost_per_verified_unit": 0.00211,
+    "audit": {
+     "passed": 492,
+     "of": 492
+    },
+    "cost_per_audit_point": 4.718e-05,
+    "output_tokens_per_audit_point": 78.91,
+    "item": "semver",
+    "run": 1,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 11,
+    "units_verified": 11,
+    "tokens": {
+     "in": 23446,
+     "out": 42777,
+     "cache_write": 0,
+     "cache_read": 147114
+    },
+    "calls": 11,
+    "outcomes": {
+     "written": 11
+    },
+    "agent_ms": 155639,
+    "seconds": 171.1,
+    "cost_usd": 0.025204,
+    "over_limit_calls": 0,
+    "kept_out": 42777,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.244,
+    "cost_per_verified_unit": 0.002291,
+    "audit": {
+     "passed": 492,
+     "of": 492
+    },
+    "cost_per_audit_point": 5.123e-05,
+    "output_tokens_per_audit_point": 86.95,
+    "item": "semver",
+    "run": 2,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 8,
+    "units_verified": 8,
+    "tokens": {
+     "in": 17977,
+     "out": 38684,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 8
+    },
+    "agent_ms": 137691,
+    "seconds": 146.8,
+    "cost_usd": 0.022209,
+    "over_limit_calls": 0,
+    "kept_out": 38684,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.3092,
+    "cost_per_verified_unit": 0.002776,
+    "audit": {
+     "passed": 492,
+     "of": 492
+    },
+    "cost_per_audit_point": 4.514e-05,
+    "output_tokens_per_audit_point": 78.63,
+    "item": "semver",
+    "run": 3,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 5,
+    "units_verified": 5,
+    "tokens": {
+     "in": 3498,
+     "out": 4928,
+     "cache_write": 0,
+     "cache_read": 66870
+    },
+    "calls": 5,
+    "outcomes": {
+     "written": 5
+    },
+    "agent_ms": 23733,
+    "seconds": 34.4,
+    "cost_usd": 0.003483,
+    "over_limit_calls": 0,
+    "kept_out": 4928,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.4083,
+    "cost_per_verified_unit": 0.000697,
+    "audit": {
+     "passed": 124,
+     "of": 124
+    },
+    "cost_per_audit_point": 2.809e-05,
+    "output_tokens_per_audit_point": 39.74,
+    "item": "sortedmap",
+    "run": 1,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 5,
+    "units_verified": 5,
+    "tokens": {
+     "in": 3596,
+     "out": 5434,
+     "cache_write": 0,
+     "cache_read": 66870
+    },
+    "calls": 5,
+    "outcomes": {
+     "written": 5
+    },
+    "agent_ms": 24701,
+    "seconds": 29.3,
+    "cost_usd": 0.003746,
+    "over_limit_calls": 0,
+    "kept_out": 5434,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.4087,
+    "cost_per_verified_unit": 0.000749,
+    "audit": {
+     "passed": 124,
+     "of": 124
+    },
+    "cost_per_audit_point": 3.021e-05,
+    "output_tokens_per_audit_point": 43.82,
+    "item": "sortedmap",
+    "run": 2,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 5,
+    "units_verified": 5,
+    "tokens": {
+     "in": 3911,
+     "out": 4925,
+     "cache_write": 0,
+     "cache_read": 66870
+    },
+    "calls": 5,
+    "outcomes": {
+     "written": 5
+    },
+    "agent_ms": 23781,
+    "seconds": 28.3,
+    "cost_usd": 0.003523,
+    "over_limit_calls": 0,
+    "kept_out": 4925,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.4014,
+    "cost_per_verified_unit": 0.000705,
+    "audit": {
+     "passed": 124,
+     "of": 124
+    },
+    "cost_per_audit_point": 2.841e-05,
+    "output_tokens_per_audit_point": 39.72,
+    "item": "sortedmap",
+    "run": 3,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 3,
+    "units_verified": 2,
+    "tokens": {
+     "in": 4566,
+     "out": 16115,
+     "cache_write": 0,
+     "cache_read": 53496
+    },
+    "calls": 4,
+    "outcomes": {
+     "written": 4
+    },
+    "agent_ms": 71533,
+    "seconds": 78.3,
+    "cost_usd": 0.009049,
+    "over_limit_calls": 0,
+    "kept_out": 4932,
+    "efficiency_calls": 0.3061,
+    "efficiency": 0.2711,
+    "cost_per_verified_unit": 0.004524,
+    "audit": {
+     "passed": 22,
+     "of": 46
+    },
+    "cost_per_audit_point": 0.00041132,
+    "output_tokens_per_audit_point": 732.5,
+    "item": "tokenbucket",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 4,
+    "units_verified": 4,
+    "tokens": {
+     "in": 4899,
+     "out": 14264,
+     "cache_write": 0,
+     "cache_read": 53496
+    },
+    "calls": 4,
+    "outcomes": {
+     "written": 4
+    },
+    "agent_ms": 59159,
+    "seconds": 71.2,
+    "cost_usd": 0.008157,
+    "over_limit_calls": 0,
+    "kept_out": 14264,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.532,
+    "cost_per_verified_unit": 0.002039,
+    "audit": {
+     "passed": 46,
+     "of": 46
+    },
+    "cost_per_audit_point": 0.00017733,
+    "output_tokens_per_audit_point": 310.09,
+    "item": "tokenbucket",
+    "run": 2,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 7,
+    "units_verified": 7,
+    "tokens": {
+     "in": 6481,
+     "out": 9885,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 41730,
+    "seconds": 71.0,
+    "cost_usd": 0.006528,
+    "over_limit_calls": 0,
+    "kept_out": 9885,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.3516,
+    "cost_per_verified_unit": 0.000933,
+    "audit": {
+     "passed": 46,
+     "of": 46
+    },
+    "cost_per_audit_point": 0.00014191,
+    "output_tokens_per_audit_point": 214.89,
+    "item": "tokenbucket",
+    "run": 3,
+    "exit": 0
+   }
+  ]
+ },
+ "gen2": {
+  "plans": [
+   {
+    "item": "base64",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 5,
+    "seconds": 64.9,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 16635,
+    "cost_usd": 0.011454,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "base64",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 6,
+    "seconds": 65.7,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 16494,
+    "cost_usd": 0.009805,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "base64",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 4,
+    "seconds": 69.3,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 18082,
+    "cost_usd": 0.010581,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "basics",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 7,
+    "seconds": 26.3,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 6799,
+    "cost_usd": 0.005529,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "basics",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 7,
+    "seconds": 23.2,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 6014,
+    "cost_usd": 0.003599,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "basics",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 7,
+    "seconds": 27.5,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 7258,
+    "cost_usd": 0.004221,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "csv",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 4,
+    "seconds": 143.9,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 33514,
+    "cost_usd": 0.018606,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "csv",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 5,
+    "seconds": 110.3,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 24712,
+    "cost_usd": 0.014165,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "csv",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 4,
+    "seconds": 87.4,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 19030,
+    "cost_usd": 0.010616,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "duration",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 5,
+    "seconds": 110.7,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 26597,
+    "cost_usd": 0.015145,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "duration",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 7,
+    "seconds": 85.9,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 22170,
+    "cost_usd": 0.012566,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "duration",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 6,
+    "seconds": 108.9,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 26863,
+    "cost_usd": 0.015349,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "editdistance",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 6,
+    "seconds": 82.5,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 19787,
+    "cost_usd": 0.011285,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "editdistance",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 7,
+    "seconds": 66.6,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 15743,
+    "cost_usd": 0.009257,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "editdistance",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 6,
+    "seconds": 71.0,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 16578,
+    "cost_usd": 0.00972,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "expr",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 5,
+    "seconds": 127.5,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 28260,
+    "cost_usd": 0.01613,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "expr",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 3,
+    "seconds": 102.0,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 24877,
+    "cost_usd": 0.01353,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "expr",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 7,
+    "seconds": 127.0,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 30646,
+    "cost_usd": 0.017449,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "glob",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 7,
+    "seconds": 94.4,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 21678,
+    "cost_usd": 0.011935,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "glob",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 6,
+    "seconds": 68.8,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 15452,
+    "cost_usd": 0.00827,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "glob",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 6,
+    "seconds": 101.0,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 21149,
+    "cost_usd": 0.011671,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "ini",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 7,
+    "seconds": 125.1,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 29483,
+    "cost_usd": 0.01682,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "ini",
+    "run": 2,
+    "exit": 1,
+    "valid": false,
+    "rounds": 3,
+    "units": 0,
+    "seconds": 115.7,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "rejected"
+    ],
+    "out_tokens": 27014,
+    "cost_usd": 0.015502,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "ini",
+    "run": 3,
+    "exit": 1,
+    "valid": false,
+    "rounds": 3,
+    "units": 0,
+    "seconds": 127.1,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "rejected"
+    ],
+    "out_tokens": 29297,
+    "cost_usd": 0.016699,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "jsonptr",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 7,
+    "seconds": 197.9,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 29669,
+    "cost_usd": 0.018495,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "jsonptr",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 5,
+    "seconds": 102.3,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 23494,
+    "cost_usd": 0.013598,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "jsonptr",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 8,
+    "seconds": 102.7,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 25086,
+    "cost_usd": 0.014558,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "roman",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 4,
+    "seconds": 121.7,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 27169,
+    "cost_usd": 0.0153,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "roman",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 5,
+    "seconds": 126.6,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 28876,
+    "cost_usd": 0.016255,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "roman",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 4,
+    "seconds": 100.1,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 23001,
+    "cost_usd": 0.01256,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "semver",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 9,
+    "seconds": 105.2,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 25217,
+    "cost_usd": 0.013822,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "semver",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 11,
+    "seconds": 111.7,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 26708,
+    "cost_usd": 0.014568,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "semver",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 9,
+    "seconds": 108.7,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 26077,
+    "cost_usd": 0.014252,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "sortedmap",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 7,
+    "seconds": 120.1,
+    "outcomes": [
+     "rejected",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 34747,
+    "cost_usd": 0.020816,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "sortedmap",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 6,
+    "seconds": 80.6,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 22247,
+    "cost_usd": 0.012952,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "sortedmap",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 5,
+    "seconds": 67.5,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 17799,
+    "cost_usd": 0.010608,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "tokenbucket",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 4,
+    "seconds": 40.6,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 10718,
+    "cost_usd": 0.006882,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "tokenbucket",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 4,
+    "seconds": 38.7,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 9627,
+    "cost_usd": 0.005415,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "tokenbucket",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 4,
+    "seconds": 42.8,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 10275,
+    "cost_usd": 0.005739,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   }
+  ],
+  "builds": [
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 3,
+    "tokens": {
+     "in": 7722,
+     "out": 14224,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 61131,
+    "seconds": 63.2,
+    "cost_usd": 0.00882,
+    "over_limit_calls": 0,
+    "kept_out": 1658,
+    "efficiency_calls": 0.1166,
+    "efficiency": 0.0585,
+    "cost_per_verified_unit": 0.00294,
+    "audit": {
+     "passed": 0,
+     "of": 329
+    },
+    "item": "base64",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 6,
+    "units_verified": 4,
+    "tokens": {
+     "in": 10402,
+     "out": 14550,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 8
+    },
+    "agent_ms": 60045,
+    "seconds": 63.0,
+    "cost_usd": 0.009385,
+    "over_limit_calls": 0,
+    "kept_out": 4338,
+    "efficiency_calls": 0.2981,
+    "efficiency": 0.1425,
+    "cost_per_verified_unit": 0.002346,
+    "audit": {
+     "passed": 0,
+     "of": 329
+    },
+    "item": "base64",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 3,
+    "units_verified": 2,
+    "tokens": {
+     "in": 3537,
+     "out": 4623,
+     "cache_write": 0,
+     "cache_read": 53496
+    },
+    "calls": 4,
+    "outcomes": {
+     "written": 4
+    },
+    "agent_ms": 20893,
+    "seconds": 22.1,
+    "cost_usd": 0.0032,
+    "over_limit_calls": 0,
+    "kept_out": 868,
+    "efficiency_calls": 0.1878,
+    "efficiency": 0.1334,
+    "cost_per_verified_unit": 0.0016,
+    "audit": {
+     "passed": 0,
+     "of": 329
+    },
+    "item": "base64",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 7,
+    "units_verified": 6,
+    "tokens": {
+     "in": 5698,
+     "out": 5459,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 8
+    },
+    "agent_ms": 26905,
+    "seconds": 31.9,
+    "cost_usd": 0.004369,
+    "over_limit_calls": 0,
+    "kept_out": 3156,
+    "efficiency_calls": 0.5781,
+    "efficiency": 0.197,
+    "cost_per_verified_unit": 0.000728,
+    "audit": {
+     "passed": 179,
+     "of": 221
+    },
+    "cost_per_audit_point": 2.441e-05,
+    "output_tokens_per_audit_point": 30.5,
+    "item": "basics",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 7,
+    "units_verified": 7,
+    "tokens": {
+     "in": 4335,
+     "out": 4104,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 21130,
+    "seconds": 28.5,
+    "cost_usd": 0.003422,
+    "over_limit_calls": 0,
+    "kept_out": 4104,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.342,
+    "cost_per_verified_unit": 0.000489,
+    "audit": {
+     "passed": 221,
+     "of": 221
+    },
+    "cost_per_audit_point": 1.548e-05,
+    "output_tokens_per_audit_point": 18.57,
+    "item": "basics",
+    "run": 2,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 7,
+    "units_verified": 6,
+    "tokens": {
+     "in": 5558,
+     "out": 6757,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 8
+    },
+    "agent_ms": 34485,
+    "seconds": 40.1,
+    "cost_usd": 0.005004,
+    "over_limit_calls": 0,
+    "kept_out": 2714,
+    "efficiency_calls": 0.4017,
+    "efficiency": 0.1397,
+    "cost_per_verified_unit": 0.000834,
+    "audit": {
+     "passed": 179,
+     "of": 221
+    },
+    "cost_per_audit_point": 2.796e-05,
+    "output_tokens_per_audit_point": 37.75,
+    "item": "basics",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 3,
+    "units_verified": 2,
+    "tokens": {
+     "in": 5060,
+     "out": 9218,
+     "cache_write": 0,
+     "cache_read": 66870
+    },
+    "calls": 5,
+    "outcomes": {
+     "written": 5
+    },
+    "agent_ms": 39863,
+    "seconds": 41.1,
+    "cost_usd": 0.005783,
+    "over_limit_calls": 0,
+    "kept_out": 1730,
+    "efficiency_calls": 0.1877,
+    "efficiency": 0.1341,
+    "cost_per_verified_unit": 0.002891,
+    "audit": {
+     "passed": 0,
+     "of": 50
+    },
+    "item": "csv",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 4,
+    "tokens": {
+     "in": 16100,
+     "out": 29190,
+     "cache_write": 0,
+     "cache_read": 120366
+    },
+    "calls": 9,
+    "outcomes": {
+     "written": 9
+    },
+    "agent_ms": 114178,
+    "seconds": 117.3,
+    "cost_usd": 0.017409,
+    "over_limit_calls": 0,
+    "kept_out": 5446,
+    "efficiency_calls": 0.1866,
+    "efficiency": 0.1225,
+    "cost_per_verified_unit": 0.004352,
+    "audit": {
+     "passed": 0,
+     "of": 50
+    },
+    "item": "csv",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 4,
+    "units_verified": 4,
+    "tokens": {
+     "in": 6639,
+     "out": 20478,
+     "cache_write": 0,
+     "cache_read": 66870
+    },
+    "calls": 5,
+    "outcomes": {
+     "written": 5
+    },
+    "agent_ms": 82072,
+    "seconds": 85.4,
+    "cost_usd": 0.011572,
+    "over_limit_calls": 0,
+    "kept_out": 13736,
+    "efficiency_calls": 0.6708,
+    "efficiency": 0.4855,
+    "cost_per_verified_unit": 0.002893,
+    "audit": {
+     "passed": 50,
+     "of": 50
+    },
+    "cost_per_audit_point": 0.00023144,
+    "output_tokens_per_audit_point": 409.56,
+    "item": "csv",
+    "run": 3,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 5,
+    "units_verified": 5,
+    "tokens": {
+     "in": 4544,
+     "out": 9253,
+     "cache_write": 0,
+     "cache_read": 66870
+    },
+    "calls": 5,
+    "outcomes": {
+     "written": 5
+    },
+    "agent_ms": 38661,
+    "seconds": 55.8,
+    "cost_usd": 0.005749,
+    "over_limit_calls": 0,
+    "kept_out": 9253,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.5344,
+    "cost_per_verified_unit": 0.00115,
+    "audit": {
+     "passed": 64,
+     "of": 64
+    },
+    "cost_per_audit_point": 8.983e-05,
+    "output_tokens_per_audit_point": 144.58,
+    "item": "duration",
+    "run": 1,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 7,
+    "units_verified": 6,
+    "tokens": {
+     "in": 10421,
+     "out": 13085,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 8
+    },
+    "agent_ms": 50895,
+    "seconds": 68.2,
+    "cost_usd": 0.008655,
+    "over_limit_calls": 0,
+    "kept_out": 7685,
+    "efficiency_calls": 0.5873,
+    "efficiency": 0.2506,
+    "cost_per_verified_unit": 0.001442,
+    "audit": {
+     "passed": 42,
+     "of": 64
+    },
+    "cost_per_audit_point": 0.00020607,
+    "output_tokens_per_audit_point": 311.55,
+    "item": "duration",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 6,
+    "units_verified": 5,
+    "tokens": {
+     "in": 7241,
+     "out": 12392,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 53836,
+    "seconds": 57.9,
+    "cost_usd": 0.007857,
+    "over_limit_calls": 0,
+    "kept_out": 7318,
+    "efficiency_calls": 0.5905,
+    "efficiency": 0.3196,
+    "cost_per_verified_unit": 0.001571,
+    "audit": {
+     "passed": 42,
+     "of": 64
+    },
+    "cost_per_audit_point": 0.00018707,
+    "output_tokens_per_audit_point": 295.05,
+    "item": "duration",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 6,
+    "units_verified": 5,
+    "tokens": {
+     "in": 10599,
+     "out": 15660,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 8
+    },
+    "agent_ms": 62940,
+    "seconds": 67.1,
+    "cost_usd": 0.009959,
+    "over_limit_calls": 0,
+    "kept_out": 8463,
+    "efficiency_calls": 0.5404,
+    "efficiency": 0.2507,
+    "cost_per_verified_unit": 0.001992,
+    "audit": {
+     "passed": 45,
+     "of": 54
+    },
+    "cost_per_audit_point": 0.00022131,
+    "output_tokens_per_audit_point": 348.0,
+    "item": "editdistance",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 7,
+    "units_verified": 6,
+    "tokens": {
+     "in": 11687,
+     "out": 17208,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 8
+    },
+    "agent_ms": 67453,
+    "seconds": 72.6,
+    "cost_usd": 0.010842,
+    "over_limit_calls": 0,
+    "kept_out": 11729,
+    "efficiency_calls": 0.6816,
+    "efficiency": 0.2459,
+    "cost_per_verified_unit": 0.001807,
+    "audit": {
+     "passed": 45,
+     "of": 54
+    },
+    "cost_per_audit_point": 0.00024093,
+    "output_tokens_per_audit_point": 382.4,
+    "item": "editdistance",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 4,
+    "units_verified": 3,
+    "tokens": {
+     "in": 4771,
+     "out": 9434,
+     "cache_write": 0,
+     "cache_read": 66870
+    },
+    "calls": 5,
+    "outcomes": {
+     "written": 5
+    },
+    "agent_ms": 43517,
+    "seconds": 45.8,
+    "cost_usd": 0.005863,
+    "over_limit_calls": 0,
+    "kept_out": 2164,
+    "efficiency_calls": 0.2294,
+    "efficiency": 0.1141,
+    "cost_per_verified_unit": 0.001954,
+    "audit": {
+     "passed": 0,
+     "of": 54
+    },
+    "item": "editdistance",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 4,
+    "units_verified": 3,
+    "tokens": {
+     "in": 7270,
+     "out": 17990,
+     "cache_write": 0,
+     "cache_read": 66870
+    },
+    "calls": 5,
+    "outcomes": {
+     "written": 5
+    },
+    "agent_ms": 71037,
+    "seconds": 73.2,
+    "cost_usd": 0.01039,
+    "over_limit_calls": 0,
+    "kept_out": 6721,
+    "efficiency_calls": 0.3736,
+    "efficiency": 0.2546,
+    "cost_per_verified_unit": 0.003463,
+    "audit": {
+     "passed": 0,
+     "of": 385
+    },
+    "item": "expr",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "provider_error",
+    "units_total": 3,
+    "units_verified": 2,
+    "tokens": {
+     "in": 7036,
+     "out": 53418,
+     "cache_write": 0,
+     "cache_read": 66870
+    },
+    "calls": 5,
+    "outcomes": {
+     "written": 2,
+     "cut_off": 3
+    },
+    "agent_ms": 251725,
+    "seconds": 259.2,
+    "cost_usd": 0.028081,
+    "over_limit_calls": 0,
+    "kept_out": 5418,
+    "efficiency_calls": 0.1014,
+    "efficiency": 0.0862,
+    "cost_per_verified_unit": 0.01404,
+    "audit": {
+     "passed": 0,
+     "of": 385
+    },
+    "item": "expr",
+    "run": 2,
+    "exit": 4
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 3,
+    "units_verified": 2,
+    "tokens": {
+     "in": 3307,
+     "out": 8215,
+     "cache_write": 0,
+     "cache_read": 53496
+    },
+    "calls": 4,
+    "outcomes": {
+     "written": 4
+    },
+    "agent_ms": 35940,
+    "seconds": 42.0,
+    "cost_usd": 0.004974,
+    "over_limit_calls": 0,
+    "kept_out": 4434,
+    "efficiency_calls": 0.5397,
+    "efficiency": 0.4808,
+    "cost_per_verified_unit": 0.002487,
+    "audit": {
+     "passed": 0,
+     "of": 385
+    },
+    "item": "expr",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 7,
+    "units_verified": 7,
+    "tokens": {
+     "in": 11898,
+     "out": 47433,
+     "cache_write": 0,
+     "cache_read": 120366
+    },
+    "calls": 9,
+    "outcomes": {
+     "written": 7,
+     "cut_off": 2
+    },
+    "agent_ms": 210387,
+    "seconds": 217.9,
+    "cost_usd": 0.026111,
+    "over_limit_calls": 0,
+    "kept_out": 15433,
+    "efficiency_calls": 0.3254,
+    "efficiency": 0.1331,
+    "cost_per_verified_unit": 0.00373,
+    "audit": {
+     "passed": 86,
+     "of": 87
+    },
+    "cost_per_audit_point": 0.00030362,
+    "output_tokens_per_audit_point": 551.55,
+    "item": "glob",
+    "run": 1,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "provider_error",
+    "units_total": 6,
+    "units_verified": 5,
+    "tokens": {
+     "in": 12181,
+     "out": 57249,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 5,
+     "cut_off": 3
+    },
+    "agent_ms": 277087,
+    "seconds": 280.8,
+    "cost_usd": 0.030913,
+    "over_limit_calls": 0,
+    "kept_out": 9249,
+    "efficiency_calls": 0.1616,
+    "efficiency": 0.0632,
+    "cost_per_verified_unit": 0.006183,
+    "audit": {
+     "passed": 23,
+     "of": 87
+    },
+    "cost_per_audit_point": 0.00134404,
+    "output_tokens_per_audit_point": 2489.09,
+    "item": "glob",
+    "run": 2,
+    "exit": 4
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "provider_error",
+    "units_total": 6,
+    "units_verified": 5,
+    "tokens": {
+     "in": 13035,
+     "out": 61954,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 5,
+     "cut_off": 3
+    },
+    "agent_ms": 285339,
+    "seconds": 289.2,
+    "cost_usd": 0.03335,
+    "over_limit_calls": 0,
+    "kept_out": 13954,
+    "efficiency_calls": 0.2252,
+    "efficiency": 0.0997,
+    "cost_per_verified_unit": 0.00667,
+    "audit": {
+     "passed": 23,
+     "of": 87
+    },
+    "cost_per_audit_point": 0.00145,
+    "output_tokens_per_audit_point": 2693.65,
+    "item": "glob",
+    "run": 3,
+    "exit": 4
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 4,
+    "tokens": {
+     "in": 4931,
+     "out": 5449,
+     "cache_write": 0,
+     "cache_read": 80244
+    },
+    "calls": 6,
+    "outcomes": {
+     "written": 6
+    },
+    "agent_ms": 25618,
+    "seconds": 29.0,
+    "cost_usd": 0.00402,
+    "over_limit_calls": 0,
+    "kept_out": 3046,
+    "efficiency_calls": 0.559,
+    "efficiency": 0.2985,
+    "cost_per_verified_unit": 0.001005,
+    "audit": {
+     "passed": 0,
+     "of": 76
+    },
+    "item": "ini",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 4,
+    "units_verified": 1,
+    "tokens": {
+     "in": 5773,
+     "out": 7895,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 36652,
+    "seconds": 37.6,
+    "cost_usd": 0.00546,
+    "over_limit_calls": 0,
+    "kept_out": 930,
+    "efficiency_calls": 0.1178,
+    "efficiency": 0.1085,
+    "cost_per_verified_unit": 0.00546,
+    "audit": {
+     "passed": 0,
+     "of": 160
+    },
+    "item": "jsonptr",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 5,
+    "units_verified": 5,
+    "tokens": {
+     "in": 6652,
+     "out": 14652,
+     "cache_write": 0,
+     "cache_read": 66870
+    },
+    "calls": 5,
+    "outcomes": {
+     "written": 5
+    },
+    "agent_ms": 57972,
+    "seconds": 62.5,
+    "cost_usd": 0.00866,
+    "over_limit_calls": 0,
+    "kept_out": 14652,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.446,
+    "cost_per_verified_unit": 0.001732,
+    "audit": {
+     "passed": 160,
+     "of": 160
+    },
+    "cost_per_audit_point": 5.412e-05,
+    "output_tokens_per_audit_point": 91.58,
+    "item": "jsonptr",
+    "run": 2,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 3,
+    "tokens": {
+     "in": 5194,
+     "out": 8997,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 41108,
+    "seconds": 43.1,
+    "cost_usd": 0.005954,
+    "over_limit_calls": 0,
+    "kept_out": 3895,
+    "efficiency_calls": 0.4329,
+    "efficiency": 0.1924,
+    "cost_per_verified_unit": 0.001985,
+    "audit": {
+     "passed": 19,
+     "of": 160
+    },
+    "cost_per_audit_point": 0.00031337,
+    "output_tokens_per_audit_point": 473.53,
+    "item": "jsonptr",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 4,
+    "units_verified": 3,
+    "tokens": {
+     "in": 4777,
+     "out": 11299,
+     "cache_write": 0,
+     "cache_read": 66870
+    },
+    "calls": 5,
+    "outcomes": {
+     "written": 5
+    },
+    "agent_ms": 48868,
+    "seconds": 50.9,
+    "cost_usd": 0.006797,
+    "over_limit_calls": 0,
+    "kept_out": 6134,
+    "efficiency_calls": 0.5429,
+    "efficiency": 0.3931,
+    "cost_per_verified_unit": 0.002266,
+    "audit": {
+     "passed": 246,
+     "of": 439
+    },
+    "cost_per_audit_point": 2.763e-05,
+    "output_tokens_per_audit_point": 45.93,
+    "item": "roman",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 4,
+    "tokens": {
+     "in": 7056,
+     "out": 11074,
+     "cache_write": 0,
+     "cache_read": 80244
+    },
+    "calls": 6,
+    "outcomes": {
+     "written": 6
+    },
+    "agent_ms": 44129,
+    "seconds": 46.9,
+    "cost_usd": 0.007045,
+    "over_limit_calls": 0,
+    "kept_out": 7697,
+    "efficiency_calls": 0.6951,
+    "efficiency": 0.3672,
+    "cost_per_verified_unit": 0.001761,
+    "audit": {
+     "passed": 0,
+     "of": 439
+    },
+    "item": "roman",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 4,
+    "units_verified": 3,
+    "tokens": {
+     "in": 6116,
+     "out": 11914,
+     "cache_write": 0,
+     "cache_read": 66870
+    },
+    "calls": 5,
+    "outcomes": {
+     "written": 5
+    },
+    "agent_ms": 48001,
+    "seconds": 50.0,
+    "cost_usd": 0.007238,
+    "over_limit_calls": 0,
+    "kept_out": 5589,
+    "efficiency_calls": 0.4691,
+    "efficiency": 0.304,
+    "cost_per_verified_unit": 0.002413,
+    "audit": {
+     "passed": 246,
+     "of": 439
+    },
+    "cost_per_audit_point": 2.942e-05,
+    "output_tokens_per_audit_point": 48.43,
+    "item": "roman",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 9,
+    "units_verified": 9,
+    "tokens": {
+     "in": 17382,
+     "out": 39188,
+     "cache_write": 0,
+     "cache_read": 120366
+    },
+    "calls": 9,
+    "outcomes": {
+     "written": 9
+    },
+    "agent_ms": 146581,
+    "seconds": 157.8,
+    "cost_usd": 0.022538,
+    "over_limit_calls": 0,
+    "kept_out": 39188,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.2992,
+    "cost_per_verified_unit": 0.002504,
+    "audit": {
+     "passed": 492,
+     "of": 492
+    },
+    "cost_per_audit_point": 4.581e-05,
+    "output_tokens_per_audit_point": 79.65,
+    "item": "semver",
+    "run": 1,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 11,
+    "units_verified": 11,
+    "tokens": {
+     "in": 23555,
+     "out": 41541,
+     "cache_write": 0,
+     "cache_read": 147114
+    },
+    "calls": 11,
+    "outcomes": {
+     "written": 11
+    },
+    "agent_ms": 146391,
+    "seconds": 161.7,
+    "cost_usd": 0.024597,
+    "over_limit_calls": 0,
+    "kept_out": 41541,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.2408,
+    "cost_per_verified_unit": 0.002236,
+    "audit": {
+     "passed": 492,
+     "of": 492
+    },
+    "cost_per_audit_point": 4.999e-05,
+    "output_tokens_per_audit_point": 84.43,
+    "item": "semver",
+    "run": 2,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 9,
+    "units_verified": 9,
+    "tokens": {
+     "in": 16589,
+     "out": 34781,
+     "cache_write": 0,
+     "cache_read": 120366
+    },
+    "calls": 9,
+    "outcomes": {
+     "written": 9
+    },
+    "agent_ms": 127212,
+    "seconds": 138.5,
+    "cost_usd": 0.020253,
+    "over_limit_calls": 0,
+    "kept_out": 34781,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.3134,
+    "cost_per_verified_unit": 0.00225,
+    "audit": {
+     "passed": 492,
+     "of": 492
+    },
+    "cost_per_audit_point": 4.116e-05,
+    "output_tokens_per_audit_point": 70.69,
+    "item": "semver",
+    "run": 3,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 7,
+    "units_verified": 7,
+    "tokens": {
+     "in": 5443,
+     "out": 5613,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 25672,
+    "seconds": 105.8,
+    "cost_usd": 0.004287,
+    "over_limit_calls": 0,
+    "kept_out": 5613,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.3072,
+    "cost_per_verified_unit": 0.000612,
+    "audit": {
+     "passed": 124,
+     "of": 124
+    },
+    "cost_per_audit_point": 3.457e-05,
+    "output_tokens_per_audit_point": 45.27,
+    "item": "sortedmap",
+    "run": 1,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 6,
+    "units_verified": 6,
+    "tokens": {
+     "in": 4228,
+     "out": 5558,
+     "cache_write": 0,
+     "cache_read": 80244
+    },
+    "calls": 6,
+    "outcomes": {
+     "written": 6
+    },
+    "agent_ms": 25169,
+    "seconds": 99.8,
+    "cost_usd": 0.004004,
+    "over_limit_calls": 0,
+    "kept_out": 5558,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.3679,
+    "cost_per_verified_unit": 0.000667,
+    "audit": {
+     "passed": 124,
+     "of": 124
+    },
+    "cost_per_audit_point": 3.229e-05,
+    "output_tokens_per_audit_point": 44.82,
+    "item": "sortedmap",
+    "run": 2,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 5,
+    "units_verified": 5,
+    "tokens": {
+     "in": 3372,
+     "out": 3666,
+     "cache_write": 0,
+     "cache_read": 66870
+    },
+    "calls": 5,
+    "outcomes": {
+     "written": 5
+    },
+    "agent_ms": 17988,
+    "seconds": 42.1,
+    "cost_usd": 0.00284,
+    "over_limit_calls": 0,
+    "kept_out": 3666,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.4459,
+    "cost_per_verified_unit": 0.000568,
+    "audit": {
+     "passed": 124,
+     "of": 124
+    },
+    "cost_per_audit_point": 2.29e-05,
+    "output_tokens_per_audit_point": 29.56,
+    "item": "sortedmap",
+    "run": 3,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 4,
+    "units_verified": 3,
+    "tokens": {
+     "in": 8840,
+     "out": 16643,
+     "cache_write": 0,
+     "cache_read": 80244
+    },
+    "calls": 6,
+    "outcomes": {
+     "written": 6
+    },
+    "agent_ms": 67400,
+    "seconds": 69.3,
+    "cost_usd": 0.010008,
+    "over_limit_calls": 0,
+    "kept_out": 10139,
+    "efficiency_calls": 0.6092,
+    "efficiency": 0.4276,
+    "cost_per_verified_unit": 0.003336,
+    "audit": {
+     "passed": 34,
+     "of": 46
+    },
+    "cost_per_audit_point": 0.00029435,
+    "output_tokens_per_audit_point": 489.5,
+    "item": "tokenbucket",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 4,
+    "units_verified": 4,
+    "tokens": {
+     "in": 4543,
+     "out": 13839,
+     "cache_write": 0,
+     "cache_read": 53496
+    },
+    "calls": 4,
+    "outcomes": {
+     "written": 4
+    },
+    "agent_ms": 58574,
+    "seconds": 62.0,
+    "cost_usd": 0.007909,
+    "over_limit_calls": 0,
+    "kept_out": 13839,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.593,
+    "cost_per_verified_unit": 0.001977,
+    "audit": {
+     "passed": 46,
+     "of": 46
+    },
+    "cost_per_audit_point": 0.00017193,
+    "output_tokens_per_audit_point": 300.85,
+    "item": "tokenbucket",
+    "run": 2,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 4,
+    "units_verified": 4,
+    "tokens": {
+     "in": 4668,
+     "out": 15513,
+     "cache_write": 0,
+     "cache_read": 53496
+    },
+    "calls": 4,
+    "outcomes": {
+     "written": 4
+    },
+    "agent_ms": 65463,
+    "seconds": 94.9,
+    "cost_usd": 0.008759,
+    "over_limit_calls": 0,
+    "kept_out": 15513,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.5172,
+    "cost_per_verified_unit": 0.00219,
+    "audit": {
+     "passed": 46,
+     "of": 46
+    },
+    "cost_per_audit_point": 0.00019041,
+    "output_tokens_per_audit_point": 337.24,
+    "item": "tokenbucket",
+    "run": 3,
+    "exit": 0
+   }
+  ]
+ },
+ "gen3": {
+  "plans": [
+   {
+    "item": "base64",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 5,
+    "seconds": 102.5,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 26899,
+    "cost_usd": 0.015631,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "base64",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 5,
+    "seconds": 34.1,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 8979,
+    "cost_usd": 0.00508,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "base64",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 5,
+    "seconds": 60.4,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 16474,
+    "cost_usd": 0.009932,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "basics",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 7,
+    "seconds": 16.3,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 3844,
+    "cost_usd": 0.002535,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "basics",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 7,
+    "seconds": 12.3,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 3113,
+    "cost_usd": 0.00217,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "basics",
+    "run": 3,
+    "exit": 1,
+    "valid": false,
+    "rounds": 3,
+    "units": 0,
+    "seconds": 102.4,
+    "outcomes": [
+     "rejected",
+     "rejected",
+     "rejected"
+    ],
+    "out_tokens": 17106,
+    "cost_usd": 0.011165,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "csv",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 6,
+    "seconds": 104.5,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 25453,
+    "cost_usd": 0.014708,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "csv",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 4,
+    "seconds": 135.7,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 31980,
+    "cost_usd": 0.017969,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "csv",
+    "run": 3,
+    "exit": 1,
+    "valid": false,
+    "rounds": 3,
+    "units": 0,
+    "seconds": 126.3,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "rejected"
+    ],
+    "out_tokens": 29961,
+    "cost_usd": 0.017091,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "duration",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 5,
+    "seconds": 75.8,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 19470,
+    "cost_usd": 0.011316,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "duration",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 3,
+    "seconds": 105.0,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 26455,
+    "cost_usd": 0.015176,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "duration",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 5,
+    "seconds": 100.3,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 24466,
+    "cost_usd": 0.01423,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "editdistance",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 8,
+    "seconds": 91.9,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 22701,
+    "cost_usd": 0.012899,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "editdistance",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 5,
+    "seconds": 83.7,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 19910,
+    "cost_usd": 0.011411,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "editdistance",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 6,
+    "seconds": 117.3,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 27146,
+    "cost_usd": 0.015463,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "expr",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 4,
+    "seconds": 118.3,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 25889,
+    "cost_usd": 0.014078,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "expr",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 6,
+    "seconds": 143.5,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 36214,
+    "cost_usd": 0.020289,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "expr",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 6,
+    "seconds": 145.1,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 34225,
+    "cost_usd": 0.019239,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "glob",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 6,
+    "seconds": 100.0,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 20875,
+    "cost_usd": 0.011576,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "glob",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 3,
+    "seconds": 95.5,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 20618,
+    "cost_usd": 0.011447,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "glob",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 6,
+    "seconds": 101.3,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 21627,
+    "cost_usd": 0.011952,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "ini",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 9,
+    "seconds": 84.7,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 21943,
+    "cost_usd": 0.012678,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "ini",
+    "run": 2,
+    "exit": 1,
+    "valid": false,
+    "rounds": 3,
+    "units": 0,
+    "seconds": 140.0,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "rejected"
+    ],
+    "out_tokens": 33149,
+    "cost_usd": 0.018756,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "ini",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 7,
+    "seconds": 147.4,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 34237,
+    "cost_usd": 0.019222,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "jsonptr",
+    "run": 1,
+    "exit": 1,
+    "valid": false,
+    "rounds": 3,
+    "units": 0,
+    "seconds": 91.0,
+    "outcomes": [
+     "rejected",
+     "rejected",
+     "rejected"
+    ],
+    "out_tokens": 26097,
+    "cost_usd": 0.016026,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "jsonptr",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 8,
+    "seconds": 134.3,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 34069,
+    "cost_usd": 0.019165,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "jsonptr",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 7,
+    "seconds": 118.6,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 28730,
+    "cost_usd": 0.016419,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "roman",
+    "run": 1,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 3,
+    "seconds": 106.9,
+    "outcomes": [
+     "cut_off",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 25773,
+    "cost_usd": 0.014803,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "roman",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 8,
+    "seconds": 92.7,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 24581,
+    "cost_usd": 0.014054,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "roman",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 7,
+    "seconds": 80.1,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 21451,
+    "cost_usd": 0.012416,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "semver",
+    "run": 1,
+    "exit": 1,
+    "valid": false,
+    "rounds": 3,
+    "units": 0,
+    "seconds": 201.9,
+    "outcomes": [
+     "cut_off",
+     "cut_off",
+     "cut_off"
+    ],
+    "out_tokens": 48000,
+    "cost_usd": 0.025888,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "semver",
+    "run": 2,
+    "exit": 1,
+    "valid": false,
+    "rounds": 3,
+    "units": 0,
+    "seconds": 176.0,
+    "outcomes": [
+     "cut_off",
+     "cut_off",
+     "rejected"
+    ],
+    "out_tokens": 43891,
+    "cost_usd": 0.023834,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "semver",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 11,
+    "seconds": 271.9,
+    "outcomes": [
+     "cut_off",
+     "written"
+    ],
+    "out_tokens": 24867,
+    "cost_usd": 0.01369,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "sortedmap",
+    "run": 1,
+    "exit": 1,
+    "valid": false,
+    "rounds": 3,
+    "units": 0,
+    "seconds": 130.3,
+    "outcomes": [
+     "rejected",
+     "rejected",
+     "rejected"
+    ],
+    "out_tokens": 35529,
+    "cost_usd": 0.02108,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "sortedmap",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 3,
+    "units": 6,
+    "seconds": 104.5,
+    "outcomes": [
+     "rejected",
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 28945,
+    "cost_usd": 0.017524,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "sortedmap",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 5,
+    "seconds": 59.5,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 17621,
+    "cost_usd": 0.010664,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "tokenbucket",
+    "run": 1,
+    "exit": 3,
+    "valid": false,
+    "rounds": 1,
+    "units": 0,
+    "seconds": 8.0,
+    "outcomes": [
+     "needs_input"
+    ],
+    "out_tokens": 1074,
+    "cost_usd": 0.001159,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "tokenbucket",
+    "run": 2,
+    "exit": 0,
+    "valid": true,
+    "rounds": 2,
+    "units": 4,
+    "seconds": 45.2,
+    "outcomes": [
+     "rejected",
+     "written"
+    ],
+    "out_tokens": 12150,
+    "cost_usd": 0.007701,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   },
+   {
+    "item": "tokenbucket",
+    "run": 3,
+    "exit": 0,
+    "valid": true,
+    "rounds": 1,
+    "units": 4,
+    "seconds": 31.2,
+    "outcomes": [
+     "written"
+    ],
+    "out_tokens": 7820,
+    "cost_usd": 0.004532,
+    "model": "claude-haiku-5-5",
+    "contract": true
+   }
+  ],
+  "builds": [
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 3,
+    "tokens": {
+     "in": 7802,
+     "out": 14429,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 61687,
+    "seconds": 64.0,
+    "cost_usd": 0.00893,
+    "over_limit_calls": 0,
+    "kept_out": 4145,
+    "efficiency_calls": 0.2873,
+    "efficiency": 0.1663,
+    "cost_per_verified_unit": 0.002977,
+    "audit": {
+     "passed": 0,
+     "of": 329
+    },
+    "item": "base64",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 5,
+    "units_verified": 5,
+    "tokens": {
+     "in": 5197,
+     "out": 9262,
+     "cache_write": 0,
+     "cache_read": 66870
+    },
+    "calls": 5,
+    "outcomes": {
+     "written": 5
+    },
+    "agent_ms": 37649,
+    "seconds": 42.2,
+    "cost_usd": 0.005819,
+    "over_limit_calls": 0,
+    "kept_out": 9262,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.4404,
+    "cost_per_verified_unit": 0.001164,
+    "audit": {
+     "passed": 329,
+     "of": 329
+    },
+    "cost_per_audit_point": 1.769e-05,
+    "output_tokens_per_audit_point": 28.15,
+    "item": "base64",
+    "run": 2,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 3,
+    "tokens": {
+     "in": 15243,
+     "out": 21687,
+     "cache_write": 0,
+     "cache_read": 120366
+    },
+    "calls": 9,
+    "outcomes": {
+     "written": 9
+    },
+    "agent_ms": 87535,
+    "seconds": 89.8,
+    "cost_usd": 0.013571,
+    "over_limit_calls": 0,
+    "kept_out": 3788,
+    "efficiency_calls": 0.1747,
+    "efficiency": 0.0883,
+    "cost_per_verified_unit": 0.004524,
+    "audit": {
+     "passed": 0,
+     "of": 329
+    },
+    "item": "base64",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 7,
+    "units_verified": 7,
+    "tokens": {
+     "in": 4109,
+     "out": 4467,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 23337,
+    "seconds": 31.0,
+    "cost_usd": 0.003581,
+    "over_limit_calls": 0,
+    "kept_out": 4467,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.3142,
+    "cost_per_verified_unit": 0.000512,
+    "audit": {
+     "passed": 221,
+     "of": 221
+    },
+    "cost_per_audit_point": 1.62e-05,
+    "output_tokens_per_audit_point": 20.21,
+    "item": "basics",
+    "run": 1,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 7,
+    "units_verified": 7,
+    "tokens": {
+     "in": 4280,
+     "out": 3956,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 20637,
+    "seconds": 27.8,
+    "cost_usd": 0.003342,
+    "over_limit_calls": 0,
+    "kept_out": 3956,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.3293,
+    "cost_per_verified_unit": 0.000477,
+    "audit": {
+     "passed": 221,
+     "of": 221
+    },
+    "cost_per_audit_point": 1.512e-05,
+    "output_tokens_per_audit_point": 17.9,
+    "item": "basics",
+    "run": 2,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 6,
+    "units_verified": 5,
+    "tokens": {
+     "in": 9612,
+     "out": 27123,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 107776,
+    "seconds": 111.7,
+    "cost_usd": 0.01546,
+    "over_limit_calls": 0,
+    "kept_out": 15386,
+    "efficiency_calls": 0.5673,
+    "efficiency": 0.3522,
+    "cost_per_verified_unit": 0.003092,
+    "audit": {
+     "passed": 35,
+     "of": 50
+    },
+    "cost_per_audit_point": 0.00044171,
+    "output_tokens_per_audit_point": 774.94,
+    "item": "csv",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 4,
+    "units_verified": 4,
+    "tokens": {
+     "in": 3956,
+     "out": 16727,
+     "cache_write": 0,
+     "cache_read": 53496
+    },
+    "calls": 4,
+    "outcomes": {
+     "written": 4
+    },
+    "agent_ms": 70761,
+    "seconds": 74.0,
+    "cost_usd": 0.009293,
+    "over_limit_calls": 0,
+    "kept_out": 16727,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.6222,
+    "cost_per_verified_unit": 0.002323,
+    "audit": {
+     "passed": 50,
+     "of": 50
+    },
+    "cost_per_audit_point": 0.00018586,
+    "output_tokens_per_audit_point": 334.54,
+    "item": "csv",
+    "run": 2,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 4,
+    "tokens": {
+     "in": 7244,
+     "out": 9864,
+     "cache_write": 0,
+     "cache_read": 80244
+    },
+    "calls": 6,
+    "outcomes": {
+     "written": 6
+    },
+    "agent_ms": 41368,
+    "seconds": 44.3,
+    "cost_usd": 0.006458,
+    "over_limit_calls": 0,
+    "kept_out": 4575,
+    "efficiency_calls": 0.4638,
+    "efficiency": 0.2677,
+    "cost_per_verified_unit": 0.001615,
+    "audit": {
+     "passed": 42,
+     "of": 64
+    },
+    "cost_per_audit_point": 0.00015376,
+    "output_tokens_per_audit_point": 234.86,
+    "item": "duration",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 3,
+    "units_verified": 2,
+    "tokens": {
+     "in": 4074,
+     "out": 7194,
+     "cache_write": 0,
+     "cache_read": 53496
+    },
+    "calls": 4,
+    "outcomes": {
+     "written": 4
+    },
+    "agent_ms": 31577,
+    "seconds": 32.8,
+    "cost_usd": 0.00454,
+    "over_limit_calls": 0,
+    "kept_out": 3610,
+    "efficiency_calls": 0.5018,
+    "efficiency": 0.3999,
+    "cost_per_verified_unit": 0.00227,
+    "audit": {
+     "passed": 42,
+     "of": 64
+    },
+    "cost_per_audit_point": 0.0001081,
+    "output_tokens_per_audit_point": 171.29,
+    "item": "duration",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 4,
+    "tokens": {
+     "in": 5842,
+     "out": 10121,
+     "cache_write": 0,
+     "cache_read": 80244
+    },
+    "calls": 6,
+    "outcomes": {
+     "written": 6
+    },
+    "agent_ms": 43543,
+    "seconds": 46.4,
+    "cost_usd": 0.006447,
+    "over_limit_calls": 0,
+    "kept_out": 4475,
+    "efficiency_calls": 0.4421,
+    "efficiency": 0.2906,
+    "cost_per_verified_unit": 0.001612,
+    "audit": {
+     "passed": 42,
+     "of": 64
+    },
+    "cost_per_audit_point": 0.0001535,
+    "output_tokens_per_audit_point": 240.98,
+    "item": "duration",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 8,
+    "units_verified": 7,
+    "tokens": {
+     "in": 13935,
+     "out": 20442,
+     "cache_write": 0,
+     "cache_read": 133740
+    },
+    "calls": 10,
+    "outcomes": {
+     "written": 10
+    },
+    "agent_ms": 83483,
+    "seconds": 90.2,
+    "cost_usd": 0.012952,
+    "over_limit_calls": 0,
+    "kept_out": 12111,
+    "efficiency_calls": 0.5925,
+    "efficiency": 0.201,
+    "cost_per_verified_unit": 0.00185,
+    "audit": {
+     "passed": 45,
+     "of": 54
+    },
+    "cost_per_audit_point": 0.00028782,
+    "output_tokens_per_audit_point": 454.27,
+    "item": "editdistance",
+    "run": 1,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 4,
+    "tokens": {
+     "in": 10870,
+     "out": 19213,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 78189,
+    "seconds": 81.3,
+    "cost_usd": 0.01163,
+    "over_limit_calls": 0,
+    "kept_out": 11980,
+    "efficiency_calls": 0.6235,
+    "efficiency": 0.3274,
+    "cost_per_verified_unit": 0.002908,
+    "audit": {
+     "passed": 45,
+     "of": 54
+    },
+    "cost_per_audit_point": 0.00025844,
+    "output_tokens_per_audit_point": 426.96,
+    "item": "editdistance",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 6,
+    "units_verified": 5,
+    "tokens": {
+     "in": 9347,
+     "out": 13217,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 8
+    },
+    "agent_ms": 56184,
+    "seconds": 60.2,
+    "cost_usd": 0.008612,
+    "over_limit_calls": 0,
+    "kept_out": 7173,
+    "efficiency_calls": 0.5427,
+    "efficiency": 0.2437,
+    "cost_per_verified_unit": 0.001722,
+    "audit": {
+     "passed": 45,
+     "of": 54
+    },
+    "cost_per_audit_point": 0.00019138,
+    "output_tokens_per_audit_point": 293.71,
+    "item": "editdistance",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 4,
+    "units_verified": 4,
+    "tokens": {
+     "in": 3222,
+     "out": 14769,
+     "cache_write": 0,
+     "cache_read": 53496
+    },
+    "calls": 4,
+    "outcomes": {
+     "written": 4
+    },
+    "agent_ms": 61480,
+    "seconds": 64.9,
+    "cost_usd": 0.008242,
+    "over_limit_calls": 0,
+    "kept_out": 14769,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.6847,
+    "cost_per_verified_unit": 0.00206,
+    "audit": {
+     "passed": 385,
+     "of": 385
+    },
+    "cost_per_audit_point": 2.141e-05,
+    "output_tokens_per_audit_point": 38.36,
+    "item": "expr",
+    "run": 1,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 6,
+    "units_verified": 6,
+    "tokens": {
+     "in": 9231,
+     "out": 21242,
+     "cache_write": 0,
+     "cache_read": 80244
+    },
+    "calls": 6,
+    "outcomes": {
+     "written": 6
+    },
+    "agent_ms": 81120,
+    "seconds": 87.1,
+    "cost_usd": 0.012346,
+    "over_limit_calls": 0,
+    "kept_out": 21242,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.46,
+    "cost_per_verified_unit": 0.002058,
+    "audit": {
+     "passed": 385,
+     "of": 385
+    },
+    "cost_per_audit_point": 3.207e-05,
+    "output_tokens_per_audit_point": 55.17,
+    "item": "expr",
+    "run": 2,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 6,
+    "units_verified": 6,
+    "tokens": {
+     "in": 9320,
+     "out": 18500,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 76113,
+    "seconds": 81.9,
+    "cost_usd": 0.011119,
+    "over_limit_calls": 0,
+    "kept_out": 16259,
+    "efficiency_calls": 0.8789,
+    "efficiency": 0.4155,
+    "cost_per_verified_unit": 0.001853,
+    "audit": {
+     "passed": 385,
+     "of": 385
+    },
+    "cost_per_audit_point": 2.888e-05,
+    "output_tokens_per_audit_point": 48.05,
+    "item": "expr",
+    "run": 3,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 6,
+    "units_verified": 6,
+    "tokens": {
+     "in": 6951,
+     "out": 18671,
+     "cache_write": 0,
+     "cache_read": 80244
+    },
+    "calls": 6,
+    "outcomes": {
+     "written": 6
+    },
+    "agent_ms": 76671,
+    "seconds": 83.4,
+    "cost_usd": 0.010833,
+    "over_limit_calls": 0,
+    "kept_out": 18671,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.4747,
+    "cost_per_verified_unit": 0.001805,
+    "audit": {
+     "passed": 87,
+     "of": 87
+    },
+    "cost_per_audit_point": 0.00012452,
+    "output_tokens_per_audit_point": 214.61,
+    "item": "glob",
+    "run": 1,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 3,
+    "units_verified": 3,
+    "tokens": {
+     "in": 3127,
+     "out": 23337,
+     "cache_write": 0,
+     "cache_read": 40122
+    },
+    "calls": 3,
+    "outcomes": {
+     "written": 3
+    },
+    "agent_ms": 98662,
+    "seconds": 101.0,
+    "cost_usd": 0.012383,
+    "over_limit_calls": 0,
+    "kept_out": 23337,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.7034,
+    "cost_per_verified_unit": 0.004128,
+    "audit": {
+     "passed": 87,
+     "of": 87
+    },
+    "cost_per_audit_point": 0.00014233,
+    "output_tokens_per_audit_point": 268.24,
+    "item": "glob",
+    "run": 2,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 6,
+    "units_verified": 6,
+    "tokens": {
+     "in": 7403,
+     "out": 25002,
+     "cache_write": 0,
+     "cache_read": 80244
+    },
+    "calls": 6,
+    "outcomes": {
+     "written": 6
+    },
+    "agent_ms": 105457,
+    "seconds": 112.0,
+    "cost_usd": 0.014043,
+    "over_limit_calls": 0,
+    "kept_out": 25002,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.4472,
+    "cost_per_verified_unit": 0.002341,
+    "audit": {
+     "passed": 84,
+     "of": 87
+    },
+    "cost_per_audit_point": 0.00016718,
+    "output_tokens_per_audit_point": 297.64,
+    "item": "glob",
+    "run": 3,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "provider_error",
+    "units_total": 8,
+    "units_verified": 7,
+    "tokens": {
+     "in": 10433,
+     "out": 52422,
+     "cache_write": 0,
+     "cache_read": 133740
+    },
+    "calls": 10,
+    "outcomes": {
+     "written": 7,
+     "cut_off": 3
+    },
+    "agent_ms": 238400,
+    "seconds": 244.6,
+    "cost_usd": 0.028592,
+    "over_limit_calls": 0,
+    "kept_out": 4422,
+    "efficiency_calls": 0.0844,
+    "efficiency": 0.027,
+    "cost_per_verified_unit": 0.004085,
+    "audit": {
+     "passed": 0,
+     "of": 76
+    },
+    "item": "ini",
+    "run": 1,
+    "exit": 4
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "provider_error",
+    "units_total": 6,
+    "units_verified": 5,
+    "tokens": {
+     "in": 7711,
+     "out": 51644,
+     "cache_write": 0,
+     "cache_read": 106992
+    },
+    "calls": 8,
+    "outcomes": {
+     "written": 5,
+     "cut_off": 3
+    },
+    "agent_ms": 235896,
+    "seconds": 239.6,
+    "cost_usd": 0.027663,
+    "over_limit_calls": 0,
+    "kept_out": 3644,
+    "efficiency_calls": 0.0706,
+    "efficiency": 0.0296,
+    "cost_per_verified_unit": 0.005533,
+    "audit": {
+     "passed": 0,
+     "of": 76
+    },
+    "item": "ini",
+    "run": 3,
+    "exit": 4
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 3,
+    "tokens": {
+     "in": 5068,
+     "out": 7708,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 36279,
+    "seconds": 38.4,
+    "cost_usd": 0.005297,
+    "over_limit_calls": 0,
+    "kept_out": 2836,
+    "efficiency_calls": 0.3679,
+    "efficiency": 0.1937,
+    "cost_per_verified_unit": 0.001766,
+    "audit": {
+     "passed": 19,
+     "of": 160
+    },
+    "cost_per_audit_point": 0.00027879,
+    "output_tokens_per_audit_point": 405.68,
+    "item": "jsonptr",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 4,
+    "tokens": {
+     "in": 5210,
+     "out": 13142,
+     "cache_write": 0,
+     "cache_read": 80244
+    },
+    "calls": 6,
+    "outcomes": {
+     "written": 6
+    },
+    "agent_ms": 54977,
+    "seconds": 57.8,
+    "cost_usd": 0.007893,
+    "over_limit_calls": 0,
+    "kept_out": 10479,
+    "efficiency_calls": 0.7974,
+    "efficiency": 0.4119,
+    "cost_per_verified_unit": 0.001973,
+    "audit": {
+     "passed": 44,
+     "of": 160
+    },
+    "cost_per_audit_point": 0.00017939,
+    "output_tokens_per_audit_point": 298.68,
+    "item": "jsonptr",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 3,
+    "units_verified": 3,
+    "tokens": {
+     "in": 2193,
+     "out": 14542,
+     "cache_write": 0,
+     "cache_read": 40122
+    },
+    "calls": 3,
+    "outcomes": {
+     "written": 3
+    },
+    "agent_ms": 64820,
+    "seconds": 67.4,
+    "cost_usd": 0.007891,
+    "over_limit_calls": 0,
+    "kept_out": 14542,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.6037,
+    "cost_per_verified_unit": 0.00263,
+    "audit": {
+     "passed": 439,
+     "of": 439
+    },
+    "cost_per_audit_point": 1.797e-05,
+    "output_tokens_per_audit_point": 33.13,
+    "item": "roman",
+    "run": 1,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 4,
+    "tokens": {
+     "in": 6983,
+     "out": 10919,
+     "cache_write": 0,
+     "cache_read": 80244
+    },
+    "calls": 6,
+    "outcomes": {
+     "written": 6
+    },
+    "agent_ms": 44163,
+    "seconds": 47.0,
+    "cost_usd": 0.00696,
+    "over_limit_calls": 0,
+    "kept_out": 6298,
+    "efficiency_calls": 0.5768,
+    "efficiency": 0.3122,
+    "cost_per_verified_unit": 0.00174,
+    "audit": {
+     "passed": 0,
+     "of": 439
+    },
+    "item": "roman",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 4,
+    "tokens": {
+     "in": 9739,
+     "out": 15167,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 64271,
+    "seconds": 67.4,
+    "cost_usd": 0.009493,
+    "over_limit_calls": 0,
+    "kept_out": 7152,
+    "efficiency_calls": 0.4716,
+    "efficiency": 0.2435,
+    "cost_per_verified_unit": 0.002373,
+    "audit": {
+     "passed": 246,
+     "of": 439
+    },
+    "cost_per_audit_point": 3.859e-05,
+    "output_tokens_per_audit_point": 61.65,
+    "item": "roman",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "done",
+    "units_total": 11,
+    "units_verified": 11,
+    "tokens": {
+     "in": 24824,
+     "out": 41115,
+     "cache_write": 0,
+     "cache_read": 147114
+    },
+    "calls": 11,
+    "outcomes": {
+     "written": 11
+    },
+    "agent_ms": 145172,
+    "seconds": 160.4,
+    "cost_usd": 0.02451,
+    "over_limit_calls": 0,
+    "kept_out": 41115,
+    "efficiency_calls": 1.0,
+    "efficiency": 0.235,
+    "cost_per_verified_unit": 0.002228,
+    "audit": {
+     "passed": 492,
+     "of": 492
+    },
+    "cost_per_audit_point": 4.982e-05,
+    "output_tokens_per_audit_point": 83.57,
+    "item": "semver",
+    "run": 3,
+    "exit": 0
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 1,
+    "units_verified": 0,
+    "tokens": {
+     "in": 2331,
+     "out": 4806,
+     "cache_write": 0,
+     "cache_read": 80244
+    },
+    "calls": 6,
+    "outcomes": {
+     "written": 6
+    },
+    "agent_ms": 28900,
+    "seconds": 29.1,
+    "cost_usd": 0.003439,
+    "over_limit_calls": 0,
+    "kept_out": 0,
+    "efficiency_calls": 0.0,
+    "efficiency": 0.0,
+    "audit": {
+     "passed": 0,
+     "of": 124
+    },
+    "item": "sortedmap",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 5,
+    "units_verified": 3,
+    "tokens": {
+     "in": 6274,
+     "out": 8127,
+     "cache_write": 0,
+     "cache_read": 93618
+    },
+    "calls": 7,
+    "outcomes": {
+     "written": 7
+    },
+    "agent_ms": 38668,
+    "seconds": 40.8,
+    "cost_usd": 0.005628,
+    "over_limit_calls": 0,
+    "kept_out": 2275,
+    "efficiency_calls": 0.2799,
+    "efficiency": 0.1383,
+    "cost_per_verified_unit": 0.001876,
+    "audit": {
+     "passed": 75,
+     "of": 124
+    },
+    "cost_per_audit_point": 7.504e-05,
+    "output_tokens_per_audit_point": 108.36,
+    "item": "sortedmap",
+    "run": 3,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 3,
+    "units_verified": 2,
+    "tokens": {
+     "in": 4706,
+     "out": 14727,
+     "cache_write": 0,
+     "cache_read": 53496
+    },
+    "calls": 4,
+    "outcomes": {
+     "written": 4
+    },
+    "agent_ms": 64506,
+    "seconds": 66.3,
+    "cost_usd": 0.008369,
+    "over_limit_calls": 0,
+    "kept_out": 7315,
+    "efficiency_calls": 0.4967,
+    "efficiency": 0.4238,
+    "cost_per_verified_unit": 0.004184,
+    "audit": {
+     "passed": 22,
+     "of": 46
+    },
+    "cost_per_audit_point": 0.00038041,
+    "output_tokens_per_audit_point": 669.41,
+    "item": "tokenbucket",
+    "run": 2,
+    "exit": 1
+   },
+   {
+    "provider": "anthropic",
+    "model": "claude-haiku-5-5",
+    "project_verdict": "stuck",
+    "units_total": 3,
+    "units_verified": 2,
+    "tokens": {
+     "in": 3954,
+     "out": 10333,
+     "cache_write": 0,
+     "cache_read": 53496
+    },
+    "calls": 4,
+    "outcomes": {
+     "written": 4
+    },
+    "agent_ms": 45009,
+    "seconds": 46.2,
+    "cost_usd": 0.006097,
+    "over_limit_calls": 0,
+    "kept_out": 9055,
+    "efficiency_calls": 0.8763,
+    "efficiency": 0.7091,
+    "cost_per_verified_unit": 0.003048,
+    "audit": {
+     "passed": 24,
+     "of": 46
+    },
+    "cost_per_audit_point": 0.00025404,
+    "output_tokens_per_audit_point": 430.54,
+    "item": "tokenbucket",
+    "run": 3,
+    "exit": 1
+   }
+  ]
+ }
+}
