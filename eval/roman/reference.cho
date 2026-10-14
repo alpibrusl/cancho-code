@@ -1,0 +1,100 @@
+edition 7;
+import std.result;
+import std.buffer;
+
+fn sym_val(k: int) -> [] int {
+    if k == 0 { return 1000; }
+    if k == 1 { return 900; }
+    if k == 2 { return 500; }
+    if k == 3 { return 400; }
+    if k == 4 { return 100; }
+    if k == 5 { return 90; }
+    if k == 6 { return 50; }
+    if k == 7 { return 40; }
+    if k == 8 { return 10; }
+    if k == 9 { return 9; }
+    if k == 10 { return 5; }
+    if k == 11 { return 4; }
+    return 1;
+}
+
+fn sym_a(k: int) -> [] int {
+    if k == 0 { return 77; }
+    if k == 1 || k == 4 || k == 3 { return 67; }
+    if k == 2 { return 68; }
+    if k == 5 || k == 8 || k == 7 { return 88; }
+    if k == 6 { return 76; }
+    if k == 10 { return 86; }
+    return 73;
+}
+
+fn sym_b(k: int) -> [] int {
+    if k == 1 { return 77; }
+    if k == 3 { return 68; }
+    if k == 5 { return 67; }
+    if k == 7 { return 76; }
+    if k == 9 { return 88; }
+    if k == 11 { return 86; }
+    return 0;
+}
+
+fn to_roman[&h](heap: &!h Heap, n: int) -> [heap] result.Result[buffer.Buffer, &static [byte]] {
+    if n < 1 || n > 3999 { return result.Result::Err("out of range 1..3999"); }
+    var b = buffer.empty(heap, 16);
+    var rest = n;
+    var k = 0;
+    while k < 13 {
+        while rest >= sym_val(k) {
+            b = buffer.push(heap, b, byte_of(sym_a(k)));
+            if sym_b(k) != 0 { b = buffer.push(heap, b, byte_of(sym_b(k))); }
+            rest = rest - sym_val(k);
+        }
+        k = k + 1;
+    }
+    return result.Result::Ok(b);
+}
+
+fn letter_val(c: int) -> [] int {
+    if c == 73 { return 1; }
+    if c == 86 { return 5; }
+    if c == 88 { return 10; }
+    if c == 76 { return 50; }
+    if c == 67 { return 100; }
+    if c == 68 { return 500; }
+    if c == 77 { return 1000; }
+    return 0;
+}
+
+fn from_roman[&r](text: &r [byte]) -> [] result.Result[int, &static [byte]] {
+    let n = len(text);
+    if n == 0 { return result.Result::Err("empty"); }
+    var i = 0;
+    var total = 0;
+    while i < n {
+        let v = letter_val(int_of(text[i]));
+        if v == 0 { return result.Result::Err("not a roman numeral letter"); }
+        var next = 0;
+        if i + 1 < n { next = letter_val(int_of(text[i + 1])); }
+        if next > v { total = total - v; } else { total = total + v; }
+        i = i + 1;
+    }
+    if total < 1 || total > 3999 { return result.Result::Err("out of range 1..3999"); }
+    // canonical iff re-encoding the value reproduces the text exactly
+    var rest = total;
+    var pos = 0;
+    var k = 0;
+    while k < 13 {
+        while rest >= sym_val(k) {
+            var w = 1;
+            if sym_b(k) != 0 { w = 2; }
+            if pos + w > n { return result.Result::Err("not canonical"); }
+            if int_of(text[pos]) != sym_a(k) { return result.Result::Err("not canonical"); }
+            if sym_b(k) != 0 && int_of(text[pos + 1]) != sym_b(k) { return result.Result::Err("not canonical"); }
+            pos = pos + w;
+            rest = rest - sym_val(k);
+        }
+        k = k + 1;
+    }
+    if pos != n { return result.Result::Err("not canonical"); }
+    return result.Result::Ok(total);
+}

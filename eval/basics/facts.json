@@ -1,0 +1,17 @@
+{
+ "item": "basics",
+ "units": 6,
+ "oracle_cases": 221,
+ "reference_loc": 57,
+ "reference_fns": 6,
+ "needs": ["pure int arithmetic", "while loops", "truncating % and / on negatives", "bool return", "gcd reuse in lcm", "square-and-multiply", "overflow-free search or reduction"],
+ "pitfalls": [
+  "isqrt: mid * mid or r * r overflows (trap) near 2^63; a float sqrt is off by one at the top; hi must be bounded (3037000499), not n",
+  "pow_mod: % of a negative base is negative; base * base overflows unless base is reduced to < modulus first; exp 0 with modulus 1 must be 0",
+  "lcm: negatives must be made positive and 0 handled before dividing by gcd (gcd(0,0) is 0)",
+  "gcd: abs of negatives, gcd(0,0)==0, results never negative; gcd(-2^62, 2^62) must be 2^62",
+  "is_leap_year: negative years and year 0; -100 is not leap, -400 is; I64 extremes",
+  "clamp: extremes of int; lo == hi; do not compute hi - lo"
+ ],
+ "difficulty_notes": "L1 floor/smoke item: six single-function pure integer units, no heap, no strings, no Result. Hardest parts are isqrt and pow_mod at the 64-bit edge, where the domain in the brief is chosen so a careful reference never overflows and a naive one traps. Hidden cases overlap the brief/plan examples only on the canonical worked ones (clamp 5/0/10 family, gcd 12/18, lcm 4/6, leap 2024/1900/2000, isqrt 0/15/16/17, pow_mod 2/10/1000, 3/0/7, 5/3/1, -2/3/7)."
+}

@@ -1,0 +1,31 @@
+{
+ "item": "04-jsonptr",
+ "units": 6,
+ "oracle_cases": 134,
+ "reference_loc": 126,
+ "reference_fns": 11,
+ "needs": [
+  "Result with a list payload",
+  "list.List[Box[Box[[byte]]]] built by list.push from the last token to the first",
+  "buffer.Buffer push/append and ownership threading",
+  "box_slice and borrow mut to fill a byte run",
+  "matching a list through a reference and reaching bytes with contents(contents(t))",
+  "loops over bytes",
+  "Result[&r [byte], ..] returning a sub-slice p[0..i]",
+  "a shared escaping helper used by two units",
+  "non-ASCII bytes passed through"
+ ],
+ "pitfalls": [
+  "unescape order: \"~01\" must give \"~1\" (left-to-right single pass, not replace ~1 then ~0 naively on a mutated buffer)",
+  "a \"~\" that is last or followed by anything but 0/1 (including \"/\") is invalid",
+  "\"\" is valid and parses to an empty list; \"/\" is one empty token; \"//\" two",
+  "a non-empty pointer without a leading \"/\" is an Err",
+  "ptr_append escapes only the new token, never p; ptr_append validates p but not the token",
+  "ptr_parent of \"/a\" is \"\", of \"\" is Err, of an invalid pointer is Err",
+  "list.push prepends, so tokens must be pushed in reverse",
+  "freeing: every token box, every list cell, and the buffers are owned",
+  "indexing past the end on a trailing \"~\" (must not panic)",
+  "the nested Box shape for tokens (#461)"
+ ],
+ "difficulty_notes": "Logic is easy (a scan and two escapes); the difficulty is cancho's ownership shapes: a list of owned byte runs (Box[Box[[byte]]]) and Buffer threading, and a Result carrying a borrowed sub-slice. Six units: valid and push_token are helpers (ptr_valid, ptr_push_token) that the plan names so parse, format and append share one definition of validity and of escaping; the audit grades only the four brief functions (oracle.py vendored unchanged, 134 cases) plus a 26-case round-trip group (the brief's two properties on the oracle's own inputs), 160 in all. The plan samples about 25 tests across the units and overlaps the brief's own worked examples; hidden cases are the other ~120 (every GOOD x 5 tokens for append, the invalid-pointer variants, non-ASCII, ~ edge cases)."
+}

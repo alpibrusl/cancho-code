@@ -1,0 +1,24 @@
+Build a small Lex library package named "base64": encode and strictly decode RFC 4648 base64 (section 4, the standard alphabet, with padding). It is a pure library: no network, no database, no files, no environment. Use only the Lex standard library (std.bytes, std.list, std.int and the like); do not depend on any other package. Every function is pure (no effect annotation) and every function has examples.
+
+The package exposes exactly two functions:
+
+- base64_encode(data :: Bytes) -> Bytes : the base64 text of data, as ASCII bytes. Never fails.
+- base64_decode(text :: Bytes) -> Result[Bytes, Str] : the original bytes, or Err(message) if text is not exactly the base64 that base64_encode would produce for some data.
+
+Alphabet. The 64 characters are A-Z (values 0-25), a-z (26-51), 0-9 (52-61), "+" (62) and "/" (63). The URL-safe characters "-" and "_" are NOT part of it. Padding is "=".
+
+Encoding. Take the input three bytes at a time; every full group of 3 bytes becomes 4 characters. A final group of 2 bytes becomes 3 characters followed by one "=", and a final group of 1 byte becomes 2 characters followed by "==". The empty input encodes to the empty text. There are no line breaks, ever, and the output is always padded.
+
+Decoding is strict. The empty text decodes to the empty data. Anything else must be a whole number of 4-character groups where only the last group may end in "=" or "==", and every one of the following is an Err (and decoding must never panic, on any bytes):
+- wrong length: a text whose length is not a multiple of 4. This includes text with its padding left off: "Zg" and "Zm8" are Err.
+- a character outside the alphabet: any other byte at all, including "-" and "_", space, tab, "\r" and "\n" (whitespace is NOT skipped, before, inside or after the text), NUL, and bytes of 128 or more.
+- misplaced or missing padding: "=" anywhere except as the last one or two characters of the text ("Zg==Zg==" and "=AAA" and "A=AA" are Err), three or four "=" in a group ("A===" and "===="), and a single "=" in the third place of the last group ("AA=A"). A last group with two data characters must be followed by exactly "==", with three data characters by exactly one "=".
+- non-zero trailing bits: the bits that padding throws away must be zero, so the text must be exactly what base64_encode gives. In a last group "xy==" the 4 low bits of the value of y must be 0 (so y is one of A, Q, g, w) and in a last group "xyz=" the 2 low bits of the value of z must be 0 (so z is one of A E I M Q U Y c g k o s w 0 4 8). "Zh==" and "Zm9=" are Err, "Zg==" and "Zm8=" are Ok.
+
+Worked examples (the answers are exact), the vectors of RFC 4648 section 10:
+
+- base64_encode("") is ""; "f" is "Zg=="; "fo" is "Zm8="; "foo" is "Zm9v"; "foob" is "Zm9vYg=="; "fooba" is "Zm9vYmE="; "foobar" is "Zm9vYmFy".
+- base64_decode of each of those texts is Ok of the original: "" gives Ok(""), "Zg==" gives Ok("f"), "Zm9vYmFy" gives Ok("foobar").
+- base64_decode("Zg"), base64_decode("Zm9vYg="), base64_decode("Zg==\n"), base64_decode("Zm9v YmFy"), base64_decode("Zm9-"), base64_decode("Zg==Zg=="), base64_decode("Zh==") and base64_decode("Zm9=") are all Err.
+
+Properties that must hold and be checked: for every data, base64_decode(base64_encode(data)) is Ok(data); base64_encode(data) has length 4 * ceil(len(data) / 3); base64_decode never panics on any bytes.

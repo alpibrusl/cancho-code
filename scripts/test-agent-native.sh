@@ -6,7 +6,8 @@
 #             refusal; the primer a cached `system` block and not repeated in the message; no primer, no system block
 #   rewrite   the project file becomes the reply's program (fence cut)
 #   key       the key is in no output (stdout, stderr, the saved raw replies); a missing, empty or unnamed key file is an error, no request
-#   usage     the saved raw reply records the token usage the API reported
+#   usage     the saved raw reply records the token usage the API reported; --usage-log writes one JSON line per API call (tokens in, out, cache write,
+#             cache read, stop reason, outcome, sizes, milliseconds, the task's first line), for every outcome including an API error, never the key
 #   workspace the id is sent as anthropic-workspace-id only when named
 #   thinking  thinking and effort are sent only when named; a bad value is exit 2 and no request; an all-thinking reply says so
 #   cut off   a reply that stopped at max_tokens is retried, never written
@@ -67,7 +68,7 @@ class H(http.server.BaseHTTPRequestHandler):
             try: stop = open(out + "/response.%d.stop" % n_requests).read().strip()
             except OSError: stop = "end_turn"
             data = json.dumps({"id": "msg_x", "type": "message", "role": "assistant", "model": "stub",
-                               "content": [{"type": "text", "text": reply}], "stop_reason": stop, "usage": {"input_tokens": 1, "output_tokens": 1}}).encode()
+                               "content": [{"type": "text", "text": reply}], "stop_reason": stop, "usage": {"input_tokens": 11, "output_tokens": 22, "cache_creation_input_tokens": 33, "cache_read_input_tokens": 44}}).encode()
             self.send_response(200)
         self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(data)))
         self.end_headers(); self.wfile.write(data)
@@ -132,7 +133,7 @@ for f in out.txt err.txt raw.txt; do
     if grep -q "$KEY" "$d/$f" 2>/dev/null; then echo "FAIL: key: the key is in the agent's $f" >&2; fail=1; fi
 done
 [ -s "$d/raw.txt" ] || { echo "FAIL: key: the raw reply was not saved (--save-raw)" >&2; fail=1; }
-case "$(cat "$d/raw.txt" 2>/dev/null)" in *"input_tokens=1 output_tokens=1"*) ;; *) echo "FAIL: usage: the saved reply does not record the token usage ($(head -c 200 "$d/raw.txt"))" >&2; fail=1 ;; esac
+case "$(cat "$d/raw.txt" 2>/dev/null)" in *"input_tokens=11 output_tokens=22 cache_creation_input_tokens=33 cache_read_input_tokens=44"*) ;; *) echo "FAIL: usage: the saved reply does not record the token usage ($(head -c 200 "$d/raw.txt"))" >&2; fail=1 ;; esac
 
 # workspace
 broken; agent >/dev/null 2>&1
@@ -187,6 +188,44 @@ broken; agent >"$d/out.txt" 2>"$d/err.txt"; rc=$?
 expect "all thinking: exit 1" "$rc" 1
 expect "all thinking: the file is untouched" "$(cat "$F")" "$(cat "$d/before.cho")"
 rm -f "$d/response"*
+
+# usage log: one JSON line per API call, whatever came of it
+stop; start
+printf 'edition 7;\nfn cut_off() -> [] int {\n' > "$d/response.1.txt"; printf 'max_tokens' > "$d/response.1.stop"
+printf 'I think it is the return type.\n' > "$d/response.2.txt"
+printf 'Fixed:\n```cancho\nedition 7;\nfn ok() -> [] int { return 1; }\n```\n' > "$d/response.3.txt"
+broken; printf 'UNIT: refill\nFUNCTION: f\n' > "$F.task"; rm -f "$d/ulog.jsonl"
+agent --usage-log "$d/ulog.jsonl" >/dev/null 2>&1; rc=$?
+expect "usage log: exit code" "$rc" 0
+python3 - "$d/ulog.jsonl" "$KEY" <<'PY' || fail=1
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+bad = []
+if [r.get("outcome") for r in rows] != ["cut_off", "no_program", "written"]: bad.append("outcomes %r" % [r.get("outcome") for r in rows])
+if [r.get("sample") for r in rows] != [1, 2, 3]: bad.append("samples")
+for r in rows:
+    for k, v in (("in", 11), ("out", 22), ("cache_write", 33), ("cache_read", 44)):
+        if r.get(k) != v: bad.append("%s=%r" % (k, r.get(k)))
+    if r.get("provider") != "anthropic" or r.get("model") != "stub-model": bad.append("provider/model")
+    if r.get("task") != "UNIT: refill": bad.append("task %r" % r.get("task"))
+    if not isinstance(r.get("ms"), int) or r["ms"] < 0: bad.append("ms")
+    if not isinstance(r.get("reply_chars"), int): bad.append("reply_chars")
+if [r.get("stop") for r in rows] != ["max_tokens", "end_turn", "end_turn"]: bad.append("stop %r" % [r.get("stop") for r in rows])
+if rows[2].get("program_chars") != len("edition 7;\nfn ok() -> [] int { return 1; }"): bad.append("program_chars %r" % rows[2].get("program_chars"))
+if rows[1].get("program_chars") != 0: bad.append("program_chars of a reply with no program")
+if sys.argv[2] in open(sys.argv[1]).read(): bad.append("THE KEY IS IN THE LOG")
+if bad:
+    print("FAIL: usage log: " + "; ".join(bad), file=sys.stderr); sys.exit(1)
+PY
+rm -f "$F.task" "$d/response"*
+touch "$d/force-error"; broken; rm -f "$d/ulog.jsonl"
+agent --usage-log "$d/ulog.jsonl" >/dev/null 2>&1
+rm -f "$d/force-error"
+expect "usage log: an API error is one line with its outcome and status" "$(python3 -c "
+import json; rows = [json.loads(l) for l in open('$d/ulog.jsonl')]
+print(len(rows), rows[0].get('outcome'), rows[0].get('status'))" 2>&1)" "1 api_error 529"
+broken; agent >/dev/null 2>&1
+[ ! -e "$d/nolog.jsonl" ] || { echo "FAIL: usage log: a file nobody named exists" >&2; fail=1; }
 
 # a key file: missing, empty, unnamed. No request.
 stop; start

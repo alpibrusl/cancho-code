@@ -1,0 +1,141 @@
+{
+ "name": "editdistance",
+ "units": [
+  {
+   "id": "min3",
+   "signature": "fn min3(a: int, b: int, c: int) -> [] int",
+   "description": "The smallest of three ints. A helper for the distance table.",
+   "examples": [
+    "min3(3, 1, 2) == 1",
+    "min3(1, 2, 3) == 1",
+    "min3(2, 3, 1) == 1",
+    "min3(5, 5, 5) == 5",
+    "min3(0 - 4, 2, 0) == 0 - 4"
+   ],
+   "tests": [
+    "pub fn test_min3_1() -> [] int { test.assert_eq(min3(3, 1, 2), 1); return 0; }",
+    "pub fn test_min3_2() -> [] int { test.assert_eq(min3(1, 2, 3), 1); return 0; }",
+    "pub fn test_min3_3() -> [] int { test.assert_eq(min3(2, 3, 1), 1); return 0; }",
+    "pub fn test_min3_4() -> [] int { test.assert_eq(min3(5, 5, 5), 5); return 0; }",
+    "pub fn test_min3_5() -> [] int { test.assert_eq(min3(0 - 4, 2, 0), 0 - 4); return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "char_count",
+   "signature": "fn char_count[&r](text: &r [byte]) -> [] int",
+   "description": "The number of Unicode characters (code points) in UTF-8 text, never the number of bytes: \"é\" is 1 (two bytes), \"日本語\" is 3 (nine bytes), \"\" is 0. The text is bytes (cancho has no string type). std.utf8 has a function that counts; use it. It must never panic, on any bytes: a malformed byte counts as one character, which is what std.utf8 does.",
+   "examples": [
+    "char_count(\"abc\") == 3",
+    "char_count(\"\") == 0",
+    "char_count(\"café\") == 4",
+    "char_count(\"日本語\") == 3"
+   ],
+   "tests": [
+    "pub fn test_cc_1() -> [] int { test.assert_eq(char_count(\"abc\"), 3); return 0; }",
+    "pub fn test_cc_2() -> [] int { test.assert_eq(char_count(\"\"), 0); return 0; }",
+    "pub fn test_cc_3() -> [] int { test.assert_eq(char_count(\"café\"), 4); return 0; }",
+    "pub fn test_cc_4() -> [] int { test.assert_eq(char_count(\"日本語\"), 3); return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "decode_chars",
+   "signature": "fn decode_chars[&r, &o](text: &r [byte], out: &!o [int]) -> [] int",
+   "description": "Decode UTF-8 text into code points: write one int per character into out, in order (out[0] is the first character), and answer how many were written. out is a slice the caller allocated, with room for at least len(text) ints (a character is at least one byte, so that is always enough); positions of out past the answer are left alone. Two characters are equal exactly when their ints are equal. ASCII 'a' is 97, \"é\" is 233, \"日\" is 26085. It must never panic on malformed UTF-8: std.utf8.decode answers a step that is either a character with its width in bytes or an invalid byte run with its width; give each invalid run an int that cannot equal a real code point (a negative one) so it never matches a real character, and advance by the width it gives. In the examples `buf` is such a caller slice, e.g. alloc_slice[r](len(text) + 1, 0) inside a region.",
+   "examples": [
+    "decode_chars(\"abc\", buf) == 3",
+    "decode_chars(\"\", buf) == 0",
+    "decode_chars(\"café\", buf) == 4",
+    "decode_chars(\"日本語\", buf) == 3"
+   ],
+   "tests": [
+    "fn dc_run[&r](text: &r [byte]) -> [] int { region w { let buf = alloc_slice[w](len(text) + 1, 7); return decode_chars(text, buf); } }",
+    "fn dc_at[&r](text: &r [byte], k: int) -> [] int { region w { let buf = alloc_slice[w](len(text) + 1, 7); let n = decode_chars(text, buf); return buf[k]; } }",
+    "pub fn test_dc_1() -> [] int { test.assert_eq(dc_run(\"abc\"), 3); return 0; }",
+    "pub fn test_dc_2() -> [] int { test.assert_eq(dc_run(\"\"), 0); return 0; }",
+    "pub fn test_dc_3() -> [] int { test.assert_eq(dc_run(\"café\"), 4); return 0; }",
+    "pub fn test_dc_4() -> [] int { test.assert_eq(dc_run(\"日本語\"), 3); return 0; }",
+    "pub fn test_dc_5() -> [] int { test.assert_eq(dc_at(\"abc\", 1), 98); return 0; }",
+    "pub fn test_dc_6() -> [] int { test.assert_eq(dc_at(\"café\", 3), 233); return 0; }",
+    "pub fn test_dc_7() -> [] int { test.assert_eq(dc_at(\"日本語\", 0), 26085); return 0; }",
+    "pub fn test_dc_8() -> [] int { test.assert_eq(dc_at(\"日本語\", 2), 35486); return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "edit_distance",
+   "signature": "fn edit_distance[&r, &s](a: &r [byte], b: &s [byte]) -> [] int",
+   "description": "The Levenshtein distance between two UTF-8 texts: the fewest single-character insertions, deletions and substitutions that turn a into b. Everything counts Unicode characters (code points), never bytes: \"café\" to \"cafe\" is 1 (one substitution; é is two bytes but one character), \"日本語\" to \"日本\" is 1. Use the dynamic-programming table, or two rows of it, never exponential recursion: two 60-character texts must answer at once. The two rows (or the table) need scratch memory; a `region` block with alloc_slice[w](n, 0) inside the function gives it without needing a heap or an effect, so the row stays `[]`. Decode both texts into code-point slices first (decode_chars) and compare those. It is symmetric (edit_distance(a, b) == edit_distance(b, a)), 0 exactly when the texts are equal, and obeys the triangle inequality. It must never panic, on any bytes.",
+   "examples": [
+    "edit_distance(\"kitten\", \"sitting\") == 3",
+    "edit_distance(\"\", \"abc\") == 3",
+    "edit_distance(\"abc\", \"abc\") == 0",
+    "edit_distance(\"abc\", \"acb\") == 2",
+    "edit_distance(\"café\", \"cafe\") == 1",
+    "edit_distance(\"日本語\", \"日本\") == 1"
+   ],
+   "tests": [
+    "pub fn test_ed_1() -> [] int { test.assert_eq(edit_distance(\"kitten\", \"sitting\"), 3); return 0; }",
+    "pub fn test_ed_2() -> [] int { test.assert_eq(edit_distance(\"\", \"abc\"), 3); return 0; }",
+    "pub fn test_ed_3() -> [] int { test.assert_eq(edit_distance(\"abc\", \"abc\"), 0); return 0; }",
+    "pub fn test_ed_4() -> [] int { test.assert_eq(edit_distance(\"abc\", \"acb\"), 2); return 0; }",
+    "pub fn test_ed_5() -> [] int { test.assert_eq(edit_distance(\"café\", \"cafe\"), 1); return 0; }",
+    "pub fn test_ed_6() -> [] int { test.assert_eq(edit_distance(\"日本語\", \"日本\"), 1); return 0; }",
+    "pub fn test_ed_7() -> [] int { test.assert_eq(edit_distance(\"gumbo\", \"gambol\"), 2); return 0; }",
+    "pub fn test_ed_8() -> [] int { test.assert_eq(edit_distance(\"abc\", \"\"), 3); return 0; }",
+    "pub fn test_ed_9() -> [] int { test.assert_eq(edit_distance(\"ab\", \"ba\"), 2); return 0; }"
+   ],
+   "deps": [
+    "decode_chars",
+    "min3"
+   ]
+  },
+  {
+   "id": "similarity_pct",
+   "signature": "fn similarity_pct[&r, &s](a: &r [byte], b: &s [byte]) -> [] int",
+   "description": "How alike two UTF-8 texts are, as a whole number from 0 to 100. If both are empty it is 100. Otherwise, with m the length in characters (not bytes) of the longer text and d the edit distance, it is (100 * (m - d)) divided by m with integer division that rounds down: kitten/sitting is 57 (m = 7, d = 3, 400/7 rounded down), \"日本語\" and \"日本\" is 66 (m = 3, d = 1, 200/3 rounded down), \"a\" and \"\" is 0. Do not use the byte length for m.",
+   "examples": [
+    "similarity_pct(\"kitten\", \"sitting\") == 57",
+    "similarity_pct(\"\", \"\") == 100",
+    "similarity_pct(\"a\", \"\") == 0",
+    "similarity_pct(\"日本語\", \"日本\") == 66"
+   ],
+   "tests": [
+    "pub fn test_sp_1() -> [] int { test.assert_eq(similarity_pct(\"kitten\", \"sitting\"), 57); return 0; }",
+    "pub fn test_sp_2() -> [] int { test.assert_eq(similarity_pct(\"\", \"\"), 100); return 0; }",
+    "pub fn test_sp_3() -> [] int { test.assert_eq(similarity_pct(\"a\", \"\"), 0); return 0; }",
+    "pub fn test_sp_4() -> [] int { test.assert_eq(similarity_pct(\"日本語\", \"日本\"), 66); return 0; }",
+    "pub fn test_sp_5() -> [] int { test.assert_eq(similarity_pct(\"abcd\", \"abxd\"), 75); return 0; }",
+    "pub fn test_sp_6() -> [] int { test.assert_eq(similarity_pct(\"abc\", \"abc\"), 100); return 0; }"
+   ],
+   "deps": [
+    "char_count",
+    "edit_distance"
+   ]
+  },
+  {
+   "id": "closest",
+   "signature": "fn closest[&q, &v, &s](query: &q [byte], candidates: &v vec.Vec[&s [byte]]) -> [] option.Option[&s [byte]]",
+   "description": "The candidate with the smallest edit distance (in characters, edit_distance) to query: Some(candidate), or None if the list is empty. If several tie, the one that comes first in the list wins (so a later candidate replaces the best only if it is strictly closer). The candidates are a std.vec Vec of text slices, borrowed (cancho has no string type and no list of strings): read its length with vec.size and an element with vec.get(candidates, i), both of which take the borrowed vector. The answer is a copy of the winning slice (it points at the same text as the candidate), not a new allocation, so the row stays `[]`. A single candidate is always the answer, however far. In the examples `cands(a, b, ...)` means a Vec holding those texts in that order, and `cands()` an empty one; the tests build them with vec.empty and vec.push.",
+   "examples": [
+    "closest(\"abc\", cands(\"abd\", \"abe\")) == option.Option::Some(\"abd\")",
+    "closest(\"kitten\", cands(\"sitting\", \"mitten\", \"bitten\", \"kitchen\")) == option.Option::Some(\"mitten\")",
+    "closest(\"x\", cands()) == option.Option::None"
+   ],
+   "tests": [
+    "fn cl_is[&h](heap: &!h Heap, q: &static [byte], n: int, c0: &static [byte], c1: &static [byte], c2: &static [byte], c3: &static [byte], want: &static [byte]) -> [heap] int { var l = vec.empty(heap, 5, \"\"); if n > 0 { l = vec.push(heap, l, c0); } if n > 1 { l = vec.push(heap, l, c1); } if n > 2 { l = vec.push(heap, l, c2); } if n > 3 { l = vec.push(heap, l, c3); } var code = 9; borrow l as &lb in { match closest(q, lb) { option.Option::None => { code = 1; } option.Option::Some(s) => { if cl_same(s, want) { code = 0; } else { code = 2; } } } } vec.drop(heap, l); return code; }",
+    "fn cl_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var i = 0; while i < len(x) { if int_of(x[i]) != int_of(y[i]) { return false; } i = i + 1; } return true; }",
+    "fn cl_none[&h](heap: &!h Heap, q: &static [byte]) -> [heap] int { var l = vec.empty(heap, 1, \"\"); var code = 9; borrow l as &lb in { match closest(q, lb) { option.Option::None => { code = 0; } option.Option::Some(_) => { code = 1; } } } vec.drop(heap, l); return code; }",
+    "pub fn test_cl_1[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(cl_is(heap, \"kitten\", 4, \"sitting\", \"mitten\", \"bitten\", \"kitchen\", \"mitten\"), 0); return 0; }",
+    "pub fn test_cl_2[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(cl_is(heap, \"abc\", 2, \"abd\", \"abe\", \"\", \"\", \"abd\"), 0); return 0; }",
+    "pub fn test_cl_3[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(cl_none(heap, \"x\"), 0); return 0; }",
+    "pub fn test_cl_4[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(cl_is(heap, \"cat\", 3, \"dog\", \"cot\", \"cut\", \"\", \"cot\"), 0); return 0; }",
+    "pub fn test_cl_5[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(cl_is(heap, \"x\", 1, \"zzzz\", \"\", \"\", \"\", \"zzzz\"), 0); return 0; }"
+   ],
+   "deps": [
+    "edit_distance"
+   ]
+  }
+ ]
+}

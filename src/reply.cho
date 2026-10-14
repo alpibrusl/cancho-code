@@ -444,3 +444,45 @@ pub fn generate_error[&h, &b](heap: &!h Heap, body: &b [byte]) -> [heap] buffer.
     none = buffer.append(heap, none, "no message");
     return none;
 }
+
+// ---- counts, for the usage log -------------------------------------------
+
+// An integer field of the reply's `usage` object (Anthropic's `input_tokens`,
+// `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`);
+// 0 when the body is not JSON or the field is absent.
+pub fn usage_count[&h, &b](heap: &!h Heap, body: &b [byte], name: &static [byte]) -> [heap] int {
+    var n = 0;
+    let tape_box = new_tape(heap, body);
+    borrow mut tape_box as &!tw in {
+        let tape = contents(tw);
+        let nodes = json.parse(body, tape);
+        if nodes >= 0 {
+            let usage = json.get(body, tape, 0, "usage");
+            let node = json.get(body, tape, usage, name);
+            if node >= 0 && json.is_int(tape, node) {
+                n = json.to_int(body, tape, node);
+            }
+        }
+    }
+    unbox_slice(heap, tape_box);
+    return n;
+}
+
+// An integer field of the reply's top-level object (Ollama's `prompt_eval_count`
+// and `eval_count`); 0 when absent.
+pub fn top_count[&h, &b](heap: &!h Heap, body: &b [byte], name: &static [byte]) -> [heap] int {
+    var n = 0;
+    let tape_box = new_tape(heap, body);
+    borrow mut tape_box as &!tw in {
+        let tape = contents(tw);
+        let nodes = json.parse(body, tape);
+        if nodes >= 0 {
+            let node = json.get(body, tape, 0, name);
+            if node >= 0 && json.is_int(tape, node) {
+                n = json.to_int(body, tape, node);
+            }
+        }
+    }
+    unbox_slice(heap, tape_box);
+    return n;
+}

@@ -1,0 +1,63 @@
+edition 7;
+
+fn clamp(x: int, lo: int, hi: int) -> [] int {
+    if x < lo { return lo; }
+    if x > hi { return hi; }
+    return x;
+}
+
+fn gcd(a: int, b: int) -> [] int {
+    var x = a;
+    var y = b;
+    if x < 0 { x = 0 - x; }
+    if y < 0 { y = 0 - y; }
+    while y != 0 {
+        let t = x % y;
+        x = y;
+        y = t;
+    }
+    return x;
+}
+
+fn lcm(a: int, b: int) -> [] int {
+    if a == 0 { return 0; }
+    if b == 0 { return 0; }
+    var x = a;
+    var y = b;
+    if x < 0 { x = 0 - x; }
+    if y < 0 { y = 0 - y; }
+    return x / gcd(x, y) * y;
+}
+
+fn is_leap_year(y: int) -> [] bool {
+    if y % 400 == 0 { return true; }
+    if y % 100 == 0 { return false; }
+    return y % 4 == 0;
+}
+
+fn isqrt(n: int) -> [] int {
+    var lo = 0;
+    var hi = 3037000499;
+    while lo < hi {
+        let mid = lo + (hi - lo + 1) / 2;
+        if mid <= n / mid {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    return lo;
+}
+
+fn pow_mod(base: int, exp: int, modulus: int) -> [] int {
+    var b = base % modulus;
+    if b < 0 { b = b + modulus; }
+    var r = 1 % modulus;
+    var e = exp;
+    while e > 0 {
+        if e % 2 == 1 { r = r * b % modulus; }
+        b = b * b % modulus;
+        e = e / 2;
+    }
+    return r;
+}

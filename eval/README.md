@@ -13,3 +13,16 @@ What a built item is judged by, kept apart from the tool that builds it.
 
 Not here yet: audits for the other items (a build of `01-semver` is not graded by anything in this directory), and the four services.
 A reference port is not an audit of a build: the audit must be written before the run and never shown to the builder.
+
+
+## Runs, metrics, and the task list (this section is newer than the text above)
+
+- `tasks.json`: every item with a difficulty level 1-5 and the rubric behind it. The levels are a hypothesis, assigned after the first runs had started
+  and with their (near-universal) success in view; they are not independent of the baseline. 09-12 (services) are not runnable until P7; `bank` is the
+  decomposition case (`docs/decomposition.md`).
+- Items now with a plan, a hidden oracle, a reference that scores full marks and mutations the audit rejects: `basics` (1), `tokenbucket`, `roman`,
+  `base64` (2), `duration`, `editdistance`, `sortedmap`, `jsonptr` (3), `expr`, `glob`, `semver`, `ini`, `csv` (4). `<item>/facts.json` has the sizes.
+- `run_item.py <item> --provider ... --model ... --runs N --label L --out DIR` builds an item through `project` with `scripts/cancho-agent.sh`,
+  audits it, and writes per run `usage.jsonl` (one line per API call), `raw.txt`, `audit.txt` and `result.json`.
+- `metrics.py` defines the numbers (tokens, cost from `prices.json`, `efficiency_calls`, `efficiency`); `report.py DIR [--catalog tasks.json]` tabulates;
+  `reanalyze.py DIR` re-reads old runs after a definition changes. Gate: `scripts/test-metrics.sh`, numbers computed on paper.

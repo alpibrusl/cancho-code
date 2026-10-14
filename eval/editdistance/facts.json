@@ -1,0 +1,31 @@
+{
+ "item": "06-editdistance",
+ "units": 6,
+ "oracle_cases": 49,
+ "audit_cases": 54,
+ "reference_loc": 76,
+ "reference_fns": 6,
+ "needs": [
+  "std.utf8 (decode/count) for code points",
+  "slice scratch in a region (alloc_slice) with a [] effect row",
+  "two-row or full DP table with nested while loops",
+  "std.vec borrowed read (vec.size/vec.get) inside closest",
+  "option.Option::Some/None of a text slice",
+  "integer division rounding down",
+  "passing a mutable int slice (&!o [int]) to a helper",
+  "tie-break by strict < on a running best"
+ ],
+ "pitfalls": [
+  "counting bytes instead of code points (len(text)) for distance or for m in similarity_pct",
+  "comparing raw bytes in the DP so é vs e costs 2",
+  "using <= in closest so the last tie wins",
+  "m taken as the shorter length or byte length",
+  "both-empty similarity must be 100 (division by zero otherwise)",
+  "exponential recursion on 60-char inputs",
+  "panic or out-of-bounds on malformed UTF-8 (std.utf8.decode Invalid step must be advanced by its width)",
+  "effect row: reaching for a heap for scratch instead of a region, widening the row to [heap]",
+  "returning a region slice out of the region block",
+  "Vec element type needs the region parameter &s on the return Option to match the candidates"
+ ],
+ "difficulty_notes": "Small and algorithmic; the language traps are the region scratch with an empty effect row, the borrowed Vec of text slices, and std.utf8's Step enum. The Unicode trap is in the oracle (café, 日本語, ü/ue, naïve). The audit adds 5 property checks from the brief (symmetry, zero-iff-equal, triangle, similarity range, malformed no-panic) over a fixed 14-string pool; the 49 oracle cases are vendored unchanged. Properties need no hidden knowledge beyond the brief."
+}

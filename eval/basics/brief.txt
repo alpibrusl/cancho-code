@@ -1,0 +1,21 @@
+Build a small Lex library package named "basics": six pure integer functions. It is a pure library: no network, no database, no files, no environment. Use only the Lex standard library (std.int and the like); do not depend on any other package. Every function is pure (no effect annotation) and every function has examples. Integers only, no floats. Int is 64-bit (-9223372036854775808 to 9223372036854775807) and an overflowing operation is an error, so each function below states the domain it must handle exactly; outside its domain a function may do anything. Inside it, none may panic or overflow.
+
+The package exposes exactly six functions:
+
+- clamp(x :: Int, lo :: Int, hi :: Int) -> Int : x limited to the range lo..hi: lo if x < lo, hi if x > hi, otherwise x. Domain: any x, any lo <= hi (lo == hi is allowed and then the answer is that value).
+- gcd(a :: Int, b :: Int) -> Int : the greatest common divisor of a and b, always >= 0, so the sign of a and of b never matters: gcd(-12, 18) is 6. gcd(a, 0) and gcd(0, a) are |a|, and gcd(0, 0) is 0. Domain: |a| <= 4611686018427387904 and |b| <= 4611686018427387904 (2^62).
+- lcm(a :: Int, b :: Int) -> Int : the least common multiple, always >= 0, sign ignored like gcd: lcm(-4, 6) is 12. It is 0 if either argument is 0. Domain: |a| <= 3000000000 and |b| <= 3000000000, which guarantees the result fits an Int.
+- is_leap_year(y :: Int) -> Bool : the proleptic Gregorian rule applied to the integer y exactly as given: a year is a leap year if it is divisible by 4, except that a year divisible by 100 is not, unless it is also divisible by 400. Domain: any Int, negative years and 0 included (year 0 is a leap year; -4 is a leap year; -100 is not).
+- isqrt(n :: Int) -> Int : the integer square root, floor(sqrt(n)): the largest r with r * r <= n. Exact for every n in the domain 0 <= n <= 9223372036854775807, including values near the top of the range, where r * r or (r + 1) * (r + 1) can overflow if you are careless and a floating point square root is not exact.
+- pow_mod(base :: Int, exp :: Int, modulus :: Int) -> Int : base to the power exp, modulo modulus, always in 0 .. modulus - 1 (a negative base still gives a non-negative answer). pow_mod(b, 0, m) is 1 % m, so it is 0 when m is 1. Domain: any base with |base| <= 4611686018427387904, 0 <= exp <= 4611686018427387904, 1 <= modulus <= 3000000000. The power itself is far too large to compute: reduce as you go, so no intermediate value overflows.
+
+Worked examples (the answers are exact):
+
+- clamp(5, 0, 10) is 5; clamp(-5, 0, 10) is 0; clamp(15, 0, 10) is 10; clamp(7, 3, 3) is 3.
+- gcd(12, 18) is 6; gcd(-12, 18) is 6; gcd(0, 5) is 5; gcd(0, 0) is 0; gcd(17, 13) is 1.
+- lcm(4, 6) is 12; lcm(-4, 6) is 12; lcm(0, 5) is 0; lcm(7, 7) is 7.
+- is_leap_year(2024) is true; is_leap_year(1900) is false; is_leap_year(2000) is true; is_leap_year(2023) is false.
+- isqrt(0) is 0; isqrt(15) is 3; isqrt(16) is 4; isqrt(17) is 4.
+- pow_mod(2, 10, 1000) is 24; pow_mod(3, 0, 7) is 1; pow_mod(5, 3, 1) is 0; pow_mod(-2, 3, 7) is 6.
+
+Properties that must hold and be checked: clamp(x, lo, hi) is always between lo and hi; gcd(a, b) divides both a and b (when not both 0) and gcd(a, b) * lcm(a, b) equals |a * b| for the lcm domain; is_leap_year(y) equals is_leap_year(y + 400); isqrt(n) * isqrt(n) <= n for every n in the domain; pow_mod(b, e1 + e2, m) equals pow_mod(b, e1, m) * pow_mod(b, e2, m) % m.

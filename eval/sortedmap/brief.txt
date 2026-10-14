@@ -1,0 +1,24 @@
+Build a small cancho library "sortedmap": a map from int to int kept as two parallel sorted arrays, with the state supplied by the caller. It is pure apart from writing into the arrays it is handed: no heap, no I/O, no files. Every function has an empty effect row, and none may panic or trap on valid input.
+
+State representation. The map lives in three things the caller owns and passes to every function:
+- keys: a slice of int (`&k [int]` to read it, `&!k [int]` to change it), and vals: a slice of int of the SAME length. The length of keys is the CAPACITY, fixed for the life of the map (it may be 0). The library never allocates, grows or shrinks anything.
+- n: the COUNT of entries in use, passed in as a plain int with 0 <= n <= len(keys). Entry i (0 <= i < n) is the pair (keys[i], vals[i]).
+Invariant on entry to every function: keys[0] < keys[1] < ... < keys[n-1] (strictly ascending, so a key occurs at most once). Slots at index >= n are unused: their contents are unspecified (garbage, possibly smaller than every key) and must never be read for a decision; the library may leave anything there. Functions that change the map return the new count; the caller keeps it. Keys and values are any int, negative and zero included, up to the extremes of the int range, so never decide order by subtracting two keys.
+
+Functions (exactly five, with these shapes; the first four parameters of the mutating ones are the arrays then n):
+- sm_lower_bound(keys, n, key) -> int : the index of the first entry whose key is >= key, or n if there is none. Binary search; reads only keys[0..n).
+- sm_get(keys, vals, n, key) -> Option[int] : Some(value) if the key is present, None if not. A stored value of 0 or -1 is still Some.
+- sm_count_in_range(keys, n, lo, hi) -> int : how many entries have lo <= key < hi (lo inclusive, hi exclusive). 0 when lo >= hi.
+- sm_insert(keys, vals, n, key, value) -> int : set key to value and return the new count.
+    * Key already present: replace its value only; the count is unchanged (returns n). This works even when the map is full.
+    * Key absent and n < len(keys): insert it at its sorted position, shifting later entries one place right; returns n + 1.
+    * Key absent and n == len(keys) (full): change nothing at all and return -1. The caller's count stays n.
+- sm_remove(keys, vals, n, key) -> int : delete the key and return the new count, shifting later entries one place left so that entries 0..n-2 stay contiguous and sorted; if the key is absent change nothing and return n.
+
+After sm_insert or sm_remove, keys[0..new count) and vals[0..new count) must be exactly the ascending entries, values travelling with their keys. A call that returns -1 must leave keys[0..n) and vals[0..n) exactly as they were.
+
+Worked examples (capacity 4, entries {10:100, 20:200, 30:300}, n = 3):
+- sm_get(.., 3, 20) is Some(200); sm_get(.., 3, 25) is None. sm_lower_bound(.., 3, 20) is 1; sm_lower_bound(.., 3, 21) is 2; sm_lower_bound(.., 3, 31) is 3; sm_lower_bound(.., 3, 5) is 0. sm_count_in_range(.., 3, 10, 30) is 2; sm_count_in_range(.., 3, 30, 10) is 0.
+- sm_insert(.., 3, 15, 150) is 4 and the entries become {10:100, 15:150, 20:200, 30:300}; a further sm_insert(.., 4, 99, 1) is -1 and changes nothing, but sm_insert(.., 4, 20, 7) is 4 and only changes the value of 20.
+- sm_remove(.., 3, 10) is 2 and the entries become {20:200, 30:300}; sm_remove(.., 3, 11) is 3.
+Properties that must hold: after any sequence of inserts and removes the arrays agree with a dictionary, lower_bound agrees with bisect_left on the live keys, and get/count_in_range agree with a scan.

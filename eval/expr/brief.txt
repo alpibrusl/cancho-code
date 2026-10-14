@@ -1,0 +1,20 @@
+Write a small cancho library with one public function that evaluates an integer arithmetic expression given as text:
+
+    pub fn expr_eval[&r](s: &r [byte]) -> [] result.Result[int, &static [byte]]
+
+It is pure: no files, no network, no environment, no heap. The text is bytes (cancho has no string type). It returns Ok(value) or Err(message); the message wording does not matter. It must never panic or trap, whatever the bytes are: every failure below is an Err value, not a crash.
+
+The language of expressions:
+- A number is one or more ASCII digits 0-9 with nothing else attached: "7", "007" (= 7), "12345". There are no signs inside a number, no decimal point, no underscores, no hex, no exponent. A number larger than 9223372036854775807 is an error.
+- Binary operators + - * / % and parentheses ( ). The usual precedence: * / % bind tighter than + -; operators of the same precedence are left associative ("10-4-3" is 3, "100/10/5" is 2, "7%4*2" is 6).
+- Unary minus: a "-" in front of a number or a parenthesised expression, and it may be repeated: "-3", "--3" (= 3), "-(-(3))" (= 3), "2--3" (= 5), "2*-3" (= -6). It binds tighter than any binary operator. There is no unary plus: "+1" is an error.
+- The only whitespace is the ASCII space (0x20), and it may appear between any two tokens and at either end ("  1 + 2 " is 3), but never inside a number ("1 2" is an error). A tab, a newline or any other byte that is not part of the language is an error, and so is anything left over after a complete expression ("1+2)", "1 2", "(1)(2)").
+- The empty text (or only spaces), "()", "1+", "*2", "(1" and similar are syntax errors.
+
+Arithmetic is exact 64-bit signed integer arithmetic, the range -9223372036854775808 to 9223372036854775807 inclusive. Every intermediate result must lie in that range, not only the final one: each binary operation, each unary minus and each number literal is checked as it is evaluated, and if any of them does not fit the whole answer is Err. So "9223372036854775807+1-1" is an error, although its mathematical value is in range. Consequently the number 9223372036854775808 cannot be written, "-9223372036854775808" is an error (the literal is already too large), and the smallest value is written "-9223372036854775807-1". Nothing is rearranged or simplified before evaluating.
+
+Division and remainder truncate toward zero, as in C: "7/2" is 3, "-7/2" is -3, "7/-2" is -3, "-7/-2" is 3. The remainder has the sign of the dividend and satisfies a = (a / b) * b + (a % b): "-7%2" is -1, "7%-2" is 1. Division or remainder by zero is an error. The minimum value divided by -1 is an error (the quotient does not fit), but the minimum value remainder -1 is 0.
+
+Examples: "1+2*3" is 7; "(1+2)*3" is 9; "2*(3+4)*5" is 70; "-(2+3)*2" is -10; "1/0" is an error; "9223372036854775807*2" is an error; "()" is an error.
+
+The evaluator must handle nesting of parentheses and chains of unary minus at least 10000 deep, and inputs of tens of thousands of bytes, without crashing.

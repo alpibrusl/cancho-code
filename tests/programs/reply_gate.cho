@@ -2,7 +2,7 @@ edition 7;
 
 // `reply_gate` — the gate program for `src/reply.cho`.
 //
-//     reply_gate <mode> <file> x x x
+//     reply_gate <mode> <file> <name> x x
 //
 // `span` prints the program in the file (the model's answer) or `NONE`;
 // `text`, `max`, `error` and `usage` read the file as an API reply. The file
@@ -25,9 +25,11 @@ fn main(world: World) -> [] int {
     var h = heap;
     var mode = "";
     var path = "";
+    var name = "";
     borrow args as &g in {
         mode = arg(g, 1);
         path = arg(g, 2);
+        name = arg(g, 3);
     }
     borrow fs as &f in {
         borrow mut console as &!i in {
@@ -88,6 +90,15 @@ fn main(world: World) -> [] int {
                         io.write_all(i, buffer.bytes(tr));
                     }
                     buffer.drop(hh, t);
+                }
+                if bytes.equal(mode, "usage-count") || bytes.equal(mode, "top-count") {
+                    var n = 0;
+                    if bytes.equal(mode, "usage-count") {
+                        n = reply.usage_count(hh, body, name);
+                    } else {
+                        n = reply.top_count(hh, body, name);
+                    }
+                    io.print_int(i, n);
                 }
                 if bytes.equal(mode, "usage") {
                     let t = reply.usage_line(hh, body);

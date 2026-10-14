@@ -1,0 +1,184 @@
+{
+ "name": "expr",
+ "units": [
+  {
+   "id": "arith_ok",
+   "signature": "fn arith_ok(op: int, a: int, b: int) -> [] bool",
+   "description": "Whether applying the binary operation op to a and b is allowed: it neither traps nor falls outside the signed 64-bit range -9223372036854775808..9223372036854775807. op is a code: 0 is a + b, 1 is a - b, 2 is a * b, 3 is a / b, 4 is a % b. True exactly when the mathematically exact result fits in that range and, for 3 and 4, b is not 0. So 9223372036854775807 + 1 is false, -9223372036854775807 - 2 is false, minimum * -1 is false, minimum / -1 is false, but minimum % -1 is true (that remainder is 0). It must itself never trap, for any a and b: cancho's own + - * trap on overflow, so test against the limits first or use wrapping_mul and a division to check a product. The minimum cannot be written as a literal (9223372036854775808 does not parse); write -9223372036854775807 - 1.",
+   "examples": [
+    "arith_ok(0, 1, 2) == true",
+    "arith_ok(0, 9223372036854775807, 1) == false",
+    "arith_ok(2, 3037000500, 3037000500) == false",
+    "arith_ok(3, 7, 0) == false",
+    "arith_ok(4, 7, 0) == false"
+   ],
+   "tests": [
+    "fn ok_is(op: int, a: int, b: int, want: bool) -> [] int { if arith_ok(op, a, b) == want { return 0; } return 1; }",
+    "pub fn test_arith_add_edges() -> [] int { test.assert_eq(ok_is(0, 9223372036854775807, 0, true), 0); test.assert_eq(ok_is(0, 9223372036854775807, 1, false), 0); test.assert_eq(ok_is(0, -9223372036854775807 - 1, -1, false), 0); test.assert_eq(ok_is(0, -9223372036854775807 - 1, 9223372036854775807, true), 0); return 0; }",
+    "pub fn test_arith_sub_edges() -> [] int { test.assert_eq(ok_is(1, 0, 9223372036854775807, true), 0); test.assert_eq(ok_is(1, -2, 9223372036854775807, false), 0); test.assert_eq(ok_is(1, 0, -9223372036854775807 - 1, false), 0); test.assert_eq(ok_is(1, -1, -9223372036854775807 - 1, true), 0); return 0; }",
+    "pub fn test_arith_mul_edges() -> [] int { test.assert_eq(ok_is(2, 3037000499, 3037000499, true), 0); test.assert_eq(ok_is(2, 3037000500, 3037000500, false), 0); test.assert_eq(ok_is(2, -9223372036854775807 - 1, -1, false), 0); test.assert_eq(ok_is(2, -1, -9223372036854775807 - 1, false), 0); test.assert_eq(ok_is(2, -9223372036854775807 - 1, 1, true), 0); test.assert_eq(ok_is(2, 0, -9223372036854775807 - 1, true), 0); return 0; }",
+    "pub fn test_arith_div_rem_edges() -> [] int { test.assert_eq(ok_is(3, -9223372036854775807 - 1, -1, false), 0); test.assert_eq(ok_is(3, -9223372036854775807 - 1, 1, true), 0); test.assert_eq(ok_is(4, -9223372036854775807 - 1, -1, true), 0); test.assert_eq(ok_is(4, 5, 0, false), 0); test.assert_eq(ok_is(3, 0, 0, false), 0); return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "arith_apply",
+   "signature": "fn arith_apply(op: int, a: int, b: int) -> [] int",
+   "description": "The result of the operation op on a and b, with the same op codes as arith_ok (0 +, 1 -, 2 *, 3 /, 4 %). It may assume arith_ok(op, a, b) is true and need not check. Division truncates toward zero, as in C: 7 / 2 is 3, -7 / 2 is -3, 7 / -2 is -3; the remainder takes the sign of the dividend: -7 % 2 is -1, 7 % -2 is 1.",
+   "examples": [
+    "arith_apply(0, 2, 3) == 5",
+    "arith_apply(1, 2, 3) == -1",
+    "arith_apply(2, -4, 3) == -12",
+    "arith_apply(3, -7, 2) == -3",
+    "arith_apply(3, 7, -2) == -3",
+    "arith_apply(4, -7, 2) == -1",
+    "arith_apply(4, 7, -2) == 1"
+   ],
+   "tests": [],
+   "deps": [
+    "arith_ok"
+   ]
+  },
+  {
+   "id": "skip_spaces",
+   "signature": "fn skip_spaces[&r](s: &r [byte], pos: int) -> [] int",
+   "description": "The index of the first byte at or after pos that is not an ASCII space (0x20), or len(s) if there is none. Only the space counts: a tab or a newline is not skipped. pos is between 0 and len(s).",
+   "examples": [
+    "skip_spaces(\"  x\", 0) == 2",
+    "skip_spaces(\"a b\", 1) == 2",
+    "skip_spaces(\"   \", 0) == 3",
+    "skip_spaces(\"a\\tb\", 1) == 1"
+   ],
+   "tests": [],
+   "deps": []
+  },
+  {
+   "id": "read_number",
+   "signature": "fn read_number[&r, &q](s: &r [byte], st: &!q [int]) -> [] int",
+   "description": "Reads a decimal number starting at st[0]. The state st is a slice of two ints that every parsing function shares: st[0] is the current position in s and st[1] is the error flag (0 means fine; anything else means an error was found, and it is never cleared). Reads the maximal run of ASCII digits 0-9 at st[0] (leading zeros allowed; spaces are NOT skipped here), sets st[0] to the index just after the last digit and returns the value. If there is no digit at st[0] (including st[0] >= len(s)), sets st[1] = 1. If the value would exceed 9223372036854775807, sets st[1] = 1; it must not trap while detecting this (compare against the limit before multiplying by 10). On error the returned value and st[0] are unspecified. It does not change st[1] otherwise, and never reads past the end of s. In the examples `st` stands for a fresh state [0, 0] (an example cannot build a slice; the unit's tests do).",
+   "examples": [
+    "read_number(\"12\", st) == 12",
+    "read_number(\"007+1\", st) == 7",
+    "read_number(\"9223372036854775807\", st) == 9223372036854775807"
+   ],
+   "tests": [
+    "fn num_ok(s: &static [byte], pos: int, want: int, want_pos: int) -> [] int { var bad = 1; region a { let st = alloc_slice[a](2, 0); st[0] = pos; let v = read_number(s, st); if st[1] == 0 && v == want && st[0] == want_pos { bad = 0; } } return bad; }",
+    "fn num_bad(s: &static [byte], pos: int) -> [] int { var bad = 1; region a { let st = alloc_slice[a](2, 0); st[0] = pos; read_number(s, st); if st[1] != 0 { bad = 0; } } return bad; }",
+    "pub fn test_num_ok_1() -> [] int { test.assert_eq(num_ok(\"12\", 0, 12, 2), 0); return 0; }",
+    "pub fn test_num_ok_2() -> [] int { test.assert_eq(num_ok(\"007+1\", 0, 7, 3), 0); return 0; }",
+    "pub fn test_num_ok_3() -> [] int { test.assert_eq(num_ok(\"a42b\", 1, 42, 3), 0); return 0; }",
+    "pub fn test_num_ok_4() -> [] int { test.assert_eq(num_ok(\"9223372036854775807\", 0, 9223372036854775807, 19), 0); return 0; }",
+    "pub fn test_num_bad_1() -> [] int { test.assert_eq(num_bad(\"\", 0), 0); return 0; }",
+    "pub fn test_num_bad_2() -> [] int { test.assert_eq(num_bad(\"x\", 0), 0); return 0; }",
+    "pub fn test_num_bad_3() -> [] int { test.assert_eq(num_bad(\"12\", 2), 0); return 0; }",
+    "pub fn test_num_bad_4() -> [] int { test.assert_eq(num_bad(\" 1\", 0), 0); return 0; }",
+    "pub fn test_num_bad_5() -> [] int { test.assert_eq(num_bad(\"9223372036854775808\", 0), 0); return 0; }",
+    "pub fn test_num_bad_6() -> [] int { test.assert_eq(num_bad(\"99999999999999999999\", 0), 0); return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "parse_level",
+   "signature": "fn parse_level[&r, &q](s: &r [byte], st: &!q [int], level: int) -> [] int",
+   "description": "The recursive core: parses and evaluates one grammar level of the expression starting at st[0], with the same two-int state as read_number (st[0] position, st[1] error flag, 0 = fine). level 0 is a sum: a level-1 operand followed by any number of (+ or -) level-1 operands, applied left to right. level 1 is a product: a level-2 operand followed by any number of (*, / or %) level-2 operands, applied left to right. level 2 is an atom: after skipping spaces it is either a '-' followed by a level-2 atom (unary minus, so '--3' works), or a '(' followed by a level-0 expression and then a ')', or a number (read_number). Spaces are skipped before every token (never inside a number). Every binary operation is checked with arith_ok before arith_apply, and a unary minus is checked as arith_ok(1, 0, v). Any failure (unexpected end of text, missing ')', a failed arith_ok, division by zero, overflow) sets st[1] = 1; once st[1] is nonzero every level stops and returns 0 without reading further, so it always terminates. A byte that is not a token for the loop (a letter, a tab, ')', ...) simply ends the loops at levels 0 and 1; the caller decides whether leftovers are an error. On success st[0] is the index just after the last byte of the last token consumed (trailing spaces are not consumed). On error the value and st[0] are unspecified. Level 0 parses a whole expression; the recursion goes level 0 -> 1 -> 2 -> (parenthesis) -> 0 and must survive 10000 nested parentheses. cancho allows a function to call itself (use level + 1 for the next level). In the examples `st` stands for a fresh state [0, 0] (an example cannot build a slice; the unit's tests do).",
+   "examples": [
+    "parse_level(\"1+2*3\", st, 0) == 7",
+    "parse_level(\"(1+2)*3\", st, 0) == 9",
+    "parse_level(\"10-4-3\", st, 0) == 3",
+    "parse_level(\"--3\", st, 2) == 3"
+   ],
+   "tests": [
+    "fn lvl_ok(s: &static [byte], level: int, want: int, want_pos: int) -> [] int { var bad = 1; region a { let st = alloc_slice[a](2, 0); let v = parse_level(s, st, level); if st[1] == 0 && v == want && st[0] == want_pos { bad = 0; } } return bad; }",
+    "fn lvl_bad(s: &static [byte], level: int) -> [] int { var bad = 1; region a { let st = alloc_slice[a](2, 0); parse_level(s, st, level); if st[1] != 0 { bad = 0; } } return bad; }",
+    "pub fn test_lvl_ok_1() -> [] int { test.assert_eq(lvl_ok(\"7\", 0, 7, 1), 0); return 0; }",
+    "pub fn test_lvl_ok_2() -> [] int { test.assert_eq(lvl_ok(\"1+2*3\", 0, 7, 5), 0); return 0; }",
+    "pub fn test_lvl_ok_3() -> [] int { test.assert_eq(lvl_ok(\"(1+2)*3\", 0, 9, 7), 0); return 0; }",
+    "pub fn test_lvl_ok_4() -> [] int { test.assert_eq(lvl_ok(\"10-4-3\", 0, 3, 6), 0); return 0; }",
+    "pub fn test_lvl_ok_5() -> [] int { test.assert_eq(lvl_ok(\"100/10/5\", 0, 2, 8), 0); return 0; }",
+    "pub fn test_lvl_ok_6() -> [] int { test.assert_eq(lvl_ok(\"7%4*2\", 0, 6, 5), 0); return 0; }",
+    "pub fn test_lvl_ok_7() -> [] int { test.assert_eq(lvl_ok(\"2*3\", 1, 6, 3), 0); return 0; }",
+    "pub fn test_lvl_ok_8() -> [] int { test.assert_eq(lvl_ok(\"2+3\", 1, 2, 1), 0); return 0; }",
+    "pub fn test_lvl_ok_9() -> [] int { test.assert_eq(lvl_ok(\"--3\", 2, 3, 3), 0); return 0; }",
+    "pub fn test_lvl_ok_10() -> [] int { test.assert_eq(lvl_ok(\"-(-(3))\", 0, 3, 7), 0); return 0; }",
+    "pub fn test_lvl_ok_11() -> [] int { test.assert_eq(lvl_ok(\"2*-3\", 0, -6, 4), 0); return 0; }",
+    "pub fn test_lvl_ok_12() -> [] int { test.assert_eq(lvl_ok( \" 1 + 2 )\", 0, 3, 6), 0); return 0; }",
+    "pub fn test_lvl_ok_13() -> [] int { test.assert_eq(lvl_ok(\"-7/2\", 0, -3, 4), 0); return 0; }",
+    "pub fn test_lvl_ok_14() -> [] int { test.assert_eq(lvl_ok(\"7%-2\", 0, 1, 4), 0); return 0; }",
+    "pub fn test_lvl_ok_15() -> [] int { test.assert_eq(lvl_ok(\"2+3\", 2, 2, 1), 0); return 0; }",
+    "pub fn test_lvl_bad_1() -> [] int { test.assert_eq(lvl_bad(\"\", 0), 0); return 0; }",
+    "pub fn test_lvl_bad_2() -> [] int { test.assert_eq(lvl_bad(\"(\", 0), 0); return 0; }",
+    "pub fn test_lvl_bad_3() -> [] int { test.assert_eq(lvl_bad(\"(1\", 0), 0); return 0; }",
+    "pub fn test_lvl_bad_4() -> [] int { test.assert_eq(lvl_bad(\"1+\", 0), 0); return 0; }",
+    "pub fn test_lvl_bad_5() -> [] int { test.assert_eq(lvl_bad(\"*2\", 0), 0); return 0; }",
+    "pub fn test_lvl_bad_6() -> [] int { test.assert_eq(lvl_bad(\"1/0\", 0), 0); return 0; }",
+    "pub fn test_lvl_bad_7() -> [] int { test.assert_eq(lvl_bad(\"1%0\", 0), 0); return 0; }",
+    "pub fn test_lvl_bad_8() -> [] int { test.assert_eq(lvl_bad(\"9223372036854775807+1\", 0), 0); return 0; }",
+    "pub fn test_lvl_bad_9() -> [] int { test.assert_eq(lvl_bad(\"-(-9223372036854775807-1)\", 0), 0); return 0; }",
+    "pub fn test_lvl_bad_10() -> [] int { test.assert_eq(lvl_bad(\"(-9223372036854775807-1)/-1\", 0), 0); return 0; }",
+    "pub fn test_lvl_bad_11() -> [] int { test.assert_eq(lvl_bad(\"3037000500*3037000500\", 0), 0); return 0; }",
+    "pub fn test_lvl_bad_12() -> [] int { test.assert_eq(lvl_bad(\"-\", 0), 0); return 0; }",
+    "pub fn test_lvl_bad_13() -> [] int { test.assert_eq(lvl_bad(\"()\", 0), 0); return 0; }",
+    "pub fn test_lvl_bad_14() -> [] int { test.assert_eq(lvl_bad(\"+1\", 0), 0); return 0; }",
+    "pub fn test_lvl_bad_15() -> [] int { test.assert_eq(lvl_bad(\"9223372036854775807+1-1\", 0), 0); return 0; }",
+    "pub fn test_lvl_min_ok() -> [] int { test.assert_eq(lvl_ok(\"-9223372036854775807-1\", 0, -9223372036854775807 - 1, 22), 0); return 0; }",
+    "pub fn test_lvl_min_rem() -> [] int { test.assert_eq(lvl_ok(\"(-9223372036854775807-1)%-1\", 0, 0, 27), 0); return 0; }"
+   ],
+   "deps": [
+    "arith_ok",
+    "arith_apply",
+    "skip_spaces",
+    "read_number"
+   ]
+  },
+  {
+   "id": "eval",
+   "signature": "fn expr_eval[&r](s: &r [byte]) -> [] result.Result[int, &static [byte]]",
+   "description": "Evaluate the whole text: Ok(value), or Err(message) (any message) when the text is not exactly one valid expression, or a step overflows, or divides by zero. Make the two-int state (region + alloc_slice[a](2, 0), starting [0, 0]), call parse_level(s, st, 0), then skip trailing spaces: anything left (a stray ')', a second number, a letter, a tab, a newline) is an error, and so is an empty text, and so is st[1] != 0. The language: numbers of ASCII digits, + - * / % with * / % tighter than + -, left associative, unary minus (repeatable; no unary plus), parentheses, ASCII spaces between tokens and at the ends. Arithmetic is exact signed 64-bit; every intermediate result (each operation, each unary minus, each literal) must fit -9223372036854775808..9223372036854775807 or the answer is Err, so '9223372036854775807+1-1' is Err. Division and remainder truncate toward zero (C). Division or remainder by zero is Err; minimum / -1 is Err but minimum % -1 is 0. The minimum can only be written -9223372036854775807-1; the literal 9223372036854775808 is Err. It must never trap, on any bytes. The Result is std.result's: result.Result::Ok(v), result.Result::Err(\"...\").",
+   "examples": [
+    "expr_eval(\"1+2*3\") == result.Result::Ok(7)",
+    "expr_eval(\"(1+2)*3\") == result.Result::Ok(9)",
+    "expr_eval(\"-(-(3))\") == result.Result::Ok(3)",
+    "expr_eval(\" 10 - 4 - 3 \") == result.Result::Ok(3)",
+    "expr_eval(\"-7/2\") == result.Result::Ok(-3)",
+    "expr_eval(\"\") == result.Result::Err",
+    "expr_eval(\"1 2\") == result.Result::Err",
+    "expr_eval(\"1/0\") == result.Result::Err",
+    "expr_eval(\"9223372036854775807+1\") == result.Result::Err"
+   ],
+   "tests": [
+    "fn ev_is(s: &static [byte], want: int) -> [] int { match expr_eval(s) { result.Result::Ok(v) => { if v == want { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "fn ev_err(s: &static [byte]) -> [] int { match expr_eval(s) { result.Result::Ok(_) => { return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_eval_ok_1() -> [] int { test.assert_eq(ev_is(\"1+2*3\", 7), 0); return 0; }",
+    "pub fn test_eval_ok_2() -> [] int { test.assert_eq(ev_is(\"(1+2)*3\", 9), 0); return 0; }",
+    "pub fn test_eval_ok_3() -> [] int { test.assert_eq(ev_is(\"  42  \", 42), 0); return 0; }",
+    "pub fn test_eval_ok_4() -> [] int { test.assert_eq(ev_is(\"-(-(3))\", 3), 0); return 0; }",
+    "pub fn test_eval_ok_5() -> [] int { test.assert_eq(ev_is(\"2--3\", 5), 0); return 0; }",
+    "pub fn test_eval_ok_6() -> [] int { test.assert_eq(ev_is(\"-7/2\", -3), 0); return 0; }",
+    "pub fn test_eval_ok_7() -> [] int { test.assert_eq(ev_is(\"-7%2\", -1), 0); return 0; }",
+    "pub fn test_eval_ok_8() -> [] int { test.assert_eq(ev_is(\"007\", 7), 0); return 0; }",
+    "pub fn test_eval_ok_9() -> [] int { test.assert_eq(ev_is(\"9223372036854775807\", 9223372036854775807), 0); return 0; }",
+    "pub fn test_eval_ok_10() -> [] int { test.assert_eq(ev_is(\"-9223372036854775807-1\", -9223372036854775807 - 1), 0); return 0; }",
+    "pub fn test_eval_err_1() -> [] int { test.assert_eq(ev_err(\"\"), 0); return 0; }",
+    "pub fn test_eval_err_2() -> [] int { test.assert_eq(ev_err(\"   \"), 0); return 0; }",
+    "pub fn test_eval_err_3() -> [] int { test.assert_eq(ev_err(\"()\"), 0); return 0; }",
+    "pub fn test_eval_err_4() -> [] int { test.assert_eq(ev_err(\"1 2\"), 0); return 0; }",
+    "pub fn test_eval_err_5() -> [] int { test.assert_eq(ev_err(\"1+\"), 0); return 0; }",
+    "pub fn test_eval_err_6() -> [] int { test.assert_eq(ev_err(\"+1\"), 0); return 0; }",
+    "pub fn test_eval_err_7() -> [] int { test.assert_eq(ev_err(\"(1\"), 0); return 0; }",
+    "pub fn test_eval_err_8() -> [] int { test.assert_eq(ev_err(\"1)\"), 0); return 0; }",
+    "pub fn test_eval_err_9() -> [] int { test.assert_eq(ev_err(\"1/0\"), 0); return 0; }",
+    "pub fn test_eval_err_10() -> [] int { test.assert_eq(ev_err(\"1%0\"), 0); return 0; }",
+    "pub fn test_eval_err_11() -> [] int { test.assert_eq(ev_err(\"9223372036854775807+1\"), 0); return 0; }",
+    "pub fn test_eval_err_12() -> [] int { test.assert_eq(ev_err(\"9223372036854775807+1-1\"), 0); return 0; }",
+    "pub fn test_eval_err_13() -> [] int { test.assert_eq(ev_err(\"-9223372036854775808\"), 0); return 0; }",
+    "pub fn test_eval_err_14() -> [] int { test.assert_eq(ev_err(\"9223372036854775808\"), 0); return 0; }",
+    "pub fn test_eval_err_15() -> [] int { test.assert_eq(ev_err(\"1a\"), 0); return 0; }",
+    "pub fn test_eval_err_16() -> [] int { test.assert_eq(ev_err(\"1\\t+1\"), 0); return 0; }",
+    "pub fn test_eval_err_17() -> [] int { test.assert_eq(ev_err(\"(-9223372036854775807-1)/-1\"), 0); return 0; }"
+   ],
+   "deps": [
+    "parse_level"
+   ]
+  }
+ ]
+}

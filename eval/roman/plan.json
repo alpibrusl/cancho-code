@@ -1,0 +1,70 @@
+{
+ "name": "roman",
+ "units": [
+  {
+   "id": "to_roman",
+   "signature": "fn to_roman[&h](heap: &!h Heap, n: int) -> [heap] result.Result[buffer.Buffer, &static [byte]]",
+   "description": "Roman numeral for n as heap-owned text (a Buffer; the caller drops it): Ok(text) for n in 1..3999, Err(message) for anything outside that range (0, negatives, 4000 and up). Upper case letters I=1 V=5 X=10 L=50 C=100 D=500 M=1000. The output is the one canonical, shortest numeral: write each decimal digit separately, thousands first, using the subtractive pairs IV=4, IX=9, XL=40, XC=90, CD=400, CM=900, and never four equal letters in a row. 4 is \"IV\" (not \"IIII\"), 1994 is \"MCMXCIV\", 3999 is \"MMMCMXCIX\". The text is bytes (cancho has no string type).",
+   "examples": [
+    "to_roman(heap, 1) == result.Result::Ok(\"I\")",
+    "to_roman(heap, 4) == result.Result::Ok(\"IV\")",
+    "to_roman(heap, 14) == result.Result::Ok(\"XIV\")",
+    "to_roman(heap, 1994) == result.Result::Ok(\"MCMXCIV\")",
+    "to_roman(heap, 3999) == result.Result::Ok(\"MMMCMXCIX\")",
+    "to_roman(heap, 0) == result.Result::Err",
+    "to_roman(heap, 4000) == result.Result::Err"
+   ],
+   "tests": [
+    "fn same_bytes[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var i = 0; while i < len(x) { if int_of(x[i]) != int_of(y[i]) { return false; } i = i + 1; } return true; }",
+    "fn rom_is[&h](heap: &!h Heap, n: int, want: &static [byte]) -> [heap] int { match to_roman(heap, n) { result.Result::Ok(b) => { var same = false; borrow b as &x in { same = same_bytes(buffer.bytes(x), want); } buffer.drop(heap, b); if same { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "fn rom_err[&h](heap: &!h Heap, n: int) -> [heap] int { match to_roman(heap, n) { result.Result::Ok(b) => { buffer.drop(heap, b); return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_to_ok_1[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(rom_is(heap, 1, \"I\"), 0); return 0; }",
+    "pub fn test_to_ok_2[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(rom_is(heap, 4, \"IV\"), 0); return 0; }",
+    "pub fn test_to_ok_3[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(rom_is(heap, 9, \"IX\"), 0); return 0; }",
+    "pub fn test_to_ok_4[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(rom_is(heap, 14, \"XIV\"), 0); return 0; }",
+    "pub fn test_to_ok_5[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(rom_is(heap, 40, \"XL\"), 0); return 0; }",
+    "pub fn test_to_ok_6[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(rom_is(heap, 1994, \"MCMXCIV\"), 0); return 0; }",
+    "pub fn test_to_ok_7[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(rom_is(heap, 3999, \"MMMCMXCIX\"), 0); return 0; }",
+    "pub fn test_to_ok_8[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(rom_is(heap, 2024, \"MMXXIV\"), 0); return 0; }",
+    "pub fn test_to_err_1[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(rom_err(heap, 0), 0); return 0; }",
+    "pub fn test_to_err_2[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(rom_err(heap, -5), 0); return 0; }",
+    "pub fn test_to_err_3[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(rom_err(heap, 4000), 0); return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "from_roman",
+   "signature": "fn from_roman[&r](text: &r [byte]) -> [] result.Result[int, &static [byte]]",
+   "description": "Value of a Roman numeral: Ok(n) with n in 1..3999, or Err(message) if text is not a CANONICAL numeral. Canonical means exactly the text to_roman would produce for that value (upper case I V X L C D M, each decimal digit written separately, thousands first, subtractive pairs IV IX XL XC CD CM only, at most three equal letters in a row, nothing else). Everything else is Err, not merely the out-of-range: \"IIII\", \"VV\", \"VX\", \"IC\", \"IL\", \"XM\", \"VIV\", \"IXI\", \"CMC\", \"CDC\", \"MMMM\", lower case, the empty string, spaces or any other character anywhere in the text, digits and signs. Do not stop at 'the letters add up to a value': a numeral that is valid in a looser reading but is not the shortest form for its value is Err. \"MCMXCIV\" is Ok(1994). It must never panic, on any text, including text of unlimited length and bytes that are not ASCII.",
+   "examples": [
+    "from_roman(\"MCMXCIV\") == result.Result::Ok(1994)",
+    "from_roman(\"XIV\") == result.Result::Ok(14)",
+    "from_roman(\"MMMCMXCIX\") == result.Result::Ok(3999)",
+    "from_roman(\"IIII\") == result.Result::Err",
+    "from_roman(\"VX\") == result.Result::Err",
+    "from_roman(\"MMMM\") == result.Result::Err",
+    "from_roman(\"\") == result.Result::Err"
+   ],
+   "tests": [
+    "fn from_is(s: &static [byte], want: int) -> [] int { match from_roman(s) { result.Result::Ok(v) => { if v == want { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "fn from_err(s: &static [byte]) -> [] int { match from_roman(s) { result.Result::Ok(_) => { return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_from_ok_1() -> [] int { test.assert_eq(from_is(\"I\", 1), 0); return 0; }",
+    "pub fn test_from_ok_2() -> [] int { test.assert_eq(from_is(\"XIV\", 14), 0); return 0; }",
+    "pub fn test_from_ok_3() -> [] int { test.assert_eq(from_is(\"MCMXCIV\", 1994), 0); return 0; }",
+    "pub fn test_from_ok_4() -> [] int { test.assert_eq(from_is(\"MMMCMXCIX\", 3999), 0); return 0; }",
+    "pub fn test_from_ok_5() -> [] int { test.assert_eq(from_is(\"XLIX\", 49), 0); return 0; }",
+    "pub fn test_from_err_1() -> [] int { test.assert_eq(from_err(\"IIII\"), 0); return 0; }",
+    "pub fn test_from_err_2() -> [] int { test.assert_eq(from_err(\"VX\"), 0); return 0; }",
+    "pub fn test_from_err_3() -> [] int { test.assert_eq(from_err(\"IC\"), 0); return 0; }",
+    "pub fn test_from_err_4() -> [] int { test.assert_eq(from_err(\"MMMM\"), 0); return 0; }",
+    "pub fn test_from_err_5() -> [] int { test.assert_eq(from_err(\"xiv\"), 0); return 0; }",
+    "pub fn test_from_err_6() -> [] int { test.assert_eq(from_err(\"\"), 0); return 0; }",
+    "pub fn test_from_err_7() -> [] int { test.assert_eq(from_err(\" X\"), 0); return 0; }",
+    "pub fn test_from_err_8() -> [] int { test.assert_eq(from_err(\"XIV \"), 0); return 0; }",
+    "pub fn test_from_err_9() -> [] int { test.assert_eq(from_err(\"VV\"), 0); return 0; }",
+    "pub fn test_from_err_10() -> [] int { test.assert_eq(from_err(\"IXI\"), 0); return 0; }"
+   ],
+   "deps": []
+  }
+ ]
+}

@@ -1,0 +1,140 @@
+{
+ "name": "jsonptr",
+ "units": [
+  {
+   "id": "valid",
+   "signature": "fn ptr_valid[&r](p: &r [byte]) -> [] bool",
+   "description": "Is p a valid JSON Pointer (RFC 6901)? The text is bytes. true for the empty pointer (the whole document). Otherwise p must start with \"/\" (byte 47), and every \"~\" (byte 126) anywhere in it must be followed by \"0\" or \"1\"; a \"~\" that is last, or followed by anything else (including \"/\"), makes it invalid. A token may be empty, so \"/\" and \"//\" are valid. Bytes other than \"/\" and \"~\" are never a problem, whatever they are (non-ASCII text such as \"é\" is fine). It must never panic, on any text. It only decides validity; it does not unescape anything.",
+   "examples": [
+    "ptr_valid(\"\") == true",
+    "ptr_valid(\"/a~1b\") == true",
+    "ptr_valid(\"//\") == true",
+    "ptr_valid(\"a/b\") == false",
+    "ptr_valid(\"/~\") == false",
+    "ptr_valid(\"/~2\") == false"
+   ],
+   "tests": [],
+   "deps": []
+  },
+  {
+   "id": "push_token",
+   "signature": "fn ptr_push_token[&h, &r](heap: &!h Heap, b: buffer.Buffer, token: &r [byte]) -> [heap] buffer.Buffer",
+   "description": "Append one reference token to the pointer text held in b, and hand the buffer back: first the byte \"/\", then the token escaped, byte for byte: \"~\" becomes \"~0\", \"/\" becomes \"~1\", every other byte (including non-ASCII bytes) is copied unchanged. The escaping is of the raw token, once: a token \"~1\" (two bytes) is written \"/~01\". An empty token appends just \"/\". b is consumed and the returned Buffer is the same text with the token added; the caller drops it. This is the one place that knows how to escape, to be used by ptr_format and ptr_append.",
+   "examples": [
+    "ptr_push_token(heap, buffer.empty(heap, 8), \"a/b\") == \"/a~1b\""
+   ],
+   "tests": [
+    "fn t_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var k = 0; while k < len(x) { if x[k] != y[k] { return false; } k = k + 1; } return true; }",
+    "fn t_push_is[&h](heap: &!h Heap, start: &static [byte], token: &static [byte], want: &static [byte]) -> [heap] int { var b = buffer.append(heap, buffer.empty(heap, 8), start); b = ptr_push_token(heap, b, token); var same = false; borrow b as &x in { same = t_same(buffer.bytes(x), want); } buffer.drop(heap, b); if same { return 0; } return 1; }",
+    "pub fn test_push_1[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(t_push_is(heap, \"\", \"a/b\", \"/a~1b\"), 0); return 0; }",
+    "pub fn test_push_2[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(t_push_is(heap, \"/x\", \"~\", \"/x/~0\"), 0); return 0; }",
+    "pub fn test_push_3[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(t_push_is(heap, \"\", \"\", \"/\"), 0); return 0; }",
+    "pub fn test_push_4[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(t_push_is(heap, \"\", \"~1\", \"/~01\"), 0); return 0; }",
+    "pub fn test_push_5[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(t_push_is(heap, \"/a\", \"é\", \"/a/é\"), 0); return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "parse",
+   "signature": "fn ptr_parse[&h, &r](heap: &!h Heap, p: &r [byte]) -> [heap] result.Result[list.List[Box[Box[[byte]]]], &static [byte]]",
+   "description": "Split a JSON Pointer (RFC 6901) into its unescaped reference tokens, in order: Ok(tokens), or Err(message) if p is not a valid pointer (see ptr_valid). The empty pointer \"\" is Ok with no tokens. Otherwise p must start with \"/\", and each \"/\" starts the next token, which runs to the next \"/\" or the end: \"/a/b\" is two tokens, \"/\" is one empty token, \"//\" is two empty tokens, \"/a/\" is \"a\" then an empty one. Inside a token \"~1\" stands for \"/\" and \"~0\" for \"~\"; a \"~\" not followed by 0 or 1 makes the whole pointer an Err, as does a non-empty p that does not start with \"/\". Unescape each token in one left-to-right pass, so \"~01\" is the two bytes \"~1\" (never \"/\"). Non-ASCII bytes pass through unchanged. It must never panic, on any text. The token list is list.List[Box[Box[[byte]]]]: each token is a Box holding a Box of bytes, one more Box than looks needed, because the compiler cannot match a plain Box[[byte]] through a reference (alpibrusl/cancho#461). list.push puts an element at the FRONT, so build the list from the last token to the first. A parsed pointer is owned by the caller, who frees it: this function allocates one boxed byte run per token and one list cell per token.",
+   "examples": [
+    "ptr_parse(heap, \"/a~1b\") == tokens(\"a/b\")",
+    "ptr_parse(heap, \"/~01\") == tokens(\"~1\")",
+    "ptr_parse(heap, \"//\") == tokens(\"\", \"\")",
+    "ptr_parse(heap, \"\") == tokens()",
+    "ptr_parse(heap, \"a/b\") == Err",
+    "ptr_parse(heap, \"/~2\") == Err"
+   ],
+   "tests": [
+    "fn t_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var k = 0; while k < len(x) { if x[k] != y[k] { return false; } k = k + 1; } return true; }",
+    "fn t_drop[&h](heap: &!h Heap, l: list.List[Box[Box[[byte]]]]) -> [heap] int { match l { list.List::Empty => { return 0; } list.List::Cons(f, rest) => { unbox_slice(heap, unbox(heap, f)); let tail = unbox(heap, rest); return 1 + t_drop(heap, tail); } } }",
+    "fn t_nth_is[&l, &r](l: &l list.List[Box[Box[[byte]]]], idx: int, want: &r [byte]) -> [] bool { match l { list.List::Empty => { return false; } list.List::Cons(f, rest) => { if idx == 0 { return t_same(contents(contents(f)), want); } return t_nth_is(contents(rest), idx - 1, want); } } }",
+    "pub fn test_parse_ok_1[&h](heap: &!h Heap) -> [heap] int { match ptr_parse(heap, \"/a~1b\") { result.Result::Ok(l) => { var ok = true; borrow l as &r in { if list.length(r) != 1 { ok = false; } if !t_nth_is(r, 0, \"a/b\") { ok = false; } } t_drop(heap, l); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parse_ok_2[&h](heap: &!h Heap) -> [heap] int { match ptr_parse(heap, \"/~01\") { result.Result::Ok(l) => { var ok = true; borrow l as &r in { if list.length(r) != 1 { ok = false; } if !t_nth_is(r, 0, \"~1\") { ok = false; } } t_drop(heap, l); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parse_ok_3[&h](heap: &!h Heap) -> [heap] int { match ptr_parse(heap, \"//\") { result.Result::Ok(l) => { var ok = true; borrow l as &r in { if list.length(r) != 2 { ok = false; } if !t_nth_is(r, 0, \"\") { ok = false; } if !t_nth_is(r, 1, \"\") { ok = false; } } t_drop(heap, l); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parse_ok_4[&h](heap: &!h Heap) -> [heap] int { match ptr_parse(heap, \"/\") { result.Result::Ok(l) => { var ok = true; borrow l as &r in { if list.length(r) != 1 { ok = false; } if !t_nth_is(r, 0, \"\") { ok = false; } } t_drop(heap, l); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parse_ok_5[&h](heap: &!h Heap) -> [heap] int { match ptr_parse(heap, \"\") { result.Result::Ok(l) => { var ok = true; borrow l as &r in { if list.length(r) != 0 { ok = false; } } t_drop(heap, l); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parse_ok_6[&h](heap: &!h Heap) -> [heap] int { match ptr_parse(heap, \"/a/b/c\") { result.Result::Ok(l) => { var ok = true; borrow l as &r in { if list.length(r) != 3 { ok = false; } if !t_nth_is(r, 0, \"a\") { ok = false; } if !t_nth_is(r, 1, \"b\") { ok = false; } if !t_nth_is(r, 2, \"c\") { ok = false; } } t_drop(heap, l); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parse_ok_7[&h](heap: &!h Heap) -> [heap] int { match ptr_parse(heap, \"/é\") { result.Result::Ok(l) => { var ok = true; borrow l as &r in { if list.length(r) != 1 { ok = false; } if !t_nth_is(r, 0, \"é\") { ok = false; } } t_drop(heap, l); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parse_err_1[&h](heap: &!h Heap) -> [heap] int { match ptr_parse(heap, \"a/b\") { result.Result::Ok(l) => { t_drop(heap, l); return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_parse_err_2[&h](heap: &!h Heap) -> [heap] int { match ptr_parse(heap, \"/~\") { result.Result::Ok(l) => { t_drop(heap, l); return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_parse_err_3[&h](heap: &!h Heap) -> [heap] int { match ptr_parse(heap, \"/~2\") { result.Result::Ok(l) => { t_drop(heap, l); return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_parse_err_4[&h](heap: &!h Heap) -> [heap] int { match ptr_parse(heap, \"/a~\") { result.Result::Ok(l) => { t_drop(heap, l); return 1; } result.Result::Err(_) => { return 0; } } }"
+   ],
+   "deps": [
+    "valid"
+   ]
+  },
+  {
+   "id": "format",
+   "signature": "fn ptr_format[&h, &l](heap: &!h Heap, tokens: &l list.List[Box[Box[[byte]]]]) -> [heap] buffer.Buffer",
+   "description": "The JSON Pointer for a list of reference tokens: each token escaped (\"~\" becomes \"~0\", \"/\" becomes \"~1\", everything else unchanged, escaped once and byte for byte) and prefixed with \"/\", written one after another with nothing between. The empty list gives the empty text \"\", and a list of one empty token gives \"/\". The tokens are only borrowed: the caller keeps and frees the list. The result is a heap-owned buffer.Buffer that the caller drops (cancho has no string type). For every list of tokens, ptr_parse of the formatted text gives the same tokens back. The token list is list.List[Box[Box[[byte]]]] (each token a Box holding a Box of bytes, as in ptr_parse), and you reach a token's bytes with contents(contents(t)) when t is the element bound by matching a list.List::Cons(t, rest) through a reference.",
+   "examples": [
+    "ptr_format(heap, tokens(\"a/b\", \"c~d\", \"\")) == \"/a~1b/c~0d/\"",
+    "ptr_format(heap, tokens(\"\")) == \"/\"",
+    "ptr_format(heap, tokens()) == \"\""
+   ],
+   "tests": [
+    "fn t_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var k = 0; while k < len(x) { if x[k] != y[k] { return false; } k = k + 1; } return true; }",
+    "fn t_drop[&h](heap: &!h Heap, l: list.List[Box[Box[[byte]]]]) -> [heap] int { match l { list.List::Empty => { return 0; } list.List::Cons(f, rest) => { unbox_slice(heap, unbox(heap, f)); let tail = unbox(heap, rest); return 1 + t_drop(heap, tail); } } }",
+    "fn t_mk[&h, &r](heap: &!h Heap, s: &r [byte]) -> [heap] Box[[byte]] { let b = box_slice(heap, len(s), byte_of(0)); borrow mut b as &!w in { copy_into(contents(w), s); } return b; }",
+    "pub fn test_format_1[&h](heap: &!h Heap) -> [heap] int { var l: list.List[Box[Box[[byte]]]] = list.List::Empty; l = list.push(heap, l, box(heap, t_mk(heap, \"\"))); l = list.push(heap, l, box(heap, t_mk(heap, \"c~d\"))); l = list.push(heap, l, box(heap, t_mk(heap, \"a/b\"))); var ok = false; borrow l as &r in { let out = ptr_format(heap, r); borrow out as &q in { ok = t_same(buffer.bytes(q), \"/a~1b/c~0d/\"); } buffer.drop(heap, out); } t_drop(heap, l); if ok { return 0; } return 1; }",
+    "pub fn test_format_2[&h](heap: &!h Heap) -> [heap] int { var l: list.List[Box[Box[[byte]]]] = list.List::Empty; l = list.push(heap, l, box(heap, t_mk(heap, \"\"))); var ok = false; borrow l as &r in { let out = ptr_format(heap, r); borrow out as &q in { ok = t_same(buffer.bytes(q), \"/\"); } buffer.drop(heap, out); } t_drop(heap, l); if ok { return 0; } return 1; }",
+    "pub fn test_format_3[&h](heap: &!h Heap) -> [heap] int { var l: list.List[Box[Box[[byte]]]] = list.List::Empty; var ok = false; borrow l as &r in { let out = ptr_format(heap, r); borrow out as &q in { ok = t_same(buffer.bytes(q), \"\"); } buffer.drop(heap, out); } t_drop(heap, l); if ok { return 0; } return 1; }",
+    "pub fn test_format_4[&h](heap: &!h Heap) -> [heap] int { var l: list.List[Box[Box[[byte]]]] = list.List::Empty; l = list.push(heap, l, box(heap, t_mk(heap, \"~1\"))); var ok = false; borrow l as &r in { let out = ptr_format(heap, r); borrow out as &q in { ok = t_same(buffer.bytes(q), \"/~01\"); } buffer.drop(heap, out); } t_drop(heap, l); if ok { return 0; } return 1; }",
+    "pub fn test_format_5[&h](heap: &!h Heap) -> [heap] int { var l: list.List[Box[Box[[byte]]]] = list.List::Empty; l = list.push(heap, l, box(heap, t_mk(heap, \"é\"))); var ok = false; borrow l as &r in { let out = ptr_format(heap, r); borrow out as &q in { ok = t_same(buffer.bytes(q), \"/é\"); } buffer.drop(heap, out); } t_drop(heap, l); if ok { return 0; } return 1; }"
+   ],
+   "deps": [
+    "push_token"
+   ]
+  },
+  {
+   "id": "append",
+   "signature": "fn ptr_append[&h, &r, &t](heap: &!h Heap, p: &r [byte], token: &t [byte]) -> [heap] result.Result[buffer.Buffer, &static [byte]]",
+   "description": "Add one reference token to the end of a pointer: Err(message) if p is not a valid pointer (see ptr_valid; the token is never checked, any bytes are a legal token), otherwise Ok(p followed by \"/\" followed by the escaped token). p is copied as it is, NOT re-escaped (it is already escaped text); only token is escaped (\"~\" becomes \"~0\", \"/\" becomes \"~1\"). So appending to \"\" gives \"/token\", and appending the empty token to \"/a\" gives \"/a/\". The result is a heap-owned buffer.Buffer that the caller drops; on Err nothing is allocated that the caller must free.",
+   "examples": [
+    "ptr_append(heap, \"/a\", \"x/y\") == result.Result::Ok(\"/a/x~1y\")",
+    "ptr_append(heap, \"\", \"~\") == result.Result::Ok(\"/~0\")",
+    "ptr_append(heap, \"a\", \"x\") == result.Result::Err"
+   ],
+   "tests": [
+    "fn t_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var k = 0; while k < len(x) { if x[k] != y[k] { return false; } k = k + 1; } return true; }",
+    "pub fn test_append_ok_1[&h](heap: &!h Heap) -> [heap] int { match ptr_append(heap, \"/a\", \"x/y\") { result.Result::Ok(b) => { var ok = false; borrow b as &x in { ok = t_same(buffer.bytes(x), \"/a/x~1y\"); } buffer.drop(heap, b); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_append_ok_2[&h](heap: &!h Heap) -> [heap] int { match ptr_append(heap, \"\", \"~\") { result.Result::Ok(b) => { var ok = false; borrow b as &x in { ok = t_same(buffer.bytes(x), \"/~0\"); } buffer.drop(heap, b); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_append_ok_3[&h](heap: &!h Heap) -> [heap] int { match ptr_append(heap, \"/a/b\", \"\") { result.Result::Ok(b) => { var ok = false; borrow b as &x in { ok = t_same(buffer.bytes(x), \"/a/b/\"); } buffer.drop(heap, b); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_append_ok_4[&h](heap: &!h Heap) -> [heap] int { match ptr_append(heap, \"/a~1b\", \"c\") { result.Result::Ok(b) => { var ok = false; borrow b as &x in { ok = t_same(buffer.bytes(x), \"/a~1b/c\"); } buffer.drop(heap, b); if ok { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_append_err_1[&h](heap: &!h Heap) -> [heap] int { match ptr_append(heap, \"a\", \"x\") { result.Result::Ok(b) => { buffer.drop(heap, b); return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_append_err_2[&h](heap: &!h Heap) -> [heap] int { match ptr_append(heap, \"/~\", \"x\") { result.Result::Ok(b) => { buffer.drop(heap, b); return 1; } result.Result::Err(_) => { return 0; } } }"
+   ],
+   "deps": [
+    "valid",
+    "push_token"
+   ]
+  },
+  {
+   "id": "parent",
+   "signature": "fn ptr_parent[&r](p: &r [byte]) -> [] result.Result[&r [byte], &static [byte]]",
+   "description": "The pointer to the parent of p: Err(message) if p is not a valid pointer (see ptr_valid) or is the empty pointer (the root has no parent), otherwise Ok(p without its last token), that is p cut at its LAST \"/\" (the cut drops that \"/\" and everything after it). Because \"~1\" is the escape for a slash, the last raw \"/\" byte is always a token boundary. \"/a/b\" gives \"/a\", \"/a\" gives \"\" (the root), \"/\" gives \"\", and \"/a//\" gives \"/a/\". The Ok text is a sub-slice of p itself (p[0..i], the same region &r), so nothing is allocated and nothing needs freeing; the text is not copied or re-escaped.",
+   "examples": [
+    "ptr_parent(\"/a/b\") == result.Result::Ok(\"/a\")",
+    "ptr_parent(\"/a\") == result.Result::Ok(\"\")",
+    "ptr_parent(\"\") == result.Result::Err"
+   ],
+   "tests": [
+    "fn t_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var k = 0; while k < len(x) { if x[k] != y[k] { return false; } k = k + 1; } return true; }",
+    "pub fn test_parent_ok_1() -> [] int { match ptr_parent(\"/a/b\") { result.Result::Ok(q) => { if t_same(q, \"/a\") { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parent_ok_2() -> [] int { match ptr_parent(\"/a\") { result.Result::Ok(q) => { if t_same(q, \"\") { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parent_ok_3() -> [] int { match ptr_parent(\"/\") { result.Result::Ok(q) => { if t_same(q, \"\") { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parent_ok_4() -> [] int { match ptr_parent(\"/a//\") { result.Result::Ok(q) => { if t_same(q, \"/a/\") { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parent_ok_5() -> [] int { match ptr_parent(\"/a~1b/c\") { result.Result::Ok(q) => { if t_same(q, \"/a~1b\") { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "pub fn test_parent_err_1() -> [] int { match ptr_parent(\"\") { result.Result::Ok(_) => { return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_parent_err_2() -> [] int { match ptr_parent(\"a\") { result.Result::Ok(_) => { return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_parent_err_3() -> [] int { match ptr_parent(\"/a~\") { result.Result::Ok(_) => { return 1; } result.Result::Err(_) => { return 0; } } }"
+   ],
+   "deps": [
+    "valid"
+   ]
+  }
+ ]
+}

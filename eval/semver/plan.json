@@ -1,0 +1,231 @@
+{
+ "name": "semver",
+ "units": [
+  {
+   "id": "idents",
+   "signature": "fn ident_list_ok[&s](s: &s [byte], no_zero: bool) -> [] bool",
+   "description": "Whether the whole of s is a dot-separated list of identifiers: at least one identifier, every identifier non-empty and made only of ASCII letters, digits and '-' (so no empty text, no leading, trailing or doubled dot, no '_' or space). If no_zero is true, an identifier made only of digits must not have a leading zero (\"0\" is fine, \"01\" is not, \"0a\" is fine since it has a letter); if no_zero is false leading zeros are allowed. This is the check for a PRERELEASE (no_zero true) and for BUILD metadata (no_zero false), applied to the text after the '-' or '+', not including it. It must never panic on any bytes.",
+   "examples": [
+    "ident_list_ok(\"alpha.1\", false) == true",
+    "ident_list_ok(\"01\", true) == false",
+    "ident_list_ok(\"01\", false) == true",
+    "ident_list_ok(\"a..b\", false) == false"
+   ],
+   "tests": [
+    "fn list_is(s: &static [byte], nz: bool, want: bool) -> [] int { if ident_list_ok(s, nz) == want { return 0; } return 1; }",
+    "pub fn test_list_1() -> [] int { test.assert_eq(list_is(\"a\", false, true), 0); return 0; }",
+    "pub fn test_list_2() -> [] int { test.assert_eq(list_is(\"alpha.1\", false, true), 0); return 0; }",
+    "pub fn test_list_3() -> [] int { test.assert_eq(list_is(\"a-b.0\", false, true), 0); return 0; }",
+    "pub fn test_list_4() -> [] int { test.assert_eq(list_is(\"0\", true, true), 0); return 0; }",
+    "pub fn test_list_5() -> [] int { test.assert_eq(list_is(\"1.0\", true, true), 0); return 0; }",
+    "pub fn test_list_6() -> [] int { test.assert_eq(list_is(\"01\", true, false), 0); return 0; }",
+    "pub fn test_list_7() -> [] int { test.assert_eq(list_is(\"01\", false, true), 0); return 0; }",
+    "pub fn test_list_8() -> [] int { test.assert_eq(list_is(\"a.01\", true, false), 0); return 0; }",
+    "pub fn test_list_9() -> [] int { test.assert_eq(list_is(\"0a\", true, true), 0); return 0; }",
+    "pub fn test_list_10() -> [] int { test.assert_eq(list_is(\"\", false, false), 0); return 0; }",
+    "pub fn test_list_11() -> [] int { test.assert_eq(list_is(\"a..b\", false, false), 0); return 0; }",
+    "pub fn test_list_12() -> [] int { test.assert_eq(list_is(\".a\", false, false), 0); return 0; }",
+    "pub fn test_list_13() -> [] int { test.assert_eq(list_is(\"a.\", false, false), 0); return 0; }",
+    "pub fn test_list_14() -> [] int { test.assert_eq(list_is(\"a_b\", false, false), 0); return 0; }",
+    "pub fn test_list_15() -> [] int { test.assert_eq(list_is(\"a b\", false, false), 0); return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "valid",
+   "signature": "fn semver_valid[&s](s: &s [byte]) -> [] bool",
+   "description": "Whether s is a valid version MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]. Exactly three numbers separated by dots; each is 1 to 9 ASCII digits with no leading zero (the single digit \"0\" is fine). Then optionally '-' and a PRERELEASE, then optionally '+' and BUILD; the PRERELEASE is the text from the first '-' after the patch number up to the first '+' (or the end), and a '-' inside it is just an identifier character (\"1.2.3-a-b\" is valid). A '-' or '+' with nothing after it is invalid. The prerelease and the build are checked with ident_list_ok (no leading zero in an all-digit PRERELEASE identifier, leading zeros allowed in BUILD). No leading 'v', no whitespace anywhere, no fourth number. Never panics on any bytes.",
+   "examples": [
+    "semver_valid(\"1.2.3-alpha.1+build.5\") == true",
+    "semver_valid(\"01.2.3\") == false",
+    "semver_valid(\"1.2.3-\") == false",
+    "semver_valid(\"999999999.0.0\") == true"
+   ],
+   "tests": [
+    "fn valid_is(s: &static [byte], want: bool) -> [] int { if semver_valid(s) == want { return 0; } return 1; }",
+    "pub fn test_valid_1() -> [] int { test.assert_eq(valid_is(\"1.2.3\", true), 0); return 0; }",
+    "pub fn test_valid_2() -> [] int { test.assert_eq(valid_is(\"5.0.7\", true), 0); return 0; }",
+    "pub fn test_valid_3() -> [] int { test.assert_eq(valid_is(\"1.2.3-alpha.1+build.5\", true), 0); return 0; }",
+    "pub fn test_valid_4() -> [] int { test.assert_eq(valid_is(\"1.2.3+build\", true), 0); return 0; }",
+    "pub fn test_valid_5() -> [] int { test.assert_eq(valid_is(\"1.2.3-a-b\", true), 0); return 0; }",
+    "pub fn test_valid_6() -> [] int { test.assert_eq(valid_is(\"999999999.0.0\", true), 0); return 0; }",
+    "pub fn test_valid_7() -> [] int { test.assert_eq(valid_is(\"1.2.3-0\", true), 0); return 0; }",
+    "pub fn test_valid_8() -> [] int { test.assert_eq(valid_is(\"1.2.3+01\", true), 0); return 0; }",
+    "pub fn test_valid_9() -> [] int { test.assert_eq(valid_is(\"1.00.3\", false), 0); return 0; }",
+    "pub fn test_valid_10() -> [] int { test.assert_eq(valid_is(\"1.2.\", false), 0); return 0; }",
+    "pub fn test_valid_11() -> [] int { test.assert_eq(valid_is(\"1.2.3.4.5\", false), 0); return 0; }",
+    "pub fn test_valid_12() -> [] int { test.assert_eq(valid_is(\"V1.2.3\", false), 0); return 0; }",
+    "pub fn test_valid_13() -> [] int { test.assert_eq(valid_is(\"\\t1.2.3\", false), 0); return 0; }",
+    "pub fn test_valid_14() -> [] int { test.assert_eq(valid_is(\"1.2.3\\n\", false), 0); return 0; }",
+    "pub fn test_valid_15() -> [] int { test.assert_eq(valid_is(\"1.2.3-\", false), 0); return 0; }",
+    "pub fn test_valid_16() -> [] int { test.assert_eq(valid_is(\"1.2.3+.\", false), 0); return 0; }",
+    "pub fn test_valid_17() -> [] int { test.assert_eq(valid_is(\"1.2.3-a.00\", false), 0); return 0; }",
+    "pub fn test_valid_18() -> [] int { test.assert_eq(valid_is(\"1000000000.0.0\", false), 0); return 0; }",
+    "pub fn test_valid_19() -> [] int { test.assert_eq(valid_is(\"1.2.3-a+\", false), 0); return 0; }",
+    "pub fn test_valid_20() -> [] int { test.assert_eq(valid_is(\"...\", false), 0); return 0; }",
+    "pub fn test_valid_21() -> [] int { test.assert_eq(valid_is(\"1..3\", false), 0); return 0; }",
+    "pub fn test_valid_22() -> [] int { test.assert_eq(valid_is(\"1.2.x\", false), 0); return 0; }"
+   ],
+   "deps": [
+    "idents"
+   ]
+  },
+  {
+   "id": "precompare",
+   "signature": "fn pre_compare[&a, &b](a: &a [byte], b: &b [byte]) -> [] int",
+   "description": "Precedence of two PRERELEASE lists, each already valid and given without the leading '-' (for example \"alpha.1\" or \"rc.2\"): -1 if a is lower than b, 0 if equal, 1 if a is higher. Compare identifier by identifier from the left. Two all-digit identifiers compare as numbers (\"2\" < \"11\"; there are no leading zeros, and an identifier can be 9 digits or more, so compare without overflowing, for example by length first); any other pair compares as ASCII text byte by byte (upper case sorts before lower case); an all-digit identifier is lower than one that is not. When every shared identifier is equal, the list with fewer identifiers is lower. The result is exactly -1, 0 or 1, never another number.",
+   "examples": [
+    "pre_compare(\"alpha\", \"alpha.1\") == -1",
+    "pre_compare(\"beta.2\", \"beta.11\") == -1",
+    "pre_compare(\"1\", \"a\") == -1",
+    "pre_compare(\"rc.1\", \"rc.1\") == 0"
+   ],
+   "tests": [
+    "fn pre_is(a: &static [byte], b: &static [byte], want: int) -> [] int { if pre_compare(a, b) == want { return 0; } return 1; }",
+    "pub fn test_pre_1() -> [] int { test.assert_eq(pre_is(\"alpha\", \"alpha\", 0), 0); return 0; }",
+    "pub fn test_pre_2() -> [] int { test.assert_eq(pre_is(\"alpha\", \"beta\", -1), 0); return 0; }",
+    "pub fn test_pre_3() -> [] int { test.assert_eq(pre_is(\"beta\", \"alpha\", 1), 0); return 0; }",
+    "pub fn test_pre_4() -> [] int { test.assert_eq(pre_is(\"alpha\", \"alpha.1\", -1), 0); return 0; }",
+    "pub fn test_pre_5() -> [] int { test.assert_eq(pre_is(\"alpha.1\", \"alpha\", 1), 0); return 0; }",
+    "pub fn test_pre_6() -> [] int { test.assert_eq(pre_is(\"beta.2\", \"beta.11\", -1), 0); return 0; }",
+    "pub fn test_pre_7() -> [] int { test.assert_eq(pre_is(\"beta.11\", \"beta.2\", 1), 0); return 0; }",
+    "pub fn test_pre_8() -> [] int { test.assert_eq(pre_is(\"1\", \"a\", -1), 0); return 0; }",
+    "pub fn test_pre_9() -> [] int { test.assert_eq(pre_is(\"a\", \"1\", 1), 0); return 0; }",
+    "pub fn test_pre_10() -> [] int { test.assert_eq(pre_is(\"alpha.1\", \"alpha.beta\", -1), 0); return 0; }",
+    "pub fn test_pre_11() -> [] int { test.assert_eq(pre_is(\"1.2.3\", \"1.2.3\", 0), 0); return 0; }",
+    "pub fn test_pre_12() -> [] int { test.assert_eq(pre_is(\"rc.1\", \"rc.1.0\", -1), 0); return 0; }",
+    "pub fn test_pre_13() -> [] int { test.assert_eq(pre_is(\"a-b\", \"a-c\", -1), 0); return 0; }",
+    "pub fn test_pre_14() -> [] int { test.assert_eq(pre_is(\"2\", \"10\", -1), 0); return 0; }",
+    "pub fn test_pre_15() -> [] int { test.assert_eq(pre_is(\"B\", \"a\", -1), 0); return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "compare",
+   "signature": "fn semver_compare[&a, &b](a: &a [byte], b: &b [byte]) -> [] result.Result[int, &static [byte]]",
+   "description": "Err(message) if either text is not a valid version (use semver_valid), otherwise Ok(-1), Ok(0) or Ok(1) by semantic-versioning precedence: a lower than b, equal, higher. MAJOR, MINOR and PATCH compare numerically, in that order (\"1.2.3\" < \"1.10.0\"). A version with a PRERELEASE is lower than the same MAJOR.MINOR.PATCH without one; two PRERELEASE lists compare with pre_compare. BUILD metadata (after '+') is ignored entirely. The Ok value is exactly -1, 0 or 1, never another number. Never panics on any bytes.",
+   "examples": [
+    "semver_compare(\"1.0.0-alpha\", \"1.0.0\") == result.Result::Ok(-1)",
+    "semver_compare(\"1.0.0-beta.2\", \"1.0.0-beta.11\") == result.Result::Ok(-1)",
+    "semver_compare(\"1.0.0+a\", \"1.0.0+b\") == result.Result::Ok(0)",
+    "semver_compare(\"2.0.0\", \"1.9.9\") == result.Result::Ok(1)",
+    "semver_compare(\"1.2\", \"1.2.3\") == result.Result::Err"
+   ],
+   "tests": [
+    "fn cmp_is(a: &static [byte], b: &static [byte], want: int) -> [] int { match semver_compare(a, b) { result.Result::Ok(v) => { if v == want { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "fn cmp_err(a: &static [byte], b: &static [byte]) -> [] int { match semver_compare(a, b) { result.Result::Ok(_) => { return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_cmp_1() -> [] int { test.assert_eq(cmp_is(\"3.4.5\", \"3.4.5\", 0), 0); return 0; }",
+    "pub fn test_cmp_2() -> [] int { test.assert_eq(cmp_is(\"1.0.0\", \"2.0.0\", -1), 0); return 0; }",
+    "pub fn test_cmp_3() -> [] int { test.assert_eq(cmp_is(\"2.0.0\", \"1.9.9\", 1), 0); return 0; }",
+    "pub fn test_cmp_4() -> [] int { test.assert_eq(cmp_is(\"1.2.3\", \"1.10.0\", -1), 0); return 0; }",
+    "pub fn test_cmp_5() -> [] int { test.assert_eq(cmp_is(\"0.0.9\", \"0.0.10\", -1), 0); return 0; }",
+    "pub fn test_cmp_6() -> [] int { test.assert_eq(cmp_is(\"1.0.0-alpha\", \"1.0.0\", -1), 0); return 0; }",
+    "pub fn test_cmp_7() -> [] int { test.assert_eq(cmp_is(\"2.1.0\", \"2.1.0-rc.1\", 1), 0); return 0; }",
+    "pub fn test_cmp_8() -> [] int { test.assert_eq(cmp_is(\"1.0.0-alpha\", \"1.0.0-alpha.1\", -1), 0); return 0; }",
+    "pub fn test_cmp_9() -> [] int { test.assert_eq(cmp_is(\"1.0.0-beta.2\", \"1.0.0-beta.11\", -1), 0); return 0; }",
+    "pub fn test_cmp_10() -> [] int { test.assert_eq(cmp_is(\"1.0.0-7\", \"1.0.0-x\", -1), 0); return 0; }",
+    "pub fn test_cmp_11() -> [] int { test.assert_eq(cmp_is(\"1.0.0+a\", \"1.0.0+b\", 0), 0); return 0; }",
+    "pub fn test_cmp_12() -> [] int { test.assert_eq(cmp_is(\"1.0.0-rc.1+x\", \"1.0.0-rc.1+y\", 0), 0); return 0; }",
+    "pub fn test_cmp_13() -> [] int { test.assert_eq(cmp_is(\"1.0.0-alpha\", \"2.0.0-alpha\", -1), 0); return 0; }",
+    "pub fn test_cmp_err_1() -> [] int { test.assert_eq(cmp_err(\"1.2\", \"1.2.3\"), 0); return 0; }",
+    "pub fn test_cmp_err_2() -> [] int { test.assert_eq(cmp_err(\"1.2.3\", \"x\"), 0); return 0; }",
+    "pub fn test_cmp_err_3() -> [] int { test.assert_eq(cmp_err(\"\", \"\"), 0); return 0; }",
+    "pub fn test_cmp_err_4() -> [] int { test.assert_eq(cmp_err(\"01.0.0\", \"1.0.0\"), 0); return 0; }",
+    "pub fn test_cmp_err_5() -> [] int { test.assert_eq(cmp_err(\"1.0.0\", \" 1.0.0\"), 0); return 0; }"
+   ],
+   "deps": [
+    "valid",
+    "precompare"
+   ]
+  },
+  {
+   "id": "comparator",
+   "signature": "fn comparator_holds[&v, &c](version: &v [byte], comparator: &c [byte]) -> [] result.Result[bool, &static [byte]]",
+   "description": "Whether version satisfies ONE comparator (no spaces in it): an optional operator directly followed by a full version. Err(message) if version is not a valid version, or the comparator is not an operator ('=', '>', '>=', '<', '<=', '^', '~' or none, where none means '=') directly followed by a valid version (so \"!=1.2.3\", \"^1.2\", \"^\", \"\" and \"> 1.2.3\" are Err; read '>=' and '<=' as one operator, not as '>' then '='). Otherwise Ok(bool), all by precedence (the same ordering as semver_compare, BUILD ignored): '=' equal, '>' '>=' '<' '<=' as written. '~X.Y.Z' means >=X.Y.Z and <X.(Y+1).0. '^X.Y.Z' means >=X.Y.Z and below the next change of the left-most non-zero number: <(X+1).0.0 if X>0, else <0.(Y+1).0 if Y>0, else <0.0.(Z+1). The comparator's version may carry a PRERELEASE and then takes part in the lower bound by normal precedence; the upper bound has no prerelease, so \"2.0.0-rc.1\" is below \"2.0.0\" and satisfies \"^1.5.0\". There is no special rule for prerelease versions.",
+   "examples": [
+    "comparator_holds(\"1.9.9\", \"^1.2.3\") == result.Result::Ok(true)",
+    "comparator_holds(\"0.0.4\", \"^0.0.3\") == result.Result::Ok(false)",
+    "comparator_holds(\"1.3.0\", \"~1.2.3\") == result.Result::Ok(false)",
+    "comparator_holds(\"1.2.3\", \">=1.2.3\") == result.Result::Ok(true)",
+    "comparator_holds(\"1.2.3\", \"^1.2\") == result.Result::Err"
+   ],
+   "tests": [
+    "fn hold_is(v: &static [byte], c: &static [byte], want: bool) -> [] int { match comparator_holds(v, c) { result.Result::Ok(x) => { if x == want { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "fn hold_err(v: &static [byte], c: &static [byte]) -> [] int { match comparator_holds(v, c) { result.Result::Ok(_) => { return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_hold_1() -> [] int { test.assert_eq(hold_is(\"1.2.3\", \"1.2.3\", true), 0); return 0; }",
+    "pub fn test_hold_2() -> [] int { test.assert_eq(hold_is(\"1.2.3\", \"=1.2.3\", true), 0); return 0; }",
+    "pub fn test_hold_3() -> [] int { test.assert_eq(hold_is(\"1.2.4\", \"=1.2.3\", false), 0); return 0; }",
+    "pub fn test_hold_4() -> [] int { test.assert_eq(hold_is(\"1.2.4\", \">1.2.3\", true), 0); return 0; }",
+    "pub fn test_hold_5() -> [] int { test.assert_eq(hold_is(\"1.2.3\", \">1.2.3\", false), 0); return 0; }",
+    "pub fn test_hold_6() -> [] int { test.assert_eq(hold_is(\"1.2.3\", \">=1.2.3\", true), 0); return 0; }",
+    "pub fn test_hold_7() -> [] int { test.assert_eq(hold_is(\"1.2.2\", \">=1.2.3\", false), 0); return 0; }",
+    "pub fn test_hold_8() -> [] int { test.assert_eq(hold_is(\"1.2.2\", \"<1.2.3\", true), 0); return 0; }",
+    "pub fn test_hold_9() -> [] int { test.assert_eq(hold_is(\"1.2.3\", \"<1.2.3\", false), 0); return 0; }",
+    "pub fn test_hold_10() -> [] int { test.assert_eq(hold_is(\"1.2.3\", \"<=1.2.3\", true), 0); return 0; }",
+    "pub fn test_hold_11() -> [] int { test.assert_eq(hold_is(\"1.2.4\", \"<=1.2.3\", false), 0); return 0; }",
+    "pub fn test_hold_12() -> [] int { test.assert_eq(hold_is(\"1.9.9\", \"^1.2.3\", true), 0); return 0; }",
+    "pub fn test_hold_13() -> [] int { test.assert_eq(hold_is(\"2.0.0\", \"^1.2.3\", false), 0); return 0; }",
+    "pub fn test_hold_14() -> [] int { test.assert_eq(hold_is(\"1.2.2\", \"^1.2.3\", false), 0); return 0; }",
+    "pub fn test_hold_15() -> [] int { test.assert_eq(hold_is(\"0.2.9\", \"^0.2.3\", true), 0); return 0; }",
+    "pub fn test_hold_16() -> [] int { test.assert_eq(hold_is(\"0.3.0\", \"^0.2.3\", false), 0); return 0; }",
+    "pub fn test_hold_17() -> [] int { test.assert_eq(hold_is(\"0.0.3\", \"^0.0.3\", true), 0); return 0; }",
+    "pub fn test_hold_18() -> [] int { test.assert_eq(hold_is(\"0.0.4\", \"^0.0.3\", false), 0); return 0; }",
+    "pub fn test_hold_19() -> [] int { test.assert_eq(hold_is(\"1.2.9\", \"~1.2.3\", true), 0); return 0; }",
+    "pub fn test_hold_20() -> [] int { test.assert_eq(hold_is(\"1.3.0\", \"~1.2.3\", false), 0); return 0; }",
+    "pub fn test_hold_21() -> [] int { test.assert_eq(hold_is(\"1.2.2\", \"~1.2.3\", false), 0); return 0; }",
+    "pub fn test_hold_22() -> [] int { test.assert_eq(hold_is(\"1.0.0-beta\", \"^1.0.0-alpha\", true), 0); return 0; }",
+    "pub fn test_hold_23() -> [] int { test.assert_eq(hold_is(\"1.0.0-alpha\", \"^1.0.0-beta\", false), 0); return 0; }",
+    "pub fn test_hold_24() -> [] int { test.assert_eq(hold_is(\"2.0.0-rc.1\", \"^1.5.0\", true), 0); return 0; }",
+    "pub fn test_hold_25() -> [] int { test.assert_eq(hold_is(\"1.0.0-alpha\", \"<1.0.0\", true), 0); return 0; }",
+    "pub fn test_hold_26() -> [] int { test.assert_eq(hold_is(\"1.0.0+x\", \"=1.0.0+y\", true), 0); return 0; }",
+    "pub fn test_hold_err_1() -> [] int { test.assert_eq(hold_err(\"1.2.3\", \"!=1.2.3\"), 0); return 0; }",
+    "pub fn test_hold_err_2() -> [] int { test.assert_eq(hold_err(\"1.2.3\", \"^1.2\"), 0); return 0; }",
+    "pub fn test_hold_err_3() -> [] int { test.assert_eq(hold_err(\"1.2.3\", \"~\"), 0); return 0; }",
+    "pub fn test_hold_err_4() -> [] int { test.assert_eq(hold_err(\"1.2.3\", \"\"), 0); return 0; }",
+    "pub fn test_hold_err_5() -> [] int { test.assert_eq(hold_err(\"1.2.3\", \">=\"), 0); return 0; }",
+    "pub fn test_hold_err_6() -> [] int { test.assert_eq(hold_err(\"1.2.3\", \"> 1.2.3\"), 0); return 0; }",
+    "pub fn test_hold_err_7() -> [] int { test.assert_eq(hold_err(\"x\", \"^1.0.0\"), 0); return 0; }",
+    "pub fn test_hold_err_8() -> [] int { test.assert_eq(hold_err(\"1.2.3\", \"v1.2.3\"), 0); return 0; }",
+    "pub fn test_hold_err_9() -> [] int { test.assert_eq(hold_err(\"1.2.3\", \"1.2.3 \"), 0); return 0; }"
+   ],
+   "deps": [
+    "compare"
+   ]
+  },
+  {
+   "id": "satisfies",
+   "signature": "fn semver_satisfies[&v, &r](version: &v [byte], range: &r [byte]) -> [] result.Result[bool, &static [byte]]",
+   "description": "Err(message) if the version is invalid or the range is invalid, otherwise Ok(whether the version satisfies the range). A range is one or more comparators separated by EXACTLY ONE space; the version must satisfy all of them (use comparator_holds for each). Invalid ranges, all Err: the empty range, a leading, trailing or doubled space (so an empty piece between spaces), an unknown operator, a space between operator and version (\">= 1.0.0\"), a partial version (\"^1.2\"), any piece that is not a valid comparator. The whole range is checked: a bad comparator later in the range is an Err even if an earlier one already failed, and the version is checked as well (invalid version with a fine range is Err). Never panics on any bytes.",
+   "examples": [
+    "semver_satisfies(\"1.4.99\", \">=1.0.0 <2.0.0\") == result.Result::Ok(true)",
+    "semver_satisfies(\"2.0.0\", \"^1.2.3\") == result.Result::Ok(false)",
+    "semver_satisfies(\"1.2.3\", \">= 1.0.0\") == result.Result::Err",
+    "semver_satisfies(\"1.2.3\", \"\") == result.Result::Err"
+   ],
+   "tests": [
+    "fn sat_is(v: &static [byte], r: &static [byte], want: bool) -> [] int { match semver_satisfies(v, r) { result.Result::Ok(x) => { if x == want { return 0; } return 1; } result.Result::Err(_) => { return 2; } } }",
+    "fn sat_err(v: &static [byte], r: &static [byte]) -> [] int { match semver_satisfies(v, r) { result.Result::Ok(_) => { return 1; } result.Result::Err(_) => { return 0; } } }",
+    "pub fn test_sat_1() -> [] int { test.assert_eq(sat_is(\"1.4.99\", \">=1.0.0 <2.0.0\", true), 0); return 0; }",
+    "pub fn test_sat_2() -> [] int { test.assert_eq(sat_is(\"2.0.0\", \">=1.0.0 <2.0.0\", false), 0); return 0; }",
+    "pub fn test_sat_3() -> [] int { test.assert_eq(sat_is(\"1.2.3\", \"1.2.3\", true), 0); return 0; }",
+    "pub fn test_sat_4() -> [] int { test.assert_eq(sat_is(\"1.5.0\", \"^1.0.0 <1.6.0 >1.5.0\", false), 0); return 0; }",
+    "pub fn test_sat_5() -> [] int { test.assert_eq(sat_is(\"1.2.3\", \"^1.2.3 ~1.2.0 >1.2.2\", true), 0); return 0; }",
+    "pub fn test_sat_6() -> [] int { test.assert_eq(sat_is(\"1.2.3\", \"^1.2.3 ~1.3.0\", false), 0); return 0; }",
+    "pub fn test_sat_7() -> [] int { test.assert_eq(sat_is(\"0.5.9\", \"^0.5.1\", true), 0); return 0; }",
+    "pub fn test_sat_8() -> [] int { test.assert_eq(sat_is(\"1.0.0-beta\", \">=1.0.0-alpha <1.0.0\", true), 0); return 0; }",
+    "pub fn test_sat_err_1() -> [] int { test.assert_eq(sat_err(\"1.2.3\", \"\"), 0); return 0; }",
+    "pub fn test_sat_err_2() -> [] int { test.assert_eq(sat_err(\"1.2.3\", \" >=1.0.0\"), 0); return 0; }",
+    "pub fn test_sat_err_3() -> [] int { test.assert_eq(sat_err(\"1.2.3\", \"^1.0.0 \"), 0); return 0; }",
+    "pub fn test_sat_err_4() -> [] int { test.assert_eq(sat_err(\"1.2.3\", \"^1.0.0   <2.0.0\"), 0); return 0; }",
+    "pub fn test_sat_err_5() -> [] int { test.assert_eq(sat_err(\"1.2.3\", \"~1\"), 0); return 0; }",
+    "pub fn test_sat_err_6() -> [] int { test.assert_eq(sat_err(\"1.2.3\", \"<= 1.0.0\"), 0); return 0; }",
+    "pub fn test_sat_err_7() -> [] int { test.assert_eq(sat_err(\"1.2\", \"1.0.0\"), 0); return 0; }",
+    "pub fn test_sat_err_8() -> [] int { test.assert_eq(sat_err(\"1.2.3\", \">=1.0.0 foo\"), 0); return 0; }",
+    "pub fn test_sat_err_9() -> [] int { test.assert_eq(sat_err(\"1.2\", \"1.0.0\"), 0); return 0; }"
+   ],
+   "deps": [
+    "comparator"
+   ]
+  }
+ ]
+}

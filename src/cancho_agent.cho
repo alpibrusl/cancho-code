@@ -34,6 +34,8 @@ edition 7;
 //   --effort        low | medium | high | xhigh | max            (the model's own)
 //   --workspace     a workspace id, for a key not scoped to one  (none)
 //   --save-raw      a file every raw reply is appended to        (none)
+//   --usage-log     a file that gets one JSON line per API call: tokens in, out,
+//                   cache write, cache read, stop reason, outcome, sizes, ms (none)
 //
 // Exit 0: the project file is the model's program. Exit 1: it was not
 // changed (the model was unreachable, refused, or never produced a program).
@@ -47,6 +49,7 @@ import reply;
 import std.buffer;
 import std.bytes;
 import std.io;
+import std.json;
 
 // ---- the command line ----------------------------------------------------
 
@@ -137,6 +140,73 @@ fn save_raw[&h, &f, &p, &t, &s](heap: &!h Heap, fs: &f Fs(""), path: &p [byte], 
     }
     buffer.drop(heap, all);
     return 0;
+}
+
+// One JSON line per API call, whatever came of it: what the call cost in
+// tokens, how it ended, and how big the reply and the program in it were.
+// `outcome` is written | cut_off | no_program | api_error | unreachable.
+// Appended by reading what is there and writing it back, as `save_raw` does.
+fn log_call[&h, &f, &p, &m, &t](heap: &!h Heap, fs: &f Fs(""), path: &p [byte], provider: &static [byte], model: &m [byte], task: &t [byte], sample: int, tin: int, tout: int, cw: int, cr: int, stop: &static [byte], outcome: &static [byte], status: int, reply_chars: int, program_chars: int, ms: int) -> [heap, fs_read(""), fs_write("")] int {
+    if len(path) == 0 {
+        return 0;
+    }
+    var w = json.writer(heap, 512);
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "provider");
+    w = json.put_string(heap, w, provider);
+    w = json.put_key(heap, w, "model");
+    w = json.put_string(heap, w, model);
+    w = json.put_key(heap, w, "task");
+    w = json.put_string(heap, w, task);
+    w = json.put_key(heap, w, "sample");
+    w = json.put_int(heap, w, sample);
+    w = json.put_key(heap, w, "in");
+    w = json.put_int(heap, w, tin);
+    w = json.put_key(heap, w, "out");
+    w = json.put_int(heap, w, tout);
+    w = json.put_key(heap, w, "cache_write");
+    w = json.put_int(heap, w, cw);
+    w = json.put_key(heap, w, "cache_read");
+    w = json.put_int(heap, w, cr);
+    w = json.put_key(heap, w, "stop");
+    w = json.put_string(heap, w, stop);
+    w = json.put_key(heap, w, "outcome");
+    w = json.put_string(heap, w, outcome);
+    w = json.put_key(heap, w, "status");
+    w = json.put_int(heap, w, status);
+    w = json.put_key(heap, w, "reply_chars");
+    w = json.put_int(heap, w, reply_chars);
+    w = json.put_key(heap, w, "program_chars");
+    w = json.put_int(heap, w, program_chars);
+    w = json.put_key(heap, w, "ms");
+    w = json.put_int(heap, w, ms);
+    w = json.end_object(heap, w);
+    let line = json.finish(w);
+    let (old, ok) = slurp(heap, fs, path, 67108864);
+    var all = old;
+    borrow line as &lr in {
+        all = buffer.append(heap, all, buffer.bytes(lr));
+    }
+    all = buffer.append(heap, all, "\n");
+    buffer.drop(heap, line);
+    borrow all as &ar in {
+        fs_write(fs, path, buffer.bytes(ar));
+    }
+    buffer.drop(heap, all);
+    return 0;
+}
+
+// The first line of the task, which names the unit (`UNIT: refill`), at most 100 bytes.
+fn task_head[&t](task: &t [byte]) -> [] &t [byte] {
+    var a = 0;
+    while a < len(task) && (int_of(task[a]) == 32 || (int_of(task[a]) >= 9 && int_of(task[a]) <= 13)) {
+        a = a + 1;
+    }
+    var b = a;
+    while b < len(task) && int_of(task[b]) != 10 && b - a < 100 {
+        b = b + 1;
+    }
+    return task[a..b];
 }
 
 // ---- the work ------------------------------------------------------------
@@ -327,6 +397,11 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
     borrow mut entropy as &!ew in {
         fs_read(fs, "/dev/urandom", contents(ew));
     }
+    let usage_path = opt(args, "--usage-log");
+    var provider_label = "anthropic";
+    if local {
+        provider_label = "ollama";
+    }
     var path = "/v1/messages";
     if local {
         path = "/api/generate";
@@ -340,8 +415,12 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
             borrow body as &br in {
               borrow roots as &rr in {
                 borrow mut entropy as &!ew in {
+                    let t0 = clock_ms(clock);
                     match provider.exchange(heap, net, clock, io, host, port, secure, path, buffer.bytes(hr), buffer.bytes(br), buffer.bytes(rr), ip, contents(ew), 33554432, 1800000) {
                         provider.Answered::Failed(tag) => {
+                            borrow task as &lt in {
+                                log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, 0, 0, 0, 0, "", "unreachable", 0, 0, 0, clock_ms(clock) - t0);
+                            }
                             io.error_all(io, "cancho-agent: cannot reach the API: ");
                             io.error_all(io, provider.tag_of(tag));
                             io.error_all(io, "\n");
@@ -351,6 +430,9 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                             borrow out as &or in {
                                 let answer = buffer.bytes(or);
                                 if status != 200 {
+                                    borrow task as &lt in {
+                                        log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, 0, 0, 0, 0, "", "api_error", status, len(answer), 0, clock_ms(clock) - t0);
+                                    }
                                     var why = buffer.empty(heap, 16);
                                     buffer.drop(heap, why);
                                     if local {
@@ -401,6 +483,49 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                                 save_raw(heap, fs, raw_path, buffer.bytes(xr), buffer.bytes(yr));
                                             }
                                             buffer.drop(heap, why);
+                                        }
+                                        var pa = 0 - 1;
+                                        var pz = 0 - 1;
+                                        if cut == false {
+                                            let (a, z) = reply.program_span(buffer.bytes(xr));
+                                            pa = a;
+                                            pz = z;
+                                        }
+                                        var outcome = "written";
+                                        if cut {
+                                            outcome = "cut_off";
+                                        } else if pa < 0 {
+                                            outcome = "no_program";
+                                        }
+                                        var stop = "end_turn";
+                                        if local {
+                                            stop = "stop";
+                                        }
+                                        if cut {
+                                            stop = "max_tokens";
+                                            if local {
+                                                stop = "length";
+                                            }
+                                        }
+                                        var tin = 0;
+                                        var tout = 0;
+                                        var tcw = 0;
+                                        var tcr = 0;
+                                        if local {
+                                            tin = reply.top_count(heap, answer, "prompt_eval_count");
+                                            tout = reply.top_count(heap, answer, "eval_count");
+                                        } else {
+                                            tin = reply.usage_count(heap, answer, "input_tokens");
+                                            tout = reply.usage_count(heap, answer, "output_tokens");
+                                            tcw = reply.usage_count(heap, answer, "cache_creation_input_tokens");
+                                            tcr = reply.usage_count(heap, answer, "cache_read_input_tokens");
+                                        }
+                                        var plen = 0;
+                                        if pa >= 0 {
+                                            plen = pz - pa;
+                                        }
+                                        borrow task as &lt in {
+                                            log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, tin, tout, tcw, tcr, stop, outcome, status, len(buffer.bytes(xr)), plen, clock_ms(clock) - t0);
                                         }
                                         if cut {
                                             io.error_all(io, "cancho-agent: a sample was cut off by the bound (--max-tokens / --num-predict)\n");

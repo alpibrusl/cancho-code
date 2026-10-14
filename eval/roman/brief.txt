@@ -1,0 +1,17 @@
+Build a small library package named "roman": convert between integers and Roman numerals. It is a pure library: no network, no database, no files, no environment. Use only the standard library; do not depend on any other package. Every function has examples.
+
+The package exposes exactly two functions:
+
+- to_roman(n) : the Roman numeral for the integer n, as owned text, or Err(message) if n is outside 1..3999 (so 0, negatives and 4000 or more are Err).
+- from_roman(text) : the integer a Roman numeral stands for, or Err(message) if text is not a valid numeral.
+
+Canonical form. Numerals are upper case and use the letters I (1), V (5), X (10), L (50), C (100), D (500), M (1000). to_roman always produces the canonical, shortest form: each decimal digit is written on its own, thousands first, using the subtractive pairs IV (4), IX (9), XL (40), XC (90), CD (400), CM (900) and never more than three equal letters in a row: 4 is "IV" (not "IIII"), 9 is "IX", 40 is "XL", 1994 is "MCMXCIV", 3999 is "MMMCMXCIX". from_roman accepts ONLY canonical numerals, that is exactly the strings to_roman can produce, and nothing else is accepted: "IIII", "VV", "VX", "IC", "IL", "XM", "VIV", "IXI", "CMC", "CDC" and "MMMM" are all Err, as are lower case ("iv", "mcmxciv"), the empty string, spaces or any other character anywhere in the text (" XIV", "XIV ", "X IV"), and any digit or sign. It must never panic, on any text. The numeral for a value is unique, so from_roman(to_roman(n)) is Ok(n) for every n in 1..3999, and to_roman of a value from_roman accepts gives back the same text.
+
+Worked examples (the answers are exact):
+
+- to_roman(1) is Ok("I"); to_roman(4) is Ok("IV"); to_roman(14) is Ok("XIV"); to_roman(1994) is Ok("MCMXCIV"); to_roman(3999) is Ok("MMMCMXCIX").
+- to_roman(0), to_roman(-5) and to_roman(4000) are Err.
+- from_roman("MCMXCIV") is Ok(1994); from_roman("XIV") is Ok(14); from_roman("MMMCMXCIX") is Ok(3999).
+- from_roman("IIII"), from_roman("VX"), from_roman("IC"), from_roman("MMMM"), from_roman("xiv"), from_roman("") and from_roman(" X") are all Err.
+
+Properties that must hold and be checked: for every n in 1..3999, from_roman of to_roman(n) gives Ok(n); from_roman never panics on any string.

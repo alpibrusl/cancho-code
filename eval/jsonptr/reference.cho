@@ -1,0 +1,137 @@
+edition 7;
+import std.list;
+import std.result;
+import std.buffer;
+
+// jsonptr: RFC 6901 pointers over bytes. A token list is List[Box[Box[[byte]]]] (one Box more than looks needed:
+// the compiler cannot match a plain Box[[byte]] through a reference, alpibrusl/cancho#461).
+
+fn is_tilde(b: byte) -> [] bool { return int_of(b) == 126; }
+fn is_slash(b: byte) -> [] bool { return int_of(b) == 47; }
+
+fn ptr_valid[&r](p: &r [byte]) -> [] bool {
+    if len(p) == 0 { return true; }
+    if is_slash(p[0]) == false { return false; }
+    var i = 1;
+    while i < len(p) {
+        if is_tilde(p[i]) {
+            if i + 1 >= len(p) { return false; }
+            let c = int_of(p[i + 1]);
+            if c != 48 && c != 49 { return false; }
+            i = i + 2;
+        } else {
+            i = i + 1;
+        }
+    }
+    return true;
+}
+
+fn ptr_push_token[&h, &r](heap: &!h Heap, b: buffer.Buffer, token: &r [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.push(heap, b, byte_of(47));
+    var i = 0;
+    while i < len(token) {
+        if is_tilde(token[i]) {
+            out = buffer.push(heap, out, byte_of(126));
+            out = buffer.push(heap, out, byte_of(48));
+        } else {
+            if is_slash(token[i]) {
+                out = buffer.push(heap, out, byte_of(126));
+                out = buffer.push(heap, out, byte_of(49));
+            } else {
+                out = buffer.push(heap, out, token[i]);
+            }
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+fn unesc_len[&r](s: &r [byte], from: int, to: int) -> [] int {
+    var n = 0;
+    var i = from;
+    while i < to {
+        if is_tilde(s[i]) { i = i + 2; } else { i = i + 1; }
+        n = n + 1;
+    }
+    return n;
+}
+
+fn make_token[&h, &r](heap: &!h Heap, s: &r [byte], from: int, to: int) -> [heap] Box[[byte]] {
+    let b = box_slice(heap, unesc_len(s, from, to), byte_of(0));
+    borrow mut b as &!w in {
+        let out = contents(w);
+        var i = from;
+        var o = 0;
+        while i < to {
+            if is_tilde(s[i]) {
+                if int_of(s[i + 1]) == 48 { out[o] = byte_of(126); } else { out[o] = byte_of(47); }
+                i = i + 2;
+            } else {
+                out[o] = s[i];
+                i = i + 1;
+            }
+            o = o + 1;
+        }
+    }
+    return b;
+}
+
+fn ptr_parse[&h, &r](heap: &!h Heap, p: &r [byte]) -> [heap] result.Result[list.List[Box[Box[[byte]]]], &static [byte]] {
+    if len(p) == 0 {
+        return result.Result::Ok(list.List::Empty);
+    }
+    if is_slash(p[0]) == false {
+        return result.Result::Err("pointer must be empty or start with /");
+    }
+    if ptr_valid(p) == false {
+        return result.Result::Err("invalid ~ escape");
+    }
+    // Walk from the end, pushing to the front, so the order comes out right.
+    var acc: list.List[Box[Box[[byte]]]] = list.List::Empty;
+    var end = len(p);
+    var i = len(p) - 1;
+    while i >= 0 {
+        if is_slash(p[i]) {
+            acc = list.push(heap, acc, box(heap, make_token(heap, p, i + 1, end)));
+            end = i;
+        }
+        i = i - 1;
+    }
+    return result.Result::Ok(acc);
+}
+
+fn format_rest[&h, &l](heap: &!h Heap, b: buffer.Buffer, tokens: &l list.List[Box[Box[[byte]]]]) -> [heap] buffer.Buffer {
+    match tokens {
+        list.List::Empty => { return b; }
+        list.List::Cons(t, rest) => {
+            let b2 = ptr_push_token(heap, b, contents(contents(t)));
+            return format_rest(heap, b2, contents(rest));
+        }
+    }
+}
+
+fn ptr_format[&h, &l](heap: &!h Heap, tokens: &l list.List[Box[Box[[byte]]]]) -> [heap] buffer.Buffer {
+    return format_rest(heap, buffer.empty(heap, 32), tokens);
+}
+
+fn ptr_append[&h, &r, &t](heap: &!h Heap, p: &r [byte], token: &t [byte]) -> [heap] result.Result[buffer.Buffer, &static [byte]] {
+    if ptr_valid(p) == false {
+        return result.Result::Err("invalid pointer");
+    }
+    let b = buffer.append(heap, buffer.empty(heap, 32), p);
+    return result.Result::Ok(ptr_push_token(heap, b, token));
+}
+
+fn ptr_parent[&r](p: &r [byte]) -> [] result.Result[&r [byte], &static [byte]] {
+    if ptr_valid(p) == false {
+        return result.Result::Err("invalid pointer");
+    }
+    if len(p) == 0 {
+        return result.Result::Err("the root has no parent");
+    }
+    var i = len(p) - 1;
+    while is_slash(p[i]) == false {
+        i = i - 1;
+    }
+    return result.Result::Ok(p[0..i]);
+}

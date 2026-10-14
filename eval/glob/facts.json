@@ -1,0 +1,29 @@
+{
+ "item": "02-glob",
+ "units": 7,
+ "oracle_cases": 87,
+ "reference_loc": 131,
+ "reference_fns": 7,
+ "needs": [
+  "loops over bytes",
+  "std.utf8 decode (code points, not bytes)",
+  "an arena region with alloc_slice for a DP table",
+  "parsing a pattern into tokens by index",
+  "int sentinels (-1) for malformed",
+  "no break/continue",
+  "bool results"
+ ],
+ "pitfalls": [
+  "? and [..] must count a code point, not a byte (? vs the two-byte e-acute)",
+  "* stops at / but ** does not, and a/**/b needs both slashes (no a/b)",
+  "no set matches / even when negated, but a literal / or escaped slash does",
+  "[]] and [!] are EMPTY sets (first ] closes), so invalid; ']' cannot be put in a set",
+  "a reversed range invalidates the pattern even when the range is never reached by the text",
+  "a trailing single backslash is invalid; backslash is plain inside a set",
+  "exponential backtracking on a*a*a*a*b against a run of a (needs a table/DP, not recursion)",
+  "an invalid pattern must match nothing, including the empty text with pattern [",
+  "DP offsets must advance by character width and never land mid-character",
+  "a first/last - in a set is plain; x-y needs a char on both sides of the dash"
+ ],
+ "difficulty_notes": "Hard item. Seven units; the match unit is the hard one (token walk + region table, with the plan's description naming the technique). The oracle is the lex-code regex-based Python (vendored unchanged), cross-checked here against an independent DP matcher on 200000 random patterns/texts with 0 differences. The audit grades glob_match (64) and glob_valid (23) only; the helper units (glob_cp_at, glob_cp_len, glob_set_has, glob_tok_end, glob_one) are plan scaffolding, tested by the plan's own tests, not by the audit. Oracle gaps: no invalid-UTF-8 inputs, no ambiguous '--' range bodies like [--z]."
+}
