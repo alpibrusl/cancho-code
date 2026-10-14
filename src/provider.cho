@@ -184,29 +184,7 @@ fn pump[&h, &n, &c, &i, &t, &p, &x, &b](heap: &!h Heap, net: &n Net(""), clock: 
                 if t < 0 {
                     refused = r_connect();
                 } else {
-                    // The request body, fed as the client has room.
                     var sent = 0;
-                    var sending = true;
-                    while sending {
-                        let room = hc.send_room(cw, t);
-                        var n = len(body) - sent;
-                        if n > room {
-                            n = room;
-                        }
-                        if n <= 0 {
-                            sending = false;
-                        } else {
-                            let m = hc.send_body(cw, t, body[sent..sent + n], clock_ms(clock));
-                            if m < 0 {
-                                sending = false;
-                            } else {
-                                sent = sent + m;
-                                if sent >= len(body) {
-                                    sending = false;
-                                }
-                            }
-                        }
-                    }
                     // The pump: step the transport, drain the events,
                     // collect the body, until Done or the deadline. No
                     // hang: `wait_ms` is the whole attempt's ceiling, and
@@ -216,6 +194,31 @@ fn pump[&h, &n, &c, &i, &t, &p, &x, &b](heap: &!h Heap, net: &n Net(""), clock: 
                     let started = clock_ms(clock);
                     var now = started;
                     while done == false && failed == false && refused == 0 && now - started < wait_ms {
+                        // The request body, fed as the client has room: its
+                        // output buffer is smaller than a body (16 KiB, and
+                        // a language page alone is 29 KB), so the rest goes
+                        // in on later turns, as the transport drains.
+                        var sending = sent < len(body);
+                        while sending {
+                            let room = hc.send_room(cw, t);
+                            var n = len(body) - sent;
+                            if n > room {
+                                n = room;
+                            }
+                            if n <= 0 {
+                                sending = false;
+                            } else {
+                                let m = hc.send_body(cw, t, body[sent..sent + n], clock_ms(clock));
+                                if m < 0 {
+                                    sending = false;
+                                } else {
+                                    sent = sent + m;
+                                    if sent >= len(body) {
+                                        sending = false;
+                                    }
+                                }
+                            }
+                        }
                         borrow mut iov as &!ioh in {
                             fio.step(ioh, cw, clock, 100);
                         }
