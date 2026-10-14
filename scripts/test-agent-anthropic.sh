@@ -9,6 +9,7 @@
 #   key       the key is in no output of the agent (stdout, stderr, the saved raw replies); a key file that others can read is refused
 #             BEFORE any request; a missing, empty or unnamed key file is an error that names ANTHROPIC_KEY_FILE
 #   cut off   a reply that stopped at max_tokens is retried, never written
+#   tls       the server is verified, and a CA bundle is found when the Python has none; a bundle without the CA still fails
 #   error     an HTTP error is a non-zero exit with the API's own message, and the file is left as it was
 #
 # Needs python3 (the stub, and the script's own HTTP call; standard library only).
@@ -37,7 +38,8 @@ class H(http.server.BaseHTTPRequestHandler):
         # what arrived, without writing the key itself anywhere
         open(out + "/headers.json", "w").write(json.dumps({
             "path": self.path, "key_matches": self.headers.get("x-api-key") == key,
-            "version": self.headers.get("anthropic-version"), "content_type": self.headers.get("content-type")}))
+            "version": self.headers.get("anthropic-version"), "content_type": self.headers.get("content-type"),
+            "workspace": self.headers.get("anthropic-workspace-id")}))
         if self.headers.get("x-api-key") != key:
             data = json.dumps({"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}}).encode()
             self.send_response(401)
@@ -58,9 +60,16 @@ class H(http.server.BaseHTTPRequestHandler):
         self.end_headers(); self.wfile.write(data)
     def log_message(self, *a): pass
 s = http.server.HTTPServer(("127.0.0.1", 0), H)
+if len(sys.argv) > 4:
+    import ssl
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(sys.argv[3], sys.argv[4])
+    s.socket = ctx.wrap_socket(s.socket, server_side=True)
 open(out + "/port", "w").write(str(s.server_address[1]))
 s.serve_forever()
 PY
+startls() { rm -f "$d/port" "$d/count" "$d/request.json" "$d/headers.json" "$d/force-error"; python3 "$d/stub.py" "$d" "$KEY" "$d/srv.pem" "$d/srv.key" & stub=$!
+          n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port"); }
 start() { rm -f "$d/port" "$d/count" "$d/request.json" "$d/headers.json" "$d/force-error"; python3 "$d/stub.py" "$d" "$KEY" & stub=$!
           n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port"); }
 stop() { kill $stub 2>/dev/null; wait $stub 2>/dev/null; }
@@ -101,6 +110,15 @@ for f in out.txt err.txt raw.txt; do
     if grep -q "$KEY" "$d/$f" 2>/dev/null; then echo "FAIL: key: the key is in the agent's $f" >&2; fail=1; fi
 done
 [ -s "$d/raw.txt" ] || { echo "FAIL: key: the raw reply was not saved (ANTHROPIC_SAVE_RAW)" >&2; fail=1; }
+case "$(cat "$d/raw.txt")" in *"input_tokens"*"output_tokens"*) ;; *) echo "FAIL: usage: the saved reply does not record the token usage the API reported" >&2; fail=1 ;; esac
+
+# a key that is not scoped to a workspace needs the workspace id as a header (the API says so, in a 400, for such a key): sent when named, absent otherwise
+printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$d/project.cho"
+agent >/dev/null 2>&1
+expect "workspace: no header unless named" "$(python3 -c "import json; print(json.load(open('$d/headers.json'))['workspace'])")" None
+printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$d/project.cho"
+agent ANTHROPIC_WORKSPACE_ID=wrkspc_test_123 >/dev/null 2>&1
+expect "workspace: the id is sent as anthropic-workspace-id" "$(python3 -c "import json; print(json.load(open('$d/headers.json'))['workspace'])")" wrkspc_test_123
 
 # no primer: no system block
 printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$d/project.cho"
@@ -156,6 +174,33 @@ printf 'sk-ant-WRONG-key\n' > "$d/wrong.key"; chmod 600 "$d/wrong.key"
 case "$(cat "$d/err.txt")" in *401*|*authentication*) ;; *) echo "FAIL: error: a rejected key is not reported as such ('$(cat "$d/err.txt")')" >&2; fail=1 ;; esac
 grep -q "sk-ant-WRONG-key" "$d/out.txt" "$d/err.txt" 2>/dev/null && { echo "FAIL: error: the key is in the error output" >&2; fail=1; }
 stop
+
+# tls: the agent must verify the server, and must find a CA bundle itself when its Python has none (the python.org macOS build ships none: the
+# first live call failed CERTIFICATE_VERIFY_FAILED). A local CA signs the stub's certificate; SSL_CERT_FILE and SSL_CERT_DIR point nowhere, which
+# is "this Python trusts nothing". Verification stays ON: a bundle that does not hold the CA must still fail.
+if command -v openssl >/dev/null 2>&1; then
+    openssl req -x509 -newkey rsa:2048 -nodes -keyout "$d/ca.key" -out "$d/ca.pem" -subj "/CN=cc-test-ca" -days 1 -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign" >/dev/null 2>&1
+    openssl req -x509 -newkey rsa:2048 -nodes -keyout "$d/other.key" -out "$d/other.pem" -subj "/CN=some-other-ca" -days 1 >/dev/null 2>&1
+    openssl req -newkey rsa:2048 -nodes -keyout "$d/srv.key" -out "$d/srv.csr" -subj "/CN=localhost" >/dev/null 2>&1
+    printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\nauthorityKeyIdentifier=keyid,issuer\nsubjectKeyIdentifier=hash\nbasicConstraints=CA:FALSE\n' > "$d/ext.cnf"
+    openssl x509 -req -in "$d/srv.csr" -CA "$d/ca.pem" -CAkey "$d/ca.key" -CAcreateserial -out "$d/srv.pem" -days 1 -extfile "$d/ext.cnf" >/dev/null 2>&1
+    startls
+    tlsagent() { env -i SSL_CERT_FILE=/nonexistent SSL_CERT_DIR=/nonexistent ANTHROPIC_URL="https://localhost:$port" ANTHROPIC_KEY_FILE="$d/key" ANTHROPIC_MODEL=stub-model "$@" /bin/sh "$root/scripts/agent-anthropic.sh" "$F"; }
+    printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$d/project.cho"; cp "$d/project.cho" "$d/before.cho"
+    tlsagent >"$d/out.txt" 2>"$d/err.txt"; rc=$?
+    [ "$rc" != 0 ] || { echo "FAIL: tls: a server whose CA nothing trusts was accepted" >&2; fail=1; }
+    case "$(cat "$d/err.txt")" in *ertificate*) ;; *) echo "FAIL: tls: no certificate message ('$(cat "$d/err.txt")')" >&2; fail=1 ;; esac
+    expect "tls: nothing was written when the server was not trusted" "$(cat "$d/project.cho")" "$(cat "$d/before.cho")"
+    tlsagent AGENT_CA_BUNDLES="$d/other.pem" >"$d/out.txt" 2>"$d/err.txt"; rc=$?
+    [ "$rc" != 0 ] || { echo "FAIL: tls: a bundle that does not hold the server's CA was accepted (verification is off?)" >&2; fail=1; }
+    tlsagent AGENT_CA_BUNDLES="$d/other.pem:$d/ca.pem" >"$d/out.txt" 2>"$d/err.txt"; rc=$?
+    expect "tls: a fallback bundle that holds the CA works (exit)" "$rc" 0
+    expect "tls: ... and the file is the reply's program" "$(cat "$d/project.cho")" "edition 7;
+fn fixed() -> [] int { return 1; }"
+    stop
+else
+    echo "note: no openssl on PATH; the tls case was skipped" >&2
+fi
 
 rm -rf "$d"
 [ "$fail" = 0 ] && echo "anthropic agent gate: ok" || { echo "anthropic agent gate: FAILED" >&2; exit 1; }

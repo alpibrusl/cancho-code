@@ -17,6 +17,8 @@
 #   ANTHROPIC_MODEL      the model                         (default claude-haiku-5-5, the cheapest to test with)
 #   ANTHROPIC_URL        the API host                      (default https://api.anthropic.com)
 #   ANTHROPIC_MAX_TOKENS the most tokens one answer may take (default 8192); a reply that stops there is a program cut off: retried, never written
+#   ANTHROPIC_WORKSPACE_ID the workspace id, sent as anthropic-workspace-id: needed when the key is not scoped to a workspace (the API answers 400
+#                        and says so); not needed for a workspace-scoped key
 #   ANTHROPIC_PRIMER     a file whose text goes first, as a cached system block (optional; `cancho agent-guidelines > file`)
 #   ANTHROPIC_SAVE_RAW   a file that every raw reply is appended to, whole (default: none)
 #
@@ -68,10 +70,12 @@ def ask(primer, rest):
     body = {"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": rest}]}
     if primer:
         body["system"] = [{"type": "text", "text": primer, "cache_control": {"type": "ephemeral"}}]
-    request = urllib.request.Request(url + "/v1/messages", json.dumps(body).encode(),
-                                     {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01"})
+    headers = {"content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01"}
+    if os.environ.get("ANTHROPIC_WORKSPACE_ID"):
+        headers["anthropic-workspace-id"] = os.environ["ANTHROPIC_WORKSPACE_ID"]
+    request = urllib.request.Request(url + "/v1/messages", json.dumps(body).encode(), headers)
     try:
-        reply = json.load(urllib.request.urlopen(request, timeout=1800))
+        reply = json.load(urllib.request.urlopen(request, timeout=1800, context=agent_lib.ssl_context()))
     except urllib.error.HTTPError as e:
         # The API's own message, and the status: never the request, which holds the key.
         try:
@@ -83,7 +87,8 @@ def ask(primer, rest):
     except urllib.error.URLError as e:
         fail("cannot reach the API: %s" % getattr(e, "reason", e))
     text = "".join(b.get("text", "") for b in reply.get("content", []) if b.get("type") == "text")
-    agent_lib.save_raw("ANTHROPIC_SAVE_RAW", text, reply.get("stop_reason"))
+    # the usage the API reports (input, output, and the cached-prefix tokens) is kept with the reply: it is what a call cost
+    agent_lib.save_raw("ANTHROPIC_SAVE_RAW", text, "%s; usage %s" % (reply.get("stop_reason"), json.dumps(reply.get("usage"))))
     return text, reply.get("stop_reason") == "max_tokens"
 
 agent_lib.run(file, ask, NAME, "ANTHROPIC_PRIMER", "ANTHROPIC_SAVE_RAW", "ANTHROPIC_MAX_TOKENS")

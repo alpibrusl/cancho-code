@@ -10,7 +10,27 @@ non-zero. What is shared, and gated once (scripts/test-agent-ollama.sh, scripts/
   - three samples at most, and the project is never written over with anything that is not a program.
 A particular agent supplies `ask(primer, prompt) -> (text, cut_off)`; `primer` is the language page (or "") and is kept apart from the rest
 of the prompt so an API that can cache a repeated prefix is able to."""
-import json, os, re, sys
+import json, os, re, ssl, sys
+
+
+# Where an operating system keeps its root certificates, for a Python that has none of its own (the python.org build for macOS ships no
+# cert.pem until its "Install Certificates" script is run, and the driver's agent finds that Python on its minimal PATH).
+CA_BUNDLES = ["/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt",
+              "/opt/homebrew/etc/openssl@3/cert.pem", "/usr/local/etc/openssl@3/cert.pem"]
+
+
+def ssl_context():
+    """A verifying TLS context. When this Python trusts nothing, the system's own bundles are added; verification is never turned off.
+    AGENT_CA_BUNDLES (a colon-separated list) names more bundles to try first: for tests with a private CA."""
+    ctx = ssl.create_default_context()
+    if ctx.cert_store_stats().get("x509_ca", 0) == 0:
+        for path in [p for p in os.environ.get("AGENT_CA_BUNDLES", "").split(":") if p] + CA_BUNDLES:
+            if os.path.isfile(path):
+                try:
+                    ctx.load_verify_locations(cafile=path)
+                except (ssl.SSLError, OSError):
+                    pass
+    return ctx
 
 
 def feedback_text(file, source):
