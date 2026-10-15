@@ -25,7 +25,7 @@ fn note_cap() -> [] int {
 // ---- small helpers --------------------------------------------------------
 
 // `<wd>/<pre><id><suf>`.
-fn in_wd[&h, &w, &a, &b, &c](heap: &!h Heap, wd: &w [byte], pre: &a [byte], id: &b [byte], suf: &c [byte]) -> [heap] buffer.Buffer {
+pub fn in_wd[&h, &w, &a, &b, &c](heap: &!h Heap, wd: &w [byte], pre: &a [byte], id: &b [byte], suf: &c [byte]) -> [heap] buffer.Buffer {
     var b = buffer.append(heap, buffer.empty(heap, 128), wd);
     b = buffer.append(heap, b, "/");
     b = buffer.append(heap, b, pre);
@@ -35,7 +35,7 @@ fn in_wd[&h, &w, &a, &b, &c](heap: &!h Heap, wd: &w [byte], pre: &a [byte], id: 
 }
 
 // Write `b` whole to `path` and end it; 0, or -1 when the write failed.
-fn put[&h, &z, &p](heap: &!h Heap, fs: &z Fs(""), path: &p [byte], b: buffer.Buffer) -> [heap, fs_write("")] int {
+pub fn put[&h, &z, &p](heap: &!h Heap, fs: &z Fs(""), path: &p [byte], b: buffer.Buffer) -> [heap, fs_write("")] int {
     var r = -1;
     borrow b as &bb in {
         let want = buffer.size(bb);
@@ -65,12 +65,50 @@ fn add_str[&h, &s, &t](heap: &!h Heap, b: buffer.Buffer, src: &s [byte], tape: &
     return out;
 }
 
-fn say[&i, &d](io: &!i Io, id: &d [byte], word: &static [byte]) -> [io_write] int {
-    io.write_all(io, "[UNIT]\t");
-    io.write_all(io, id);
-    io.write_all(io, "\t");
-    io.write_all(io, word);
-    io.write_all(io, "\n");
+// Append `text` to the file `path` (read whole, written whole: a log is small, and the file capability has no append): 0, or -1.
+pub fn append_file[&h, &z, &p, &t](heap: &!h Heap, fs: &z Fs(""), path: &p [byte], text: &t [byte]) -> [heap, fs_read(""), fs_write("")] int {
+    let room = 4194304;
+    let store = box_slice(heap, room, byte_of(0));
+    var b = buffer.empty(heap, 256);
+    var full = false;
+    borrow mut store as &!sw in {
+        let n = fs_read(fs, path, contents(sw));
+        if n >= room {
+            full = true;
+        } else if n > 0 {
+            b = buffer.append(heap, b, contents(sw)[0..n]);
+        }
+    }
+    unbox_slice(heap, store);
+    b = buffer.append(heap, b, text);
+    var r = -1;
+    if full == false {
+        r = put(heap, fs, path, b);
+    } else {
+        buffer.drop(heap, b);
+    }
+    return r;
+}
+
+// Say `text` on the console and, when `log` names a file, append it there too (the run's `run.log`, docs/build.md).
+pub fn tell[&h, &i, &z, &l, &t](heap: &!h Heap, io: &!i Io, fs: &z Fs(""), log: &l [byte], text: &t [byte]) -> [heap, io_write, fs_read(""), fs_write("")] int {
+    io.write_all(io, text);
+    if len(log) > 0 {
+        append_file(heap, fs, log, text);
+    }
+    return 0;
+}
+
+fn say[&h, &i, &z, &l, &d](heap: &!h Heap, io: &!i Io, fs: &z Fs(""), log: &l [byte], id: &d [byte], word: &static [byte]) -> [heap, io_write, fs_read(""), fs_write("")] int {
+    var b = buffer.append(heap, buffer.empty(heap, 64), "[UNIT]\t");
+    b = buffer.append(heap, b, id);
+    b = buffer.append(heap, b, "\t");
+    b = buffer.append(heap, b, word);
+    b = buffer.append(heap, b, "\n");
+    borrow b as &bb in {
+        tell(heap, io, fs, log, buffer.bytes(bb));
+    }
+    buffer.drop(heap, b);
     return 0;
 }
 
@@ -444,7 +482,7 @@ fn verify[&h, &x, &c, &k, &w, &d](heap: &!h Heap, exec: &x Exec(""), clock: &c C
 }
 
 // Re-verify every verified unit but `skip` (-1: none): the ones that fail go back on the board, with a NOTE naming `broke`.
-fn recheck[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &b](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], tape: &t [int], nodes: &n [int], meta: &!m [int], notes: &!o [byte], count: int, skip: int, broke: &b [byte], keep: bool, checker: &k [byte], wd: &w [byte]) -> [heap, exec(""), clock, poll, io_write, fs_write("")] int {
+fn recheck[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &b, &l](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], tape: &t [int], nodes: &n [int], meta: &!m [int], notes: &!o [byte], count: int, skip: int, broke: &b [byte], keep: bool, checker: &k [byte], wd: &w [byte], log: &l [byte]) -> [heap, exec(""), clock, poll, io_write, fs_read(""), fs_write("")] int {
     var u = 0;
     var dropped = 0;
     while u < count {
@@ -454,12 +492,12 @@ fn recheck[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &b](heap: &!h Heap, e
             buffer.drop(heap, why);
             if held == 0 {
                 if keep {
-                    say(io, uid(src, tape, nodes, u), "kept");
+                    say(heap, io, fs, log, uid(src, tape, nodes, u), "kept");
                 }
             } else {
                 meta[3 * u] = 0;
                 dropped = dropped + 1;
-                say(io, uid(src, tape, nodes, u), "regressed");
+                say(heap, io, fs, log, uid(src, tape, nodes, u), "regressed");
                 borrow said as &sd in {
                     set_note(notes, meta, u, broke, buffer.bytes(sd));
                 }
@@ -475,13 +513,13 @@ fn recheck[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &b](heap: &!h Heap, e
 }
 
 // Build unit `u` with the fix loop: 0 verified, 1 failed, 2 unavailable.
-fn build[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], tape: &t [int], nodes: &n [int], meta: &!m [int], notes: &o [byte], u: int, checker: &k [byte], wd: &w [byte], agent: &a [byte], attempts: int, agent_ms: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] int {
+fn build[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], tape: &t [int], nodes: &n [int], meta: &!m [int], notes: &o [byte], u: int, checker: &k [byte], wd: &w [byte], agent: &a [byte], attempts: int, agent_ms: int, log: &l [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] int {
     let id = uid(src, tape, nodes, u);
     let base = u * note_cap();
     write_task(heap, fs, src, tape, nodes[u], wd, notes[base..base + meta[3 * u + 2]]);
     meta[3 * u + 2] = 0;
     meta[3 * u + 1] = meta[3 * u + 1] + 1;
-    say(io, id, "building");
+    say(heap, io, fs, log, id, "building");
     let file = in_wd(heap, wd, "project.cho", "", "");
     var cmd = buffer.append(heap, buffer.empty(heap, 512), "-c\0");
     cmd = buffer.append(heap, cmd, checker);
@@ -608,7 +646,7 @@ fn final_gate[&h, &x, &c, &s, &t, &n, &k, &w](heap: &!h Heap, exec: &x Exec(""),
 
 // ---- the loop -------------------------------------------------------------
 
-fn drive[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], tape: &t [int], nodes: &!n [int], meta: &!m [int], notes: &!o [byte], count: int, checker: &k [byte], wd: &w [byte], agent: &a [byte], attempts: int, agent_ms: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] int {
+fn drive[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], tape: &t [int], nodes: &!n [int], meta: &!m [int], notes: &!o [byte], count: int, checker: &k [byte], wd: &w [byte], agent: &a [byte], attempts: int, agent_ms: int, log: &l [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] int {
     let units = json.get(src, tape, 0, "units");
     var j = units + 1;
     var u = 0;
@@ -620,7 +658,7 @@ fn drive[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a](heap: &!h Heap, exe
     }
     state_read(heap, fs, src, tape, nodes, meta, count, wd);
     // Re-verify what the state says is verified.
-    recheck(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, count, -1, "an earlier edit", true, checker, wd);
+    recheck(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, count, -1, "an earlier edit", true, checker, wd, log);
     var provider = false;
     var going = true;
     while going {
@@ -632,25 +670,25 @@ fn drive[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a](heap: &!h Heap, exe
             if meta[3 * next + 1] >= 3 * count {
                 // The guard against two units breaking each other for ever.
                 meta[3 * next] = 2;
-                say(io, id, "failed");
+                say(heap, io, fs, log, id, "failed");
             } else {
                 // A unit that fails leaves its attempts in project.cho; the file goes back to what it was, so the units
                 // that do not depend on it still build.
                 keep_copy(heap, fs, wd, "project.cho.before", false);
-                let r = build(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, next, checker, wd, agent, attempts, agent_ms);
+                let r = build(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, next, checker, wd, agent, attempts, agent_ms, log);
                 // The unit's trail is kept whatever the outcome: a unit that failed is the one whose trail is wanted.
                 keep_trail(heap, fs, id, wd);
                 if r == 0 {
                     meta[3 * next] = 1;
                     state_write(heap, fs, src, tape, nodes, meta, count, wd);
-                    say(io, id, "verified");
-                    recheck(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, count, next, id, false, checker, wd);
+                    say(heap, io, fs, log, id, "verified");
+                    recheck(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, count, next, id, false, checker, wd, log);
                 } else if r == 1 {
                     keep_copy(heap, fs, wd, "project.cho.before", true);
                     meta[3 * next] = 2;
-                    say(io, id, "failed");
+                    say(heap, io, fs, log, id, "failed");
                 } else {
-                    say(io, id, "unavailable");
+                    say(heap, io, fs, log, id, "unavailable");
                     provider = true;
                     going = false;
                 }
@@ -658,7 +696,7 @@ fn drive[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a](heap: &!h Heap, exe
         }
     }
     if provider {
-        io.write_all(io, "[PROJECT_VERDICT]\tprovider_error\n");
+        tell(heap, io, fs, log, "[PROJECT_VERDICT]\tprovider_error\n");
         return 4;
     }
     var stuck = false;
@@ -668,32 +706,33 @@ fn drive[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a](heap: &!h Heap, exe
             stuck = true;
         } else if meta[3 * u] == 0 {
             stuck = true;
-            say(io, uid(src, tape, nodes, u), "skipped");
+            say(heap, io, fs, log, uid(src, tape, nodes, u), "skipped");
         }
         u = u + 1;
     }
     if stuck {
-        io.write_all(io, "[PROJECT_VERDICT]\tstuck\n");
+        tell(heap, io, fs, log, "[PROJECT_VERDICT]\tstuck\n");
         return 1;
     }
     if final_gate(heap, exec, clock, src, tape, nodes, count, checker, wd) {
-        io.write_all(io, "[PROJECT_VERDICT]\tdone\n");
+        tell(heap, io, fs, log, "[PROJECT_VERDICT]\tdone\n");
         return 0;
     }
-    io.write_all(io, "[PROJECT_VERDICT]\tgate_failed\n");
-    return 1;
+    tell(heap, io, fs, log, "[PROJECT_VERDICT]\tgate_failed\n");
+    return 5;
 }
 
-// Build the plan in `src` in `wd`: the exit code of docs/project.md (0 done, 1 stuck or gate failed, 2 the work directory
-// cannot be written, 3 no plan, 4 the agent or the checker is away).
-pub fn run[&h, &x, &c, &i, &z, &s, &k, &w, &a](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], checker: &k [byte], wd: &w [byte], agent: &a [byte], attempts: int, agent_ms: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write, err_write] int {
+// Build the plan in `src` in `wd`, saying every line on the console and, when `log` names a file, appending it there too (the build
+// command's run.log). The exit code of docs/project.md, except that a final gate that fails is 5 (it is 1 in `run`, the same exit as stuck):
+// 0 done, 1 stuck, 2 the work directory cannot be written, 3 no plan, 4 the agent or the checker is away, 5 gate_failed.
+pub fn run_logged[&h, &x, &c, &i, &z, &s, &k, &w, &a, &l](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], checker: &k [byte], wd: &w [byte], agent: &a [byte], attempts: int, agent_ms: int, log: &l [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write, err_write] int {
     let (out, code) = plan.check(heap, src);
     borrow out as &o in {
-        buffer.write(io, o);
+        tell(heap, io, fs, log, buffer.bytes(o));
     }
     buffer.drop(heap, out);
     if code != 0 {
-        io.write_all(io, "[PROJECT_VERDICT]\tno_plan\n");
+        tell(heap, io, fs, log, "[PROJECT_VERDICT]\tno_plan\n");
         return 3;
     }
     if write_fixed(heap, fs, wd) < 0 {
@@ -712,7 +751,7 @@ pub fn run[&h, &x, &c, &i, &z, &s, &k, &w, &a](heap: &!h Heap, exec: &x Exec("")
         borrow mut nb as &!nw in {
             borrow mut mb as &!mw in {
                 borrow mut sb as &!sw in {
-                    status = drive(heap, exec, clock, io, fs, src, tape, contents(nw), contents(mw), contents(sw), count, checker, wd, agent, attempts, agent_ms);
+                    status = drive(heap, exec, clock, io, fs, src, tape, contents(nw), contents(mw), contents(sw), count, checker, wd, agent, attempts, agent_ms, log);
                 }
             }
         }
@@ -721,5 +760,15 @@ pub fn run[&h, &x, &c, &i, &z, &s, &k, &w, &a](heap: &!h Heap, exec: &x Exec("")
         unbox_slice(heap, nb);
     }
     unbox_slice(heap, tb);
+    return status;
+}
+
+// Build the plan in `src` in `wd` (the exit code of docs/project.md: 0 done, 1 stuck or gate failed, 2 the work directory cannot be
+// written, 3 no plan, 4 the agent or the checker is away).
+pub fn run[&h, &x, &c, &i, &z, &s, &k, &w, &a](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], checker: &k [byte], wd: &w [byte], agent: &a [byte], attempts: int, agent_ms: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write, err_write] int {
+    let status = run_logged(heap, exec, clock, io, fs, src, checker, wd, agent, attempts, agent_ms, "");
+    if status == 5 {
+        return 1;
+    }
     return status;
 }
