@@ -18,8 +18,10 @@ compiler and the task's own examples say so — never because the model says so.
 - **Describe it, get a plan, get a build — in one command.** A brief becomes a
   plan of small units, each with a signature and examples; each unit is built
   and checked on its own. The functions your brief names keep their names.
-- **See it.** A read-only board shows every unit (waiting, building, verified,
-  stuck) with its attempts, refusals, tokens and cost.
+- **See everything.** Every run keeps a journal (each prompt, reply, the
+  compiler's full refusal, the diff between attempts, the plan stage). A
+  read-only board shows every unit (waiting, building, verified, stuck); click
+  one to read its whole story.
 - **Loops stop.** Attempt ceilings and a same-refusal stop rule end a stuck
   run, named, instead of burning money.
 - **Any model.** Claude (API key) or a local model through Ollama. You choose
@@ -53,6 +55,7 @@ scripts/cancho-board.sh work && python3 -m http.server -d docs 8000     # then o
 ```
 
 [`docs/build.md`](docs/build.md) explains the command and the run directory,
+[`docs/journal.md`](docs/journal.md) what a run records,
 [`docs/dashboard.md`](docs/dashboard.md) the board. For a local model with no
 key, follow the [guide](docs/guide.html).
 
