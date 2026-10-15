@@ -111,6 +111,9 @@ fn main(world: World) -> [] int {
                         io.write_all(i, "no");
                     }
                 }
+                if bytes.equal(mode, "usage-thinking") {
+                    io.print_int(i, reply.usage_thinking(hh, body));
+                }
                 if bytes.equal(mode, "usage-count") || bytes.equal(mode, "top-count") {
                     var n = 0;
                     if bytes.equal(mode, "usage-count") {

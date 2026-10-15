@@ -573,3 +573,24 @@ pub fn field_is[&h, &b, &n, &v](heap: &!h Heap, body: &b [byte], name: &n [byte]
     buffer.drop(heap, nm);
     return yes;
 }
+
+// The tokens the model spent thinking before it answered, as the API reports them (`usage.output_tokens_details.thinking_tokens`); they are part of
+// `output_tokens`. 0 when the body is not JSON or the field is absent (a model without thinking, and a provider that does not say).
+pub fn usage_thinking[&h, &b](heap: &!h Heap, body: &b [byte]) -> [heap] int {
+    var n = 0;
+    let tape_box = new_tape(heap, body);
+    borrow mut tape_box as &!tw in {
+        let tape = contents(tw);
+        let nodes = json.parse(body, tape);
+        if nodes >= 0 {
+            let usage = json.get(body, tape, 0, "usage");
+            let details = json.get(body, tape, usage, "output_tokens_details");
+            let node = json.get(body, tape, details, "thinking_tokens");
+            if node >= 0 && json.is_int(tape, node) {
+                n = json.to_int(body, tape, node);
+            }
+        }
+    }
+    unbox_slice(heap, tape_box);
+    return n;
+}

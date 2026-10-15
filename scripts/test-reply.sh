@@ -172,7 +172,14 @@ field_case("other value", {"status": "too_big"}, "status", "unclear", "no")
 field_case("absent", {"name": "x"}, "status", "unclear", "no")
 field_case("not a string", {"status": 3}, "status", "unclear", "no")
 field_case("nested does not count", {"plan": {"status": "unclear"}}, "status", "unclear", "no")
-print("reply: 53 cases")
+# thinking tokens: the API reports them inside usage.output_tokens_details
+expect("thinking tokens", "usage-thinking", {"content": [], "usage": {"input_tokens": 1, "output_tokens": 900, "output_tokens_details": {"thinking_tokens": 1234}}}, "1234")
+expect("thinking tokens absent details", "usage-thinking", {"content": [], "usage": {"input_tokens": 1, "output_tokens": 9}}, "0")
+expect("thinking tokens details without the field", "usage-thinking", {"content": [], "usage": {"output_tokens_details": {"other": 5}}}, "0")
+expect("thinking tokens at the wrong level", "usage-thinking", {"content": [], "thinking_tokens": 77, "usage": {}}, "0")
+expect("thinking tokens of a non-JSON body", "usage-thinking", b"nope", "0")
+expect("thinking tokens zero", "usage-thinking", {"content": [], "usage": {"output_tokens_details": {"thinking_tokens": 0}}}, "0")
+print("reply: 59 cases")
 sys.exit(1 if fails else 0)
 PY
 rc=$?

@@ -27,17 +27,19 @@ prices = os.path.join(d, "prices.json")
 json.dump({"anthropic": {"m": {"prompt_limit": 1000, "in": 1.0, "cache_write": 1.25, "cache_read": 0.1, "out": 5.0,
                                 "over_limit_prices": {"in": 2.0, "cache_write": 2.5, "cache_read": 0.2, "out": 10.0}}}}, open(prices, "w"))
 
-def call(task, outcome, tin, tout, cw, cr, pc, ms=1000):
-    return {"provider": "anthropic", "model": "m", "task": task, "sample": 1, "in": tin, "out": tout, "cache_write": cw, "cache_read": cr,
+def call(task, outcome, tin, tout, cw, cr, pc, ms=1000, think=None):
+    r = {"provider": "anthropic", "model": "m", "task": task, "sample": 1, "in": tin, "out": tout, "cache_write": cw, "cache_read": cr,
             "stop": "end_turn", "outcome": outcome, "status": 200, "reply_chars": pc, "program_chars": pc, "ms": ms}
+    if think is not None: r["thinking"] = think
+    return r
 
 rows = [
-    call("UNIT: a", "cut_off", 100, 100, 0, 0, 0),            # a: a wasted sample
-    call("UNIT: a", "written", 100, 300, 500, 0, 400),        # a: kept, program 400 chars
-    call("UNIT: b", "no_program", 100, 50, 0, 500, 0),        # b: wasted
-    call("UNIT: b", "written", 100, 500, 0, 500, 900),        # b: written, then rejected by the checker (not the last written)
-    call("UNIT: b", "written", 100, 600, 0, 500, 1000),       # b: kept, program 1000 chars
-    call("UNIT: c", "written", 100, 200, 0, 500, 1100),       # c: written but the unit never verified: nothing kept
+    call("UNIT: a", "cut_off", 100, 100, 0, 0, 0, think=60),            # a: a wasted sample
+    call("UNIT: a", "written", 100, 300, 500, 0, 400, think=200),        # a: kept, program 400 chars
+    call("UNIT: b", "no_program", 100, 50, 0, 500, 0, think=10),        # b: wasted
+    call("UNIT: b", "written", 100, 500, 0, 500, 900, think=400),        # b: written, then rejected by the checker (not the last written)
+    call("UNIT: b", "written", 100, 600, 0, 500, 1000, think=450),       # b: kept, program 1000 chars
+    call("UNIT: c", "written", 100, 200, 0, 500, 1100, think=100),       # c: written but the unit never verified: nothing kept
 ]
 os.makedirs(os.path.join(d, "run"))
 w = os.path.join(d, "run")
@@ -48,7 +50,7 @@ open(os.path.join(w, "audit.txt"), "w").write("a: 3/3\nTOTAL 7/10\n")
 
 r = metrics.analyze(w, None, prices)
 # tokens: in 6 x 100 = 600; out 100+300+50+500+600+200 = 1750; cache_write 500; cache_read 4 x 500 = 2000
-check("tokens", r["tokens"], {"in": 600, "out": 1750, "cache_write": 500, "cache_read": 2000})
+check("tokens", r["tokens"], {"in": 600, "out": 1750, "cache_write": 500, "cache_read": 2000, "thinking": 1220})
 check("calls", r["calls"], 6)
 check("outcomes", r["outcomes"], {"cut_off": 1, "written": 4, "no_program": 1})
 # cost: no call has a prompt over 1000 (the largest is 100 + 500 = 600): in 600 x 1.0 + cw 500 x 1.25 + cr 2000 x 0.1 + out 1750 x 5.0
@@ -73,6 +75,15 @@ check("output tokens per audit point", r["output_tokens_per_audit_point"], round
 # unit a's cost alone: calls 1,2: in 200 + cw 500 x 1.25 + out 400 x 5 = 200 + 625 + 2000 = 2825 micro-USD
 check("unit a cost", r["per_unit"]["a"]["cost"], 0.002825)
 
+# thinking tokens (inside output_tokens): 60 + 200 + 10 + 400 + 450 + 100 = 1220 of 1750; visible output = 1750 - 1220 = 530
+check("thinking tokens", r["tokens"]["thinking"], 1220)
+check("thinking share", r["thinking_share"], round(1220 / 1750, 4))
+check("visible output", r["visible_out"], 530)
+# kept calls' visible tokens: a 300 - 200 = 100, b 600 - 450 = 150; times the mandatory shares 0.9 and 0.6 = 90 + 90 = 180 of 530 visible
+check("efficiency over visible tokens", r["efficiency_visible"], round(180 / 530, 4))
+# unit a: thinking 60 + 200 = 260 of 400
+check("unit a thinking", (r["per_unit"]["a"]["thinking"], r["per_unit"]["a"]["out"]), (260, 400))
+
 # a prompt over the limit is priced at the higher tier: in 1500, out 10 -> 1500 x 2.0 + 10 x 10 = 3100 micro-USD
 d2 = os.path.join(d, "over"); os.makedirs(d2)
 open(os.path.join(d2, "usage.jsonl"), "w").write(json.dumps(call("UNIT: a", "written", 1500, 10, 0, 0, 50)) + "\n")
@@ -93,6 +104,9 @@ d5 = os.path.join(d, "strict"); os.makedirs(d5)
 open(os.path.join(d5, "usage.jsonl"), "w").write(json.dumps(call("UNIT: a", "written", 10, 10, 0, 0, 50)) + "\n")
 open(os.path.join(d5, "audit.txt"), "w").write("bucket_refill: 12/12\nSTRICT total 46/46\n")
 check("strict total", metrics.analyze(d5, None, prices).get("audit"), {"passed": 46, "of": 46})
+# runs made before the API reported thinking tokens have no such field: unknown, not zero
+r5 = metrics.analyze(d5, None, prices)
+check("no thinking field: unknown", (r5["tokens"]["thinking"], r5["thinking_share"], r5["visible_out"], r5["efficiency_visible"]), (None, None, None, None))
 
 # nothing at all
 d4 = os.path.join(d, "empty"); os.makedirs(d4)
@@ -100,7 +114,7 @@ r4 = metrics.analyze(d4, None, prices)
 check("empty: calls", r4["calls"], 0)
 check("empty: efficiency", r4["efficiency"], None)
 
-print("metrics: 25 checks")
+print("metrics: 31 checks")
 sys.exit(1 if fails else 0)
 PY
 rc=$?

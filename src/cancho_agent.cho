@@ -155,9 +155,10 @@ fn save_raw[&h, &f, &p, &t, &s](heap: &!h Heap, fs: &f Fs(""), path: &p [byte], 
 
 // One JSON line per API call, whatever came of it: what the call cost in
 // tokens, how it ended, and how big the reply and the program in it were.
-// `outcome` is written | cut_off | no_program | api_error | unreachable.
+// `thinking` is the part of `out` the model spent thinking, as the API reports it (0 when it does not).
+// `outcome` is written | cut_off | no_program | api_error | unreachable (plans: also rejected, needs_input, no_plan; reviews: reviewed, review_failed, review_rejected).
 // Appended by reading what is there and writing it back, as `save_raw` does.
-fn log_call[&h, &f, &p, &m, &t](heap: &!h Heap, fs: &f Fs(""), path: &p [byte], provider: &static [byte], model: &m [byte], task: &t [byte], sample: int, tin: int, tout: int, cw: int, cr: int, stop: &static [byte], outcome: &static [byte], status: int, reply_chars: int, program_chars: int, ms: int) -> [heap, fs_read(""), fs_write("")] int {
+fn log_call[&h, &f, &p, &m, &t](heap: &!h Heap, fs: &f Fs(""), path: &p [byte], provider: &static [byte], model: &m [byte], task: &t [byte], sample: int, tin: int, tout: int, tthink: int, cw: int, cr: int, stop: &static [byte], outcome: &static [byte], status: int, reply_chars: int, program_chars: int, ms: int) -> [heap, fs_read(""), fs_write("")] int {
     if len(path) == 0 {
         return 0;
     }
@@ -175,6 +176,8 @@ fn log_call[&h, &f, &p, &m, &t](heap: &!h Heap, fs: &f Fs(""), path: &p [byte], 
     w = json.put_int(heap, w, tin);
     w = json.put_key(heap, w, "out");
     w = json.put_int(heap, w, tout);
+    w = json.put_key(heap, w, "thinking");
+    w = json.put_int(heap, w, tthink);
     w = json.put_key(heap, w, "cache_write");
     w = json.put_int(heap, w, cw);
     w = json.put_key(heap, w, "cache_read");
@@ -262,6 +265,7 @@ fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, 
         var cut = false;
         var tin = 0;
         var tout = 0;
+        var tthink = 0;
         var tcw = 0;
         var tcr = 0;
         var status = 0;
@@ -285,6 +289,7 @@ fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, 
                                 cut = reply.stop_reason_is(heap, buffer.bytes(or), "max_tokens");
                                 tin = reply.usage_count(heap, buffer.bytes(or), "input_tokens");
                                 tout = reply.usage_count(heap, buffer.bytes(or), "output_tokens");
+                                tthink = reply.usage_thinking(heap, buffer.bytes(or));
                                 tcw = reply.usage_count(heap, buffer.bytes(or), "cache_creation_input_tokens");
                                 tcr = reply.usage_count(heap, buffer.bytes(or), "cache_read_input_tokens");
                             }
@@ -358,7 +363,7 @@ fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, 
         borrow text as &tq in {
             tlen = len(buffer.bytes(tq));
         }
-        log_call(heap, fs, usage_path, provider_label, model, task, attempt, tin, tout, tcw, tcr, "", outcome, status, tlen, 0, clock_ms(clock) - t0);
+        log_call(heap, fs, usage_path, provider_label, model, task, attempt, tin, tout, tthink, tcw, tcr, "", outcome, status, tlen, 0, clock_ms(clock) - t0);
         buffer.drop(heap, text);
     }
     buffer.drop(heap, body);
@@ -662,7 +667,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                     match provider.exchange(heap, net, clock, io, host, port, secure, path, buffer.bytes(hr), buffer.bytes(br), buffer.bytes(rr), ip, contents(ew), 33554432, 1800000) {
                         provider.Answered::Failed(tag) => {
                             borrow task as &lt in {
-                                log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, 0, 0, 0, 0, "", "unreachable", 0, 0, 0, clock_ms(clock) - t0);
+                                log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, 0, 0, 0, 0, 0, "", "unreachable", 0, 0, 0, clock_ms(clock) - t0);
                             }
                             io.error_all(io, "cancho-agent: cannot reach the API: ");
                             io.error_all(io, provider.tag_of(tag));
@@ -674,7 +679,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                 let answer = buffer.bytes(or);
                                 if status != 200 {
                                     borrow task as &lt in {
-                                        log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, 0, 0, 0, 0, "", "api_error", status, len(answer), 0, clock_ms(clock) - t0);
+                                        log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, 0, 0, 0, 0, 0, "", "api_error", status, len(answer), 0, clock_ms(clock) - t0);
                                     }
                                     var why = buffer.empty(heap, 16);
                                     buffer.drop(heap, why);
@@ -772,6 +777,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                             }
                                             var tin = 0;
                                             var tout = 0;
+                                            var tthink = 0;
                                             var tcw = 0;
                                             var tcr = 0;
                                             if local {
@@ -780,6 +786,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                             } else {
                                                 tin = reply.usage_count(heap, answer, "input_tokens");
                                                 tout = reply.usage_count(heap, answer, "output_tokens");
+                                                tthink = reply.usage_thinking(heap, answer);
                                                 tcw = reply.usage_count(heap, answer, "cache_creation_input_tokens");
                                                 tcr = reply.usage_count(heap, answer, "cache_read_input_tokens");
                                             }
@@ -798,7 +805,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                                 jlen = jz - ja;
                                             }
                                             borrow task as &lt in {
-                                                log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, tin, tout, tcw, tcr, pstop, po, status, len(buffer.bytes(xr)), jlen, clock_ms(clock) - t0);
+                                                log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, tin, tout, tthink, tcw, tcr, pstop, po, status, len(buffer.bytes(xr)), jlen, clock_ms(clock) - t0);
                                             }
                                             if accepted && review_on {
                                                 // the blind second pass: the cases the reviewer cannot re-derive are dropped
@@ -900,6 +907,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                         }
                                         var tin = 0;
                                         var tout = 0;
+                                        var tthink = 0;
                                         var tcw = 0;
                                         var tcr = 0;
                                         if local {
@@ -908,6 +916,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                         } else {
                                             tin = reply.usage_count(heap, answer, "input_tokens");
                                             tout = reply.usage_count(heap, answer, "output_tokens");
+                                                tthink = reply.usage_thinking(heap, answer);
                                             tcw = reply.usage_count(heap, answer, "cache_creation_input_tokens");
                                             tcr = reply.usage_count(heap, answer, "cache_read_input_tokens");
                                         }
@@ -916,7 +925,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                             plen = pz - pa;
                                         }
                                         borrow task as &lt in {
-                                            log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, tin, tout, tcw, tcr, stop, outcome, status, len(buffer.bytes(xr)), plen, clock_ms(clock) - t0);
+                                            log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, tin, tout, tthink, tcw, tcr, stop, outcome, status, len(buffer.bytes(xr)), plen, clock_ms(clock) - t0);
                                         }
                                         if cut {
                                             io.error_all(io, "cancho-agent: a sample was cut off by the bound (--max-tokens / --num-predict)\n");
