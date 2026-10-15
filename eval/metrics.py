@@ -16,7 +16,7 @@ Definitions (all stated here so a number can be argued with; none is a measureme
                    higher tier and counted in `over_limit`
   kept call        for a unit that ended `verified`: the LAST call of that unit whose outcome was `written` (the program that the checker accepted)
   efficiency_calls output tokens of kept calls / all output tokens. What is lost to retries: cut-off, no-program, rejected and API-error samples
-  mandatory share  of a kept call: (its program_chars - the previous kept program's chars) / its program_chars. The agent rewrites the WHOLE file
+  mandatory share  (patch mode: 1.0, the reply is the unit and nothing else) of a kept call: (its program_chars - the previous kept program's chars) / its program_chars. The agent rewrites the WHOLE file
                    each time, so most of every reply repeats earlier units; only the growth is new work. The first unit's previous is the scaffold
   efficiency       sum(kept output tokens x mandatory share) / all output tokens: the share of everything generated that was both kept and new.
                    It uses characters as the proxy for how a reply's tokens split, and counts hidden reasoning tokens (which the API folds into
@@ -123,6 +123,8 @@ def analyze(workdir, plan_path=None, prices_path=None):
         if kept is not None:
             pc = kept.get("program_chars", 0)
             share = max(0, pc - prev_chars) / pc if pc else 0.0
+            if meta.get("patch"):
+                share = 1.0 if pc else 0.0     # the reply is the unit itself, not the whole file again
             uc.update({"kept_out": kept.get("out", 0), "mandatory_share": round(share, 4), "mandatory_out": round(kept.get("out", 0) * share, 1)})
             kept_out += kept.get("out", 0)
             mandatory_out += kept.get("out", 0) * share
