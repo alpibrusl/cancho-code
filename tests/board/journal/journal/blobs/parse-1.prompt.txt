@@ -1,0 +1,45 @@
+Unit parse: fn tok_parse[&r](text: &r [byte]) -> [] int
+Your last attempt was refused:
+error[E0308]: mismatched types
+  --> unit parse, line 3:13
+   |
+ 3 |     var b = buffer.empty(heap, 8);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^ expected `[byte]`, found `Buffer`
+   = note: a Buffer is an owned value; borrow it with `buffer.bytes` first
+
+error[E0308]: mismatched types
+  --> unit parse, line 4:13
+   |
+ 4 |     var b = buffer.empty(heap, 8);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^ expected `[byte]`, found `Buffer`
+   = note: a Buffer is an owned value; borrow it with `buffer.bytes` first
+
+error[E0308]: mismatched types
+  --> unit parse, line 5:13
+   |
+ 5 |     var b = buffer.empty(heap, 8);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^ expected `[byte]`, found `Buffer`
+   = note: a Buffer is an owned value; borrow it with `buffer.bytes` first
+
+error[E0308]: mismatched types
+  --> unit parse, line 6:13
+   |
+ 6 |     var b = buffer.empty(heap, 8);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^ expected `[byte]`, found `Buffer`
+   = note: a Buffer is an owned value; borrow it with `buffer.bytes` first
+
+error[E0308]: mismatched types
+  --> unit parse, line 7:13
+   |
+ 7 |     var b = buffer.empty(heap, 8);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^ expected `[byte]`, found `Buffer`
+   = note: a Buffer is an owned value; borrow it with `buffer.bytes` first
+
+error[E0308]: mismatched types
+  --> unit parse, line 8:13
+   |
+ 8 |     var b = buffer.empty(heap, 8);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^ expected `[byte]`, found `Buffer`
+   = note: a Buffer is an owned value; borrow it with `buffer.bytes` first
+
+Fix it.

@@ -1,0 +1,146 @@
+{
+ "schema": 1,
+ "run": {
+  "name": null,
+  "brief": null,
+  "stage": null,
+  "plan_valid": null,
+  "provider": null,
+  "model": null,
+  "started_unix": null,
+  "seconds": null,
+  "verdict": "done"
+ },
+ "files": {
+  "plan": false,
+  "run_log": true,
+  "state": false,
+  "usage": false,
+  "run_json": false,
+  "build_json": false,
+  "audit": false,
+  "prices": false
+ },
+ "metrics": {
+  "units_total": 1,
+  "units_verified": 1,
+  "columns": {
+   "waiting": 0,
+   "building": 0,
+   "verified": 1,
+   "stuck": 0,
+   "regressed": 0,
+   "unknown": 0
+  },
+  "calls": null,
+  "tokens": null,
+  "visible_out": null,
+  "thinking_share": null,
+  "cache_read_share": null,
+  "efficiency": null,
+  "efficiency_calls": null,
+  "efficiency_visible": null,
+  "cost_usd": null,
+  "cost_per_verified_unit": null,
+  "over_limit_calls": null,
+  "audit": null
+ },
+ "truncated": false,
+ "units": [
+  {
+   "id": "key",
+   "function": null,
+   "column": "verified",
+   "deps": null,
+   "attempts": null,
+   "regressions": 0,
+   "calls": null,
+   "tokens": null,
+   "cost_usd": null,
+   "trail": null
+  }
+ ],
+ "journal": {
+  "events": [
+   {
+    "t_ms": 0,
+    "kind": "run_start"
+   },
+   {
+    "t_ms": 10,
+    "kind": "unit_start",
+    "unit": "key"
+   },
+   {
+    "t_ms": 20,
+    "kind": "attempt",
+    "unit": "key",
+    "n": 0,
+    "prompt": "gone.txt",
+    "reply": "real.txt",
+    "code": "../escape.txt",
+    "primer": true,
+    "tokens": {
+     "in": 5
+    }
+   },
+   {
+    "t_ms": 30,
+    "kind": "attempt",
+    "unit": "key",
+    "n": 1,
+    "reply": "real.txt",
+    "feedback": "empty.txt",
+    "stderr": "a..b.txt",
+    "tokens": "many"
+   },
+   {
+    "t_ms": 40,
+    "kind": "mystery",
+    "anything": [
+     1,
+     2,
+     {
+      "deep": null
+     }
+    ]
+   },
+   {
+    "t_ms": 50,
+    "kind": "unit_end",
+    "unit": "key",
+    "state": "verified"
+   }
+  ],
+  "costs": [
+   null,
+   null,
+   null,
+   null,
+   null,
+   null
+  ],
+  "blobs": {
+   "primer.txt": null,
+   "gone.txt": null,
+   "real.txt": {
+    "bytes": 17,
+    "truncated": false,
+    "text": "this blob exists\n"
+   },
+   "empty.txt": {
+    "bytes": 0,
+    "truncated": false,
+    "text": ""
+   }
+  },
+  "skipped_lines": 2,
+  "partial_tail": false,
+  "events_dropped": 0,
+  "blobs_omitted": 0,
+  "limits": {
+   "blob_bytes": 32768,
+   "total_bytes": 2097152
+  }
+ }
+}

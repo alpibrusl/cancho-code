@@ -1,0 +1,15 @@
+{"t_ms":0,"kind":"run_start","brief":"tokens: count, parse and evaluate","provider":"anthropic","model":"claude-haiku-5-5","options":{"max_attempts":2}}
+{"t_ms":1200,"kind":"plan_call","round":0,"sample":0,"tokens":{"in":900,"out":700,"thinking":0,"cache_write":13000,"cache_read":0},"ms":9100,"stop":"end_turn","outcome":"refused","primer":true,"prompt":"plan-0.prompt.txt","reply":"plan-0.reply.txt","errors":["unit parse: no examples","unit get: no examples"]}
+{"t_ms":11000,"kind":"plan_call","round":1,"sample":0,"tokens":{"in":1100,"out":650,"thinking":0,"cache_write":0,"cache_read":13000},"ms":8000,"stop":"end_turn","outcome":"accepted","primer":true,"prompt":"plan-1.prompt.txt","reply":"plan-1.reply.txt","errors":[]}
+{"t_ms":19500,"kind":"plan_review","kept":11,"dropped":[{"unit":"parse","case":3,"reason":"expected value contradicts case #1"}],"blob":"plan-review.txt"}
+{"t_ms":19600,"kind":"plan_final","valid":true,"units":3,"plan":"plan-final.json"}
+{"t_ms":19700,"kind":"unit_start","unit":"key","function":"tok_key_ok","deps":[]}
+{"t_ms":24000,"kind":"attempt","unit":"key","n":0,"tokens":{"in":421,"out":889,"thinking":0,"cache_write":0,"cache_read":13374},"ms":4168,"stop":"end_turn","outcome":"accepted","signature":"","decision":"accept","primer":true,"prompt":"key-0.prompt.txt","reply":"key-0.reply.txt","code":"key-0.code.cho","acceptance":"key-0.acceptance.txt","exit":0}
+{"t_ms":24100,"kind":"unit_end","unit":"key","state":"verified","attempts":1}
+{"t_ms":24200,"kind":"sweep","after_unit":"key","held":["key"],"regressed":[]}
+{"t_ms":24300,"kind":"unit_start","unit":"parse","function":"tok_parse","deps":["key"]}
+{"t_ms":58900,"kind":"attempt","unit":"parse","n":0,"tokens":{"in":640,"out":1210,"thinking":0,"cache_write":0,"cache_read":13374},"ms":34545,"stop":"end_turn","outcome":"refused","signature":"type-mismatch:expected `[byte]`, found `Buffer`","decision":"retry","primer":true,"prompt":"parse-0.prompt.txt","reply":"parse-0.reply.txt","code":"parse-0.code.cho","feedback":"parse-0.feedback.txt","checker":"parse-0.checker.txt","exit":1}
+{"t_ms":78700,"kind":"attempt","unit":"parse","n":1,"tokens":{"in":1830,"out":1302,"thinking":0,"cache_write":0,"cache_read":13374},"ms":19729,"stop":"end_turn","outcome":"refused","signature":"type-mismatch:expected `[byte]`, found `Buffer`","decision":"signature","primer":true,"prompt":"parse-1.prompt.txt","reply":"parse-1.reply.txt","code":"parse-1.code.cho","feedback":"parse-1.feedback.txt","diff":"parse-1.diff","exit":1}
+{"t_ms":78800,"kind":"unit_end","unit":"parse","state":"failed","attempts":2}
+{"t_ms":78900,"kind":"unit_end","unit":"get","state":"skipped","attempts":0}
+{"t_ms":79000,"kind":"run_end","verdict":"stuck","exit":1,"seconds":61.5}

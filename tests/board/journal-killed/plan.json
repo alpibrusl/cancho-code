@@ -1,0 +1,11 @@
+{
+ "name": "tokens",
+ "units": [
+  {
+   "id": "key",
+   "signature": "fn tok_key_ok[&r](key: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  }
+ ]
+}

@@ -69,7 +69,7 @@
   .col .empty { color: var(--muted); padding: 4px; font-size: 0.9rem; }
 
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; min-width: 0; }
-  .card.flash { animation: flash 1.2s ease-out; }
+  .card.flash, .sec.flash { animation: flash 1.2s ease-out; }
   @keyframes flash { from { box-shadow: 0 0 0 3px var(--building); } to { box-shadow: 0 0 0 0 transparent; } }
   .card .head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
   .card .id { font-weight: 650; overflow-wrap: anywhere; }
@@ -106,6 +106,66 @@
           border: 3px dashed var(--building); font-size: 1.3rem; z-index: 10; pointer-events: none; }
   #drop.on { display: flex; }
 
+
+  /* tabs, the detail panel and the story */
+  .tabs { display: flex; gap: 6px; margin: 0 0 12px; border-bottom: 1px solid var(--line); }
+  .tabs[hidden] { display: none; }
+  .tabs button { border: 0; border-bottom: 3px solid transparent; border-radius: 8px 8px 0 0; background: none; padding: 6px 14px; color: var(--muted); font-weight: 600; }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--building); }
+  .view[hidden] { display: none; }
+  .card .open { margin-top: 8px; font-size: 0.82rem; padding: 3px 10px; min-height: 30px; }
+
+  #shade { position: fixed; inset: 0; background: rgba(10, 14, 20, 0.5); z-index: 20; }
+  #shade[hidden], #panel[hidden] { display: none; }
+  #panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(780px, 100%); background: var(--bg); z-index: 21; display: flex; flex-direction: column;
+           border-left: 1px solid var(--line); box-shadow: -8px 0 28px rgba(0, 0, 0, 0.25); }
+  #panel:focus { outline: none; }
+  .phead { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .phead h2 { font-size: 1.05rem; overflow-wrap: anywhere; }
+  .phead p { margin: 2px 0 0; font-size: 0.85rem; color: var(--muted); overflow-wrap: anywhere; }
+  #pbody { overflow: auto; padding: 12px 16px 28px; flex: 1; -webkit-overflow-scrolling: touch; }
+  .sec { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; min-width: 0; }
+  .sec > h3 { margin: 0 0 6px; font-size: 0.92rem; }
+  .sec.refused, .sec.defect, .sec.truncated, .sec.failed { border-left: 4px solid var(--stuck); }
+  .sec.accepted, .sec.verified, .sec.written { border-left: 4px solid var(--verified); }
+  .kv { display: flex; flex-wrap: wrap; gap: 4px 8px; margin: 4px 0 8px; }
+  .kv .chip b { font-weight: 600; }
+  .note { color: var(--muted); font-size: 0.84rem; margin: 4px 0; }
+  .note.warn { color: var(--warn); }
+  details.blob { margin: 6px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+  details.blob > summary { cursor: pointer; padding: 5px 10px; font-size: 0.86rem; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+  details.blob > summary .sz { color: var(--muted); font-size: 0.78rem; }
+  details.blob > .in { padding: 0 10px 8px; }
+  details.blob details.blob { background: var(--panel); }
+  pre.txt { margin: 0; padding: 8px 10px; background: var(--soft); border-radius: 6px; font: 0.8rem/1.4 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
+            max-height: 45vh; overflow: auto; }
+  .diff { margin: 0; background: var(--soft); border-radius: 6px; font: 0.8rem/1.4 var(--mono); max-height: 45vh; overflow: auto; padding: 4px 0; }
+  .diff .dl { display: block; padding: 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .diff .add { background: color-mix(in srgb, var(--verified) 20%, transparent); }
+  .diff .del { background: color-mix(in srgb, var(--stuck) 20%, transparent); }
+  .diff .hunk { color: var(--building); }
+  .diff .meta { color: var(--muted); font-weight: 600; }
+  ul.errs { margin: 4px 0; padding-left: 20px; font-size: 0.86rem; overflow-wrap: anywhere; }
+  table.dropped { border-collapse: collapse; width: 100%; font-size: 0.84rem; margin: 4px 0; }
+  table.dropped th, table.dropped td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+  ol.tl { list-style: none; margin: 0; padding: 0; }
+  ol.tl li { margin: 0; }
+  ol.tl button.row { width: 100%; text-align: left; display: grid; grid-template-columns: 5.5em 8.5em 1fr; gap: 8px; align-items: baseline; border: 0;
+                     border-bottom: 1px solid var(--line); border-radius: 0; background: none; padding: 6px 4px; min-height: 0; }
+  ol.tl button.row:hover { background: var(--soft); }
+  ol.tl .t { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 0.8rem; }
+  ol.tl .k { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
+  ol.tl .s { overflow-wrap: anywhere; font-size: 0.86rem; }
+  ol.tl li.bad .s { color: var(--bad); } ol.tl li.good .s { color: var(--ok); }
+  .storyhead { margin-bottom: 12px; }
+  .storyhead h2 { font-size: 1.05rem; margin-bottom: 4px; }
+
+  @media (max-width: 640px) {
+    .phead, #pbody { padding-left: 12px; padding-right: 12px; }
+    ol.tl button.row { grid-template-columns: 4.5em 1fr; }
+    ol.tl .k { display: none; }
+  }
+
   @media (max-width: 640px) {
     main { padding: 12px; }
     .metric.wide { grid-column: span 1; }
@@ -136,10 +196,25 @@
   </header>
 
   <p id="notice" hidden></p>
-  <section id="metrics" class="metrics" aria-label="Metrics"></section>
-  <section id="board" class="board" aria-label="Units"></section>
+  <div id="tabs" class="tabs" role="tablist" aria-label="Views" hidden>
+    <button id="tab-board" type="button" role="tab" aria-selected="true" aria-controls="view-board">Board</button>
+    <button id="tab-story" type="button" role="tab" aria-selected="false" aria-controls="view-story" tabindex="-1">Story</button>
+  </div>
+  <div id="view-board" class="view" role="tabpanel" aria-labelledby="tab-board">
+    <section id="metrics" class="metrics" aria-label="Metrics"></section>
+    <section id="board" class="board" aria-label="Units"></section>
+  </div>
+  <div id="view-story" class="view" role="tabpanel" aria-labelledby="tab-story" hidden></div>
   <footer id="foot"></footer>
 </main>
+<div id="shade" hidden></div>
+<aside id="panel" role="dialog" aria-modal="true" aria-labelledby="ptitle" tabindex="-1" hidden>
+  <div class="phead">
+    <div><h2 id="ptitle"></h2><p id="psub"></p></div>
+    <button id="pclose" type="button" aria-label="Close (Escape)">Close</button>
+  </div>
+  <div id="pbody"></div>
+</aside>
 <div id="drop">Drop board.json here</div>
 
 <script>
@@ -152,7 +227,7 @@ var COLS = [
   ["regressed", "Regressed", "Verified once, broken by a later unit, back on the board."],
   ["unknown", "Unknown", "The files that would say are missing."]
 ];
-var state = { data: null, from: "", timer: null };
+var state = { data: null, from: "", timer: null, raw: null, view: "board" };
 
 function $(id) { return document.getElementById(id); }
 function el(tag, cls, text) {
@@ -195,6 +270,8 @@ function accept(text, from) {
     notice("That is not a board.json made by the board tool (no schema 1, units and metrics).", true);
     return;
   }
+  if (text === state.raw && from === state.from) { notice(""); return; }
+  state.raw = text;
   state.data = d;
   state.from = from;
   notice("");
@@ -364,6 +441,12 @@ function card(u, states, usageKnown) {
     if (u.calls !== null && u.calls !== undefined) nums.push(u.calls + (u.calls === 1 ? " call" : " calls"));
   }
   c.appendChild(el("div", "nums", nums.length ? nums.join(" · ") : (usageKnown ? "" : "tokens and cost: unknown")));
+  var more = el("button", "open", "Details");
+  more.type = "button";
+  more.title = "The whole story of " + u.id;
+  more.setAttribute("aria-label", "Details of unit " + u.id);
+  more.addEventListener("click", function () { openUnit(u, null, more); });
+  c.appendChild(more);
 
   if (Array.isArray(u.trail) && u.trail.length) {
     var d = el("details", "trail");
@@ -425,6 +508,7 @@ function renderFoot(d) {
     var have = d.files && d.files[n[0]];
     files.appendChild(el("span", have ? "have" : "lack", n[1] + (have ? "" : " (not available)")));
   });
+  files.appendChild(el("span", d.journal ? "have" : "lack", "journal" + (d.journal ? "" : " (not recorded)")));
   f.appendChild(el("div", "", "Read from the run directory by the board tool; this page only reads " + state.from + ". A missing file is shown as unknown, never as zero."));
   f.appendChild(files);
   if (d.truncated) f.appendChild(el("div", "", "More units than the tool keeps (256): the rest are not shown."));
@@ -441,11 +525,533 @@ function renderFoot(d) {
 }
 
 function render(d) {
+  J = indexJournal(d);
   renderHead(d);
   renderMetrics(d);
   renderBoard(d);
+  renderStory(d);
   renderFoot(d);
+  $("tabs").hidden = !J;
+  showView(J ? state.view : "board");
+  if (panelState.open && panelState.build) panelState.build();
 }
+
+// ---- the journal: the detail panel and the story ---------------------------------------------------------------------------
+// board.json's `journal` (docs/dashboard.md): the events verbatim, in order, and the blobs they name as bounded excerpts. Anything
+// missing is shown as "not recorded", never as empty or zero. Everything here is built with textContent, never markup.
+
+var J = null;                 // the index of the journal of the board on show, or null
+var panelState = { open: false, build: null, opener: null };
+var BLOBS = [["prompt", "Prompt sent"], ["reply", "Model reply"], ["code", "Code"], ["feedback", "Compiler refusal (full text)"],
+             ["checker", "Checker output"], ["acceptance", "Acceptance and test output"], ["diff", "Diff against the previous attempt"],
+             ["stderr", "stderr"], ["blob", "Detail"], ["plan", "Plan"]];
+
+function indexJournal(d) {
+  var j = d && d.journal;
+  if (!j || !Array.isArray(j.events)) return null;
+  var ix = { j: j, units: {}, calls: [], review: null, final: null, start: null, end: null, any: false };
+  function unit(id) {
+    if (!ix.units[id]) ix.units[id] = { start: null, attempts: [], end: null, sweeps: [] };
+    return ix.units[id];
+  }
+  j.events.forEach(function (ev, i) {
+    if (!ev || typeof ev !== "object") return;
+    var r = { ev: ev, i: i };
+    switch (ev.kind) {
+      case "run_start": if (!ix.start) ix.start = r; break;
+      case "run_end": ix.end = r; break;
+      case "plan_call": ix.calls.push(r); break;
+      case "plan_review": ix.review = r; break;
+      case "plan_final": ix.final = r; break;
+      case "unit_start": if (typeof ev.unit === "string") unit(ev.unit).start = r; break;
+      case "attempt": if (typeof ev.unit === "string") unit(ev.unit).attempts.push(r); break;
+      case "unit_end": if (typeof ev.unit === "string") unit(ev.unit).end = r; break;
+      case "sweep": if (typeof ev.after_unit === "string") unit(ev.after_unit).sweeps.push(r); break;
+    }
+  });
+  return ix;
+}
+
+function costOf(i) {
+  var c = J && J.j.costs ? J.j.costs[i] : null;
+  return isNum(c) ? c : null;
+}
+
+function blobInfo(name) {
+  if (typeof name !== "string") return { s: "absent" };
+  var v = (J.j.blobs || {})[name];
+  if (v === undefined) return { s: "unlisted" };
+  if (v === null) return { s: "missing" };
+  if (v.omitted) return { s: "omitted" };
+  if (typeof v.text !== "string") return { s: "unlisted" };
+  return { s: "ok", v: v };
+}
+
+function fmtBytes(n) { return isNum(n) ? (n >= 10240 ? Math.round(n / 1024) + " KiB" : n + " B") : "?"; }
+
+// Unified diff text as coloured lines (the +/- stays in the text, so colour is not the only signal).
+function diffView(text) {
+  var box = el("div", "diff");
+  box.tabIndex = 0;
+  var lines = text.split("\n");
+  if (lines.length && lines[lines.length - 1] === "") lines.pop();
+  lines.forEach(function (ln) {
+    var cls = "dl";
+    if (/^(\+\+\+|---) /.test(ln) || /^(diff |index )/.test(ln)) cls += " meta";
+    else if (ln.charAt(0) === "+") cls += " add";
+    else if (ln.charAt(0) === "-") cls += " del";
+    else if (ln.slice(0, 2) === "@@") cls += " hunk";
+    box.appendChild(el("span", cls, ln === "" ? " " : ln));
+  });
+  return box;
+}
+
+// A collapsible text: the blob `name`, or a note saying why there is none. `o.open`, `o.diff`. null when the event has no such field.
+function blobBlock(label, name, o) {
+  o = o || {};
+  var info = blobInfo(name);
+  if (info.s === "absent") return null;
+  var det = el("details", "blob");
+  det.open = !!o.open;
+  var sum = el("summary");
+  sum.appendChild(el("span", "", label));
+  if (info.s === "ok") sum.appendChild(el("span", "sz", fmtBytes(info.v.bytes)));
+  det.appendChild(sum);
+  var inn = el("div", "in");
+  if (info.s === "ok") {
+    if (info.v.text === "") inn.appendChild(el("div", "note", "(empty)"));
+    else if (o.diff) inn.appendChild(diffView(info.v.text));
+    else { var pre = el("pre", "txt", info.v.text); pre.tabIndex = 0; inn.appendChild(pre); }
+    if (info.v.truncated) inn.appendChild(el("div", "note warn", "Truncated: the first " + fmtBytes(J.j.limits && J.j.limits.blob_bytes) + " of " + fmtBytes(info.v.bytes) + ". Full text: journal/blobs/" + name + " in the run directory."));
+  } else if (info.s === "missing") {
+    inn.appendChild(el("div", "note warn", "Not recorded: the file journal/blobs/" + name + " is missing from the run directory."));
+  } else if (info.s === "omitted") {
+    inn.appendChild(el("div", "note warn", "Left out of board.json to keep it small. Full text: journal/blobs/" + name + " in the run directory."));
+  } else {
+    inn.appendChild(el("div", "note warn", "Not recorded: board.json has no text for " + name + "."));
+  }
+  det.appendChild(inn);
+  return det;
+}
+
+function primerBlock() {
+  var b = blobBlock("primer (same for every call)", "primer.txt", {});
+  if (b) return b;
+  return el("div", "note", "primer (same for every call): not recorded");
+}
+
+function chip(label, value) {
+  var c = el("span", "chip");
+  if (value === undefined) { c.textContent = label; return c; }
+  c.appendChild(el("span", "muted", label + " "));
+  c.appendChild(el("b", "", value));
+  return c;
+}
+
+// tokens, time, stop reason and cost of one call
+function callStats(ev, i) {
+  var kv = el("div", "kv");
+  var missing = [];
+  if (typeof ev.outcome === "string") kv.appendChild(chip("outcome", ev.outcome)); else missing.push("outcome");
+  if (typeof ev.decision === "string") kv.appendChild(chip("decision", ev.decision));
+  if (isNum(ev.ms)) kv.appendChild(chip("time", fmtMs(ev.ms))); else missing.push("time");
+  if (typeof ev.stop === "string") kv.appendChild(chip("stop", ev.stop)); else missing.push("stop reason");
+  var t = ev.tokens;
+  if (t && typeof t === "object") {
+    var bits = ["in " + (fmtInt(t.in) || "?"), "out " + (fmtInt(t.out) || "?")];
+    if (isNum(t.thinking)) bits.push("thinking " + fmtInt(t.thinking));
+    if (isNum(t.cache_read)) bits.push("cache read " + fmtInt(t.cache_read));
+    if (isNum(t.cache_write)) bits.push("cache write " + fmtInt(t.cache_write));
+    kv.appendChild(chip("tokens", bits.join(" · ")));
+    var c = costOf(i);
+    if (c !== null) kv.appendChild(chip("cost", fmtUsd(c))); else missing.push("cost (no price for this model)");
+  } else {
+    missing.push("tokens", "cost");
+  }
+  if (isNum(ev.exit)) kv.appendChild(chip("exit", String(ev.exit)));
+  return { el: kv, missing: missing };
+}
+
+function missingNote(list) {
+  return list.length ? el("div", "note", "Not recorded: " + list.join(", ") + ".") : null;
+}
+
+// ---- the panel ---------------------------------------------------------------------------------------------------------------
+
+function openPanel(title, sub, build, opener) {
+  var p = $("panel"), body = $("pbody");
+  var keep = panelState.open ? body.scrollTop : 0;
+  $("ptitle").textContent = title;
+  $("psub").textContent = sub || "";
+  body.textContent = "";
+  build(body);
+  body.scrollTop = keep;
+  panelState.build = function () { openPanel(title, sub, build); };
+  if (!panelState.open) {
+    panelState.open = true;
+    panelState.opener = opener || document.activeElement;
+    $("shade").hidden = false;
+    p.hidden = false;
+    document.querySelector("main").inert = true;
+    $("pclose").focus();
+  }
+}
+
+function closePanel() {
+  if (!panelState.open) return;
+  panelState.open = false;
+  $("panel").hidden = true;
+  $("shade").hidden = true;
+  document.querySelector("main").inert = false;
+  var o = panelState.opener;
+  panelState.opener = null;
+  panelState.build = null;
+  if (o && o.focus && document.body.contains(o)) o.focus();
+}
+
+$("pclose").addEventListener("click", closePanel);
+$("shade").addEventListener("click", closePanel);
+document.addEventListener("keydown", function (e) {
+  if (!panelState.open) return;
+  if (e.key === "Escape") { e.preventDefault(); closePanel(); return; }
+  if (e.key !== "Tab") return;
+  var f = Array.prototype.filter.call($("panel").querySelectorAll("button, summary, [tabindex='0'], a[href]"), function (n) { return n.offsetParent !== null; });
+  if (!f.length) return;
+  var first = f[0], last = f[f.length - 1];
+  if (e.shiftKey && (document.activeElement === first || document.activeElement === $("panel"))) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  else if (!$("panel").contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+});
+
+// ---- one attempt, one plan call ----------------------------------------------------------------------------------------------
+
+var DECISIONS = { accept: "kept", retry: "tried again", signature: "stopped: the same refusal came twice", ceiling: "stopped: the attempts ran out",
+                  defect: "stopped: the unit could not be built", provider: "stopped: the model was unavailable" };
+
+function attemptBlock(r, last, trailRow) {
+  var ev = r.ev;
+  var sec = el("section", "sec " + (typeof ev.outcome === "string" ? ev.outcome : ""));
+  sec.id = "att-" + (isNum(ev.n) ? ev.n : r.i);
+  sec.appendChild(el("h3", "", "Attempt #" + (isNum(ev.n) ? ev.n : "?") + (typeof ev.decision === "string" ? " → " + ev.decision : "")));
+  if (typeof ev.decision === "string" && DECISIONS[ev.decision]) sec.appendChild(el("div", "note", "Decision: " + DECISIONS[ev.decision] + "."));
+  var st = callStats(ev, r.i);
+  sec.appendChild(st.el);
+  var sig = typeof ev.signature === "string" && ev.signature ? ev.signature : (trailRow && trailRow.sig ? trailRow.sig : null);
+  if (sig) { var sg = el("div", "sig open", sig); sg.title = "The refusal signature the loop compared"; sec.appendChild(sg); }
+
+  var miss = st.missing.slice();
+  var refused = ev.outcome === "refused" || ev.outcome === "defect";
+  var order = [["diff", true], ["feedback", true], ["checker", false], ["acceptance", true], ["stderr", false], ["code", last], ["reply", false], ["prompt", false]];
+  order.forEach(function (o) {
+    var lab = BLOBS.filter(function (b) { return b[0] === o[0]; })[0][1];
+    var blk = blobBlock(lab, ev[o[0]], { open: o[1], diff: o[0] === "diff" });
+    if (blk) {
+      sec.appendChild(blk);
+      if (o[0] === "prompt" && ev.primer === true) sec.appendChild(primerBlock());
+    } else if (o[0] === "prompt" || o[0] === "reply" || o[0] === "code" || (o[0] === "feedback" && refused) || (o[0] === "diff" && isNum(ev.n) && ev.n > 0) || (o[0] === "acceptance" && !refused)) {
+      miss.push(lab.toLowerCase().replace(" (full text)", ""));
+    }
+  });
+  var mn = missingNote(miss);
+  if (mn) sec.appendChild(mn);
+  return sec;
+}
+
+function planCallBlock(r) {
+  var ev = r.ev;
+  var sec = el("section", "sec " + (typeof ev.outcome === "string" ? ev.outcome : ""));
+  sec.appendChild(el("h3", "", "Planner round " + (isNum(ev.round) ? ev.round : "?") + (isNum(ev.sample) && ev.sample > 0 ? ", sample " + ev.sample : "")));
+  var st = callStats(ev, r.i);
+  sec.appendChild(st.el);
+  var miss = st.missing.slice();
+  var p = blobBlock("What was asked", ev.prompt, {});
+  if (p) { sec.appendChild(p); if (ev.primer === true) sec.appendChild(primerBlock()); } else miss.push("what was asked");
+  var a = blobBlock("What came back", ev.reply, {});
+  if (a) sec.appendChild(a); else miss.push("what came back");
+  if (Array.isArray(ev.errors)) {
+    if (ev.errors.length) {
+      sec.appendChild(el("div", "note", "Refusals fed back to the next round (" + ev.errors.length + "):"));
+      var ul = el("ul", "errs");
+      ev.errors.forEach(function (x) { ul.appendChild(el("li", "", String(x))); });
+      sec.appendChild(ul);
+    } else {
+      sec.appendChild(el("div", "note", "No refusals: nothing was fed back."));
+    }
+  } else {
+    miss.push("refusals fed back");
+  }
+  var mn = missingNote(miss);
+  if (mn) sec.appendChild(mn);
+  return sec;
+}
+
+function reviewBlock(r) {
+  var ev = r.ev;
+  var sec = el("section", "sec");
+  sec.appendChild(el("h3", "", "Review of the cases"));
+  var kv = el("div", "kv");
+  if (isNum(ev.kept)) kv.appendChild(chip("kept", String(ev.kept))); 
+  if (Array.isArray(ev.dropped)) kv.appendChild(chip("dropped", String(ev.dropped.length)));
+  sec.appendChild(kv);
+  var miss = [];
+  if (!isNum(ev.kept)) miss.push("cases kept");
+  if (Array.isArray(ev.dropped)) {
+    if (ev.dropped.length) {
+      var t = el("table", "dropped");
+      var hr = el("tr");
+      ["unit", "case", "why it was dropped"].forEach(function (h) { hr.appendChild(el("th", "", h)); });
+      t.appendChild(hr);
+      ev.dropped.forEach(function (x) {
+        var tr = el("tr");
+        x = x && typeof x === "object" ? x : {};
+        [x.unit, x.case, x.reason].forEach(function (v) { tr.appendChild(el("td", "", v === undefined || v === null ? "not recorded" : String(v))); });
+        t.appendChild(tr);
+      });
+      sec.appendChild(t);
+    } else {
+      sec.appendChild(el("div", "note", "No case was dropped."));
+    }
+  } else {
+    miss.push("dropped cases");
+  }
+  if (typeof ev.error === "string") sec.appendChild(el("div", "note warn", "The review failed: " + ev.error));
+  var b = blobBlock("The review's own text", ev.blob, {});
+  if (b) sec.appendChild(b);
+  var mn = missingNote(miss);
+  if (mn) sec.appendChild(mn);
+  return sec;
+}
+
+function finalBlock(r) {
+  var ev = r.ev;
+  var sec = el("section", "sec " + (ev.valid === true ? "accepted" : ev.valid === false ? "refused" : ""));
+  sec.appendChild(el("h3", "", "The plan that was used"));
+  var kv = el("div", "kv");
+  if (typeof ev.valid === "boolean") kv.appendChild(chip("valid", ev.valid ? "yes" : "no"));
+  if (isNum(ev.units)) kv.appendChild(chip("units", String(ev.units)));
+  sec.appendChild(kv);
+  var b = blobBlock("The plan (json)", ev.plan, {});
+  if (b) sec.appendChild(b);
+  return sec;
+}
+
+// ---- the unit panel ------------------------------------------------------------------------------------------------------------
+
+function openUnit(u, focusN, opener) {
+  var id = u.id;
+  openPanel("Unit " + id, u.function || "", function (body) {
+    var states = stateOf(state.data);
+    u = state.data.units.filter(function (x) { return x.id === id; })[0] || u;
+    var top = el("section", "sec");
+    var kv = el("div", "kv");
+    kv.appendChild(chip("state", u.column));
+    kv.appendChild(chip("attempts", u.attempts === null ? "unknown" : String(u.attempts)));
+    if (u.regressions) kv.appendChild(chip("regressed", u.regressions + "×"));
+    var cost = fmtUsd(u.cost_usd);
+    kv.appendChild(chip("total cost", cost || "not recorded"));
+    if (u.tokens) kv.appendChild(chip("tokens", "in " + fmtInt(u.tokens.in) + " · out " + fmtInt(u.tokens.out)));
+    if (isNum(u.calls)) kv.appendChild(chip("model calls", String(u.calls)));
+    top.appendChild(kv);
+    if (Array.isArray(u.deps) && u.deps.length) {
+      var deps = el("div", "chips");
+      deps.appendChild(el("span", "muted", "needs"));
+      u.deps.forEach(function (id) {
+        var b = el("button", "dep");
+        b.type = "button";
+        b.appendChild(el("span", "dot " + (states[id] || "missing")));
+        b.appendChild(el("span", "", id));
+        b.title = "Open " + id;
+        var other = state.data.units.filter(function (x) { return x.id === id; })[0];
+        if (other) b.addEventListener("click", function () { openUnit(other, null); });
+        else b.disabled = true;
+        deps.appendChild(b);
+      });
+      top.appendChild(deps);
+    } else if (u.deps === null) {
+      top.appendChild(el("div", "note", "Dependencies: not recorded (no plan.json)."));
+    }
+    body.appendChild(top);
+
+    var jr = J && J.units[u.id];
+    if (jr && jr.start && typeof jr.start.ev.function === "string" && !u.function) $("psub").textContent = jr.start.ev.function;
+    if (jr && jr.attempts.length) {
+      jr.attempts.forEach(function (r, k) {
+        var tr = Array.isArray(u.trail) ? u.trail.filter(function (t) { return t.attempt === r.ev.n; })[0] : null;
+        body.appendChild(attemptBlock(r, k === jr.attempts.length - 1, tr));
+      });
+      if (jr.end) {
+        var e = jr.end.ev;
+        body.appendChild(el("div", "note", "Ended: " + (typeof e.state === "string" ? e.state : "state not recorded") + (isNum(e.attempts) ? " after " + e.attempts + (e.attempts === 1 ? " attempt." : " attempts.") : ".")));
+      } else {
+        body.appendChild(el("div", "note", "No end of this unit in the journal: it was still being built, or the run stopped."));
+      }
+      jr.sweeps.forEach(function (r) { body.appendChild(el("div", "note", "Sweep after this unit: " + sweepText(r.ev))); });
+    } else {
+      var sec = el("section", "sec");
+      sec.appendChild(el("h3", "", "Attempts"));
+      if (Array.isArray(u.trail) && u.trail.length) {
+        var ol = el("ol", "attempts");
+        u.trail.forEach(function (a) { ol.appendChild(trailItem(a)); });
+        sec.appendChild(ol);
+      } else {
+        sec.appendChild(el("div", "note", u.trail === null ? "Not recorded: this run has no trail file for the unit." : "No attempts yet."));
+      }
+      sec.appendChild(el("div", "note", J ? "Not recorded: the journal has no events for this unit, so no prompts, replies, code or diffs." : "Not recorded: this run has no journal, so no prompts, replies, code or diffs."));
+      body.appendChild(sec);
+    }
+    if (focusN !== null && focusN !== undefined) {
+      var t = document.getElementById("att-" + focusN);
+      if (t) { t.scrollIntoView({ block: "start" }); t.classList.add("flash"); }
+    }
+  }, opener);
+}
+
+function sweepText(ev) {
+  function part(v) { return Array.isArray(v) ? (v.length ? v.join(", ") : "none") : (isNum(v) ? String(v) : "not recorded"); }
+  return "held " + part(ev.held) + "; regressed " + part(ev.regressed) + ".";
+}
+
+// ---- the story -----------------------------------------------------------------------------------------------------------------
+
+function fmtAt(ms) {
+  if (!isNum(ms)) return "?";
+  return ms < 90000 ? "+" + (Math.round(ms / 100) / 10) + " s" : "+" + fmtSecs(ms / 1000);
+}
+
+function eventLine(r) {
+  var e = r.ev, k = e.kind, cls = "";
+  var s;
+  function nz(v) { return v === undefined || v === null ? "?" : v; }
+  if (k === "run_start") s = "The run started" + (e.provider || e.model ? " (" + [e.provider, e.model].filter(Boolean).join(" / ") + ")" : "");
+  else if (k === "plan_call") { s = "Planner round " + nz(e.round) + ": " + (e.outcome || "outcome not recorded") + (Array.isArray(e.errors) && e.errors.length ? ", " + e.errors.length + " refusal(s) fed back" : ""); if (e.outcome === "refused") cls = "bad"; }
+  else if (k === "plan_review") s = "Review: kept " + nz(e.kept) + ", dropped " + (Array.isArray(e.dropped) ? e.dropped.length : "?");
+  else if (k === "plan_final") { s = "Plan " + (e.valid === true ? "valid" : e.valid === false ? "not valid" : "validity not recorded") + (isNum(e.units) ? ", " + e.units + " units" : ""); cls = e.valid === false ? "bad" : ""; }
+  else if (k === "unit_start") s = "Unit " + nz(e.unit) + " started" + (e.function ? " (" + e.function + ")" : "");
+  else if (k === "attempt") { s = "Unit " + nz(e.unit) + ", attempt #" + nz(e.n) + ": " + (e.outcome || "outcome not recorded") + (e.decision ? " → " + e.decision : "") + (isNum(e.ms) ? " · " + fmtMs(e.ms) : ""); cls = e.outcome === "refused" || e.outcome === "defect" ? "bad" : (e.outcome === "accepted" || e.outcome === "verified" ? "good" : ""); }
+  else if (k === "sweep") s = "Sweep after " + nz(e.after_unit) + ": " + sweepText(e);
+  else if (k === "unit_end") { s = "Unit " + nz(e.unit) + " ended: " + (e.state || "state not recorded"); cls = e.state === "failed" ? "bad" : (e.state === "verified" ? "good" : ""); }
+  else if (k === "run_end") { s = "The run ended: " + (e.verdict || "verdict not recorded") + (isNum(e.exit) ? " (exit " + e.exit + ")" : "") + (isNum(e.seconds) ? " after " + fmtSecs(e.seconds) : ""); cls = e.verdict === "done" ? "good" : (e.verdict ? "bad" : ""); }
+  else s = typeof k === "string" ? "Event " + k : "An event without a kind";
+  return { text: s, cls: cls };
+}
+
+function openEvent(r, opener) {
+  var e = r.ev;
+  if ((e.kind === "attempt" || e.kind === "unit_start" || e.kind === "unit_end" || e.kind === "sweep") && state.data) {
+    var id = e.kind === "sweep" ? e.after_unit : e.unit;
+    var u = state.data.units.filter(function (x) { return x.id === id; })[0];
+    if (u) { openUnit(u, e.kind === "attempt" ? e.n : null, opener); return; }
+  }
+  openPanel(eventLine(r).text, fmtAt(e.t_ms) + " · " + (e.kind || "?"), function (body) {
+    if (e.kind === "plan_call") body.appendChild(planCallBlock(r));
+    else if (e.kind === "plan_review") body.appendChild(reviewBlock(r));
+    else if (e.kind === "plan_final") body.appendChild(finalBlock(r));
+    var sec = el("section", "sec");
+    sec.appendChild(el("h3", "", "The event as recorded"));
+    var pre = el("pre", "txt", JSON.stringify(e, null, 1));
+    pre.tabIndex = 0;
+    sec.appendChild(pre);
+    body.appendChild(sec);
+  }, opener);
+}
+
+function renderStory(d) {
+  var box = $("view-story");
+  box.textContent = "";
+  if (!J) { box.appendChild(el("p", "note", "Not recorded: this run has no journal.")); return; }
+  var jj = J.j, r = d.run || {};
+  var head = el("section", "sec storyhead");
+  head.appendChild(el("h2", "", "The run"));
+  var s = J.start ? J.start.ev : {};
+  var brief = typeof s.brief === "string" ? s.brief : r.brief;
+  head.appendChild(el("p", "", brief ? brief : "Brief: not recorded."));
+  var kv = el("div", "kv");
+  var prov = [s.provider || r.provider, s.model || r.model].filter(Boolean).join(" / ");
+  kv.appendChild(chip("model", prov || "not recorded"));
+  var en = J.end ? J.end.ev : null;
+  kv.appendChild(chip("verdict", en && en.verdict ? en.verdict : (r.verdict || "not recorded")));
+  if (en && isNum(en.seconds)) kv.appendChild(chip("time", fmtSecs(en.seconds)));
+  if (en && isNum(en.exit)) kv.appendChild(chip("exit", String(en.exit)));
+  kv.appendChild(chip("events", String(jj.events.length)));
+  head.appendChild(kv);
+  if (!J.start) head.appendChild(el("div", "note", "Not recorded: the start of the run."));
+  if (s.options && typeof s.options === "object") {
+    var o = el("details", "blob");
+    o.appendChild(el("summary", "", "Options of the run"));
+    var inn = el("div", "in"), pre = el("pre", "txt", JSON.stringify(s.options, null, 1));
+    inn.appendChild(pre); o.appendChild(inn); head.appendChild(o);
+  }
+  if (!en) head.appendChild(el("div", "note warn", "The journal has no end of the run: it is still going, or it was stopped."));
+  if (jj.partial_tail) head.appendChild(el("div", "note warn", "The last line of the journal is half written (the run was stopped while writing it); it is left out."));
+  if (isNum(jj.skipped_lines) && jj.skipped_lines > 0) head.appendChild(el("div", "note warn", jj.skipped_lines + " line(s) of the journal could not be read and are left out."));
+  if (isNum(jj.events_dropped) && jj.events_dropped > 0) head.appendChild(el("div", "note warn", jj.events_dropped + " later event(s) are not in board.json (limit of 20,000)."));
+  if (isNum(jj.blobs_omitted) && jj.blobs_omitted > 0) head.appendChild(el("div", "note warn", jj.blobs_omitted + " text(s) were left out of board.json to keep it small; they are in journal/blobs/."));
+  head.appendChild(el("div", "note", "Texts are excerpts of up to " + fmtBytes(jj.limits && jj.limits.blob_bytes) + " each; the full files are in journal/blobs/ of the run directory."));
+  box.appendChild(head);
+
+  var plan = el("section", "storyplan");
+  plan.appendChild(el("h2", "", "The plan"));
+  if (!J.calls.length && !J.review && !J.final) plan.appendChild(el("p", "note", "Not recorded: the journal has no plan stage (a plan given by hand, or a run before the planner was recorded)."));
+  J.calls.forEach(function (c) { plan.appendChild(planCallBlock(c)); });
+  if (J.review) plan.appendChild(reviewBlock(J.review));
+  if (J.final) plan.appendChild(finalBlock(J.final));
+  box.appendChild(plan);
+
+  var tl = el("section", "timeline");
+  tl.appendChild(el("h2", "", "Timeline"));
+  tl.appendChild(el("p", "note", "Everything that happened, in order. Click a line for its detail."));
+  var ol = el("ol", "tl");
+  var shown = 0, LIMIT = 400;
+  function more() {
+    var upto = Math.min(jj.events.length, shown + LIMIT);
+    for (; shown < upto; shown++) {
+      var ev = jj.events[shown];
+      if (!ev || typeof ev !== "object") continue;
+      var rec = { ev: ev, i: shown }, line = eventLine(rec);
+      var li = el("li", line.cls);
+      var b = el("button", "row");
+      b.type = "button";
+      b.appendChild(el("span", "t", fmtAt(ev.t_ms)));
+      b.appendChild(el("span", "k", typeof ev.kind === "string" ? ev.kind : "?"));
+      b.appendChild(el("span", "s", line.text));
+      b.addEventListener("click", (function (rr, bb) { return function () { openEvent(rr, bb); }; })(rec, b));
+      li.appendChild(b);
+      ol.appendChild(li);
+    }
+    if (btn) btn.hidden = shown >= jj.events.length;
+  }
+  var btn = null;
+  if (jj.events.length > LIMIT) {
+    btn = el("button", "", "Show more events");
+    btn.type = "button";
+    btn.addEventListener("click", more);
+  }
+  more();
+  tl.appendChild(ol);
+  if (btn) tl.appendChild(btn);
+  box.appendChild(tl);
+}
+
+// ---- tabs ----------------------------------------------------------------------------------------------------------------------
+
+function showView(name) {
+  var story = name === "story" && !!J;
+  $("view-board").hidden = story;
+  $("view-story").hidden = !story;
+  $("tab-board").setAttribute("aria-selected", story ? "false" : "true");
+  $("tab-story").setAttribute("aria-selected", story ? "true" : "false");
+  $("tab-board").tabIndex = story ? -1 : 0;
+  $("tab-story").tabIndex = story ? 0 : -1;
+  state.view = story ? "story" : "board";
+}
+$("tab-board").addEventListener("click", function () { showView("board"); });
+$("tab-story").addEventListener("click", function () { showView("story"); });
+$("tabs").addEventListener("keydown", function (e) {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  var to = e.key === "ArrowRight" ? "story" : "board";
+  showView(to);
+  $("tab-" + to).focus();
+});
 
 load();
 </script>
