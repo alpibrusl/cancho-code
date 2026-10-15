@@ -1,0 +1,5 @@
+fn tok_parse[&r](text: &r [byte]) -> [] int {
+    var total = 0;
+    var b = buffer.empty(heap, 16);
+    return total;
+}

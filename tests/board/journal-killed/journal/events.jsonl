@@ -1,0 +1,5 @@
+{"t_ms":0,"kind":"run_start","brief":"tokens","provider":"anthropic","model":"claude-haiku-5-5","options":{}}
+{"t_ms":900,"kind":"plan_final","valid":true,"units":1,"plan":"plan-final.json"}
+{"t_ms":1000,"kind":"unit_start","unit":"key","function":"tok_key_ok","deps":[]}
+{"t_ms":9000,"kind":"attempt","unit":"key","n":0,"tokens":{"in":421,"out":889,"thinking":0,"cache_write":0,"cache_read":0},"ms":7900,"stop":"max_tokens","outcome":"truncated","prompt":"key-0.prompt.txt","reply":"key-0.reply.txt"}
+{"t_ms":9500,"kind":"attempt","unit":"key","n":1,"tok

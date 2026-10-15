@@ -102,6 +102,101 @@ def intval(row, key):
     return None
 
 
+# ---- the journal (docs/dashboard.md "The journal") ---------------------------------------------------------------------
+BLOB_CAP = 32768          # bytes of a blob kept in board.json
+BLOB_MAX = 262144         # the most the tool reads of one blob file
+BLOB_BUDGET = 2097152     # all blob text in one board.json
+MAX_EVENTS = 20000
+MAX_LINE = 65536
+SEEN_MAX = 65536
+BLOB_KEYS = ["prompt", "reply", "code", "feedback", "checker", "acceptance", "diff", "stderr", "blob", "plan"]
+
+
+def plain_name(n):
+    if not n or len(n) > 100 or ".." in n:
+        return False
+    return all(33 <= ord(c) <= 126 and c not in '"\\/' for c in n)
+
+
+def journal_of(wd, price):
+    path = os.path.join(wd, "journal", "events.jsonl")
+    raw = read(path)
+    if raw is None:
+        return None
+    pieces = raw.split(b"\n")
+    events, costs = [], []
+    skipped = dropped = 0
+    partial = False
+    for i, ln in enumerate(pieces):
+        if ln.endswith(b"\r"):
+            ln = ln[:-1]
+        if not ln:
+            continue
+        ev = None
+        if len(ln) < MAX_LINE:
+            try:
+                ev = json.loads(ln.decode("utf-8"))
+            except Exception:
+                ev = None
+        if not isinstance(ev, dict):
+            if i == len(pieces) - 1:
+                partial = True
+            else:
+                skipped += 1
+            continue
+        if len(events) >= MAX_EVENTS:
+            dropped += 1
+            continue
+        events.append(ev)
+    blobs = {}
+    seen_used = 0
+    total = omitted = 0
+
+    def add(name):
+        nonlocal seen_used, total, omitted
+        if name in blobs or not plain_name(name):
+            return
+        if seen_used + len(name) + 1 > SEEN_MAX:
+            omitted += 1
+            return
+        seen_used += len(name) + 1
+        data = read(os.path.join(wd, "journal", "blobs", name))
+        if data is None or os.path.isdir(os.path.join(wd, "journal", "blobs", name)):
+            blobs[name] = None
+            return
+        data = data[:BLOB_MAX]
+        cut = len(data)
+        if len(data) > BLOB_CAP:
+            cut = BLOB_CAP
+            while cut > 0 and 128 <= data[cut] < 192:
+                cut -= 1
+        if total + cut > BLOB_BUDGET:
+            blobs[name] = {"omitted": True}
+            omitted += 1
+            return
+        total += cut
+        blobs[name] = {"bytes": len(data), "truncated": len(data) > BLOB_CAP, "text": data[:cut].decode("utf-8", "replace")}
+
+    for ev in events:
+        if ev.get("primer") is True:
+            add("primer.txt")
+        for k in BLOB_KEYS:
+            if isinstance(ev.get(k), str):
+                add(ev[k])
+        tk = ev.get("tokens")
+        if isinstance(tk, dict) and price:
+            g = lambda k: max(0, intval(tk, k) or 0)
+            tier = price["base"]
+            if price["limit"] and g("in") + g("cache_write") + g("cache_read") > price["limit"] and price["over"]:
+                tier = price["over"]
+            pico = g("in") * tier[0] + g("cache_write") * tier[1] + g("cache_read") * tier[2] + g("out") * tier[3]
+            costs.append(fixed((pico + 500000) // 1000000, 6))
+        else:
+            costs.append(None)
+    return {"events": events, "costs": costs, "blobs": blobs, "skipped_lines": skipped, "partial_tail": partial,
+            "events_dropped": dropped, "blobs_omitted": omitted, "limits": {"blob_bytes": BLOB_CAP, "total_bytes": BLOB_BUDGET}}
+
+
 def main():
     wd = sys.argv[1]
     prices_path = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] != "-" else None
@@ -357,6 +452,9 @@ def main():
         "truncated": False,
         "units": ucards,
     }
+    jr = journal_of(wd, price)
+    if jr is not None:
+        board["journal"] = jr
     print(json.dumps(board, indent=1))
 
 

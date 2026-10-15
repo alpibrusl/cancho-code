@@ -3,12 +3,12 @@
 # into ONE json file, read-only; docs/board.html shows it.
 #
 #   scripts/test-board.sh             the gate
-#   scripts/test-board.sh --mutants   prove the gate can fail: three broken copies of src/board.cho must each be RED
+#   scripts/test-board.sh --mutants   prove the gate can fail: seven broken copies of src/board.cho must each be RED
 #
 #   CANCHO     the compiler (default: cancho on PATH)
 #   BOARD_SRC  the source of the tool to judge (default: src/board.cho); how --mutants judges a broken copy
 #
-# What it asserts
+# What it asserts (the journal: fixtures journal, journal-killed, journal-gaps, and a big one made here)
 #   - for each fixture run directory under tests/board/ (a done run, a stuck run with refusal history, a run mid-build,
 #     a regressed unit, a directory with most files missing, no run.log, an empty directory, and junk), the tool's board.json
 #     equals tests/board/expected/<name>.json (compared as JSON, key order free) and also the independent oracle
@@ -17,6 +17,7 @@
 #   - the run directory is byte-identical (contents, names, mtimes) after the tool ran: it never writes there, and an output
 #     path inside the run directory is refused (exit 2) and writes nothing;
 #   - usage errors exit 2; a plan found through run.json's `plan` path gives the same board as plan.json beside it;
+#   - docs/board.html has the detail panel (dialog, Escape) and the Story view, and shows no retry command (there is none yet);
 #   - docs/board.html makes no request to another host, has no build step, no write path, reads board.json and offers a file picker.
 set -u
 
@@ -55,6 +56,10 @@ PY
     mutant column  'col_stuck()' 'col_verified()'          # a failed unit is put in the Verified column
     mutant cost    'n_in * tier_in' 'n_in * tier_out'            # the input tokens are priced as output tokens
     mutant refuse  'inside(out, wd)' 'false'               # an output path inside the run directory is no longer refused
+    mutant blobcap 'return 32768' 'return 300000'          # a blob is inlined whole, past the cap
+    mutant order   'let ix = k;' 'let ix = n - 1 - k;'      # the journal's events come out last first
+    mutant partial 'cells[j_partial()] = 1;' 'cells[j_skipped()] = cells[j_skipped()] + 1;'   # a half-written last line is counted as a bad line
+    mutant traverse '|| bytes.find(name, "..") >= 0' '|| false'   # a blob name with .. is read
     exit $fail
 fi
 
@@ -189,6 +194,48 @@ a["run"]["seconds"] = b["run"]["seconds"]
 sys.exit(0 if a == b else 1)
 PY
 
+# ---- the journal: bounded blobs (a blob is cut at the cap on a character boundary; the total is bounded; the rest is marked) ----------------
+mkdir -p "$work/big/journal/blobs"
+python3 - "$work/big" <<'PY'
+import json, os, sys
+d = sys.argv[1]
+b = os.path.join(d, "journal", "blobs")
+open(os.path.join(b, "multi.txt"), "wb").write(b"a" * 32767 + "\u00e9".encode() + b"b" * 7000)   # the cap falls inside the 2-byte character
+ev = [{"t_ms": 0, "kind": "attempt", "unit": "u", "n": 0, "reply": "multi.txt"}]
+for i in range(70):
+    open(os.path.join(b, "f%d.txt" % i), "wb").write(("%02d" % i).encode() + b"x" * 29998)
+    ev.append({"t_ms": i + 1, "kind": "attempt", "unit": "u", "n": i + 1, "reply": "f%d.txt" % i})
+open(os.path.join(d, "journal", "events.jsonl"), "w").write("".join(json.dumps(e) + "\n" for e in ev))
+open(os.path.join(d, "run.log"), "w").write("[UNIT]\tu\tbuilding\n")
+PY
+before=$(tree "$work/big")
+"$exe" "$work/big" "$work/big.json" "$prices" >/dev/null 2>&1; expect "big journal: exit code" "$?" 0
+expect "big journal: the run directory is byte-identical afterwards" "$(tree "$work/big")" "$before"
+python3 "$root/tests/reference/board_ref.py" "$work/big" "$prices" > "$work/big.ref.json"
+norm "$work/big.json" > "$work/big.got"; norm "$work/big.ref.json" > "$work/big.want"
+diff -q "$work/big.want" "$work/big.got" >/dev/null || bad "big journal: board.json differs from the oracle"
+python3 - "$work/big.json" <<'PY' || fail=1
+import json, os, sys
+raw = open(sys.argv[1], "rb").read()
+j = json.loads(raw)["journal"]
+bl, bad = j["blobs"], []
+m = bl["multi.txt"]
+if not (m["truncated"] and m["bytes"] == 39769 and len(m["text"]) == 32767 and m["text"].endswith("a")):
+    bad.append("multi.txt: wanted cut at the character boundary before the cap, got truncated=%s bytes=%s chars=%s" % (m["truncated"], m["bytes"], len(m["text"])))
+kept = sum(len(v["text"].encode()) for v in bl.values() if v and "text" in v)
+if kept > j["limits"]["total_bytes"]:
+    bad.append("the blobs kept are %d bytes, more than the budget %d" % (kept, j["limits"]["total_bytes"]))
+if j["blobs_omitted"] < 1 or not any(v == {"omitted": True} for v in bl.values()):
+    bad.append("no blob was marked omitted although the budget was exceeded")
+if len(raw) > j["limits"]["total_bytes"] + 262144:
+    bad.append("board.json is %d bytes: not bounded by the budget" % len(raw))
+if [e["n"] for e in j["events"]] != list(range(71)) and [e.get("n") for e in j["events"]][1:] != list(range(1, 71)):
+    bad.append("events are not in file order")
+for x in bad:
+    print("FAIL: big journal: " + x, file=sys.stderr)
+sys.exit(1 if bad else 0)
+PY
+
 # ---- the page ----------------------------------------------------------------------------------------------------------------------
 page="$root/docs/board.html"
 if [ ! -f "$page" ]; then
@@ -203,6 +250,12 @@ else
     grep -q 'drop' "$page" || bad "docs/board.html has no drag-and-drop"
     grep -q 'prefers-color-scheme' "$page" || bad "docs/board.html does not follow the colour scheme"
     grep -q 'name="viewport"' "$page" || bad "docs/board.html has no viewport (phone width)"
+    # the detail panel: a dialog, closed by Escape, with the journal's missing parts said out loud and no way to act on a unit
+    grep -q 'role="dialog"' "$page" || bad "docs/board.html has no detail panel (role=dialog)"
+    grep -q "Escape" "$page" || bad "docs/board.html: the detail panel does not close on Escape"
+    grep -q "not recorded" "$page" || bad "docs/board.html does not say 'not recorded' for what the journal lacks"
+    grep -q 'id="view-story"' "$page" || bad "docs/board.html has no Story view"
+    grep -nE -- '--retry|--hint' "$page" >"$work/retry" && { bad "docs/board.html shows a command that does not exist yet:"; head -3 "$work/retry" >&2; }
     # it only reads: no way to send anything anywhere
     grep -nE "method: *['\"](POST|PUT|DELETE|PATCH)|XMLHttpRequest|sendBeacon|WebSocket|\.send\(|localStorage|sessionStorage|document\.cookie|<form" "$page" >"$work/write" && { bad "docs/board.html has a write path:"; head -5 "$work/write" >&2; }
     # one static file: no build step

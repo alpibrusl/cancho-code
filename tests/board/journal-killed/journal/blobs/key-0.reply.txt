@@ -1,0 +1,3 @@
+```
+fn tok_key_ok[&r](key: &r [byte]) -> [] bool {
+```

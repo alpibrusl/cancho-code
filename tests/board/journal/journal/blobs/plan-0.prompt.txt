@@ -1,0 +1,2 @@
+Brief: tokens: count, parse and evaluate
+Return a plan as JSON with units, signatures, deps and examples.
