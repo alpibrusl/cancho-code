@@ -1,0 +1,1 @@
+{"name": "x", "units": [{"id": "a", "signature": "fn f(n: int) -> [] int", "examples": ["f(1) == 1"], "effort": "low", "deps": []}, {"id": "b", "signature": "fn g(n: int) -> [] int", "examples": ["g(1) == 1"], "effort": "max", "deps": ["a"]}, {"id": "c", "signature": "fn h(n: int) -> [] int", "examples": ["h(1) == 1"], "deps": []}]}

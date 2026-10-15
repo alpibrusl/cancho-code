@@ -197,6 +197,11 @@ fn find_fn[&s, &t, &i, &x](src: &s [byte], tape: &t [int], info: &!i [int], n: i
     return 0 - 1;
 }
 
+// Is the node one of the five effort levels the API takes?
+fn effort_level[&s, &t](src: &s [byte], tape: &t [int], n: int) -> [] bool {
+    return json.is_string(tape, n) && (json.string_equals(src, tape, n, "low") || json.string_equals(src, tape, n, "medium") || json.string_equals(src, tape, n, "high") || json.string_equals(src, tape, n, "xhigh") || json.string_equals(src, tape, n, "max"));
+}
+
 fn collect[&s, &t, &i](src: &s [byte], tape: &t [int], info: &!i [int], units: int, n: int) -> [] int {
     var u = 0;
     var j = units + 1;
@@ -209,6 +214,7 @@ fn collect[&s, &t, &i](src: &s [byte], tape: &t [int], info: &!i [int], units: i
         var dp = 0 - 1;
         var ds = 0 - 1;
         var ts = 0 - 1;
+        var ef = 0 - 1;
         if isobj {
             idn = json.get(src, tape, j, "id");
             sg = json.get(src, tape, j, "signature");
@@ -216,12 +222,13 @@ fn collect[&s, &t, &i](src: &s [byte], tape: &t [int], info: &!i [int], units: i
             dp = json.get(src, tape, j, "deps");
             ds = json.get(src, tape, j, "description");
             ts = json.get(src, tape, j, "tests");
+            ef = json.get(src, tape, j, "effort");
         }
         if idn >= 0 && json.is_string(tape, idn) {
             set_f(info, u, f_id(), idn);
         }
         var ok = 0;
-        if isobj && get_f(info, u, f_id()) >= 0 && sg >= 0 && json.is_string(tape, sg) && all_strings(tape, ex) && all_strings(tape, dp) && (ds < 0 || json.is_string(tape, ds)) && (ts < 0 || all_strings(tape, ts)) {
+        if isobj && get_f(info, u, f_id()) >= 0 && sg >= 0 && json.is_string(tape, sg) && all_strings(tape, ex) && all_strings(tape, dp) && (ds < 0 || json.is_string(tape, ds)) && (ts < 0 || all_strings(tape, ts)) && (ef < 0 || effort_level(src, tape, ef)) {
             ok = 1;
         }
         set_f(info, u, f_ok(), ok);
@@ -305,7 +312,7 @@ fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte
     var b = out;
     let who = label(src, tape, info, u);
     if get_f(info, u, f_ok()) != 1 {
-        return emit(heap, b, "unit-field", who, "a unit must be an object with a string id, a string signature, an array of strings examples and an array of strings deps (and a description, if any, that is a string, and tests, if any, an array of strings)");
+        return emit(heap, b, "unit-field", who, "a unit must be an object with a string id, a string signature, an array of strings examples and an array of strings deps (and a description, if any, that is a string, tests, if any, an array of strings, and an effort, if any, one of low, medium, high, xhigh, max)");
     }
     if find_id(src, tape, info, n, who) != u {
         b = emit(heap, b, "duplicate-id", who, "another unit already has this id");

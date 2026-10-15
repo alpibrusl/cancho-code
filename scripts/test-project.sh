@@ -136,6 +136,15 @@ expect "described: verdict" "$(verdict "$out")" done
 grep -q '^DESCRIPTION:' "$wd/project.cho.task" || { echo "FAIL: described: no DESCRIPTION line in the task" >&2; fail=1; }
 rm -rf "$wd" "$rc"
 
+# effort: a unit's `effort` (low|medium|high|xhigh|max) reaches the agent as an `EFFORT:` line of the task; a unit without one has none
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf 'case "$(sed -n 1p "$1.task")" in "UNIT: a") grep -q "^EFFORT: low$" "$1.task" || exit 3; printf "\nfn double(x: int) -> [] int { return x * 2; }\n" >> "$1" ;; *) if grep -q "^EFFORT:" "$1.task"; then exit 4; fi; printf "\nfn triple(x: int) -> [] int { return x * 3; }\n" >> "$1" ;; esac\n' > "$rc/a.sh"
+cp "$rc/a.sh" "$rc/b.sh"
+out=$(run "$T/plan-effort.json" "$wd" "$rc" "$lg"); r=$?
+expect "effort: exit code (3 = a unit with effort had no EFFORT line, 4 = a unit without one had it)" "$r" 0
+expect "effort: verdict" "$(verdict "$out")" done
+rm -rf "$wd" "$rc"
+
 # rawtests: a unit's own `tests` (cancho source) are appended verbatim to its tests file and used in place of the example-derived ones; a
 # signature with region parameters is accepted. The stand-in's first answer is wrong for the empty string, which only the raw test 2 knows
 set -- $(mk); wd=$1; rc=$2; lg=$3

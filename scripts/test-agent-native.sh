@@ -158,6 +158,18 @@ rm -f "$d/count"; broken; agent --thinking sometimes >/dev/null 2>&1; rc=$?
 expect "thinking: a bad thinking mode is exit 2" "$rc" 2
 expect "thinking: ... and sends no request" "$(count)" 0
 
+# a unit's own effort (`EFFORT:` in the task, from the plan) beats the flag; without one the flag stands; a bad one is refused before any request
+broken; printf 'UNIT: u\nEFFORT: high\n' > "$F.task"; agent --effort low >/dev/null 2>&1
+expect "unit effort: the task's EFFORT beats --effort" "$(req)" '[null, {"effort": "high"}]'
+broken; printf 'UNIT: u\nEFFORT: low\n' > "$F.task"; agent >/dev/null 2>&1
+expect "unit effort: the task's EFFORT is sent when no flag" "$(req)" '[null, {"effort": "low"}]'
+broken; printf 'UNIT: u\n' > "$F.task"; agent --effort medium >/dev/null 2>&1
+expect "unit effort: a task without EFFORT leaves the flag" "$(req)" '[null, {"effort": "medium"}]'
+rm -f "$d/count"; broken; printf 'UNIT: u\nEFFORT: huge\n' > "$F.task"; agent >/dev/null 2>"$d/err.txt"; rc=$?
+expect "unit effort: a bad EFFORT in the task is exit 2" "$rc" 2
+expect "unit effort: ... and sends no request" "$(count)" 0
+rm -f "$F.task"
+
 # no primer: no system block
 broken; agent >/dev/null 2>&1
 expect "request: no primer, no system block" "$(python3 -c "import json; print('system' in json.load(open('$d/request.json')))")" False

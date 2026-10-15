@@ -300,6 +300,12 @@ fn write_task[&h, &z, &s, &t, &w, &x](heap: &!h Heap, fs: &z Fs(""), src: &s [by
         b = buffer.append(heap, b, "\nDESCRIPTION: ");
         b = add_decoded(heap, b, src, tape, dn);
     }
+    // How hard the model should think about this unit (docs/plan.md `effort`): the agent reads it and sends it as the request's effort.
+    let en = json.get(src, tape, node, "effort");
+    if en >= 0 && json.is_string(tape, en) {
+        b = buffer.append(heap, b, "\nEFFORT: ");
+        b = add_decoded(heap, b, src, tape, en);
+    }
     b = buffer.append(heap, b, "\nEXAMPLES:\n");
     let arr = json.get(src, tape, node, "examples");
     var j = arr + 1;

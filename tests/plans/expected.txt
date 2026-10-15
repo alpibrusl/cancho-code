@@ -32,3 +32,5 @@ bad-test-world  1     bad-test:a
 valid-heap-test  0
 valid-cases  0
 needs-tests-empty-cases  1     needs-tests:a
+bad-effort  1     unit-field:a unit-field:b
+valid-effort  0
