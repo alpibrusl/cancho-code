@@ -1,0 +1,194 @@
+edition 7;
+
+// `cancho-build` -- one command from a brief to a verified build (docs/build.md):
+//
+//     build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [options]
+//
+// Exit codes: 0 done, 1 stuck or the final gate failed, 2 usage, 3 plan_failed, 4 provider_error.
+
+import build;
+import std.bytes;
+import std.io;
+
+fn digits_of[&a](text: &a [byte]) -> [] int {
+    if len(text) == 0 {
+        return 0 - 1;
+    }
+    var n = 0;
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if c < 48 || c > 57 {
+            return 0 - 1;
+        }
+        n = n * 10 + c - 48;
+        i = i + 1;
+    }
+    return n;
+}
+
+// The value after `--name`, or "" when the option is absent (the last one wins).
+fn opt[&g](g: &g Args, name: &static [byte]) -> [args] &static [byte] {
+    var found = "";
+    var i = 5;
+    while i + 1 < arg_count(g) {
+        if bytes.equal(arg(g, i), name) {
+            found = arg(g, i + 1);
+        }
+        i = i + 2;
+    }
+    return found;
+}
+
+fn known[&a](name: &a [byte]) -> [] bool {
+    return bytes.equal(name, "--provider") || bytes.equal(name, "--model") || bytes.equal(name, "--guide") || bytes.equal(name, "--review-guide")
+        || bytes.equal(name, "--review") || bytes.equal(name, "--contract") || bytes.equal(name, "--rounds") || bytes.equal(name, "--attempts")
+        || bytes.equal(name, "--agent-seconds") || bytes.equal(name, "--plan-seconds");
+}
+
+// A word that goes into a shell command line: letters, digits and . _ / + : = @ % , - only.
+fn plain[&a](text: &a [byte]) -> [] bool {
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        let ok = (c >= 48 && c <= 58) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 46 || c == 95 || c == 47 || c == 43 || c == 61 || c == 64 || c == 37 || c == 44 || c == 45;
+        if ok == false {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(net);
+    release(signals);
+    var console = io;
+    var h = heap;
+    var checker = "";
+    var brief = "";
+    var wd = "";
+    var agent = "";
+    var provider = "";
+    var model = "";
+    var guide = "";
+    var review_guide = "";
+    var contract = "";
+    var review = false;
+    var rounds = 3;
+    var attempts = 4;
+    var agent_seconds = 30;
+    var plan_seconds = 900;
+    var given = false;
+    borrow mut console as &!ci in {
+        borrow args as &g in {
+            if arg_count(g) < 5 {
+                io.error_all(ci, "usage: build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [--guide <file>] [--review on --review-guide <file>] [--contract <file>] [--rounds N] [--attempts N] [--agent-seconds N] [--plan-seconds N]\n");
+            } else {
+                given = true;
+                checker = arg(g, 1);
+                brief = arg(g, 2);
+                wd = arg(g, 3);
+                agent = arg(g, 4);
+                provider = opt(g, "--provider");
+                model = opt(g, "--model");
+                guide = opt(g, "--guide");
+                review_guide = opt(g, "--review-guide");
+                contract = opt(g, "--contract");
+                if len(checker) == 0 || int_of(checker[0]) != 47 {
+                    io.error_all(ci, "build: the checker path must be absolute\n");
+                    given = false;
+                }
+                // `..` in a path traps the file capability (exit 132), so it is refused here, as `project` does.
+                if bytes.find(brief, "..") >= 0 || bytes.find(wd, "..") >= 0 || bytes.find(guide, "..") >= 0 || bytes.find(review_guide, "..") >= 0 || bytes.find(contract, "..") >= 0 {
+                    io.error_all(ci, "build: a path may not contain '..'\n");
+                    given = false;
+                }
+                // The paths, provider and model are put into shell command lines: no space, quote or metacharacter in them.
+                if plain(checker) == false || plain(brief) == false || plain(wd) == false || plain(guide) == false || plain(review_guide) == false || plain(contract) == false || plain(provider) == false || plain(model) == false {
+                    io.error_all(ci, "build: a path, the provider and the model may hold only letters, digits and . _ / + : = @ % , -\n");
+                    given = false;
+                }
+                if len(provider) == 0 || len(model) == 0 {
+                    io.error_all(ci, "build: --provider and --model are required (there is no default for either)\n");
+                    given = false;
+                }
+                var i = 5;
+                while i < arg_count(g) {
+                    if known(arg(g, i)) == false || i + 1 >= arg_count(g) {
+                        io.error_all(ci, "build: an option it does not know, or without a value: ");
+                        io.error_all(ci, arg(g, i));
+                        io.error_all(ci, "\n");
+                        given = false;
+                    }
+                    i = i + 2;
+                }
+                let r = opt(g, "--review");
+                if bytes.equal(r, "on") {
+                    review = true;
+                    if len(review_guide) == 0 {
+                        io.error_all(ci, "build: --review on needs --review-guide\n");
+                        given = false;
+                    }
+                } else if len(r) > 0 && bytes.equal(r, "off") == false {
+                    io.error_all(ci, "build: --review is on or off\n");
+                    given = false;
+                }
+                let n_rounds = opt(g, "--rounds");
+                if len(n_rounds) > 0 {
+                    rounds = digits_of(n_rounds);
+                }
+                let n_attempts = opt(g, "--attempts");
+                if len(n_attempts) > 0 {
+                    attempts = digits_of(n_attempts);
+                }
+                let n_agent = opt(g, "--agent-seconds");
+                if len(n_agent) > 0 {
+                    agent_seconds = digits_of(n_agent);
+                }
+                let n_plan = opt(g, "--plan-seconds");
+                if len(n_plan) > 0 {
+                    plan_seconds = digits_of(n_plan);
+                }
+                if rounds < 1 || attempts < 1 || agent_seconds < 1 || plan_seconds < 1 {
+                    io.error_all(ci, "build: --rounds, --attempts, --agent-seconds and --plan-seconds are positive numbers\n");
+                    given = false;
+                }
+            }
+        }
+    }
+    var status = 2;
+    if given {
+        borrow fs as &fz in {
+            // The brief must be there (the agent reads it; here it is only checked).
+            region probe {
+                let room = alloc_slice[probe](4, byte_of(0));
+                if fs_read(fz, brief, room) < 0 {
+                    given = false;
+                }
+            }
+            borrow exec as &x in {
+                borrow clock as &c in {
+                    borrow mut console as &!i in {
+                        borrow mut h as &!hh in {
+                            if given {
+                                status = build.run(hh, x, c, i, fz, checker, brief, wd, agent, provider, model, guide, review_guide, contract, review, rounds, attempts, agent_seconds * 1000, plan_seconds * 1000);
+                            } else {
+                                io.error_all(i, "build: the brief cannot be read\n");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    release(fs);
+    release(exec);
+    release(clock);
+    release(console);
+    release(h);
+    release(args);
+    return status;
+}

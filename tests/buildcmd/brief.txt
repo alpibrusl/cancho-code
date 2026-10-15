@@ -1,0 +1,1 @@
+Build a tiny library: double(x), is_big(x) and big_double(x). Pure functions on integers.

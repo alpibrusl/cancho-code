@@ -57,6 +57,9 @@ jobs:
       - name: The authority report of the project driver is the committed one (it runs the checker and the agent and writes the work directory; no network)
         run: CANCHO=$HOME/cancho-bin/cancho scripts/check-authority.sh --project
 
+      - name: The authority report of the build command is the committed one (the plan agent, the checker and the unit agent as processes, the work directory; no network)
+        run: CANCHO=$HOME/cancho-bin/cancho scripts/check-authority.sh --build
+
       - name: The pins can fail (a stray net_out is a red diff)
         run: |
           export CANCHO=$HOME/cancho-bin/cancho CANCHO_PACKAGES=$HOME/cancho-bin/packages
@@ -64,6 +67,7 @@ jobs:
           scripts/check-authority.sh --provider --prove
           scripts/check-authority.sh --plan --prove
           scripts/check-authority.sh --project --prove
+          scripts/check-authority.sh --build --prove
 
       - name: Unit tests (the loop's decisions, the failure signature)
         run: $HOME/cancho-bin/cancho test tests/loop_check_test.cho tests/signature_test.cho src/loop_check.cho src/signature.cho --std --backend cranelift
@@ -80,6 +84,7 @@ jobs:
           sh scripts/test-verdicts.sh
           sh scripts/test-plan.sh
           sh scripts/test-project.sh
+          sh scripts/test-build.sh
           sh scripts/test-eval.sh
           sh scripts/test-page.sh
           sh scripts/test-reference-ports.sh
@@ -97,3 +102,9 @@ jobs:
           sh scripts/test-services.sh
           sh scripts/test-agent-native.sh
           sh scripts/test-agent-native-ollama.sh
+
+      # The one-command tool builds as a program with the pinned compiler (docs/build.md).
+      - name: The build command builds
+        run: |
+          CANCHO=$HOME/cancho-bin/cancho sh scripts/build-cancho-build.sh
+          test -x build/cancho-build

@@ -45,6 +45,8 @@ real API, the checker still the oracle.
 
 `project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds]]` builds a plan unit by unit: dependencies first, each unit verified by its own examples, everything that had verified re-checked after every unit, a killed run resumed from `state.txt`. Ends `[PROJECT_VERDICT] done|stuck|no_plan|provider_error|gate_failed`, exit 0, 1, 3, 4. Spec: [docs/project.md](project.md); gate: `scripts/test-project.sh` (a stand-in agent, no model). The Ollama agent reads the unit's task from `<project.cho>.task`.
 
+`build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [options]` goes from a brief to a verified build in one command: the agent writes the plan, the plan is checked, the project is built, and the run ends `[BUILD_VERDICT] done|stuck|gate_failed|plan_failed|provider_error` (exit 0, 1, 1, 3, 4), resuming from `plan.json` and `state.txt`, with `build.json` for dashboards. Spec: [docs/build.md](build.md); gate: `scripts/test-build.sh` (a stand-in agent, no model).
+
 ## A Claude agent
 
 `scripts/cancho-agent.sh --provider anthropic` is the same agent over Anthropic's Messages API. **Its key comes from a file**, never from the environment or the command line: the driver's agent has no environment, and a key in the agent command would be in the process list. The agent verifies the server's certificate against the system's CA bundle (native TLS) and prints the key nowhere.
