@@ -1,0 +1,57 @@
+Build a cancho service "invoices": a multi-tenant invoice REST API that is safe to put on the internet. The application goes in project.cho; the fixed server skeleton (eval/services/skeleton/main.cho, never edited) owns the listener, the HTTP parsing and `main`, and calls the four functions of its contract (`struct App`, `app_new`, `app_handle`, `app_drop`). Use std.http, std.json and std.route (and std.utf8 if you need it) instead of writing those layers yourself.
+
+Each customer company ("tenant") has its own bearer token. A request carries "Authorization: Bearer <token>"; the token decides which tenant it acts for.
+
+CONFIGURATION (flags, because a cancho program has no environment variables). The service is started as
+
+    service --port 8812 --tokens tokA:acme,tokB:globex
+
+The skeleton consumes --port and passes every other argument to app_new as text, each argument followed by a newline ("--tokens\ntokA:acme,tokB:globex\n"). --tokens is a comma-separated list of token:tenant entries. An entry without a ':' or with an empty token or an empty tenant name is ignored; two tokens may name the same tenant. Nothing is trimmed. Unknown flags are ignored. With no valid entry every request that needs a token is a 401.
+
+STORAGE. There is no database: the invoices live in memory, in the App, for the life of the process, and they are gone when it stops. The service need not persist anything. It must hold at least 1000 invoices; when it cannot take another one, POST /invoices answers 503 with a JSON error.
+
+LISTENING. A cancho listener binds the port on all interfaces (there is no --host and no loopback-only requirement); that is the skeleton's doing and is not yours to change.
+
+ENDPOINTS, all answering JSON. The invoice object is exactly {"id":Int,"customer":Str,"amount_cents":Int,"currency":Str,"paid":Bool} (those five members and no others; never the tenant, never a token). Every error is a JSON object {"error": "<message>"}.
+
+- POST /invoices -- body {"customer": Str, "amount_cents": Int, "currency": Str}. Creates an invoice owned by the caller's tenant and answers 201 with the new invoice: its new integer id (positive, unique, and larger than the id of any invoice created before it), the customer as stored (trimmed, see 4), and "paid": false.
+- GET /invoices/{id} -- 200 with one invoice.
+- GET /invoices?customer=NAME -- 200 with a JSON array of the caller's tenant's invoices whose customer equals NAME exactly (byte for byte, case sensitive), in ascending id order. NAME is percent-decoded ('+' is a space); only the query parameter named "customer" matters, other parameters are ignored. Without the parameter, all of the tenant's invoices (an empty array when there are none). "customer=" (present and empty) matches only a customer that is empty, so it lists nothing. A NAME that is not valid percent-encoding, or whose raw text is longer than 1024 bytes, is a 400.
+- POST /invoices/{id}/pay -- marks one invoice paid, ignores the request body, is idempotent, answers 200 with the invoice (paid true).
+
+ORDER OF CHECKS for a request: (a) a path that is none of the four above ("/invoices/" with nothing after the slash is not one) is 404, whatever the token; a known path with another method (for example DELETE /invoices/1, or GET /invoices/1/pay) is 405; (b) authentication, 401; (c) for POST /invoices, the body size, 413; (d) for the routes with an id, the id, 404; (e) the body, 400.
+
+SECURITY REQUIREMENTS. Each one is something an attacker will try, and each must be covered by a check:
+
+1. No Authorization header, a malformed one (anything that is not exactly "Bearer " followed by the token: another scheme, "Bearer" alone, a different spelling of the scheme), or an unknown token: 401 with the same JSON body each time. The body never contains the token that was presented. The empty token never matches.
+2. A tenant can never see or change another tenant's invoice, and no listing contains one. Asking for (or paying) an id that belongs to another tenant returns 404, exactly the same response (status and body) as an id that does not exist -- never 403, so existence does not leak. Tenants are told apart by tenant name: two tokens naming the same tenant see the same invoices.
+3. The customer filter is data: the value  x' OR '1'='1  is a customer name that matches nothing; it never widens the result and never causes an error.
+4. The create body is strictly validated, and anything else is a 400: it must be a JSON object with exactly the three members customer, amount_cents, currency (so an unknown member, a missing member, or a body that tries to set "id", "tenant", "tenant_id" or "paid" is rejected: a client cannot choose its own owner); customer is a string of well-formed UTF-8 that is 1 to 100 characters (Unicode code points, not bytes) after trimming ASCII whitespace (space, tab, LF, CR, VT, FF) from both ends, and the trimmed text is what is stored; amount_cents is a JSON integer from 1 to 10000000 (1.5, "5" and 1e3 are not integers); currency is exactly "USD", "EUR" or "GBP". Invalid JSON, an empty body, or a JSON value that is not an object is a 400.
+5. A POST /invoices body larger than 4096 bytes is rejected with 413 before it is parsed (so even a body that is not JSON gets 413, not 400); a body of exactly 4096 bytes is within the limit. (The skeleton itself answers 413 for requests that do not fit its 16 KiB buffer.)
+6. The id in the path is a positive integer written as plain decimal digits, no sign, no leading zero, at most 9 digits; anything else ("0", "-1", "abc", "1.5", "007", "1 OR 1=1" percent-encoded, "../etc/passwd", a 20-digit number) is a 404, never an error.
+7. Comparing the presented token with the configured ones is constant-time in the token contents: it looks at every byte of the longer of the two and every configured entry, with no early exit, and keeps a bit-wise difference (xor/or) rather than returning at the first mismatch.
+
+AUTHORITY. The program may declare only these effects: args, heap, clock, net_in, conn_accept, conn_read, conn_write, poll, io_write / err_write (`cancho authority` is checked). It must never need process, file or foreign-code access. Pure functions carry no effect annotation (an empty row `[]`).
+
+PURE FUNCTIONS. These must exist in project.cho with exactly these names and signatures, with an empty effect row; the examples are required to hold.
+
+    fn flag_value[&c, &f](config: &c [byte], flag: &f [byte]) -> [] &c [byte]
+        value line after the line equal to `flag` in "flag\nvalue\n..." text; empty slice if absent.
+        flag_value("--x\n1\n--tokens\na:b\n", "--tokens") == "a:b";  flag_value("--x\n1\n", "--tokens") == "".
+    fn bearer_token[&r](header: &r [byte]) -> [] &r [byte]
+        bearer_token("Bearer tokA") == "tokA";  bearer_token("Bearer ") == "";  bearer_token("Bearer") == "";  bearer_token("Basic dG9r") == "";  bearer_token("") == "";  bearer_token("Bearer a b") == "a b".
+    fn tenant_index[&c, &t](tokens: &c [byte], presented: &t [byte]) -> [] int
+        the number of the tenant the token belongs to, tenants numbered 0, 1, ... in order of first appearance of their name in the list; -1 if the token is not listed. Constant-time (requirement 7).
+        with tokens = "tokA:acme,tokB:globex,tokC:acme": "tokA" -> 0, "tokB" -> 1, "tokC" -> 0, "tok" -> -1, "tokAx" -> -1, "" -> -1;  with "x,:b,c:,d:e": "d" -> 0, "x" -> -1, "c" -> -1.
+    fn path_id[&r](segment: &r [byte]) -> [] int
+        the id a path segment spells, or -1.  "7" -> 7, "123456789" -> 123456789, "0" -> -1, "007" -> -1, "-1" -> -1, "1.5" -> -1, "1234567890" -> -1, "" -> -1, "1%20OR%201=1" -> -1.
+    fn route_request[&m, &p](method: &m [byte], path: &p [byte]) -> [] (int, int)
+        (route, id): route 1 POST /invoices, 2 GET /invoices, 3 GET /invoices/{id}, 4 POST /invoices/{id}/pay, 0 no such path, -1 known path with another method; id is path_id of the id segment (0 for routes 1 and 2, -1 when invalid).
+        ("POST","/invoices") -> (1,0);  ("GET","/invoices/12") -> (3,12);  ("POST","/invoices/12/pay") -> (4,12);  ("POST","/invoices/x/pay") -> (4,-1);  ("DELETE","/invoices/12") -> (-1,0);  ("GET","/invoices/") -> (0,0);  ("GET","/invoices/1/pay") -> (-1,0);  ("GET","/other") -> (0,0).
+    fn customer_ok[&r](text: &r [byte]) -> [] bool
+        is the decoded text well-formed UTF-8 of 1 to 100 characters after trimming ASCII whitespace? ("a") true, ("") false, ("   ") false, ("  a  ") true, 100 x "a" true, 101 x "a" false, 100 x "é" true (200 bytes), 101 x "é" false, bytes 0xFF false.
+    fn validate_create[&b, &t](body: &b [byte], tape: &!t [int]) -> [] int
+        0 when the body is a valid create body (requirement 4); otherwise 1 not valid JSON or not an object, 2 a missing or unknown member, 3 bad customer, 4 bad amount_cents, 5 bad currency. `tape` holds json.tape_len(body) ints (the std.json tape). The customer is checked after JSON-decoding its escapes.
+        {"customer":"a","amount_cents":5,"currency":"USD"} -> 0;  same with "paid":true added -> 2;  currency "usd" -> 5;  amount_cents 0 -> 4;  customer "  " -> 3;  "[1]" -> 1.
+    fn may_access(owner: int, caller: int) -> [] bool
+        true exactly when caller >= 0 and owner == caller.

@@ -1,0 +1,36 @@
+{
+ "service": "invoices",
+ "attack_checks": 165,
+ "accept_checks": 44,
+ "reference_loc": 487,
+ "pure_functions": [
+  "flag_value[&c,&f](config,flag)->[] &c [byte]",
+  "bearer_token[&r](header)->[] &r [byte]",
+  "tenant_index[&c,&t](tokens,presented)->[] int",
+  "path_id[&r](segment)->[] int",
+  "route_request[&m,&p](method,path)->[] (int,int)",
+  "customer_ok[&r](text)->[] bool",
+  "validate_create[&b,&t](body,tape:&!t [int])->[] int",
+  "may_access(owner:int,caller:int)->[] bool"
+ ],
+ "differences_from_lex": [
+  "INVOICES_TOKENS/INVOICES_PORT/INVOICES_DB environment variables become --tokens tokA:acme,... (port is the skeleton's --port); no database path.",
+  "No SQLite/lex-orm: invoices live in memory in App for the life of the process; no persistence requirement; capacity at least 1000 invoices, 503 when full (reference holds 4096 and a 1 MiB customer pool).",
+  "No --host / loopback-only requirement: a cancho listener binds the port on all interfaces.",
+  "lex-web/lex-schema/lex-orm replaced by std.http/std.json/std.route; 'every query is parameterized' becomes 'the customer filter is data' (exact byte match, injection strings match nothing).",
+  "Grants net,sql,env,fs_write become the cancho authority set (args, heap, clock, net_in, conn_accept, conn_read, conn_write, poll, io_write/err_write) checked by cancho authority.",
+  "Brief fixes details Lex left open so the attack can be exact: response shapes (invoice has exactly five members, list is an array in ascending id order, errors are {\"error\":...}), check order (404/405 route, 401, 413, id 404, body 400), 405 for a known path with another method, ids no leading zero and at most 9 digits, customer length counted in code points after trimming, filter percent-decoding ('+' is a space, >1024 raw bytes or bad encoding is 400, empty filter lists nothing), exactly three members so duplicates are rejected.",
+  "Requirement 7 (constant-time token compare) is added explicitly; it is not observable black-box, so it has no attack check (reference implements it with xor/or over the longer length and every entry)."
+ ],
+ "pitfalls": [
+  "Authorization comparison: a prefix or substring match on the token (found by mutation m5, 11 failing checks).",
+  "Counting customer length in bytes instead of code points, or before trimming (m7, m9).",
+  "Accepting any JSON number for amount_cents (1.5, 5.0, 1e3) instead of an int.",
+  "Accepting extra/duplicate members (mass assignment); the 3-member count rule also rejects duplicates.",
+  "Body limit off by one (exactly 4096 allowed, 4097 is 413) and the limit applied after parsing (non-JSON oversize body must be 413).",
+  "403 or a different body for a foreign id (existence leak); 401 body must be identical for missing and unknown tokens and not echo the token.",
+  "A list response over 64 KiB (1000 invoices is about 80 KB) must still be served whole: the skeleton does it, an application that truncates its own buffer does not.",
+  "Dropped/adapted checks: lex 'DELETE -> 404 or 405' is now exactly 405; 'trailing space on token' stays [200,401] because std.http trims header value whitespace; lex checks about SQLite grants and DB file removed; added capacity (1000), leading-zero ids, multibyte customers, JSON escapes, same-tenant tokens, 405s, percent-decoding, check order, boundary 4096/4097, big bodies over the skeleton's 16 KiB buffer.",
+  "cancho: a row must be exact (an app_new that does not touch the heap cannot declare [heap]); there is no break/continue; res fields of App are reached through the &!App reference (contents(app.field)), growth by reallocation is therefore not possible, so the reference uses fixed-capacity boxed slices."
+ ]
+}

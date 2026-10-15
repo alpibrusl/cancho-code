@@ -1,0 +1,487 @@
+edition 7;
+import std.utf8;
+
+// The invoices service: a multi-tenant invoice REST API held in memory. See brief.txt.
+//
+// Pure logic (no effects): flag_value, bearer_token, tenant_index, path_id, route_request, customer_ok, validate_create, may_access.
+// Everything with a heap or a buffer is below them.
+
+fn cap_invoices() -> [] int {
+    return 4096;
+}
+
+fn pool_size() -> [] int {
+    return 1048576;
+}
+
+fn max_body() -> [] int {
+    return 4096;
+}
+
+struct App {
+    tokens: Box[[byte]],
+    tokens_len: int,
+    tape: Box[[int]],
+    scratch: Box[[byte]],
+    inv: Box[[int]],
+    pool: Box[[byte]],
+    pool_used: int,
+    count: int,
+}
+
+// ---------------------------------------------------------------------
+// Pure logic
+// ---------------------------------------------------------------------
+
+// The value that follows `flag` in the `flag\nvalue\n...` configuration text, or an empty slice.
+fn flag_value[&c, &f](config: &c [byte], flag: &f [byte]) -> [] &c [byte] {
+    var at = 0;
+    while at < len(config) {
+        var e = at;
+        while e < len(config) && int_of(config[e]) != 10 {
+            e = e + 1;
+        }
+        let n = e + 1;
+        if n >= len(config) {
+            return config[0..0];
+        }
+        var m = n;
+        while m < len(config) && int_of(config[m]) != 10 {
+            m = m + 1;
+        }
+        if bytes.equal(config[at..e], flag) {
+            return config[n..m];
+        }
+        at = m + 1;
+    }
+    return config[0..0];
+}
+
+// The token of an `Authorization: Bearer <token>` header value; an empty slice when the value is not that.
+fn bearer_token[&r](header: &r [byte]) -> [] &r [byte] {
+    if len(header) > 7 && bytes.starts_with(header, "Bearer ") {
+        return header[7..len(header)];
+    }
+    return header[0..0];
+}
+
+// Do two texts hold the same bytes? Looks at every byte of the longer one, and keeps no early exit.
+fn same_token[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool {
+    var n = len(x);
+    if len(y) > n {
+        n = len(y);
+    }
+    var diff = len(x) ^ len(y);
+    var i = 0;
+    while i < n {
+        var p = 0;
+        if i < len(x) {
+            p = int_of(x[i]);
+        }
+        var q = 0;
+        if i < len(y) {
+            q = int_of(y[i]);
+        }
+        diff = diff | (p ^ q);
+        i = i + 1;
+    }
+    return diff == 0;
+}
+
+fn entry_end[&c](tokens: &c [byte], at: int) -> [] int {
+    var e = at;
+    while e < len(tokens) && int_of(tokens[e]) != 44 {
+        e = e + 1;
+    }
+    return e;
+}
+
+// Where the first ':' of tokens[from..to] is, or -1.
+fn colon_at[&c](tokens: &c [byte], from: int, to: int) -> [] int {
+    var k = from;
+    while k < to && int_of(tokens[k]) != 58 {
+        k = k + 1;
+    }
+    if k >= to {
+        return 0 - 1;
+    }
+    return k;
+}
+
+// Does a valid entry that starts before `limit` name tenant `name`?
+fn name_seen[&c, &n](tokens: &c [byte], limit: int, name: &n [byte]) -> [] bool {
+    var at = 0;
+    while at < limit {
+        let e = entry_end(tokens, at);
+        let k = colon_at(tokens, at, e);
+        if k > at && k + 1 < e && bytes.equal(tokens[k + 1..e], name) {
+            return true;
+        }
+        at = e + 1;
+    }
+    return false;
+}
+
+// The number of the tenant a token belongs to (tenants are numbered 0, 1, ... in order of first appearance), or -1 for a token that is not listed.
+fn tenant_index[&c, &t](tokens: &c [byte], presented: &t [byte]) -> [] int {
+    var matched = 0 - 1;
+    var at = 0;
+    while at <= len(tokens) {
+        let e = entry_end(tokens, at);
+        let k = colon_at(tokens, at, e);
+        if k > at && k + 1 < e {
+            let same = same_token(tokens[at..k], presented);
+            if same && matched < 0 {
+                matched = at;
+            }
+        }
+        at = e + 1;
+    }
+    if matched < 0 {
+        return 0 - 1;
+    }
+    let me = entry_end(tokens, matched);
+    let mk = colon_at(tokens, matched, me);
+    let name = tokens[mk + 1..me];
+    var n = 0;
+    at = 0;
+    while at < len(tokens) {
+        let e = entry_end(tokens, at);
+        let k = colon_at(tokens, at, e);
+        if k > at && k + 1 < e {
+            if bytes.equal(tokens[k + 1..e], name) {
+                return n;
+            }
+            if !name_seen(tokens, at, tokens[k + 1..e]) {
+                n = n + 1;
+            }
+        }
+        at = e + 1;
+    }
+    return 0 - 1;
+}
+
+// A path segment as an invoice id: plain decimal digits, no leading zero, at most 9 of them; -1 otherwise.
+fn path_id[&r](segment: &r [byte]) -> [] int {
+    if len(segment) == 0 || len(segment) > 9 {
+        return 0 - 1;
+    }
+    if int_of(segment[0]) == 48 {
+        return 0 - 1;
+    }
+    var n = 0;
+    var i = 0;
+    while i < len(segment) {
+        let c = int_of(segment[i]);
+        if c < 48 || c > 57 {
+            return 0 - 1;
+        }
+        n = n * 10 + (c - 48);
+        i = i + 1;
+    }
+    return n;
+}
+
+// (route, id): route 1 POST /invoices, 2 GET /invoices, 3 GET /invoices/{id}, 4 POST /invoices/{id}/pay, 0 no such path, -1 known path with another method.
+// `id` is the path id, or -1 when the segment is not a valid one.
+fn route_request[&m, &p](method: &m [byte], path: &p [byte]) -> [] (int, int) {
+    if bytes.equal(path, "/invoices") {
+        if bytes.equal(method, "POST") {
+            return (1, 0);
+        }
+        if bytes.equal(method, "GET") {
+            return (2, 0);
+        }
+        return (0 - 1, 0);
+    }
+    if bytes.starts_with(path, "/invoices/") {
+        let rest = path[10..len(path)];
+        if len(rest) == 0 {
+            return (0, 0);
+        }
+        let slash = bytes.find(rest, "/");
+        if slash < 0 {
+            if bytes.equal(method, "GET") {
+                return (3, path_id(rest));
+            }
+            return (0 - 1, 0);
+        }
+        if bytes.equal(rest[slash..len(rest)], "/pay") {
+            if bytes.equal(method, "POST") {
+                return (4, path_id(rest[0..slash]));
+            }
+            return (0 - 1, 0);
+        }
+    }
+    return (0, 0);
+}
+
+// Is `text` (already decoded) a valid customer: well-formed UTF-8 that is 1 to 100 characters once surrounding blanks are cut?
+fn customer_ok[&r](text: &r [byte]) -> [] bool {
+    if !utf8.is_valid(text) {
+        return false;
+    }
+    let t = bytes.trim(text);
+    let n = utf8.count(t);
+    return n >= 1 && n <= 100;
+}
+
+fn currency_ok[&b, &t](body: &b [byte], tape: &t [int], node: int) -> [] bool {
+    return json.string_equals(body, tape, node, "USD") || json.string_equals(body, tape, node, "EUR") || json.string_equals(body, tape, node, "GBP");
+}
+
+// 0 when `body` is a valid create body; otherwise 1 not a JSON object, 2 a missing or unknown field, 3 customer, 4 amount_cents, 5 currency.
+// `tape` must hold json.tape_len(body) ints.
+fn validate_create[&b, &t](body: &b [byte], tape: &!t [int]) -> [] int {
+    let nodes = json.parse(body, tape);
+    if nodes < 0 {
+        return 1;
+    }
+    if !json.is_object(tape, 0) {
+        return 1;
+    }
+    if json.count(tape, 0) != 3 {
+        return 2;
+    }
+    let c = json.get(body, tape, 0, "customer");
+    let a = json.get(body, tape, 0, "amount_cents");
+    let u = json.get(body, tape, 0, "currency");
+    if c < 0 || a < 0 || u < 0 {
+        return 2;
+    }
+    if !json.is_string(tape, c) {
+        return 3;
+    }
+    let n = json.string_length(body, tape, c);
+    if n < 0 || n > 4096 {
+        return 3;
+    }
+    var customer_valid = false;
+    region r {
+        let buf = alloc_slice[r](4096, byte_of(0));
+        let w = json.string_into(body, tape, c, buf);
+        if w >= 0 {
+            customer_valid = customer_ok(buf[0..w]);
+        }
+    }
+    if !customer_valid {
+        return 3;
+    }
+    if !json.is_int(tape, a) || !json.fits_int(body, tape, a) {
+        return 4;
+    }
+    let amount = json.to_int(body, tape, a);
+    if amount < 1 || amount > 10000000 {
+        return 4;
+    }
+    if !currency_ok(body, tape, u) {
+        return 5;
+    }
+    return 0;
+}
+
+// May the caller's tenant see and change an invoice owned by `owner`?
+fn may_access(owner: int, caller: int) -> [] bool {
+    return caller >= 0 && owner == caller;
+}
+
+// ---------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------
+
+fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App {
+    let tokens = box_slice(heap, 4096, byte_of(0));
+    var used = 0;
+    let value = flag_value(config, "--tokens");
+    borrow mut tokens as &!tw in {
+        let t = contents(tw);
+        var i = 0;
+        while i < len(value) && i < 4096 {
+            t[i] = value[i];
+            i = i + 1;
+        }
+        used = i;
+    }
+    return App { tokens: tokens, tokens_len: used, tape: box_slice(heap, 3 * (4096 + 1), 0), scratch: box_slice(heap, 4096, byte_of(0)), inv: box_slice(heap, 6 * 4096, 0), pool: box_slice(heap, 1048576, byte_of(0)), pool_used: 0, count: 0 };
+}
+
+fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int {
+    let App { tokens, tokens_len, tape, scratch, inv, pool, pool_used, count } = app;
+    unbox_slice(heap, tokens);
+    unbox_slice(heap, tape);
+    unbox_slice(heap, scratch);
+    unbox_slice(heap, inv);
+    unbox_slice(heap, pool);
+    return 0;
+}
+
+// ---------------------------------------------------------------------
+// Answers
+// ---------------------------------------------------------------------
+
+fn currency_name(code: int) -> [] &static [byte] {
+    if code == 1 {
+        return "USD";
+    }
+    if code == 2 {
+        return "EUR";
+    }
+    return "GBP";
+}
+
+fn put_invoice[&h, &a](heap: &!h Heap, w: json.Writer, app: &a App, i: int) -> [heap] json.Writer {
+    let inv = contents(app.inv);
+    let pool = contents(app.pool);
+    let off = inv[6 * i + 4];
+    let n = inv[6 * i + 5];
+    var x = json.begin_object(heap, w);
+    x = json.put_key(heap, x, "id");
+    x = json.put_int(heap, x, i + 1);
+    x = json.put_key(heap, x, "customer");
+    x = json.put_string(heap, x, pool[off..off + n]);
+    x = json.put_key(heap, x, "amount_cents");
+    x = json.put_int(heap, x, inv[6 * i + 1]);
+    x = json.put_key(heap, x, "currency");
+    x = json.put_string(heap, x, currency_name(inv[6 * i + 2]));
+    x = json.put_key(heap, x, "paid");
+    x = json.put_bool(heap, x, inv[6 * i + 3] == 1);
+    x = json.end_object(heap, x);
+    return x;
+}
+
+fn send_invoice[&h, &a](heap: &!h Heap, out: buffer.Buffer, status: int, app: &a App, i: int, keep: bool) -> [heap] buffer.Buffer {
+    var w = json.writer(heap, 256);
+    w = put_invoice(heap, w, app, i);
+    let body = json.finish(w);
+    var answer = out;
+    borrow body as &bb in {
+        answer = server.reply(heap, answer, status, buffer.bytes(bb), keep);
+    }
+    buffer.drop(heap, body);
+    return answer;
+}
+
+fn do_create[&h, &a, &b](heap: &!h Heap, app: &!a App, body: &b [byte], tenant: int, out: buffer.Buffer, keep: bool) -> [heap] buffer.Buffer {
+    if len(body) > max_body() {
+        return server.failure(heap, out, 413, "request body too large", keep);
+    }
+    let tape = contents(app.tape);
+    let code = validate_create(body, tape);
+    if code != 0 {
+        return server.failure(heap, out, 400, "invalid invoice", keep);
+    }
+    if app.count >= cap_invoices() {
+        return server.failure(heap, out, 503, "invoice storage is full", keep);
+    }
+    let cnode = json.get(body, tape, 0, "customer");
+    let scratch = contents(app.scratch);
+    let w = json.string_into(body, tape, cnode, scratch);
+    var s = 0;
+    var e = w;
+    while s < e && bytes.is_blank(int_of(scratch[s])) {
+        s = s + 1;
+    }
+    while e > s && bytes.is_blank(int_of(scratch[e - 1])) {
+        e = e - 1;
+    }
+    let n = e - s;
+    if app.pool_used + n > pool_size() {
+        return server.failure(heap, out, 503, "invoice storage is full", keep);
+    }
+    let pool = contents(app.pool);
+    var k = 0;
+    while k < n {
+        pool[app.pool_used + k] = scratch[s + k];
+        k = k + 1;
+    }
+    var code_cur = 1;
+    if json.string_equals(body, tape, json.get(body, tape, 0, "currency"), "EUR") {
+        code_cur = 2;
+    }
+    if json.string_equals(body, tape, json.get(body, tape, 0, "currency"), "GBP") {
+        code_cur = 3;
+    }
+    let inv = contents(app.inv);
+    let i = app.count;
+    inv[6 * i] = tenant;
+    inv[6 * i + 1] = json.to_int(body, tape, json.get(body, tape, 0, "amount_cents"));
+    inv[6 * i + 2] = code_cur;
+    inv[6 * i + 3] = 0;
+    inv[6 * i + 4] = app.pool_used;
+    inv[6 * i + 5] = n;
+    app.pool_used = app.pool_used + n;
+    app.count = app.count + 1;
+    return send_invoice(heap, out, 201, app, i, keep);
+}
+
+fn do_list[&h, &a, &q](heap: &!h Heap, app: &!a App, query: &q [byte], tenant: int, out: buffer.Buffer, keep: bool) -> [heap] buffer.Buffer {
+    let (from, to) = http.query_value(query, "customer");
+    var filter = 0 - 1;
+    let scratch = contents(app.scratch);
+    if from >= 0 {
+        if to - from > 1024 {
+            return server.failure(heap, out, 400, "customer filter is too long", keep);
+        }
+        filter = http.percent_decode(query[from..to], scratch, true);
+        if filter < 0 {
+            return server.failure(heap, out, 400, "customer filter is not valid percent-encoding", keep);
+        }
+    }
+    let inv = contents(app.inv);
+    let pool = contents(app.pool);
+    var w = json.writer(heap, 256);
+    w = json.begin_array(heap, w);
+    var i = 0;
+    while i < app.count {
+        if may_access(inv[6 * i], tenant) {
+            let off = inv[6 * i + 4];
+            let n = inv[6 * i + 5];
+            if filter < 0 || (n == filter && bytes.equal(pool[off..off + n], scratch[0..filter])) {
+                w = put_invoice(heap, w, app, i);
+            }
+        }
+        i = i + 1;
+    }
+    w = json.end_array(heap, w);
+    let body = json.finish(w);
+    var answer = out;
+    borrow body as &bb in {
+        answer = server.reply(heap, answer, 200, buffer.bytes(bb), keep);
+    }
+    buffer.drop(heap, body);
+    return answer;
+}
+
+fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer {
+    let keep = http.keeps_alive(table);
+    let (route, id) = route_request(http.method(request, table), http.path(request, table));
+    if route == 0 {
+        return server.failure(heap, out, 404, "not found", keep);
+    }
+    if route < 0 {
+        return server.failure(heap, out, 405, "method not allowed", keep);
+    }
+    let token = bearer_token(http.header(request, table, "authorization"));
+    let tokens = contents(app.tokens);
+    let tenant = tenant_index(tokens[0..app.tokens_len], token);
+    if tenant < 0 {
+        return server.failure_with(heap, out, 401, "unauthorized", keep, "WWW-Authenticate: Bearer\r\n");
+    }
+    if route == 1 {
+        return do_create(heap, app, body, tenant, out, keep);
+    }
+    if route == 2 {
+        return do_list(heap, app, http.query(request, table), tenant, out, keep);
+    }
+    if id < 1 || id > app.count {
+        return server.failure(heap, out, 404, "not found", keep);
+    }
+    let inv = contents(app.inv);
+    if !may_access(inv[6 * (id - 1)], tenant) {
+        return server.failure(heap, out, 404, "not found", keep);
+    }
+    if route == 4 {
+        inv[6 * (id - 1) + 3] = 1;
+    }
+    return send_invoice(heap, out, 200, app, id - 1, keep);
+}

@@ -1,0 +1,752 @@
+edition 7;
+
+// kvstore: a multi-tenant key-value store with expiry. The application half of the service (the skeleton is the other).
+//
+// State is in memory and fixed in size, allocated once in `app_new`: a hash table of row numbers (`tab`), a table of rows (`rows`, eight ints
+// each: live, key offset, key length, hash, value offset, value length, stored-at ms, ttl seconds) and one arena of bytes (`arena`) holding every
+// key (stored as `tenant 0x00 key`) and value. A replaced or removed entry leaves garbage in the arena; when a new entry does not fit, the arena
+// is compacted (expired entries are dropped then), and if it still does not fit the answer is 507.
+
+import std.utf8;
+
+struct App {
+    spec: Box[[byte]],
+    spec_len: int,
+    tab: Box[[int]],
+    rows: Box[[int]],
+    arena: Box[[byte]],
+    live: int,
+    tombs: int,
+    high: int,
+    top: int,
+    free_head: int,
+}
+
+fn tab_size() -> [] int {
+    return 16384;
+}
+
+fn max_rows() -> [] int {
+    return 4096;
+}
+
+fn arena_size() -> [] int {
+    return 8388608;
+}
+
+fn max_body() -> [] int {
+    return 4096;
+}
+
+fn hash_seed() -> [] int {
+    return 1469598103;
+}
+
+// ---------------------------------------------------------------------
+// Pure logic
+// ---------------------------------------------------------------------
+
+// The value of flag `name` in the `flag\nvalue\n...` configuration text, as (start, end), or (-1, -1).
+fn flag_value[&c, &n](config: &c [byte], name: &n [byte]) -> [] (int, int) {
+    var pos = 0;
+    var from = 0 - 1;
+    var to = 0 - 1;
+    while pos < len(config) && from < 0 {
+        var e1 = pos;
+        while e1 < len(config) && int_of(config[e1]) != 10 {
+            e1 = e1 + 1;
+        }
+        let s2 = e1 + 1;
+        var e2 = s2;
+        while e2 < len(config) && int_of(config[e2]) != 10 {
+            e2 = e2 + 1;
+        }
+        if bytes.equal(config[pos..e1], name) && s2 <= len(config) {
+            from = s2;
+            to = e2;
+        }
+        pos = e2 + 1;
+    }
+    return (from, to);
+}
+
+// The token of an `Authorization` header value: the text after `Bearer ` (one space), non-empty, with no space or control character in it.
+// An empty slice when the header is absent or malformed.
+fn bearer_token[&r](header: &r [byte]) -> [] &r [byte] {
+    if !bytes.starts_with(header, "Bearer ") || len(header) <= 7 {
+        return header[0..0];
+    }
+    var i = 7;
+    var clean = true;
+    while i < len(header) {
+        let c = int_of(header[i]);
+        if c <= 32 || c >= 127 {
+            clean = false;
+        }
+        i = i + 1;
+    }
+    if !clean {
+        return header[0..0];
+    }
+    return header[7..len(header)];
+}
+
+// Equal contents, the work depending on the length of `a` (the configured token) and not on where the two first differ.
+fn ct_equal[&a, &b](a: &a [byte], b: &b [byte]) -> [] bool {
+    var diff = len(a) ^ len(b);
+    var i = 0;
+    while i < len(a) {
+        var other = 0;
+        if i < len(b) {
+            other = int_of(b[i]);
+        }
+        diff = diff | (int_of(a[i]) ^ other);
+        i = i + 1;
+    }
+    return diff == 0;
+}
+
+// The tenant for `token` in a spec `tokenA:tenantA,tokenB:tenantB`, as (start, end) in the spec, or (-1, -1). Every entry is compared, with
+// no early exit; the first of equal tokens wins. An empty token matches nothing.
+fn tenant_range[&s, &t](spec: &s [byte], token: &t [byte]) -> [] (int, int) {
+    var from = 0 - 1;
+    var to = 0 - 1;
+    if len(token) == 0 {
+        return (from, to);
+    }
+    var pos = 0;
+    while pos <= len(spec) {
+        var stop = pos;
+        while stop < len(spec) && int_of(spec[stop]) != 44 {
+            stop = stop + 1;
+        }
+        var colon = pos;
+        while colon < stop && int_of(spec[colon]) != 58 {
+            colon = colon + 1;
+        }
+        if colon < stop && colon > pos && colon + 1 < stop {
+            if ct_equal(spec[pos..colon], token) && from < 0 {
+                from = colon + 1;
+                to = stop;
+            }
+        }
+        pos = stop + 1;
+    }
+    return (from, to);
+}
+
+fn is_key_char(c: int) -> [] bool {
+    return (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 46 || c == 95 || c == 45;
+}
+
+fn all_key_chars[&r](text: &r [byte]) -> [] bool {
+    var i = 0;
+    var ok = true;
+    while i < len(text) {
+        if !is_key_char(int_of(text[i])) {
+            ok = false;
+        }
+        i = i + 1;
+    }
+    return ok;
+}
+
+// A key: 1 to 64 characters of lowercase letters, digits, `.`, `_`, `-`.
+fn valid_key[&r](key: &r [byte]) -> [] bool {
+    return len(key) >= 1 && len(key) <= 64 && all_key_chars(key);
+}
+
+// A listing prefix: the empty string or up to 64 characters of the key alphabet.
+fn valid_prefix[&r](prefix: &r [byte]) -> [] bool {
+    return len(prefix) <= 64 && all_key_chars(prefix);
+}
+
+// Has the entry expired? `ttl_s` is 0 for an entry with no expiry.
+fn is_expired(stored_ms: int, ttl_s: int, now_ms: int) -> [] bool {
+    return ttl_s > 0 && now_ms >= stored_ms + ttl_s * 1000;
+}
+
+// Whole seconds left, rounded up; -1 for an entry with no expiry; 0 once expired.
+fn seconds_left(stored_ms: int, ttl_s: int, now_ms: int) -> [] int {
+    if ttl_s <= 0 {
+        return 0 - 1;
+    }
+    let remaining = stored_ms + ttl_s * 1000 - now_ms;
+    if remaining <= 0 {
+        return 0;
+    }
+    return (remaining + 999) / 1000;
+}
+
+// The `limit` of a query string: 50 when absent, 1 to 100 when valid, -1 when invalid.
+fn list_limit[&q](query: &q [byte]) -> [] int {
+    let (from, to) = http.query_value(query, "limit");
+    if from < 0 {
+        return 50;
+    }
+    if to - from < 1 || to - from > 3 {
+        return 0 - 1;
+    }
+    var n = 0;
+    var i = from;
+    while i < to {
+        let c = int_of(query[i]);
+        if c < 48 || c > 57 {
+            return 0 - 1;
+        }
+        n = n * 10 + (c - 48);
+        i = i + 1;
+    }
+    if n < 1 || n > 100 {
+        return 0 - 1;
+    }
+    return n;
+}
+
+// The `prefix` of a query string, percent-decoded into `out`: its length (0 when absent), or -1 when it is not a valid prefix.
+fn list_prefix[&q, &o](query: &q [byte], out: &!o [byte]) -> [] int {
+    let (from, to) = http.query_value(query, "prefix");
+    if from < 0 {
+        return 0;
+    }
+    let n = http.percent_decode(query[from..to], out, false);
+    if n < 0 || !valid_prefix(out[0..n]) {
+        return 0 - 1;
+    }
+    return n;
+}
+
+// The reason code of a PUT body: (code, value node, ttl). Code 0 is valid; the ttl is 0 when absent.
+//   1 not JSON, 2 not an object, 3 unknown field, 4 repeated field, 5 value missing, 6 value not a string, 7 value too long, 8 bad ttl_seconds
+fn parse_put[&b, &t](body: &b [byte], tape: &!t [int]) -> [] (int, int, int) {
+    let nodes = json.parse(body, tape);
+    if nodes < 0 {
+        return (1, 0 - 1, 0);
+    }
+    if !json.is_object(tape, 0) {
+        return (2, 0 - 1, 0);
+    }
+    var members = json.count(tape, 0);
+    var j = 1;
+    var vnode = 0 - 1;
+    var tnode = 0 - 1;
+    var seen_v = 0;
+    var seen_t = 0;
+    var unknown = 0;
+    while members > 0 {
+        if json.string_equals(body, tape, j, "value") {
+            seen_v = seen_v + 1;
+            vnode = j + 1;
+        } else if json.string_equals(body, tape, j, "ttl_seconds") {
+            seen_t = seen_t + 1;
+            tnode = j + 1;
+        } else {
+            unknown = unknown + 1;
+        }
+        j = json.skip(tape, j + 1);
+        members = members - 1;
+    }
+    if unknown > 0 {
+        return (3, 0 - 1, 0);
+    }
+    if seen_v > 1 || seen_t > 1 {
+        return (4, 0 - 1, 0);
+    }
+    if seen_v == 0 {
+        return (5, 0 - 1, 0);
+    }
+    if !json.is_string(tape, vnode) {
+        return (6, 0 - 1, 0);
+    }
+    let size = json.string_length(body, tape, vnode);
+    if size > 4000 {
+        return (7, 0 - 1, 0);
+    }
+    var points = 0;
+    region a {
+        let decoded = alloc_slice[a](4000, byte_of(0));
+        let n = json.string_into(body, tape, vnode, decoded);
+        if n >= 0 {
+            points = utf8.count(decoded[0..n]);
+        }
+    }
+    if points > 1000 {
+        return (7, 0 - 1, 0);
+    }
+    var ttl = 0;
+    if seen_t == 1 {
+        if !json.is_int(tape, tnode) || !json.fits_int(body, tape, tnode) {
+            return (8, 0 - 1, 0);
+        }
+        ttl = json.to_int(body, tape, tnode);
+        if ttl < 1 || ttl > 86400 {
+            return (8, 0 - 1, 0);
+        }
+    }
+    return (0, vnode, ttl);
+}
+
+fn put_message(code: int) -> [] &static [byte] {
+    if code == 1 {
+        return "body is not valid JSON";
+    }
+    if code == 2 {
+        return "body must be a JSON object";
+    }
+    if code == 3 {
+        return "unknown field";
+    }
+    if code == 4 {
+        return "repeated field";
+    }
+    if code == 5 {
+        return "value is required";
+    }
+    if code == 6 {
+        return "value must be a string";
+    }
+    if code == 7 {
+        return "value must be at most 1000 characters";
+    }
+    return "ttl_seconds must be an integer from 1 to 86400";
+}
+
+// ---------------------------------------------------------------------
+// The store
+// ---------------------------------------------------------------------
+
+// The table slot holding `ckey`, or -1. Tombstones (-1) are probed through; an empty slot (0) ends the probe. The table is never more than half
+// occupied, so one is always reached.
+fn find_slot[&t, &r, &a, &k](tab: &t [int], rows: &r [int], arena: &a [byte], ckey: &k [byte], h: int) -> [] int {
+    let mask = len(tab) - 1;
+    var at = h & mask;
+    var found = 0 - 1;
+    var going = true;
+    while going {
+        let s = tab[at];
+        if s == 0 {
+            going = false;
+        } else if s > 0 {
+            let row = s - 1;
+            if rows[row * 8 + 3] == h {
+                let off = rows[row * 8 + 1];
+                if bytes.equal(arena[off..off + rows[row * 8 + 2]], ckey) {
+                    found = at;
+                    going = false;
+                }
+            }
+        }
+        at = (at + 1) & mask;
+    }
+    return found;
+}
+
+// Give a row back: its table slot becomes a tombstone and the row joins the free list.
+fn free_slot[&a](app: &!a App, slot: int) -> [] int {
+    let tab = contents(app.tab);
+    let rows = contents(app.rows);
+    let row = tab[slot] - 1;
+    tab[slot] = 0 - 1;
+    rows[row * 8] = 0;
+    rows[row * 8 + 1] = app.free_head;
+    app.free_head = row;
+    app.live = app.live - 1;
+    app.tombs = app.tombs + 1;
+    return row;
+}
+
+// Put the live row `row` (hash `h`) in the first free or tombstone slot of its probe.
+fn place_row[&a](app: &!a App, row: int, h: int) -> [] int {
+    let tab = contents(app.tab);
+    let mask = len(tab) - 1;
+    var at = h & mask;
+    while tab[at] > 0 {
+        at = (at + 1) & mask;
+    }
+    if tab[at] < 0 {
+        app.tombs = app.tombs - 1;
+    }
+    tab[at] = row + 1;
+    return at;
+}
+
+// Clear the table and enter every live row again: no tombstones.
+fn rebuild_table[&a](app: &!a App) -> [] int {
+    let tab = contents(app.tab);
+    let rows = contents(app.rows);
+    var i = 0;
+    while i < len(tab) {
+        tab[i] = 0;
+        i = i + 1;
+    }
+    app.tombs = 0;
+    var r = 0;
+    while r < app.high {
+        if rows[r * 8] == 1 {
+            place_row(app, r, rows[r * 8 + 3]);
+        }
+        r = r + 1;
+    }
+    return 0;
+}
+
+// Drop every expired entry, then slide the live keys and values to the front of the arena.
+fn compact[&h, &a](heap: &!h Heap, app: &!a App, now_ms: int) -> [heap] int {
+    let tab = contents(app.tab);
+    let rows = contents(app.rows);
+    let arena = contents(app.arena);
+    var r = 0;
+    while r < app.high {
+        if rows[r * 8] == 1 && is_expired(rows[r * 8 + 6], rows[r * 8 + 7], now_ms) {
+            let off = rows[r * 8 + 1];
+            let slot = find_slot(tab, rows, arena, arena[off..off + rows[r * 8 + 2]], rows[r * 8 + 3]);
+            if slot >= 0 {
+                free_slot(app, slot);
+            }
+        }
+        r = r + 1;
+    }
+    let scratch = box_slice(heap, len(arena), byte_of(0));
+    var top = 0;
+    borrow mut scratch as &!sw in {
+        let tmp = contents(sw);
+        r = 0;
+        while r < app.high {
+            if rows[r * 8] == 1 {
+                let koff = rows[r * 8 + 1];
+                let klen = rows[r * 8 + 2];
+                let voff = rows[r * 8 + 4];
+                let vlen = rows[r * 8 + 5];
+                copy_into(tmp[top..top + klen], arena[koff..koff + klen]);
+                rows[r * 8 + 1] = top;
+                top = top + klen;
+                copy_into(tmp[top..top + vlen], arena[voff..voff + vlen]);
+                rows[r * 8 + 4] = top;
+                top = top + vlen;
+            }
+            r = r + 1;
+        }
+        copy_into(arena[0..top], tmp[0..top]);
+    }
+    unbox_slice(heap, scratch);
+    app.top = top;
+    if app.tombs * 4 > len(tab) {
+        rebuild_table(app);
+    }
+    return top;
+}
+
+// The live row of `ckey`, or -1. An expired entry found is removed (it behaves as if it never existed).
+fn lookup[&a, &k](app: &!a App, ckey: &k [byte], now_ms: int) -> [] int {
+    let h = map.hash(ckey, hash_seed());
+    let tab = contents(app.tab);
+    let rows = contents(app.rows);
+    let arena = contents(app.arena);
+    let slot = find_slot(tab, rows, arena, ckey, h);
+    if slot < 0 {
+        return 0 - 1;
+    }
+    let row = tab[slot] - 1;
+    if is_expired(rows[row * 8 + 6], rows[row * 8 + 7], now_ms) {
+        free_slot(app, slot);
+        return 0 - 1;
+    }
+    return row;
+}
+
+// ---------------------------------------------------------------------
+// Answers
+// ---------------------------------------------------------------------
+
+fn not_found[&h](heap: &!h Heap, out: buffer.Buffer, keep: bool) -> [heap] buffer.Buffer {
+    return server.failure(heap, out, 404, "not found", keep);
+}
+
+fn unauthorized[&h](heap: &!h Heap, out: buffer.Buffer, keep: bool) -> [heap] buffer.Buffer {
+    return server.failure(heap, out, 401, "unauthorized", keep);
+}
+
+fn answer_get[&h, &a, &k, &y](heap: &!h Heap, app: &!a App, out: buffer.Buffer, ckey: &k [byte], key: &y [byte], now_ms: int, keep: bool) -> [heap] buffer.Buffer {
+    let row = lookup(app, ckey, now_ms);
+    if row < 0 {
+        return not_found(heap, out, keep);
+    }
+    let rows = contents(app.rows);
+    let arena = contents(app.arena);
+    let voff = rows[row * 8 + 4];
+    var w = json.writer(heap, 128);
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "key");
+    w = json.put_string(heap, w, key);
+    w = json.put_key(heap, w, "value");
+    w = json.put_string(heap, w, arena[voff..voff + rows[row * 8 + 5]]);
+    w = json.put_key(heap, w, "expires_in");
+    let left = seconds_left(rows[row * 8 + 6], rows[row * 8 + 7], now_ms);
+    if left < 0 {
+        w = json.put_null(heap, w);
+    } else {
+        w = json.put_int(heap, w, left);
+    }
+    w = json.end_object(heap, w);
+    let text = json.finish(w);
+    var answer = out;
+    borrow text as &tb in {
+        answer = server.reply(heap, answer, 200, buffer.bytes(tb), keep);
+    }
+    buffer.drop(heap, text);
+    return answer;
+}
+
+fn answer_delete[&h, &a, &k](heap: &!h Heap, app: &!a App, out: buffer.Buffer, ckey: &k [byte], now_ms: int, keep: bool) -> [heap] buffer.Buffer {
+    let row = lookup(app, ckey, now_ms);
+    if row < 0 {
+        return not_found(heap, out, keep);
+    }
+    let h = map.hash(ckey, hash_seed());
+    let slot = find_slot(contents(app.tab), contents(app.rows), contents(app.arena), ckey, h);
+    free_slot(app, slot);
+    return server.reply_empty(heap, out, 204, keep, "");
+}
+
+// Store `value` (the string at `vnode` of the body) under `ckey`. 201 for a new entry, 200 for a replaced one, 507 when the store is full.
+fn answer_put[&h, &a, &k, &y, &b, &t](heap: &!h Heap, app: &!a App, out: buffer.Buffer, ckey: &k [byte], key: &y [byte], body: &b [byte], tape: &t [int], vnode: int, ttl: int, now_ms: int, keep: bool) -> [heap] buffer.Buffer {
+    let vlen = json.string_length(body, tape, vnode);
+    let existing = lookup(app, ckey, now_ms);
+    var need = vlen;
+    if existing < 0 {
+        need = need + len(ckey);
+    }
+    if app.top + need > arena_size() {
+        compact(heap, app, now_ms);
+    }
+    // Compaction may have dropped the expired entry: look again.
+    var row = lookup(app, ckey, now_ms);
+    let created = row < 0;
+    if created {
+        need = vlen + len(ckey);
+    } else {
+        need = vlen;
+    }
+    if app.top + need > arena_size() {
+        return server.failure(heap, out, 507, "store full", keep);
+    }
+    if created {
+        if app.free_head >= 0 {
+            row = app.free_head;
+            app.free_head = contents(app.rows)[row * 8 + 1];
+        } else if app.high < max_rows() {
+            row = app.high;
+            app.high = app.high + 1;
+        } else {
+            return server.failure(heap, out, 507, "store full", keep);
+        }
+        if (app.live + app.tombs + 1) * 2 > len(contents(app.tab)) {
+            rebuild_table(app);
+        }
+    }
+    let rows = contents(app.rows);
+    let arena = contents(app.arena);
+    if created {
+        let h = map.hash(ckey, hash_seed());
+        copy_into(arena[app.top..app.top + len(ckey)], ckey);
+        rows[row * 8 + 1] = app.top;
+        rows[row * 8 + 2] = len(ckey);
+        rows[row * 8 + 3] = h;
+        app.top = app.top + len(ckey);
+        rows[row * 8] = 1;
+        app.live = app.live + 1;
+        place_row(app, row, h);
+    }
+    json.string_into(body, tape, vnode, arena[app.top..app.top + vlen]);
+    rows[row * 8 + 4] = app.top;
+    rows[row * 8 + 5] = vlen;
+    rows[row * 8 + 6] = now_ms;
+    rows[row * 8 + 7] = ttl;
+    app.top = app.top + vlen;
+    var w = json.writer(heap, 128);
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "key");
+    w = json.put_string(heap, w, key);
+    w = json.put_key(heap, w, "value");
+    w = json.put_string(heap, w, arena[rows[row * 8 + 4]..rows[row * 8 + 4] + vlen]);
+    w = json.end_object(heap, w);
+    let text = json.finish(w);
+    var status = 200;
+    if created {
+        status = 201;
+    }
+    var answer = out;
+    borrow text as &tb in {
+        answer = server.reply(heap, answer, status, buffer.bytes(tb), keep);
+    }
+    buffer.drop(heap, text);
+    return answer;
+}
+
+// The caller's live keys starting with `prefix`, ascending, at most `limit`. `tprefix` is `tenant 0x00 prefix`, `skip` the length of `tenant 0x00`.
+fn answer_list[&h, &a, &k](heap: &!h Heap, app: &!a App, out: buffer.Buffer, tprefix: &k [byte], skip: int, limit: int, now_ms: int, keep: bool) -> [heap] buffer.Buffer {
+    let rows = contents(app.rows);
+    let arena = contents(app.arena);
+    var w = json.writer(heap, 256);
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "keys");
+    w = json.begin_array(heap, w);
+    var last = 0 - 1;
+    var emitted = 0;
+    var more = true;
+    while more && emitted < limit {
+        var best = 0 - 1;
+        var r = 0;
+        while r < app.high {
+            if rows[r * 8] == 1 {
+                let koff = rows[r * 8 + 1];
+                let ck = arena[koff..koff + rows[r * 8 + 2]];
+                if bytes.starts_with(ck, tprefix) && !is_expired(rows[r * 8 + 6], rows[r * 8 + 7], now_ms) {
+                    var after_last = true;
+                    if last >= 0 {
+                        let loff = rows[last * 8 + 1];
+                        after_last = bytes.compare(ck, arena[loff..loff + rows[last * 8 + 2]]) > 0;
+                    }
+                    if after_last {
+                        if best < 0 {
+                            best = r;
+                        } else {
+                            let boff = rows[best * 8 + 1];
+                            if bytes.compare(ck, arena[boff..boff + rows[best * 8 + 2]]) < 0 {
+                                best = r;
+                            }
+                        }
+                    }
+                }
+            }
+            r = r + 1;
+        }
+        if best < 0 {
+            more = false;
+        } else {
+            let boff = rows[best * 8 + 1];
+            w = json.put_string(heap, w, arena[boff + skip..boff + rows[best * 8 + 2]]);
+            last = best;
+            emitted = emitted + 1;
+        }
+    }
+    w = json.end_array(heap, w);
+    w = json.end_object(heap, w);
+    let text = json.finish(w);
+    var answer = out;
+    borrow text as &tb in {
+        answer = server.reply(heap, answer, 200, buffer.bytes(tb), keep);
+    }
+    buffer.drop(heap, text);
+    return answer;
+}
+
+// ---------------------------------------------------------------------
+// The interface
+// ---------------------------------------------------------------------
+
+fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App {
+    let (from, to) = flag_value(config, "--tokens");
+    var n = 0;
+    if from >= 0 {
+        n = to - from;
+    }
+    let spec = box_slice(heap, n + 1, byte_of(0));
+    if n > 0 {
+        borrow mut spec as &!sw in {
+            copy_into(contents(sw)[0..n], config[from..to]);
+        }
+    }
+    return App { spec: spec, spec_len: n, tab: box_slice(heap, tab_size(), 0), rows: box_slice(heap, max_rows() * 8, 0), arena: box_slice(heap, arena_size(), byte_of(0)), live: 0, tombs: 0, high: 0, top: 0, free_head: 0 - 1 };
+}
+
+fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer {
+    let keep = http.keeps_alive(table);
+    let path = http.path(request, table);
+    let method = http.method(request, table);
+    // 1: the listing, 2: one key, 0: no such route.
+    var route = 0;
+    if bytes.equal(path, "/kv") {
+        route = 1;
+    } else if bytes.starts_with(path, "/kv/") && bytes.count_byte(path[4..len(path)], 47) == 0 {
+        route = 2;
+    }
+    if route == 0 {
+        return not_found(heap, out, keep);
+    }
+    let token = bearer_token(http.header(request, table, "authorization"));
+    let (tfrom, tto) = tenant_range(contents(app.spec)[0..app.spec_len], token);
+    if tfrom < 0 {
+        return unauthorized(heap, out, keep);
+    }
+    let is_get = bytes.equal(method, "GET");
+    let is_put = bytes.equal(method, "PUT");
+    let is_delete = bytes.equal(method, "DELETE");
+    if (route == 1 && !is_get) || (route == 2 && !is_get && !is_put && !is_delete) {
+        if route == 1 {
+            return server.failure_with(heap, out, 405, "method not allowed", keep, "Allow: GET\r\n");
+        }
+        return server.failure_with(heap, out, 405, "method not allowed", keep, "Allow: GET, PUT, DELETE\r\n");
+    }
+    // The tenant and a separator, then the key (route 2) or the prefix (route 1), in one scratch slice.
+    let tlen = tto - tfrom;
+    var answer = out;
+    region scratch {
+        if route == 2 {
+            let key = path[4..len(path)];
+            if is_put && len(body) > max_body() {
+                answer = server.failure(heap, answer, 413, "request body too large", keep);
+            } else if !valid_key(key) {
+                if is_put {
+                    answer = server.failure(heap, answer, 400, "invalid key", keep);
+                } else {
+                    answer = not_found(heap, answer, keep);
+                }
+            } else {
+                let ck = alloc_slice[scratch](tlen + 1 + len(key), byte_of(0));
+                copy_into(ck[0..tlen], contents(app.spec)[tfrom..tto]);
+                copy_into(ck[tlen + 1..tlen + 1 + len(key)], key);
+                if is_get {
+                    answer = answer_get(heap, app, answer, ck, key, now_ms, keep);
+                } else if is_delete {
+                    answer = answer_delete(heap, app, answer, ck, now_ms, keep);
+                } else {
+                    let tape = box_slice(heap, json.tape_len(body), 0);
+                    borrow mut tape as &!tw in {
+                        let (code, vnode, ttl) = parse_put(body, contents(tw));
+                        if code != 0 {
+                            answer = server.failure(heap, answer, 400, put_message(code), keep);
+                        } else {
+                            answer = answer_put(heap, app, answer, ck, key, body, contents(tw), vnode, ttl, now_ms, keep);
+                        }
+                    }
+                    unbox_slice(heap, tape);
+                }
+            }
+        } else {
+            let decoded = alloc_slice[scratch](300, byte_of(0));
+            let plen = list_prefix(http.query(request, table), decoded);
+            let limit = list_limit(http.query(request, table));
+            if plen < 0 {
+                answer = server.failure(heap, answer, 400, "invalid prefix", keep);
+            } else if limit < 0 {
+                answer = server.failure(heap, answer, 400, "limit must be an integer from 1 to 100", keep);
+            } else {
+                let tp = alloc_slice[scratch](tlen + 1 + plen, byte_of(0));
+                copy_into(tp[0..tlen], contents(app.spec)[tfrom..tto]);
+                copy_into(tp[tlen + 1..tlen + 1 + plen], decoded[0..plen]);
+                answer = answer_list(heap, app, answer, tp, tlen + 1, limit, now_ms, keep);
+            }
+        }
+    }
+    return answer;
+}
+
+fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int {
+    let App { spec, spec_len, tab, rows, arena, live, tombs, high, top, free_head } = app;
+    unbox_slice(heap, spec);
+    unbox_slice(heap, tab);
+    unbox_slice(heap, rows);
+    unbox_slice(heap, arena);
+    return live;
+}

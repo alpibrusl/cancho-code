@@ -29,3 +29,7 @@ A reference port is not an audit of a build: the audit must be written before th
 - `plan_item.py <item> ...` asks a model to PLAN an item from its brief and the signatures of its public functions (`docs/plan-guide.md`), `run_item.py --plan`
   builds that plan, `plan_vs_reference.py` runs a plan's tests against the item's reference, `probe_planner.py` sends vague and huge requests.
   Results and the analysis: `results/2026-10-15-plan-generator.md`.
+- **Services** (`services/<name>/`: jobs, invoices, webhooks, kvstore; adapted from lex-code's 09-12): `brief.txt` (cancho-adapted), `reference/project.cho`
+  (a working application), `accept.py` (the scenarios the builder is shown), `attack.py` (hidden), `launch.json`, `demo.json`, `facts.json`. A service is the
+  fixed `services/skeleton/main.cho` (server loop and `main`, never edited) plus the application `project.cho`; `service_run.py accept|attack <service> <project.cho>`
+  builds and judges it, `run_service.py` builds one with `fix` and the acceptance scenarios, `demo.py` runs the scripted session. Results: `results/2026-10-15-services.md`.

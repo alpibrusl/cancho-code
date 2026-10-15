@@ -1,0 +1,56 @@
+{
+  "service": "jobs",
+  "attack_checks": 188,
+  "accept_checks": 64,
+  "reference_loc": 568,
+  "pure_functions": [
+    "bearer_token[&v](header: &v [byte]) -> [] &v [byte]",
+    "token_tenant[&s, &t](spec: &s [byte], token: &t [byte]) -> [] (int, int)",
+    "transition(state: int, action: int) -> [] int",
+    "parse_job_id[&t](text: &t [byte]) -> [] int",
+    "parse_list_query[&q](query: &q [byte]) -> [] (int, int, int, int)",
+    "valid_kind[&k](kind: &k [byte]) -> [] bool",
+    "validate_create[&h, &b](heap: &!h Heap, body: &b [byte]) -> [heap] int"
+  ],
+  "differences_from_lex": [
+    "JOBS_TOKENS/JOBS_PORT/JOBS_DB/JOBS_HOST environment variables -> flag --tokens (and the skeleton's --port); no DB flag, no host flag",
+    "SQLite + lex-orm -> in-memory fixed-capacity boxed slices in App; nothing persists across restarts (brief says so); the 'database is never touched' wording becomes 'nothing else is looked at or changed'",
+    "SQL-injection requirements (3) become 'invalid state/limit/after values are 400'; the checks are kept with the same hostile values",
+    "loopback-only listening (req 8) dropped: a cancho listener binds all interfaces; attack's listens_on_loopback_only check removed",
+    "grants net,sql,env,fs_write -> allowed effects args,heap,clock,net_in,conn_accept,conn_read,conn_write,poll,io_write,err_write, checked via SVC_AUTHORITY_OK / cancho authority",
+    "no lex-web/lex-schema: std.http, std.json, std.route, server.reply are the toolbox; 16 KiB request buffer and 64 KiB output buffer are properties of the skeleton",
+    "401 is now returned for ALL paths before routing (the Lex brief was silent on unknown paths); header must be exactly 'Bearer <token>'",
+    "the brief states payload length in Unicode characters and the list page budget (48000 bytes, may return fewer than limit) which Lex did not need; next_after is defined as the last id in jobs, null when empty",
+    "added: 405 or 404 for wrong methods, 503 when the fixed store is full (>= 2000 jobs and 2 MiB of text must fit, reference holds 5000 jobs / 6 MiB)"
+  ],
+  "pitfalls": [
+    "app_handle gets App by &! borrow; 'app.jobs = vec.push(heap, app.jobs, x)' is refused (expected Vec, found &!a Vec): a growable Vec/Buffer/Map field cannot be moved out of and replaced, so state must be fixed-capacity box_slice stores written through contents(app.field); the brief tells the builder",
+    "std.http trims trailing whitespace of header values, so 'Bearer tokA ' reaches the app as 'Bearer tokA' and cannot be refused; the Lex attack's 'trailing space must not crash (200 or 401)' became 'a longer / shorter token is 401'",
+    "a response is first offered to the socket and only the unsent remainder must fit the 64 KiB per-connection queue, so on loopback a 100 KB answer usually arrives intact; the page-budget requirement is therefore checked by the answer's size (<64 KiB, observed with a late reader) and by a late-reader read; a slow-reader cut-off needs a kernel that absorbs little, so the 'whole page' check alone is not reliable on macOS",
+    "Python json.dumps escapes non-ASCII to \\uXXXX (6 bytes a character), which pushes a 1000-character payload of 'e-acute' over the 4096-byte body limit; the multi-byte test sends raw UTF-8",
+    "std.json.string_into/string_length decode escapes; kind and payload must be checked after decoding (kind '\\u0061bc' is the valid kind 'abc'), payload length is utf8.count of the decoded bytes",
+    "json.tape_len(body) ints is up to 98 KB for a 4096-byte body: use box_slice on the heap, not a region (an arena is one 64 KiB chunk and exhaustion traps)",
+    "'copy_into' is a builtin name and may not be redefined; a byte is not an int (int_of); no break/continue; Option/Result are enums, not helper functions; fn rows are exact ([heap] only if the body allocates)",
+    "the equivalent mutant 'acc = 0' in ct_equal (zero-padding already differs) is not detectable: constant-time cannot be observed, only the no-prefix-match behaviour",
+    "tested on macOS (cranelift) only; Linux behaviour of the late-reader check is untested here"
+  ],
+  "dropped_checks": [
+    "listens on loopback only by default (Lex attack check 11)",
+    "'server starts with grants net,sql,env,fs_write' -> replaced by the authority check and a plain start check",
+    "'trailing space must not crash (200 or 401)' -> impossible to observe (see pitfalls); replaced by longer/shorter/prefixed token checks",
+    "'lowercase scheme must not crash (200 or 401)' -> now exactly 401 because the brief fixes 'Bearer ' exactly"
+  ],
+  "ports": {"accept": 18811, "attack": 8811},
+  "mutations_caught_by_attack": {
+    "403 for a foreign claim/complete": ["B cannot claim A's job: 404", "B cannot complete A's job: 404", "foreign claim and missing claim give the identical response"],
+    "unknown fields accepted": ["unknown/forbidden field 'id' -> 400", "unknown field holding a long array -> 400"],
+    "limit upper bound 51": ["limit='51' -> 400"],
+    "body limit 4097": ["body of 4097 bytes -> 413"],
+    "no list page budget": ["... and that page is under 64 KiB"],
+    "token prefix match": ["token truncated -> 401", "token with a character appended -> 401"],
+    "payload length in bytes": ["payload of 1000 two-byte characters -> 201 (characters, not bytes)"],
+    "idempotency key shared across tenants": ["same key, other tenant -> 201 (independent)"],
+    "claim jumps to done": ["claim -> 200 running"],
+    "list ignores tenant": ["tenant list shows only own jobs"]
+  }
+}

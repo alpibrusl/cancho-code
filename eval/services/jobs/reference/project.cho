@@ -1,0 +1,568 @@
+edition 7;
+import std.utf8;
+
+// jobs: a multi-tenant job-queue REST API (the application half of a cancho service; the skeleton is eval/services/skeleton/main.cho).
+//
+// State lives in `App` for the life of the process. `app_handle` receives the App by `&!` borrow, and a borrowed struct cannot hand out a growable
+// `Vec`/`Buffer` field by value (`app.jobs = vec.push(heap, app.jobs, ...)` is refused), so the stores are boxed slices of a fixed capacity.
+
+// ---------------------------------------------------------------------
+// Limits
+// ---------------------------------------------------------------------
+
+fn max_jobs() -> [] int {
+    return 5000;
+}
+
+fn text_capacity() -> [] int {
+    return 6291456;
+}
+
+// The most bytes a request body may have; one more is 413.
+fn max_body() -> [] int {
+    return 4096;
+}
+
+// A list page stops adding jobs once its JSON passes this: the server's output buffer for one connection is 64 KiB.
+fn page_budget() -> [] int {
+    return 48000;
+}
+
+// One record per job, `stride` ints: tenant start, tenant length (both into `tokens`), state, kind start, kind length, payload start, payload
+// length, idempotency key start, idempotency key length (starts and lengths into `text`).
+fn stride() -> [] int {
+    return 9;
+}
+
+// ---------------------------------------------------------------------
+// Pure logic
+// ---------------------------------------------------------------------
+
+// The token in an `Authorization` header value: what follows exactly `Bearer `; an empty slice for anything else.
+fn bearer_token[&v](header: &v [byte]) -> [] &v [byte] {
+    if len(header) <= 7 || !bytes.starts_with(header, "Bearer ") {
+        return header[0..0];
+    }
+    return header[7..len(header)];
+}
+
+// Equal bytes? Looks at every byte of the longer one, whatever the first difference.
+fn ct_equal[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool {
+    var n = len(x);
+    if len(y) > n {
+        n = len(y);
+    }
+    var acc = len(x) ^ len(y);
+    var i = 0;
+    while i < n {
+        var p = 0;
+        var q = 0;
+        if i < len(x) {
+            p = int_of(x[i]);
+        }
+        if i < len(y) {
+            q = int_of(y[i]);
+        }
+        acc = acc | p ^ q;
+        i = i + 1;
+    }
+    return acc == 0;
+}
+
+// `spec` is `token:tenant,token:tenant`. The (start, end) of the tenant name inside `spec` for the entry whose token is `token`, or (-1, -1).
+// Every entry is compared, whether or not an earlier one matched. Entries without a token or without a tenant are skipped.
+fn token_tenant[&s, &t](spec: &s [byte], token: &t [byte]) -> [] (int, int) {
+    var from = 0 - 1;
+    var to = 0 - 1;
+    var at = 0;
+    while at <= len(spec) {
+        var e = at;
+        while e < len(spec) && int_of(spec[e]) != ',' {
+            e = e + 1;
+        }
+        var colon = at;
+        while colon < e && int_of(spec[colon]) != ':' {
+            colon = colon + 1;
+        }
+        if colon > at && colon + 1 < e {
+            let same = ct_equal(spec[at..colon], token);
+            if same && from < 0 {
+                from = colon + 1;
+                to = e;
+            }
+        }
+        at = e + 1;
+    }
+    return (from, to);
+}
+
+// States: 0 queued, 1 running, 2 done. Actions: 0 claim, 1 complete. The state after the move, or -1 when it is not allowed.
+fn transition(state: int, action: int) -> [] int {
+    if state == 0 && action == 0 {
+        return 1;
+    }
+    if state == 1 && action == 1 {
+        return 2;
+    }
+    return 0 - 1;
+}
+
+fn state_name(state: int) -> [] &static [byte] {
+    if state == 0 {
+        return "queued";
+    }
+    if state == 1 {
+        return "running";
+    }
+    return "done";
+}
+
+// A non-empty run of at most `max_digits` decimal digits, as a number; otherwise -1.
+fn parse_nat[&t](text: &t [byte], max_digits: int) -> [] int {
+    if len(text) == 0 || len(text) > max_digits {
+        return 0 - 1;
+    }
+    var n = 0;
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if c < 48 || c > 57 {
+            return 0 - 1;
+        }
+        n = n * 10 + (c - 48);
+        i = i + 1;
+    }
+    return n;
+}
+
+// The id in a path segment: a positive integer of at most 17 digits, or -1.
+fn parse_job_id[&t](text: &t [byte]) -> [] int {
+    let n = parse_nat(text, 17);
+    if n < 1 {
+        return 0 - 1;
+    }
+    return n;
+}
+
+// (error, state, limit, after) from the query string (without the `?`). error is 0, or 1 for any invalid value.
+// state is -1 (absent) or 0..2; limit defaults to 20; after defaults to 0. Values are taken as written, never percent-decoded.
+fn parse_list_query[&q](query: &q [byte]) -> [] (int, int, int, int) {
+    var bad = 0;
+    var state = 0 - 1;
+    var limit = 20;
+    var after = 0;
+    let (ss, se) = http.query_value(query, "state");
+    if ss >= 0 {
+        let v = query[ss..se];
+        if bytes.equal(v, "queued") {
+            state = 0;
+        } else if bytes.equal(v, "running") {
+            state = 1;
+        } else if bytes.equal(v, "done") {
+            state = 2;
+        } else {
+            bad = 1;
+        }
+    }
+    let (ls, le) = http.query_value(query, "limit");
+    if ls >= 0 {
+        limit = parse_nat(query[ls..le], 3);
+        if limit < 1 || limit > 50 {
+            bad = 1;
+        }
+    }
+    let (as_, ae) = http.query_value(query, "after");
+    if as_ >= 0 {
+        after = parse_nat(query[as_..ae], 17);
+        if after < 0 {
+            bad = 1;
+        }
+    }
+    return (bad, state, limit, after);
+}
+
+fn kind_char(c: int) -> [] bool {
+    return c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_' || c == '-';
+}
+
+fn valid_kind[&k](kind: &k [byte]) -> [] bool {
+    if len(kind) < 1 || len(kind) > 40 {
+        return false;
+    }
+    var i = 0;
+    while i < len(kind) {
+        if !kind_char(int_of(kind[i])) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+// Reads a create body. Answers (code, kind length, payload length) and writes the decoded kind into `kout` (64 bytes) and payload into `pout`
+// (4096 bytes). code: 0 valid, 1 not JSON, 2 not an object, 3 an unknown field, 4 kind missing or not a string, 5 kind invalid,
+// 6 payload missing or not a string, 7 payload longer than 1000 characters.
+fn parse_create[&h, &b, &k, &p](heap: &!h Heap, body: &b [byte], kout: &!k [byte], pout: &!p [byte]) -> [heap] (int, int, int) {
+    let tape = box_slice(heap, json.tape_len(body), 0);
+    var code = 0;
+    var kl = 0;
+    var pl = 0;
+    borrow mut tape as &!tw in {
+        let t = contents(tw);
+        let nodes = json.parse(body, t);
+        if nodes < 0 {
+            code = 1;
+        } else if !json.is_object(t, 0) {
+            code = 2;
+        } else {
+            var j = 1;
+            var left = json.count(t, 0);
+            while left > 0 {
+                if !json.string_equals(body, t, j, "kind") && !json.string_equals(body, t, j, "payload") {
+                    code = 3;
+                }
+                j = json.skip(t, j + 1);
+                left = left - 1;
+            }
+            if code == 0 {
+                let kn = json.get(body, t, 0, "kind");
+                if kn < 0 || !json.is_string(t, kn) {
+                    code = 4;
+                } else if json.string_length(body, t, kn) > 40 {
+                    code = 5;
+                } else {
+                    kl = json.string_into(body, t, kn, kout);
+                    if kl < 0 || !valid_kind(kout[0..kl]) {
+                        code = 5;
+                    }
+                }
+            }
+            if code == 0 {
+                let pn = json.get(body, t, 0, "payload");
+                if pn < 0 || !json.is_string(t, pn) {
+                    code = 6;
+                } else if json.string_length(body, t, pn) > len(pout) {
+                    code = 7;
+                } else {
+                    pl = json.string_into(body, t, pn, pout);
+                    if pl < 0 || utf8.count(pout[0..pl]) > 1000 {
+                        code = 7;
+                    }
+                }
+            }
+        }
+    }
+    unbox_slice(heap, tape);
+    return (code, kl, pl);
+}
+
+// The code of `parse_create` and nothing else.
+fn validate_create[&h, &b](heap: &!h Heap, body: &b [byte]) -> [heap] int {
+    let kbox = box_slice(heap, 64, byte_of(0));
+    let pbox = box_slice(heap, 4100, byte_of(0));
+    var code = 0;
+    borrow mut kbox as &!kw in {
+        borrow mut pbox as &!pw in {
+            let (c, k, p) = parse_create(heap, body, contents(kw), contents(pw));
+            code = c;
+        }
+    }
+    unbox_slice(heap, kbox);
+    unbox_slice(heap, pbox);
+    return code;
+}
+
+// ---------------------------------------------------------------------
+// The application
+// ---------------------------------------------------------------------
+
+res struct App {
+    tokens: Box[[byte]],
+    tokens_len: int,
+    recs: Box[[int]],
+    count: int,
+    text: Box[[byte]],
+    text_used: int,
+}
+
+// The (start, end) of the value after the flag `name` in the newline-separated config, or (-1, -1).
+fn flag_value[&c, &n](config: &c [byte], name: &n [byte]) -> [] (int, int) {
+    var at = 0;
+    while at < len(config) {
+        var e = at;
+        while e < len(config) && int_of(config[e]) != 10 {
+            e = e + 1;
+        }
+        if bytes.equal(config[at..e], name) && e + 1 < len(config) {
+            var v = e + 1;
+            while v < len(config) && int_of(config[v]) != 10 {
+                v = v + 1;
+            }
+            return (e + 1, v);
+        }
+        at = e + 1;
+    }
+    return (0 - 1, 0 - 1);
+}
+
+fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App {
+    let (from, to) = flag_value(config, "--tokens");
+    var n = 0;
+    if from >= 0 {
+        n = to - from;
+    }
+    let tokens = box_slice(heap, n + 1, byte_of(0));
+    borrow mut tokens as &!tw in {
+        let t = contents(tw);
+        var i = 0;
+        while i < n {
+            t[i] = config[from + i];
+            i = i + 1;
+        }
+    }
+    return App { tokens: tokens, tokens_len: n, recs: box_slice(heap, max_jobs() * stride(), 0), count: 0, text: box_slice(heap, text_capacity(), byte_of(0)), text_used: 0 };
+}
+
+fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int {
+    let App { tokens, tokens_len, recs, count, text, text_used } = app;
+    unbox_slice(heap, tokens);
+    unbox_slice(heap, recs);
+    unbox_slice(heap, text);
+    return count;
+}
+
+fn put_bytes[&d, &s](dst: &!d [byte], at: int, src: &s [byte]) -> [] int {
+    var i = 0;
+    while i < len(src) {
+        dst[at + i] = src[i];
+        i = i + 1;
+    }
+    return at + len(src);
+}
+
+// One job as JSON, appended to the writer.
+fn put_job[&h, &a](heap: &!h Heap, w: json.Writer, app: &a App, i: int) -> [heap] json.Writer {
+    let recs = contents(app.recs);
+    let text = contents(app.text);
+    let tokens = contents(app.tokens);
+    let r = i * stride();
+    var out = json.begin_object(heap, w);
+    out = json.put_key(heap, out, "id");
+    out = json.put_int(heap, out, i + 1);
+    out = json.put_key(heap, out, "tenant");
+    out = json.put_string(heap, out, tokens[recs[r]..recs[r] + recs[r + 1]]);
+    out = json.put_key(heap, out, "kind");
+    out = json.put_string(heap, out, text[recs[r + 3]..recs[r + 3] + recs[r + 4]]);
+    out = json.put_key(heap, out, "payload");
+    out = json.put_string(heap, out, text[recs[r + 5]..recs[r + 5] + recs[r + 6]]);
+    out = json.put_key(heap, out, "state");
+    out = json.put_string(heap, out, state_name(recs[r + 2]));
+    return json.end_object(heap, out);
+}
+
+fn send_job[&h, &a](heap: &!h Heap, out: buffer.Buffer, app: &a App, i: int, status: int, keep: bool) -> [heap] buffer.Buffer {
+    var w = json.writer(heap, 256);
+    w = put_job(heap, w, app, i);
+    let body = json.finish(w);
+    var answer = out;
+    borrow body as &bb in {
+        answer = server.reply(heap, answer, status, buffer.bytes(bb), keep);
+    }
+    buffer.drop(heap, body);
+    return answer;
+}
+
+// Does job `i` belong to the tenant named by tokens[ts..te]?
+fn owns[&a](app: &a App, i: int, ts: int, te: int) -> [] bool {
+    let recs = contents(app.recs);
+    let tokens = contents(app.tokens);
+    let r = i * stride();
+    return bytes.equal(tokens[recs[r]..recs[r] + recs[r + 1]], tokens[ts..te]);
+}
+
+fn list_jobs[&h, &a](heap: &!h Heap, out: buffer.Buffer, app: &a App, ts: int, te: int, state: int, limit: int, after: int, keep: bool) -> [heap] buffer.Buffer {
+    var w = json.writer(heap, 1024);
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "jobs");
+    w = json.begin_array(heap, w);
+    let recs = contents(app.recs);
+    var i = after;
+    var emitted = 0;
+    var last = 0;
+    var size = 0;
+    while i < app.count && emitted < limit && size < page_budget() {
+        if owns(app, i, ts, te) && (state < 0 || recs[i * stride() + 2] == state) {
+            w = put_job(heap, w, app, i);
+            emitted = emitted + 1;
+            last = i + 1;
+            borrow w as &wr in {
+                size = len(json.bytes(wr));
+            }
+        }
+        i = i + 1;
+    }
+    w = json.end_array(heap, w);
+    w = json.put_key(heap, w, "next_after");
+    if emitted > 0 {
+        w = json.put_int(heap, w, last);
+    } else {
+        w = json.put_null(heap, w);
+    }
+    w = json.end_object(heap, w);
+    let body = json.finish(w);
+    var answer = out;
+    borrow body as &bb in {
+        answer = server.reply(heap, answer, 200, buffer.bytes(bb), keep);
+    }
+    buffer.drop(heap, body);
+    return answer;
+}
+
+fn create_job[&h, &a, &q, &t, &b](heap: &!h Heap, out: buffer.Buffer, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], ts: int, te: int, keep: bool) -> [heap] buffer.Buffer {
+    let kbox = box_slice(heap, 64, byte_of(0));
+    let pbox = box_slice(heap, 4100, byte_of(0));
+    var answer = out;
+    var code = 0;
+    var kl = 0;
+    var pl = 0;
+    borrow mut kbox as &!kw in {
+        borrow mut pbox as &!pw in {
+            let (c, k, p) = parse_create(heap, body, contents(kw), contents(pw));
+            code = c;
+            kl = k;
+            pl = p;
+        }
+    }
+    if code != 0 {
+        answer = server.failure(heap, answer, 400, "invalid job: kind is 1 to 40 of a-z 0-9 _ -, payload is a string of at most 1000 characters, no other fields", keep);
+    } else {
+        let key = http.header(request, table, "idempotency-key");
+        var replay = 0 - 1;
+        if len(key) > 0 {
+            let recs = contents(app.recs);
+            let text = contents(app.text);
+            let tokens = contents(app.tokens);
+            var i = 0;
+            while i < app.count {
+                let r = i * stride();
+                if recs[r + 8] == len(key) && bytes.equal(text[recs[r + 7]..recs[r + 7] + recs[r + 8]], key) && owns(app, i, ts, te) {
+                    replay = i;
+                }
+                i = i + 1;
+            }
+        }
+        if replay >= 0 {
+            answer = send_job(heap, answer, app, replay, 200, keep);
+        } else if app.count >= max_jobs() || app.text_used + kl + pl + len(key) > text_capacity() {
+            answer = server.failure(heap, answer, 503, "job store full", keep);
+        } else {
+            let i = app.count;
+            let r = i * stride();
+            let recs = contents(app.recs);
+            let text = contents(app.text);
+            var at = app.text_used;
+            recs[r] = ts;
+            recs[r + 1] = te - ts;
+            recs[r + 2] = 0;
+            recs[r + 3] = at;
+            recs[r + 4] = kl;
+            borrow kbox as &kr in {
+                at = put_bytes(text, at, contents(kr)[0..kl]);
+            }
+            recs[r + 5] = at;
+            recs[r + 6] = pl;
+            borrow pbox as &pr in {
+                at = put_bytes(text, at, contents(pr)[0..pl]);
+            }
+            recs[r + 7] = at;
+            recs[r + 8] = len(key);
+            at = put_bytes(text, at, key);
+            app.text_used = at;
+            app.count = i + 1;
+            answer = send_job(heap, answer, app, i, 201, keep);
+        }
+    }
+    unbox_slice(heap, kbox);
+    unbox_slice(heap, pbox);
+    return answer;
+}
+
+// 0 claim, 1 complete.
+fn move_job[&h, &a](heap: &!h Heap, out: buffer.Buffer, app: &!a App, id: int, action: int, ts: int, te: int, keep: bool) -> [heap] buffer.Buffer {
+    if id < 1 || id > app.count || !owns(app, id - 1, ts, te) {
+        return server.failure(heap, out, 404, "not found", keep);
+    }
+    let recs = contents(app.recs);
+    let r = (id - 1) * stride();
+    let next = transition(recs[r + 2], action);
+    if next < 0 {
+        return server.failure(heap, out, 409, "the job is not in a state that allows this", keep);
+    }
+    recs[r + 2] = next;
+    return send_job(heap, out, app, id - 1, 200, keep);
+}
+
+fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer {
+    let keep = http.keeps_alive(table);
+    let method = http.method(request, table);
+    let path = http.path(request, table);
+    let token = bearer_token(http.header(request, table, "authorization"));
+    let tokens = contents(app.tokens);
+    let (ts, te) = token_tenant(tokens[0..app.tokens_len], token);
+    if ts < 0 {
+        return server.failure_with(heap, out, 401, "unauthorized", keep, "WWW-Authenticate: Bearer\r\n");
+    }
+    if len(body) > max_body() {
+        return server.failure(heap, out, 413, "request body too large", keep);
+    }
+    let get = bytes.equal(method, "GET");
+    let post = bytes.equal(method, "POST");
+    if bytes.equal(path, "/jobs") {
+        if get {
+            let (bad, state, limit, after) = parse_list_query(http.query(request, table));
+            if bad != 0 {
+                return server.failure(heap, out, 400, "invalid state, limit or after", keep);
+            }
+            return list_jobs(heap, out, app, ts, te, state, limit, after, keep);
+        }
+        if post {
+            return create_job(heap, out, app, request, table, body, ts, te, keep);
+        }
+        return server.failure_with(heap, out, 405, "method not allowed", keep, "Allow: GET, POST\r\n");
+    }
+    if bytes.starts_with(path, "/jobs/") {
+        let rest = path[6..len(path)];
+        let slashes = bytes.count_byte(rest, '/');
+        if slashes == 0 {
+            let id = parse_job_id(rest);
+            if id < 0 || id > app.count || !owns(app, id - 1, ts, te) {
+                return server.failure(heap, out, 404, "not found", keep);
+            }
+            if get {
+                return send_job(heap, out, app, id - 1, 200, keep);
+            }
+            return server.failure_with(heap, out, 405, "method not allowed", keep, "Allow: GET\r\n");
+        }
+        if slashes == 1 {
+            let id = parse_job_id(bytes.field(rest, '/', 1));
+            let act = bytes.field(rest, '/', 2);
+            var action = 0 - 1;
+            if bytes.equal(act, "claim") {
+                action = 0;
+            } else if bytes.equal(act, "complete") {
+                action = 1;
+            }
+            if id < 0 || action < 0 {
+                return server.failure(heap, out, 404, "not found", keep);
+            }
+            if post {
+                return move_job(heap, out, app, id, action, ts, te, keep);
+            }
+            if id > app.count || !owns(app, id - 1, ts, te) {
+                return server.failure(heap, out, 404, "not found", keep);
+            }
+            return server.failure_with(heap, out, 405, "method not allowed", keep, "Allow: POST\r\n");
+        }
+    }
+    return server.failure(heap, out, 404, "not found", keep);
+}

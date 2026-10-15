@@ -61,5 +61,27 @@ out=$("$exe" "$CANCHO" "$d2/project.cho" "cp $d2/good.cho" 4 2>&1)
 expect "std: a project that imports std.option verifies" "$(printf '%s' "$out" | grep ISSUE_VERDICT | cut -f1,2)" "$(printf '[ISSUE_VERDICT]\tverified')"
 rm -rf "$d2"
 
+
+# extra files: a service is more than one file (its application, the fixed skeleton, a package). The eighth argument names files the checker
+# is given beside the project file; without it a project that needs them is refused, with it the same project verifies.
+cat > "$d/extra.cho" <<'EXTRA'
+fn helper() -> [] int { return 7; }
+EXTRA
+cat > "$d/needs.cho" <<'NEEDS'
+edition 7;
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi); release(fs); release(net); release(clock); release(signals); release(exec); release(args);
+    release(io); release(heap);
+    return helper() - 7;
+}
+NEEDS
+cp "$d/needs.cho" "$d/p2.cho"
+out=$("$exe" "$CANCHO" "$d/p2.cho" "true" 2 30 "" 60 "$d/extra.cho" 2>&1)
+expect "extra: verified with the extra file" "$(printf '%s' "$out" | grep ISSUE_VERDICT | cut -f1,2)" "$(printf '[ISSUE_VERDICT]\tverified')"
+cp "$d/needs.cho" "$d/p3.cho"
+out=$("$exe" "$CANCHO" "$d/p3.cho" "true" 2 30 2>&1)
+case "$(printf '%s' "$out" | grep ISSUE_VERDICT | cut -f2)" in verified) echo "FAIL: extra: without the extra file the project verified" >&2; fail=1 ;; esac
+
 rm -rf "$exe" "$d"
 [ "$fail" = 0 ] && echo "front door gate: ok" || { echo "front door gate: FAILED" >&2; exit 1; }

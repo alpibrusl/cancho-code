@@ -1,0 +1,45 @@
+{
+ "service": "webhooks",
+ "attack_checks": 129,
+ "accept_checks": 51,
+ "reference_loc": 554,
+ "pure_functions": [
+  "name_ok",
+  "event_id_ok",
+  "secrets_ok",
+  "secret_span",
+  "timestamp_value",
+  "timestamp_in_window",
+  "signed_text",
+  "signature_decode",
+  "same_bytes",
+  "token_ok",
+  "bearer_span",
+  "limit_value",
+  "flag_span"
+ ],
+ "differences_from_lex": [
+  "configuration by flags (--secrets, --admin-token) instead of WEBHOOKS_SECRETS / WEBHOOKS_ADMIN_TOKEN / WEBHOOKS_PORT / WEBHOOKS_HOST / WEBHOOKS_DB",
+  "events live in memory for the life of the process; no SQLite, no persistence, so the SQL-injection requirement becomes 'a source value that is not a configured name is 400'",
+  "no loopback-only requirement (cancho listeners bind the port on all interfaces); dropped the 'listens on loopback' check",
+  "body limit 256 bytes instead of 65536: the skeleton's server has a 16 KiB input buffer (413 by the server) and a 64 KiB output buffer, and a page of 100 events must fit it",
+  "oversize check runs first and is 413 for any source, signed or not (the original allowed 401 or 413 for unsigned)",
+  "fixed-capacity store: at most 1000 events, then 503 for a new event (a borrowed App cannot grow a collection, a duplicate is still 200); new requirement, checked by both scripts",
+  "missing X-Timestamp: the signature is computed over the empty text, so it is 401 unless validly signed for that, then 400 (the original accepted 400 or 401)",
+  "source filter is not percent-decoded; limit is plain digits 1-100 with no leading zero; Authorization is exactly 'Bearer <token>' (a token containing a space is malformed)",
+  "404 for unknown paths and 405 for a wrong method are specified (the original left them to lex-web)",
+  "grants net,sql,env,fs_write,crypto,time become the cancho effects args, heap, clock, net_in, conn_*, poll, io_write/err_write; HMAC and the constant-time compare are ordinary pure code (std.hmac), no capability"
+ ],
+ "pitfalls": [
+  "THE SKELETON PASSES clock_ms (CLOCK_MONOTONIC, ms since boot), NOT Unix time: the replay window cannot be implemented against it. The brief and scripts assume now_ms is Unix milliseconds, which needs main.cho line 77 to call clock_unix_ms(clock) instead of clock_ms(clock). With the unmodified skeleton the reference fails 14 accept and 28 attack checks, all time-dependent.",
+  "a borrowed &!App field cannot be moved out and back (buffer.append(heap, app.data, ..) is 'expected Buffer, found &!a Buffer'), so state is fixed-size Box slices written in place via contents(app.field); a Vec/Buffer/Map field cannot grow",
+  "std.http trims OWS around header values, so a signature header with a trailing space is the valid signature: the original 'trailing space -> 401' check cannot hold and was replaced by a space inside the signature",
+  "std.hmac.sha256(key, msg, out) needs the message contiguous: build ts '.' body in a region slice first (signed_text); an unknown source should still be MACed with a placeholder key so it costs the same",
+  "a region (alloc_slice) is one 64 KiB chunk: sized by the header text + 256 here, fine, but a larger body limit would need a heap box",
+  "Box fields: unbox_slice them in app_drop through a destructuring let; a row that declares heap but never performs it is refused (app_new/app_drop here do allocate or free)",
+  "server.reply knows no reason phrase for 507; use 503 for a full store",
+  "std.json.put_fragment re-parses and traps on a non-value: only splice bodies already checked with json.parse",
+  "http.query_value returns raw (still encoded) spans, first of repeated keys; an empty value is (k, k) not (-1, -1)",
+  "the harness opens a connection per request; the capacity loop (1000 deliveries) reuses one keep-alive connection, else macOS runs out of ephemeral ports across repeated runs"
+ ]
+}

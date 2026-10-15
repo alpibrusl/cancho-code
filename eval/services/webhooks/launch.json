@@ -1,0 +1,1 @@
+{"args": ["--secrets", "alpha:s3cret-alpha,beta:s3cret-beta", "--admin-token", "adm-token-xyz"], "port": 18813}

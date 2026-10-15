@@ -1,0 +1,554 @@
+edition 7;
+import std.hmac;
+
+// webhooks -- a signed-webhook inbox. The application half of the service; eval/services/skeleton/main.cho is the server loop.
+//
+// State is memory only: the --secrets text, the admin token, and a fixed-size event store (a Box of bytes for the text, a Box of ints for the
+// index: 5 ints per event = offset, source length, event-id length, body length, received_at). A borrowed `App` cannot have a field moved out
+// and back in, so nothing grows: the store holds at most max_events() events.
+
+fn max_events() -> [] int {
+    return 1000;
+}
+
+fn max_body() -> [] int {
+    return 256;
+}
+
+fn store_bytes() -> [] int {
+    return 1000 * (256 + 32 + 64);
+}
+
+struct App {
+    secrets: Box[[byte]],
+    secrets_len: int,
+    admin: Box[[byte]],
+    admin_len: int,
+    data: Box[[byte]],
+    idx: Box[[int]],
+    count: int,
+    used: int,
+}
+
+// ---------------------------------------------------------------------
+// Pure logic
+// ---------------------------------------------------------------------
+
+fn is_name_char(c: int) -> [] bool {
+    return (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95 || c == 45;
+}
+
+// A source name: 1 to 32 characters of lowercase letters, digits, "_" or "-".
+fn name_ok[&s](name: &s [byte]) -> [] bool {
+    if len(name) < 1 || len(name) > 32 {
+        return false;
+    }
+    var i = 0;
+    var ok = true;
+    while i < len(name) {
+        if !is_name_char(int_of(name[i])) {
+            ok = false;
+        }
+        i = i + 1;
+    }
+    return ok;
+}
+
+// An event id: 1 to 64 characters of letters, digits, "_" or "-".
+fn event_id_ok[&s](id: &s [byte]) -> [] bool {
+    if len(id) < 1 || len(id) > 64 {
+        return false;
+    }
+    var i = 0;
+    var ok = true;
+    while i < len(id) {
+        let c = int_of(id[i]);
+        if !(is_name_char(c) || (c >= 65 && c <= 90)) {
+            ok = false;
+        }
+        i = i + 1;
+    }
+    return ok;
+}
+
+// "name1:secret1,name2:secret2": at least one entry, every name a valid source name, every secret at least one character with no "," or ":".
+fn secrets_ok[&s](text: &s [byte]) -> [] bool {
+    if len(text) == 0 {
+        return false;
+    }
+    var ok = true;
+    var start = 0;
+    var i = 0;
+    while i <= len(text) {
+        if i == len(text) || int_of(text[i]) == 44 {
+            let entry = text[start..i];
+            let colon = bytes.find(entry, ":");
+            if colon < 0 {
+                ok = false;
+            } else {
+                if !name_ok(entry[0..colon]) {
+                    ok = false;
+                }
+                let secret = entry[colon + 1..len(entry)];
+                if len(secret) == 0 || bytes.count_byte(secret, 58) != 0 {
+                    ok = false;
+                }
+            }
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    return ok;
+}
+
+// Where the secret of `name` lies in a valid secrets text, as (start, end); (-1, -1) for a name that is not there.
+fn secret_span[&s, &n](text: &s [byte], name: &n [byte]) -> [] (int, int) {
+    var from = 0 - 1;
+    var to = 0 - 1;
+    var start = 0;
+    var i = 0;
+    while i <= len(text) {
+        if i == len(text) || int_of(text[i]) == 44 {
+            let entry = text[start..i];
+            let colon = bytes.find(entry, ":");
+            if colon >= 0 && from < 0 && bytes.equal(entry[0..colon], name) {
+                from = start + colon + 1;
+                to = i;
+            }
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    return (from, to);
+}
+
+// X-Timestamp: 1 to 12 ASCII digits and nothing else; its value, or -1.
+fn timestamp_value[&s](text: &s [byte]) -> [] int {
+    if len(text) < 1 || len(text) > 12 {
+        return 0 - 1;
+    }
+    var n = 0;
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if c < 48 || c > 57 {
+            return 0 - 1;
+        }
+        n = n * 10 + (c - 48);
+        i = i + 1;
+    }
+    return n;
+}
+
+// Within 300 seconds of now, past or future (300 itself is inside).
+fn timestamp_in_window(ts: int, now_s: int) -> [] bool {
+    return ts >= now_s - 300 && ts <= now_s + 300;
+}
+
+// The signed text <ts> "." <body> written into `out`; its length, or -1 if `out` is too small.
+fn signed_text[&t, &b, &o](ts: &t [byte], body: &b [byte], out: &!o [byte]) -> [] int {
+    let n = len(ts) + 1 + len(body);
+    if n > len(out) {
+        return 0 - 1;
+    }
+    var i = 0;
+    while i < len(ts) {
+        out[i] = ts[i];
+        i = i + 1;
+    }
+    out[len(ts)] = byte_of(46);
+    var j = 0;
+    while j < len(body) {
+        out[len(ts) + 1 + j] = body[j];
+        j = j + 1;
+    }
+    return n;
+}
+
+fn hex_nibble(c: int) -> [] int {
+    if c >= 48 && c <= 57 {
+        return c - 48;
+    }
+    if c >= 97 && c <= 102 {
+        return c - 87;
+    }
+    return 0 - 1;
+}
+
+// "sha256=" and 64 lowercase hex characters, decoded into out[0..32]; false for any other form.
+fn signature_decode[&s, &o](header: &s [byte], out: &!o [byte]) -> [] bool {
+    if len(header) != 71 || len(out) < 32 || !bytes.starts_with(header, "sha256=") {
+        return false;
+    }
+    var ok = true;
+    var i = 0;
+    while i < 32 {
+        let hi = hex_nibble(int_of(header[7 + 2 * i]));
+        let lo = hex_nibble(int_of(header[8 + 2 * i]));
+        if hi < 0 || lo < 0 {
+            ok = false;
+        } else {
+            out[i] = byte_of(hi * 16 + lo);
+        }
+        i = i + 1;
+    }
+    return ok;
+}
+
+// Equal bytes, compared without stopping at the first difference (the length is not secret).
+fn same_bytes[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool {
+    if len(x) != len(y) {
+        return false;
+    }
+    var diff = 0;
+    var i = 0;
+    while i < len(x) {
+        diff = diff | (int_of(x[i]) ^ int_of(y[i]));
+        i = i + 1;
+    }
+    return diff == 0;
+}
+
+// An admin token: at least one character, every one printable ASCII other than space.
+fn token_ok[&s](text: &s [byte]) -> [] bool {
+    if len(text) == 0 {
+        return false;
+    }
+    var ok = true;
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if c < 33 || c > 126 {
+            ok = false;
+        }
+        i = i + 1;
+    }
+    return ok;
+}
+
+// "Bearer <token>": the token's span in the header, or (-1, -1) for any other form.
+fn bearer_span[&s](header: &s [byte]) -> [] (int, int) {
+    if !bytes.starts_with(header, "Bearer ") || !token_ok(header[7..len(header)]) {
+        return (0 - 1, 0 - 1);
+    }
+    return (7, len(header));
+}
+
+// The `limit` query value: 1 to 100 written as plain digits (no sign, no leading zero), or -1.
+fn limit_value[&s](text: &s [byte]) -> [] int {
+    if len(text) < 1 || len(text) > 3 || int_of(text[0]) == 48 {
+        return 0 - 1;
+    }
+    var n = 0;
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if c < 48 || c > 57 {
+            return 0 - 1;
+        }
+        n = n * 10 + (c - 48);
+        i = i + 1;
+    }
+    if n > 100 {
+        return 0 - 1;
+    }
+    return n;
+}
+
+// The value following `flag` in the config text ("flag\nvalue\nflag\nvalue\n"), as (start, end); (-1, -1) if absent.
+fn flag_span[&c, &f](config: &c [byte], flag: &f [byte]) -> [] (int, int) {
+    var from = 0 - 1;
+    var to = 0 - 1;
+    var pos = 0;
+    while pos < len(config) {
+        let e = bytes.find(config[pos..len(config)], "\n");
+        if e < 0 {
+            pos = len(config);
+        } else {
+            let name = config[pos..pos + e];
+            let vstart = pos + e + 1;
+            var vend = len(config);
+            if vstart < len(config) {
+                let e2 = bytes.find(config[vstart..len(config)], "\n");
+                if e2 >= 0 {
+                    vend = vstart + e2;
+                }
+            }
+            if bytes.equal(name, flag) && from < 0 && vstart < len(config) {
+                from = vstart;
+                to = vend;
+            }
+            pos = vend + 1;
+        }
+    }
+    return (from, to);
+}
+
+// ---------------------------------------------------------------------
+// The application
+// ---------------------------------------------------------------------
+
+fn copy_box[&h, &s](heap: &!h Heap, text: &s [byte]) -> [heap] Box[[byte]] {
+    let b = box_slice(heap, len(text) + 1, byte_of(0));
+    borrow mut b as &!w in {
+        let c = contents(w);
+        var i = 0;
+        while i < len(text) {
+            c[i] = text[i];
+            i = i + 1;
+        }
+    }
+    return b;
+}
+
+fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App {
+    var secrets_text = config[0..0];
+    var admin_text = config[0..0];
+    let (sf, st) = flag_span(config, "--secrets");
+    if sf >= 0 && secrets_ok(config[sf..st]) {
+        secrets_text = config[sf..st];
+    }
+    let (af, at) = flag_span(config, "--admin-token");
+    if af >= 0 && token_ok(config[af..at]) {
+        admin_text = config[af..at];
+    }
+    return App {
+        secrets: copy_box(heap, secrets_text),
+        secrets_len: len(secrets_text),
+        admin: copy_box(heap, admin_text),
+        admin_len: len(admin_text),
+        data: box_slice(heap, store_bytes(), byte_of(0)),
+        idx: box_slice(heap, 5 * max_events(), 0),
+        count: 0,
+        used: 0,
+    };
+}
+
+fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int {
+    let App { secrets, secrets_len, admin, admin_len, data, idx, count, used } = app;
+    unbox_slice(heap, secrets);
+    unbox_slice(heap, admin);
+    unbox_slice(heap, data);
+    unbox_slice(heap, idx);
+    return 0;
+}
+
+fn unauthorized[&h](heap: &!h Heap, out: buffer.Buffer, keep: bool) -> [heap] buffer.Buffer {
+    return server.failure(heap, out, 401, "unauthorized", keep);
+}
+
+// POST /hooks/{source}
+fn deliver[&h, &a, &q, &t, &b, &s](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_s: int, source: &s [byte], out: buffer.Buffer, keep: bool) -> [heap] buffer.Buffer {
+    if len(body) > max_body() {
+        return server.failure(heap, out, 413, "body too large", keep);
+    }
+    let ts_text = http.header(request, table, "x-timestamp");
+    let sig_text = http.header(request, table, "x-signature");
+    var authorized = false;
+    region r {
+        let provided = alloc_slice[r](32, byte_of(0));
+        let want = alloc_slice[r](32, byte_of(0));
+        let msg = alloc_slice[r](len(ts_text) + 1 + len(body), byte_of(0));
+        let format_ok = signature_decode(sig_text, provided);
+        let n = signed_text(ts_text, body, msg);
+        let secrets = contents(app.secrets)[0..app.secrets_len];
+        let (sf, st) = secret_span(secrets, source);
+        // An unknown source is MACed with a fixed key and compared all the same, so it costs what a known one costs.
+        if sf >= 0 {
+            hmac.sha256(secrets[sf..st], msg[0..n], want);
+        } else {
+            hmac.sha256("no-such-source-placeholder-key", msg[0..n], want);
+        }
+        let equal = same_bytes(want, provided);
+        authorized = sf >= 0 && format_ok && equal;
+    }
+    if !authorized {
+        return unauthorized(heap, out, keep);
+    }
+    let ts = timestamp_value(ts_text);
+    if ts < 0 {
+        return server.failure(heap, out, 400, "X-Timestamp must be integer Unix seconds", keep);
+    }
+    if !timestamp_in_window(ts, now_s) {
+        return server.failure(heap, out, 400, "X-Timestamp is outside the accepted window", keep);
+    }
+    let eid = http.header(request, table, "x-event-id");
+    if !event_id_ok(eid) {
+        return server.failure(heap, out, 400, "X-Event-Id is missing or invalid", keep);
+    }
+    var is_object = false;
+    let tape = box_slice(heap, json.tape_len(body) + 3, 0);
+    borrow mut tape as &!tw in {
+        let t0 = contents(tw);
+        let nodes = json.parse(body, t0);
+        is_object = nodes > 0 && json.is_object(t0, 0);
+    }
+    unbox_slice(heap, tape);
+    if !is_object {
+        return server.failure(heap, out, 400, "body must be a JSON object", keep);
+    }
+    let idx = contents(app.idx);
+    let data = contents(app.data);
+    var i = 0;
+    var found = 0 - 1;
+    while i < app.count && found < 0 {
+        let off = idx[5 * i];
+        let sl = idx[5 * i + 1];
+        let el = idx[5 * i + 2];
+        if bytes.equal(data[off..off + sl], source) && bytes.equal(data[off + sl..off + sl + el], eid) {
+            found = i;
+        }
+        i = i + 1;
+    }
+    var id = 0;
+    var dup = false;
+    if found >= 0 {
+        id = found + 1;
+        dup = true;
+    } else {
+        let need = len(source) + len(eid) + len(body);
+        if app.count >= max_events() || app.used + need > store_bytes() {
+            return server.failure(heap, out, 503, "event store is full", keep);
+        }
+        let base = app.used;
+        var k = 0;
+        while k < len(source) {
+            data[base + k] = source[k];
+            k = k + 1;
+        }
+        k = 0;
+        while k < len(eid) {
+            data[base + len(source) + k] = eid[k];
+            k = k + 1;
+        }
+        k = 0;
+        while k < len(body) {
+            data[base + len(source) + len(eid) + k] = body[k];
+            k = k + 1;
+        }
+        let at = 5 * app.count;
+        idx[at] = base;
+        idx[at + 1] = len(source);
+        idx[at + 2] = len(eid);
+        idx[at + 3] = len(body);
+        idx[at + 4] = now_s;
+        app.count = app.count + 1;
+        app.used = base + need;
+        id = app.count;
+    }
+    var w = json.writer(heap, 64);
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "id");
+    w = json.put_int(heap, w, id);
+    w = json.put_key(heap, w, "duplicate");
+    w = json.put_bool(heap, w, dup);
+    w = json.end_object(heap, w);
+    let reply = json.finish(w);
+    var answer = out;
+    borrow reply as &rb in {
+        if dup {
+            answer = server.reply(heap, answer, 200, buffer.bytes(rb), keep);
+        } else {
+            answer = server.reply(heap, answer, 202, buffer.bytes(rb), keep);
+        }
+    }
+    buffer.drop(heap, reply);
+    return answer;
+}
+
+// GET /events
+fn list_events[&h, &a, &q, &t](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], out: buffer.Buffer, keep: bool) -> [heap] buffer.Buffer {
+    let ah = http.header(request, table, "authorization");
+    let (bf, bt) = bearer_span(ah);
+    let admin = contents(app.admin)[0..app.admin_len];
+    var known = false;
+    if bf >= 0 {
+        // Compared even when no admin token is configured (then it never matches).
+        known = same_bytes(ah[bf..bt], admin) && app.admin_len > 0;
+    }
+    if !known {
+        return unauthorized(heap, out, keep);
+    }
+    let query = http.query(request, table);
+    let secrets = contents(app.secrets)[0..app.secrets_len];
+    let (qf, qt) = http.query_value(query, "source");
+    var filter = false;
+    if qf >= 0 {
+        let (sf, st) = secret_span(secrets, query[qf..qt]);
+        if sf < 0 {
+            return server.failure(heap, out, 400, "source is not a configured source", keep);
+        }
+        filter = true;
+    }
+    var limit = 50;
+    let (lf, lt) = http.query_value(query, "limit");
+    if lf >= 0 {
+        limit = limit_value(query[lf..lt]);
+        if limit < 0 {
+            return server.failure(heap, out, 400, "limit must be an integer from 1 to 100", keep);
+        }
+    }
+    let idx = contents(app.idx);
+    let data = contents(app.data);
+    var w = json.writer(heap, 4096);
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "events");
+    w = json.begin_array(heap, w);
+    var i = 0;
+    var emitted = 0;
+    while i < app.count && emitted < limit {
+        let off = idx[5 * i];
+        let sl = idx[5 * i + 1];
+        let el = idx[5 * i + 2];
+        let bl = idx[5 * i + 3];
+        let src = data[off..off + sl];
+        if !filter || bytes.equal(src, query[qf..qt]) {
+            w = json.begin_object(heap, w);
+            w = json.put_key(heap, w, "id");
+            w = json.put_int(heap, w, i + 1);
+            w = json.put_key(heap, w, "source");
+            w = json.put_string(heap, w, src);
+            w = json.put_key(heap, w, "event_id");
+            w = json.put_string(heap, w, data[off + sl..off + sl + el]);
+            w = json.put_key(heap, w, "received_at");
+            w = json.put_int(heap, w, idx[5 * i + 4]);
+            w = json.put_key(heap, w, "body");
+            w = json.put_fragment(heap, w, data[off + sl + el..off + sl + el + bl]);
+            w = json.end_object(heap, w);
+            emitted = emitted + 1;
+        }
+        i = i + 1;
+    }
+    w = json.end_array(heap, w);
+    w = json.end_object(heap, w);
+    let reply = json.finish(w);
+    var answer = out;
+    borrow reply as &rb in {
+        answer = server.reply(heap, answer, 200, buffer.bytes(rb), keep);
+    }
+    buffer.drop(heap, reply);
+    return answer;
+}
+
+fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer {
+    let keep = http.keeps_alive(table);
+    let method = http.method(request, table);
+    let path = http.path(request, table);
+    if bytes.starts_with(path, "/hooks/") {
+        let source = path[7..len(path)];
+        if len(source) == 0 || bytes.find(source, "/") >= 0 {
+            return server.failure(heap, out, 404, "not found", keep);
+        }
+        if !bytes.equal(method, "POST") {
+            return server.failure(heap, out, 405, "method not allowed", keep);
+        }
+        return deliver(heap, app, request, table, body, now_ms / 1000, source, out, keep);
+    }
+    if bytes.equal(path, "/events") {
+        if !bytes.equal(method, "GET") {
+            return server.failure(heap, out, 405, "method not allowed", keep);
+        }
+        return list_events(heap, app, request, table, out, keep);
+    }
+    return server.failure(heap, out, 404, "not found", keep);
+}

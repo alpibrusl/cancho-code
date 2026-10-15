@@ -1,0 +1,79 @@
+{
+ "intro": "A per-tenant key-value store with TTL (acme: tokA, globex: tokB).",
+ "steps": [
+  {
+   "title": "store a key (201)",
+   "method": "PUT",
+   "path": "/kv/greeting",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   },
+   "body": {
+    "value": "hello"
+   }
+  },
+  {
+   "title": "replace it (200)",
+   "method": "PUT",
+   "path": "/kv/greeting",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   },
+   "body": {
+    "value": "hello again"
+   }
+  },
+  {
+   "title": "a key with a 2-second TTL",
+   "method": "PUT",
+   "path": "/kv/session",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   },
+   "body": {
+    "value": "abc",
+    "ttl_seconds": 2
+   }
+  },
+  {
+   "title": "read it: expires_in counts down",
+   "method": "GET",
+   "path": "/kv/session",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   }
+  },
+  {
+   "title": "list keys by prefix",
+   "method": "GET",
+   "path": "/kv?prefix=s",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   }
+  },
+  {
+   "title": "globex does not see acme's key",
+   "method": "GET",
+   "path": "/kv/greeting",
+   "headers": {
+    "Authorization": "Bearer tokB"
+   }
+  },
+  {
+   "title": "delete (204)",
+   "method": "DELETE",
+   "path": "/kv/greeting",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   }
+  },
+  {
+   "title": "deleting again is a 404",
+   "method": "DELETE",
+   "path": "/kv/greeting",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   }
+  }
+ ]
+}

@@ -1,0 +1,65 @@
+Build a cancho HTTP service named "jobs": a multi-tenant job-queue REST API that is safe to put on the internet. It is the application half of a cancho service: you write `project.cho` (module-less, with `edition 7;`), and it is compiled together with the fixed skeleton `eval/services/skeleton/main.cho` (the socket loop and `main`) and the `http-server` package. Read the header of the skeleton first: it fixes the interface you must define,
+
+    struct App { ... }
+    fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App
+    fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer
+    fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int
+
+and says which std modules the skeleton already imports for the whole program (project.cho must NOT import std.buffer, std.bytes, std.http, std.io, std.json, std.map, std.option, std.result, std.route, std.vec or http.server; use them qualified: `buffer.`, `bytes.`, `http.`, `json.`, `server.`). Other std modules (std.utf8, std.hmac, std.crypto, std.fmt ...) you import yourself. `app_handle` answers EVERY request exactly once, with `server.reply`, `server.reply_with`, `server.failure` or `server.failure_with`, and never traps.
+
+How this differs from a service built on a web framework and a database (these are deliberate, not omissions):
+- There are no environment variables. The service is configured by command-line flags, which the skeleton hands to `app_new` as `config`: every argument after the program name, each followed by a newline, with `--port N` removed (for example "--tokens\ntokA:acme,tokB:globex\n").
+- There is no database. All state lives in memory, in `App`, for the life of the process. Nothing is persisted and nothing is required to survive a restart. Note that `app_handle` receives `App` by `&!` borrow and a borrowed struct cannot give up a growable `Vec`/`Buffer`/`Map` field to be replaced: keep the data in fixed-capacity boxed slices (`Box[[int]]`, `Box[[byte]]`). The service must hold at least 2000 jobs and 2 MiB of job text; when it cannot hold one more job, a create answers 503 {"error": ...} rather than trapping.
+- A cancho listener binds the port on all interfaces (there is no `--host`), so there is no loopback-only requirement.
+- There is no web framework, schema or ORM package: `std.http` (headers, query), `std.json` (parse and write), `std.route` (optional) and `server.reply` are the toolbox. The input buffer of one request is 16 KiB and the output buffer of one answer is 64 KiB; a request that does not fit is refused with 413 by the skeleton itself.
+
+Flags: `--tokens token1:tenantA,token2:tenantB` (comma-separated entries `token:tenant`; the token is everything before the first ":", the tenant everything after it; several tokens may name one tenant; an entry with an empty token or an empty tenant is ignored). With no `--tokens` no token is valid, so every request is 401. The skeleton adds `--port N`.
+
+Each customer company ("tenant") has its own bearer token. A request carries "Authorization: Bearer <token>"; the token decides which tenant it acts for.
+
+A job has an integer id (unique, positive, assigned by the service), a tenant, a "kind", a "payload", and a "state" that is one of "queued", "running" or "done". A new job starts "queued". The only allowed moves are queued to running (a worker claims it) and running to done (the worker completes it). Nothing moves backwards and nothing is skipped.
+
+Every response is JSON (Content-Type: application/json). A job is the object {"id": <int>, "tenant": <string>, "kind": <string>, "payload": <string>, "state": <string>}. Every error is {"error": <short text>}.
+
+Endpoints:
+
+- POST /jobs -- body {"kind": Str, "payload": Str}. Creates a queued job owned by the caller's tenant and returns the job. 201 on success. An optional "Idempotency-Key" header makes the call safe to repeat: the same key sent again by the same tenant returns the original job (as it is now, in whatever state it has reached) with 200 and creates nothing. Two different tenants may use the same key independently. An empty Idempotency-Key value is the same as no header. A body is validated before the key is looked at.
+- GET /jobs/{id} -- returns one job (200).
+- GET /jobs?state=queued&limit=20&after=7 -- lists the caller's tenant's jobs ordered by id ascending. "state" is optional and must be one of the three states. "limit" is optional, an integer from 1 to 50, default 20. "after" is optional, a non-negative integer: only jobs with an id greater than it are returned. The response is {"jobs": [...], "next_after": <id of the last job in "jobs", or null when "jobs" is empty>}. A page may hold FEWER than "limit" jobs: it stops adding jobs once its JSON has passed 48000 bytes, so that it fits the 64 KiB output buffer; "next_after" is then the last job it did contain, and asking again with that "after" continues exactly where it stopped. Query values are taken as written (never percent-decoded); anything else in the query string is ignored.
+- POST /jobs/{id}/claim -- moves a queued job to running. 200 with the job. 409 if the job is not queued.
+- POST /jobs/{id}/complete -- moves a running job to done. 200 with the job. 409 if the job is not running.
+
+Any other method on these paths is 405 with an "Allow" header (404 is also tolerated); any other path is 404.
+
+Security requirements. Each one is something an attacker will try, and each must have a test:
+
+1. Authentication comes first, for every request to any path: no token, a malformed Authorization header, or an unknown token is 401 and nothing else is looked at or changed. The header must be exactly "Bearer " (capital B, one space) followed by the token; "Bearer" alone, "bearer tokA", "Basic ...", a token with extra characters before or after it (a second space after "Bearer", or a longer or shorter token; trailing whitespace is removed from header values by the HTTP parser, so it cannot be told apart and is not tested), or an empty token are all 401. (The header NAME is case-insensitive as in any HTTP.) A missing token and an unknown token return the identical generic 401 body.
+2. A tenant can never see or change another tenant's job. Asking for an id that belongs to someone else returns 404, exactly the same response as an id that does not exist -- never 403, so existence does not leak. This includes claim and complete (a foreign claim must not change the job).
+3. "state", "limit" and "after" values that are not valid are 400, whatever they look like: `queued' OR '1'='1`, "QUEUED", "", "0", "51", "abc", "-1", "1.5", "+5". Nothing from the request is ever used as anything but data.
+4. The create body is strictly validated: kind is 1 to 40 characters of lowercase letters (a-z), digits, "_" or "-"; payload is a string of at most 1000 characters (Unicode characters, not bytes; the empty string is allowed). Unknown fields are rejected with 400 -- in particular a body that tries to set "id", "tenant", "tenant_id" or "state" is rejected, so a client can neither choose its owner nor start a job in a later state. Missing fields, fields of the wrong JSON type, a body that is not a JSON object, an empty body and invalid JSON (including very deep nesting) are all 400. The payload is stored and returned verbatim (quotes, SQL text, non-ASCII all come back as sent).
+5. A request body larger than 4096 bytes is rejected with 413 before it is parsed (4096 bytes exactly is accepted). This applies after authentication; a request the skeleton refuses for not fitting its 16 KiB input buffer is also 413, and an unauthenticated oversize request may therefore be answered 401 or 413 -- never 500.
+6. The id in the path must be a positive integer written as decimal digits (at most 17); anything else (including "0", "-1", "abc", "1 OR 1=1", "../etc/passwd", "1.5") is 404. Paths are not percent-decoded.
+7. Tokens are compared in constant time against every configured token (no early exit on the first mismatch, no early exit on the first differing byte), tokens are never logged or echoed in a response, and the 401 body is the same for every failure.
+8. Listening address: not applicable (see the differences above).
+
+Effects. The service may declare only the effects a server needs: args, heap, clock, net_in, conn_accept, conn_read, conn_write, poll, io_write and err_write (`cancho authority` on the three files is checked); in particular no file, process or foreign-code access. The pure logic must be pure functions with no effect annotation (a row of `[]`, except that `validate_create` allocates its parse tape and so declares `[heap]`), each with examples, with exactly these names and signatures so they can be tested on their own. States are numbered 0 queued, 1 running, 2 done; actions 0 claim, 1 complete.
+
+    fn bearer_token[&v](header: &v [byte]) -> [] &v [byte]
+        the token after exactly "Bearer "; an empty slice for anything else.
+        bearer_token("Bearer abc") is "abc"; bearer_token("Bearer ") , bearer_token("Bearer"), bearer_token("bearer abc"), bearer_token("Basic abc") and bearer_token("") are empty.
+    fn token_tenant[&s, &t](spec: &s [byte], token: &t [byte]) -> [] (int, int)
+        spec is the --tokens value. The (start, end) of the tenant name inside spec for the entry whose token equals token (compared in constant time, every entry compared), or (-1, -1) when none does.
+        token_tenant("tokA:acme,tokB:globex", "tokB") is (15, 21); token_tenant(..., "tokC") is (-1, -1); token_tenant(..., "") is (-1, -1); token_tenant("a:x", "a:x") is (-1, -1).
+    fn transition(state: int, action: int) -> [] int
+        the state after the move, or -1 when it is not allowed. transition(0,0) is 1, transition(1,1) is 2, every other pair is -1.
+    fn parse_job_id[&t](text: &t [byte]) -> [] int
+        a positive integer of at most 17 decimal digits, else -1. parse_job_id("12") is 12; "0", "", "-1", "1x", "1 ", "123456789012345678" are -1.
+    fn parse_list_query[&q](query: &q [byte]) -> [] (int, int, int, int)
+        (error, state, limit, after) from the query string without its "?". error is 0 when every given value is valid, else 1. state is -1 when absent, else 0..2; limit defaults to 20, after to 0.
+        parse_list_query("") is (0,-1,20,0); parse_list_query("state=running&limit=5&after=7") is (0,1,5,7); parse_list_query("limit=0").0 is 1; parse_list_query("state=bogus").0 is 1; parse_list_query("after=-1").0 is 1.
+    fn valid_kind[&k](kind: &k [byte]) -> [] bool
+        1 to 40 bytes of a-z 0-9 _ -. valid_kind("build-1_x") is true; "", "Deploy", "a b", and 41 characters are false.
+    fn validate_create[&h, &b](heap: &!h Heap, body: &b [byte]) -> [heap] int
+        0 when body is a valid create body, else 1 not JSON, 2 not an object, 3 unknown field, 4 kind missing or not a string, 5 kind invalid, 6 payload missing or not a string, 7 payload longer than 1000 characters. validate_create(h, "{\"kind\":\"x\",\"payload\":\"\"}") is 0; with an extra "state" field it is 3; "{\"kind\":\"X\",\"payload\":\"\"}" is 5.
+
+Suggested way to work: the pure functions first (with their examples as `fn test_*` checks if you like), then the stores in `App`, then `app_handle`. The tests that grade the service start the built binary with `--port N --tokens ...` and speak HTTP to it.
