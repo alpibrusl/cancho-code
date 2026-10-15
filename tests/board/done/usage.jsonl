@@ -1,0 +1,2 @@
+{"provider":"anthropic","model":"claude-haiku-5-5","task":"UNIT: encode","sample":1,"in":691,"out":2587,"thinking":1947,"cache_write":13374,"cache_read":0,"stop":"end_turn","outcome":"written","status":200,"reply_chars":1323,"program_chars":1323,"ms":11759}
+{"provider":"anthropic","model":"claude-haiku-5-5","task":"UNIT: decode","sample":1,"in":1645,"out":7031,"thinking":6027,"cache_write":0,"cache_read":13374,"stop":"end_turn","outcome":"written","status":200,"reply_chars":2130,"program_chars":2122,"ms":29343}

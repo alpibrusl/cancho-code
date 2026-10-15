@@ -1,0 +1,49 @@
+{
+ "schema": 1,
+ "run": {
+  "name": null,
+  "brief": null,
+  "stage": null,
+  "plan_valid": null,
+  "provider": null,
+  "model": null,
+  "started_unix": null,
+  "seconds": null,
+  "verdict": null
+ },
+ "files": {
+  "plan": false,
+  "run_log": false,
+  "state": false,
+  "usage": false,
+  "run_json": false,
+  "build_json": false,
+  "audit": false,
+  "prices": false
+ },
+ "metrics": {
+  "units_total": 0,
+  "units_verified": 0,
+  "columns": {
+   "waiting": 0,
+   "building": 0,
+   "verified": 0,
+   "stuck": 0,
+   "regressed": 0,
+   "unknown": 0
+  },
+  "calls": null,
+  "tokens": null,
+  "visible_out": null,
+  "thinking_share": null,
+  "cache_read_share": null,
+  "efficiency": null,
+  "efficiency_calls": null,
+  "efficiency_visible": null,
+  "cost_usd": null,
+  "cost_per_verified_unit": null,
+  "over_limit_calls": null,
+  "audit": null
+ },
+ "units": []
+}

@@ -1,0 +1,2 @@
+{"provider":"anthropic","model":"claude-sonnet-5-5","task":"UNIT: lex","sample":1,"in":500,"out":1200,"thinking":800,"cache_write":0,"cache_read":9000,"stop":"end_turn","outcome":"written","status":200,"reply_chars":300,"program_chars":300,"ms":4000}
+{"provider":"anthropic","model":"claude-sonnet-5-5","task":"UNIT: parse","sample":1,"in":900,"out":2000,"thinking":1500,"cache_write":0,"cache_read":9000,"stop":"end_turn","outcome":"written","status":200,"reply_chars":900,"program_chars":900,"ms":9000}

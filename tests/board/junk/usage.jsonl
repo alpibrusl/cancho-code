@@ -1,0 +1,4 @@
+not json
+{"provider":"anthropic","model":"claude-haiku-5-5","task":"UNIT: a","in":10,"out":20,"cache_write":0,"cache_read":0,"outcome":"written","program_chars":5,"ms":3}
+{"provider":"anthropic","model":"claude-haiku-5-5","in":1,"out":2}
+{"task":"UNIT: a","in":"x","out":4}

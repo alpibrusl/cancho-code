@@ -1,0 +1,27 @@
+{
+ "name": "rings",
+ "units": [
+  {
+   "id": "a",
+   "signature": "fn ring_a(n: int) -> [] int",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "b",
+   "signature": "fn ring_b(n: int) -> [] int",
+   "examples": [],
+   "deps": [
+    "a"
+   ]
+  },
+  {
+   "id": "c",
+   "signature": "fn ring_c(n: int) -> [] int",
+   "examples": [],
+   "deps": [
+    "b"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,34 @@
+[PLAN]	valid
+[UNIT]	key	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	key	verified
+[UNIT]	section	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	section	verified
+[UNIT]	unquote	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	unquote	verified
+[UNIT]	kind	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	kind	verified
+[UNIT]	raw	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	raw	verified
+[UNIT]	dedupe	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	dedupe	verified
+[UNIT]	parse	building
+[ISSUE_VERDICT]	failed	signature
+[UNIT]	parse	failed
+[UNIT]	find	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	find	verified
+[UNIT]	get	skipped
+[PROJECT_VERDICT]	stuck

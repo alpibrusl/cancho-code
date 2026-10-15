@@ -1,0 +1,19 @@
+{
+ "name": "base64",
+ "units": [
+  {
+   "id": "encode",
+   "signature": "fn base64_encode[&h, &r](heap: &!h Heap, data: &r [byte]) -> [heap] buffer.Buffer",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "decode",
+   "signature": "fn base64_decode[&h, &r](heap: &!h Heap, text: &r [byte]) -> [heap] result.Result[buffer.Buffer, &static [byte]]",
+   "examples": [],
+   "deps": [
+    "encode"
+   ]
+  }
+ ]
+}

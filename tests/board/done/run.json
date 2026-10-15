@@ -1,0 +1,17 @@
+{
+ "item": "base64",
+ "label": "patch",
+ "run": 1,
+ "provider": "anthropic",
+ "model": "claude-haiku-5-5",
+ "scaffold_chars": 49,
+ "seconds": 42.9,
+ "exit": 0,
+ "cancho": "/x/cancho",
+ "primer": "/x/primer",
+ "max_tokens": "16000",
+ "thinking": null,
+ "effort": null,
+ "plan": "/x/plan",
+ "patch": true
+}

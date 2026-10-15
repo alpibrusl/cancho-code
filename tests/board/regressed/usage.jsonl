@@ -1,0 +1,4 @@
+{"provider":"ollama","model":"qwen3.8:27b","task":"UNIT: a","sample":1,"in":100,"out":200,"cache_write":0,"cache_read":0,"stop":"end_turn","outcome":"written","status":200,"reply_chars":50,"program_chars":50,"ms":100}
+{"provider":"ollama","model":"qwen3.8:27b","task":"UNIT: b","sample":1,"in":120,"out":300,"cache_write":0,"cache_read":0,"stop":"end_turn","outcome":"written","status":200,"reply_chars":90,"program_chars":90,"ms":200}
+{"provider":"ollama","model":"qwen3.8:27b","task":"UNIT: a","sample":1,"in":150,"out":250,"cache_write":0,"cache_read":0,"stop":"end_turn","outcome":"written","status":200,"reply_chars":60,"program_chars":60,"ms":300}
+{"provider":"ollama","model":"qwen3.8:27b","task":"UNIT: c","sample":1,"in":130,"out":400,"cache_write":0,"cache_read":0,"stop":"end_turn","outcome":"written","status":200,"reply_chars":120,"program_chars":120,"ms":400}

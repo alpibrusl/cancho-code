@@ -1,0 +1,2 @@
+{"attempt":0,"agent_ms":1000,"outcome":"refused","sig":"type-mismatch:expected `int`, found `bool`","decision":"retry"}
+{"attempt":1,"agent_ms":900,"outcome":"verified","sig":"","decision":"verified"}

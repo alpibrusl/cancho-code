@@ -1,0 +1,7 @@
+[PLAN]	valid
+[UNIT]	x	building
+[UNIT]	x	verified
+[UNIT]	y	building
+[UNIT]	y	failed
+[UNIT]	z	skipped
+[PROJECT_VERDICT]	stuck

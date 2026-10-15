@@ -1,0 +1,5 @@
+  base64_encode: 42/42 
+  base64_decode: 249/266 
+  roundtrip: 11/21 
+  (decode Err cases by first rule broken: alphabet 21, length 43, padding 21, trailing-bits 115)
+  TOTAL 302/329
