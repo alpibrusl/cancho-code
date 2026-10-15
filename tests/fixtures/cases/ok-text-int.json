@@ -1,0 +1,42 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "count",
+   "signature": "fn count_a[&r](s: &r [byte]) -> [] int",
+   "cases": [
+    {
+     "args": [
+      "banana"
+     ],
+     "expect": 3
+    },
+    {
+     "args": [
+      ""
+     ],
+     "expect": 0
+    },
+    {
+     "args": [
+      "a\"b\\c\n\t"
+     ],
+     "expect": 1
+    },
+    {
+     "args": [
+      "h\u00e9llo \u65e5\u672c \ud83d\ude00"
+     ],
+     "expect": 0
+    },
+    {
+     "args": [
+      "a\u00e1"
+     ],
+     "expect": 1
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

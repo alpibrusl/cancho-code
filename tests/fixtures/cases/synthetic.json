@@ -1,0 +1,208 @@
+{
+ "name": "synthetic",
+ "units": [
+  {
+   "id": "optb",
+   "signature": "fn syn_optb(n: int) -> [] option.Option[bool]",
+   "deps": [],
+   "cases": [
+    {
+     "args": [
+      0
+     ],
+     "expect": null
+    },
+    {
+     "args": [
+      5
+     ],
+     "expect": true
+    },
+    {
+     "args": [
+      -5
+     ],
+     "expect": false
+    }
+   ]
+  },
+  {
+   "id": "resb",
+   "signature": "fn syn_resb(s: &static [byte]) -> [] result.Result[bool, int]",
+   "deps": [],
+   "cases": [
+    {
+     "args": [
+      ""
+     ],
+     "expect": {
+      "err": 0
+     }
+    },
+    {
+     "args": [
+      "yes"
+     ],
+     "expect": {
+      "ok": true
+     }
+    },
+    {
+     "args": [
+      "no"
+     ],
+     "expect": {
+      "ok": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "bufe",
+   "signature": "fn syn_bufe[&h](heap: &!h Heap, n: int) -> [heap] result.Result[buffer.Buffer, buffer.Buffer]",
+   "deps": [],
+   "cases": [
+    {
+     "args": [
+      -1
+     ],
+     "expect": {
+      "err": "neg"
+     }
+    },
+    {
+     "args": [
+      12
+     ],
+     "expect": {
+      "ok": "n=12"
+     }
+    },
+    {
+     "args": [
+      0
+     ],
+     "expect": {
+      "ok": "n=0"
+     }
+    }
+   ]
+  },
+  {
+   "id": "mid",
+   "signature": "fn syn_mid[&h, &r](s: &r [byte], heap: &!h Heap, flag: bool) -> [heap] buffer.Buffer",
+   "deps": [],
+   "cases": [
+    {
+     "args": [
+      "ab",
+      true
+     ],
+     "expect": "ab|\t\"q\"\\\n"
+    },
+    {
+     "args": [
+      "ab",
+      false
+     ],
+     "expect": "|\t\"q\"\\\n"
+    }
+   ]
+  },
+  {
+   "id": "two",
+   "signature": "fn syn_two[&a, &b](x: &a [byte], y: &b [byte]) -> [] int",
+   "deps": [],
+   "cases": [
+    {
+     "args": [
+      "abc",
+      "de"
+     ],
+     "expect": 32
+    },
+    {
+     "args": [
+      "",
+      "h\u00e9"
+     ],
+     "expect": 3
+    }
+   ]
+  },
+  {
+   "id": "noargs",
+   "signature": "fn syn_none() -> [] int",
+   "deps": [],
+   "cases": [
+    {
+     "args": [],
+     "expect": 42
+    }
+   ]
+  },
+  {
+   "id": "neg",
+   "signature": "fn syn_neg(a: int) -> [] int",
+   "deps": [],
+   "cases": [
+    {
+     "args": [
+      -9223372036854775807
+     ],
+     "expect": -9223372036854775808
+    },
+    {
+     "args": [
+      -7
+     ],
+     "expect": -8
+    },
+    {
+     "args": [
+      0
+     ],
+     "expect": -1
+    },
+    {
+     "args": [
+      9223372036854775807
+     ],
+     "expect": 9223372036854775806
+    }
+   ]
+  },
+  {
+   "id": "uni",
+   "signature": "fn syn_uni[&r](s: &r [byte]) -> [] &r [byte]",
+   "deps": [],
+   "cases": [
+    {
+     "args": [
+      "\u65e5\u672c \ud83d\ude00"
+     ],
+     "expect": "\u65e5\u672c \ud83d\ude00"
+    }
+   ]
+  },
+  {
+   "id": "heapint",
+   "signature": "fn syn_heapint[&h](heap: &!h Heap, a: int) -> [heap] int",
+   "deps": [],
+   "cases": [
+    {
+     "args": [
+      1
+     ],
+     "expect": 2
+    },
+    {
+     "args": [
+      -1
+     ],
+     "expect": 0
+    }
+   ]
+  }
+ ]
+}

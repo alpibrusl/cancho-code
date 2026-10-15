@@ -1,0 +1,28 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "par",
+   "signature": "fn parent[&r](p: &r [byte]) -> [] result.Result[&r [byte], &static [byte]]",
+   "cases": [
+    {
+     "args": [
+      "/a/b"
+     ],
+     "expect": {
+      "ok": "/a"
+     }
+    },
+    {
+     "args": [
+      ""
+     ],
+     "expect": {
+      "err": "root"
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

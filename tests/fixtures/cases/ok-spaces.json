@@ -1,0 +1,19 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "sp",
+   "signature": "fn  sp [ &a ] ( s : &a  [byte] , n:int ) ->  [ ]  int",
+   "cases": [
+    {
+     "args": [
+      "x",
+      1
+     ],
+     "expect": 2
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

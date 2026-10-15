@@ -1,0 +1,28 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "fmt2",
+   "signature": "fn fmt2[&h](heap: &!h Heap, n: int) -> [heap] result.Result[buffer.Buffer, buffer.Buffer]",
+   "cases": [
+    {
+     "args": [
+      1
+     ],
+     "expect": {
+      "ok": "x"
+     }
+    },
+    {
+     "args": [
+      -1
+     ],
+     "expect": {
+      "err": "no"
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

@@ -1,0 +1,30 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "mb",
+   "signature": "fn maybe(a: int) -> [] option.Option[bool]",
+   "cases": [
+    {
+     "args": [
+      0
+     ],
+     "expect": null
+    },
+    {
+     "args": [
+      1
+     ],
+     "expect": true
+    },
+    {
+     "args": [
+      2
+     ],
+     "expect": false
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

@@ -1,0 +1,26 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "len2",
+   "signature": "fn len2(a: &static [byte], b: &q [byte]) -> [] bool",
+   "cases": [
+    {
+     "args": [
+      "x",
+      "y"
+     ],
+     "expect": true
+    },
+    {
+     "args": [
+      "",
+      "z"
+     ],
+     "expect": false
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

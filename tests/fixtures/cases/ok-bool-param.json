@@ -1,0 +1,26 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "pick",
+   "signature": "fn pick(flag: bool, a: int) -> [] int",
+   "cases": [
+    {
+     "args": [
+      true,
+      5
+     ],
+     "expect": 5
+    },
+    {
+     "args": [
+      false,
+      5
+     ],
+     "expect": 0
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

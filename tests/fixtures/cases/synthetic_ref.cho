@@ -1,0 +1,60 @@
+edition 7;
+import std.buffer;
+import std.option;
+import std.result;
+
+// A reference for the gate's synthetic plan (tests/fixtures/cases/synthetic.json): one function per return shape the eval items do not
+// cover, with a heap in the middle of the parameters, a bool parameter, two text parameters, no parameters.
+
+fn syn_optb(n: int) -> [] option.Option[bool] {
+    if n == 0 { return option.Option::None; }
+    return option.Option::Some(n > 0);
+}
+
+fn syn_resb(s: &static [byte]) -> [] result.Result[bool, int] {
+    if len(s) == 0 { return result.Result::Err(7); }
+    return result.Result::Ok(int_of(s[0]) == 121);
+}
+
+fn syn_bufe[&h](heap: &!h Heap, n: int) -> [heap] result.Result[buffer.Buffer, buffer.Buffer] {
+    var b = buffer.empty(heap, 16);
+    if n < 0 {
+        b = buffer.append(heap, b, "neg");
+        return result.Result::Err(b);
+    }
+    b = buffer.append(heap, b, "n=");
+    b = buffer.push_nat(heap, b, n);
+    return result.Result::Ok(b);
+}
+
+fn syn_mid[&h, &r](s: &r [byte], heap: &!h Heap, flag: bool) -> [heap] buffer.Buffer {
+    var b = buffer.empty(heap, 16);
+    if flag {
+        b = buffer.append(heap, b, s);
+    }
+    b = buffer.append(heap, b, "|\t\"q\"\\\n");
+    return b;
+}
+
+fn syn_two[&a, &b](x: &a [byte], y: &b [byte]) -> [] int {
+    return len(x) * 10 + len(y);
+}
+
+fn syn_none() -> [] int {
+    return 42;
+}
+
+fn syn_neg(a: int) -> [] int {
+    return a - 1;
+}
+
+fn syn_uni[&r](s: &r [byte]) -> [] &r [byte] {
+    return s;
+}
+
+fn syn_heapint[&h](heap: &!h Heap, a: int) -> [heap] int {
+    var b = buffer.empty(heap, 8);
+    b = buffer.push_nat(heap, b, 1);
+    let n = buffer.drop(heap, b);
+    return a + n;
+}

@@ -1,0 +1,23 @@
+{
+ "name": "x\u00e9",
+ "units": [
+  {
+   "id": "a",
+   "signature": "fn a() -> [] int",
+   "examples": [
+    "a() == 1"
+   ],
+   "description": "\u00e9 \ud83d\ude00 \"q\" \\ \n",
+   "f": [
+    1.0,
+    1000.0,
+    0,
+    1.5e-07,
+    12345678901234567890,
+    true,
+    null
+   ],
+   "deps": []
+  }
+ ]
+}

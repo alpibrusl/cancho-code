@@ -1,0 +1,21 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "p",
+   "signature": "fn parse[&r](s: &r [byte]) -> [] result.Result[int, int]",
+   "cases": [
+    {
+     "args": [
+      "1"
+     ],
+     "expect": {
+      "ok": 1,
+      "err": 2
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

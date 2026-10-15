@@ -1,0 +1,16 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "answer",
+   "signature": "fn answer() -> [] int",
+   "cases": [
+    {
+     "args": [],
+     "expect": 42
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

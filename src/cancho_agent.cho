@@ -47,6 +47,7 @@ edition 7;
 // Exit 2: the command line was wrong; nothing was read or sent.
 
 import anthropic;
+import cases;
 import ollama;
 import plan;
 import planprompt;
@@ -561,6 +562,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                             var report = buffer.empty(heap, 16);
                                             var asks = false;
                                             var accepted = false;
+                                            var final_plan = buffer.empty(heap, 16);
                                             if cut {
                                                 po = "cut_off";
                                             } else if ja >= 0 {
@@ -569,14 +571,29 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                                     po = "needs_input";
                                                     asks = true;
                                                 } else {
-                                                    let (rep, code) = plan.check(heap, obj);
-                                                    buffer.drop(heap, report);
-                                                    report = rep;
-                                                    if code == 0 {
-                                                        po = "written";
-                                                        accepted = true;
-                                                    } else {
+                                                    // The model wrote DATA (`cases`); the tests are made from it by a program, from the signature.
+                                                    let (expanded, creport, ccode) = cases.expand(heap, obj);
+                                                    if ccode != 0 {
+                                                        buffer.drop(heap, report);
+                                                        report = creport;
                                                         po = "rejected";
+                                                        buffer.drop(heap, expanded);
+                                                    } else {
+                                                        buffer.drop(heap, creport);
+                                                        borrow expanded as &er in {
+                                                            let (rep, code) = plan.check(heap, buffer.bytes(er));
+                                                            buffer.drop(heap, report);
+                                                            report = rep;
+                                                            if code == 0 {
+                                                                po = "written";
+                                                                accepted = true;
+                                                                buffer.drop(heap, final_plan);
+                                                                final_plan = buffer.append(heap, buffer.empty(heap, len(buffer.bytes(er)) + 2), buffer.bytes(er));
+                                                            } else {
+                                                                po = "rejected";
+                                                            }
+                                                        }
+                                                        buffer.drop(heap, expanded);
                                                     }
                                                 }
                                             }
@@ -634,8 +651,14 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                                 rc = 3;
                                                 finished = true;
                                             } else if accepted {
-                                                var file = buffer.empty(heap, jz - ja + 2);
-                                                file = buffer.append(heap, file, buffer.bytes(xr)[ja..jz]);
+                                                // the plan as expanded (its tests made from its cases), and one newline
+                                                var file = buffer.empty(heap, 16);
+                                                buffer.drop(heap, file);
+                                                file = buffer.empty(heap, 16);
+                                                borrow final_plan as &fpr in {
+                                                    buffer.drop(heap, file);
+                                                    file = buffer.append(heap, buffer.empty(heap, len(buffer.bytes(fpr)) + 2), buffer.bytes(fpr));
+                                                }
                                                 file = buffer.push(heap, file, byte_of(10));
                                                 borrow file as &fr in {
                                                     fs_write(fs, project, buffer.bytes(fr));
@@ -659,6 +682,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                                 feedback = nf;
                                             }
                                             buffer.drop(heap, report);
+                                            buffer.drop(heap, final_plan);
                                         } else {
                                         var pa = 0 - 1;
                                         var pz = 0 - 1;

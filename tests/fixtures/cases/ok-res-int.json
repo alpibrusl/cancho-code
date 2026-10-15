@@ -1,0 +1,65 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "parse",
+   "signature": "fn parse[&r](s: &r [byte]) -> [] result.Result[int, &static [byte]]",
+   "cases": [
+    {
+     "args": [
+      "12"
+     ],
+     "expect": {
+      "ok": 12
+     }
+    },
+    {
+     "args": [
+      ""
+     ],
+     "expect": {
+      "err": "empty"
+     }
+    },
+    {
+     "args": [
+      "x"
+     ],
+     "expect": {
+      "err": null
+     }
+    },
+    {
+     "args": [
+      "-"
+     ],
+     "expect": {
+      "err": {
+       "x": [
+        1,
+        2
+       ]
+      }
+     }
+    },
+    {
+     "args": [
+      "9"
+     ],
+     "expect": {
+      "err": 3
+     }
+    },
+    {
+     "args": [
+      "-3"
+     ],
+     "expect": {
+      "ok": -3
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

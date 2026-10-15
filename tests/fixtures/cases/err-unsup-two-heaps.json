@@ -1,0 +1,16 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "f",
+   "signature": "fn f[&h, &g](a: &!h Heap, b: &!g Heap) -> [heap] int",
+   "cases": [
+    {
+     "args": [],
+     "expect": 1
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

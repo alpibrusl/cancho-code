@@ -1,0 +1,61 @@
+edition 7;
+
+// cases_gate <plan.json>: expand the plan's cases (src/cases.cho). The new plan goes to stdout, the report to stderr, and the exit code
+// is 0 (no problem), 1 (problems reported) or 2 (usage: no argument, the file cannot be read, or it is 1 MiB or more).
+
+import std.buffer;
+import std.io;
+import cases;
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(net);
+    release(clock);
+    release(signals);
+    release(exec);
+    var console = io;
+    var h = heap;
+    var path = "";
+    var given = false;
+    var status = 2;
+    borrow args as &g in {
+        if arg_count(g) >= 2 {
+            given = true;
+            path = arg(g, 1);
+        }
+    }
+    if given {
+        borrow fs as &f in {
+            borrow mut console as &!i in {
+                borrow mut h as &!hh in {
+                    let room = box_slice(hh, 1048576, byte_of(0));
+                    borrow mut room as &!rw in {
+                        let text = contents(rw);
+                        let n = fs_read(f, path, text);
+                        if n >= 1048576 {
+                            io.error_all(i, "cases_gate: the plan is too large (1 MiB or more)\n");
+                        } else if n >= 0 {
+                            let (plan, report, code) = cases.expand(hh, text[0..n]);
+                            borrow plan as &p in {
+                                buffer.write(i, p);
+                            }
+                            buffer.drop(hh, plan);
+                            borrow report as &r in {
+                                io.error_all(i, buffer.bytes(r));
+                            }
+                            buffer.drop(hh, report);
+                            status = code;
+                        }
+                    }
+                    unbox_slice(hh, room);
+                }
+            }
+        }
+    }
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return status;
+}

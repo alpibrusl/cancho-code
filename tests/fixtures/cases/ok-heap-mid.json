@@ -1,0 +1,19 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "mid",
+   "signature": "fn mid[&h, &r](s: &r [byte], heap: &!h Heap, n: int) -> [heap] int",
+   "cases": [
+    {
+     "args": [
+      "ab",
+      2
+     ],
+     "expect": 4
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

@@ -1,0 +1,21 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "eq",
+   "signature": "fn count_a[&r](s: &r [byte]) -> [] int",
+   "examples": [
+    "count_a(\"a\") == 1"
+   ],
+   "cases": [
+    {
+     "args": [
+      "a == b"
+     ],
+     "expect": 1
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

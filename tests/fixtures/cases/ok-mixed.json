@@ -1,0 +1,39 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "a",
+   "signature": "fn a(x: int) -> [] int",
+   "cases": [
+    {
+     "args": [
+      1
+     ],
+     "expect": 1
+    }
+   ],
+   "deps": []
+  },
+  {
+   "id": "b",
+   "signature": "fn b() -> [] int",
+   "examples": [
+    "b() == 2"
+   ],
+   "deps": []
+  },
+  {
+   "id": "c",
+   "signature": "fn c(x: bool) -> [] bool",
+   "cases": [
+    {
+     "args": [
+      true
+     ],
+     "expect": true
+    }
+   ],
+   "deps": []
+  }
+ ]
+}
