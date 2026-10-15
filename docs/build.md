@@ -77,3 +77,7 @@ Exit 2 is a usage error (nothing was run). A killed run is resumed by running th
 ## Gate and authority
 
 `scripts/test-build.sh` runs the whole chain against a stand-in agent (no network, no key, no model): the happy path, the arguments each call gets, plan reuse, an invalid plan, a plan the agent gave up on, an unreachable agent, a build killed with SIGKILL and resumed, a failing unit, a stuck unit, usage errors, and the fields of `build.json`. The authority report is pinned in [authority-build.json](authority-build.json) (`scripts/check-authority.sh --build`): the tool spawns processes and reads and writes files; it has no network.
+
+## The brief's names are the plan's names
+
+A bullet in the brief of the form `- name(...) : what it does` (or `- name(...) -> Type : ...`) names a public function. After the plan check the build checks that every such name is declared by a unit (`fn name(` or `fn name[`, the whole name). A plan that renames one is refused with `[PLAN_ERROR]<TAB>brief-name<TAB>name`, the verdict is `plan_failed`, and nothing is built; a valid `plan.json` left in the work directory that lacks one is not reused. A brief with no such bullet requires nothing. Found on the first real run: a plan that called `to_roman` `roman_to_roman` was `done` by its own examples and scored 0 on the audit that calls `to_roman`.

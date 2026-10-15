@@ -1,0 +1,6 @@
+Build a tiny library of integer functions.
+
+The package exposes exactly these functions:
+
+- double(x) : twice x.
+- is_huge(x) -> Bool : whether x is at least 1000.

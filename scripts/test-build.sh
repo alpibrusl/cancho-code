@@ -12,6 +12,7 @@
 #   resume      a run killed (SIGKILL) while building the third unit: build.json says stage build; the next run asks for no plan, keeps a and b
 #   provider    the unit agent fails: provider_error, exit 4, the state keeps what verified, build.json agrees
 #   stuck       a unit never verifies: stuck, exit 1, build.json counts the verified ones
+#   names       the brief names its public functions (`- name(...) : ...`): a plan that does not declare one is refused (`brief-name`), plan_failed, exit 3; a plan that does is built; a valid plan.json that lacks one is not reused
 #   usage       missing arguments, provider, model or guide, a relative checker, `..`, an unknown option, a brief that is not there: exit 2, nothing run
 #
 # Needs the real cancho as CANCHO. BUILD_SRC names a directory to take src/ from (the mutation runs of the gate's own review). Exit 0: every case held.
@@ -237,6 +238,35 @@ case "$out" in *".."*) ;; *) echo "FAIL: usage: a work directory with .. : no me
 "$exe" "$CANCHO" "$B/brief.txt" "$wd.nope" "$agent" --provider stand --model m1 --guide "$B/guide.txt" >/dev/null 2>&1; expect "usage: a work directory that is not there" "$?" 2
 expect "usage: the agent was never asked" "$(wc -c < "$lg" | tr -d ' ')" 0
 [ -f "$wd/build.json" ] && { echo "FAIL: usage: a usage error wrote build.json" >&2; fail=1; }
+rm -rf "$wd" "$rc"
+
+# names: what the brief calls its functions are the plan's names
+set -- $(mk); wd=$1; rc=$2; lg=$3
+out=$("$exe" "$CANCHO" "$B/brief-names.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 2>&1); r=$?
+expect "names held: exit code" "$r" 0
+expect "names held: verdict" "$(verdict "$out")" done
+printf '%s\n' "$out" | grep -q 'brief-name' && { echo "FAIL: names held: a brief-name error" >&2; fail=1; }
+rm -rf "$wd" "$rc"
+set -- $(mk); wd=$1; rc=$2; lg=$3
+out=$("$exe" "$CANCHO" "$B/brief-renamed.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 2>&1); r=$?
+expect "names missing: exit code" "$r" 3
+expect "names missing: verdict" "$(verdict "$out")" plan_failed
+expect "names missing: the missing name" "$(printf '%s\n' "$out" | grep '^\[PLAN_ERROR\]' | cut -f2,3 | tr '\t' ':')" "brief-name:is_huge"
+expect "names missing: only the plan was asked" "$(order "$lg")" PLAN
+[ -f "$wd/main.cho" ] && { echo "FAIL: names missing: the project step ran" >&2; fail=1; }
+rm -rf "$wd" "$rc"
+# a valid plan.json from an earlier run that lacks a required name is asked for again, not reused
+set -- $(mk); wd=$1; rc=$2; lg=$3
+cp "$P/plan.json" "$wd/plan.json"
+out=$("$exe" "$CANCHO" "$B/brief-renamed.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 2>&1); r=$?
+expect "names reuse: the plan was asked for again" "$(order "$lg")" PLAN
+rm -rf "$wd" "$rc"
+
+# a name that is only the start of a declared name is not declared (`doub` against `fn double`)
+set -- $(mk); wd=$1; rc=$2; lg=$3
+out=$("$exe" "$CANCHO" "$B/brief-prefix.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 2>&1); r=$?
+expect "names prefix: exit code" "$r" 3
+expect "names prefix: the missing name" "$(printf '%s\n' "$out" | grep '^\[PLAN_ERROR\]' | cut -f2,3 | tr '\t' ':')" "brief-name:doub"
 rm -rf "$wd" "$rc"
 
 rm -f "$exe"

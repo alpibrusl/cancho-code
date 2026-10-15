@@ -1,0 +1,11 @@
+Build a tiny library of integer functions.
+
+The package exposes exactly these functions:
+
+- double(x) : twice x.
+- is_big(x) -> Bool : whether x is at least 100.
+- big_double(x) : double(x) when is_big(x), else x.
+
+Worked examples:
+
+- double(4) is 8; is_big(100) is true; big_double(3) is 3.
