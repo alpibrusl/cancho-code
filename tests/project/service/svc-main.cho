@@ -1,0 +1,16 @@
+edition 7;
+
+// The stand-in for a service's fixed skeleton (eval/services/skeleton/main.cho): a `main` that calls the application and exits with its answer.
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(io);
+    release(ffi);
+    release(fs);
+    release(heap);
+    release(args);
+    release(net);
+    release(clock);
+    release(signals);
+    release(exec);
+    return app_run(20);
+}

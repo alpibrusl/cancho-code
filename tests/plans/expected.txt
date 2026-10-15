@@ -34,3 +34,10 @@ valid-cases  0
 needs-tests-empty-cases  1     needs-tests:a
 bad-effort  1     unit-field:a unit-field:b
 valid-effort  0
+valid-integration  0
+integration-unknown  1  bad-integration:- no-example:app needs-tests:app
+integration-not-string  1  bad-integration:- no-example:app needs-tests:app
+integration-order  1  integration-order:app
+no-integration-field  1  no-example:app needs-tests:app
+integration-bad-signature  1  bad-signature:app
+valid-integration-chain  0

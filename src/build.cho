@@ -447,7 +447,7 @@ pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q](heap: &!h Hea
                             let unit_agent = unit_command(heap, agent, provider, model, wd);
                             var code = 2;
                             borrow unit_agent as &ua in {
-                                code = project.run_logged(heap, exec, clock, io, fs, src, checker, wd, buffer.bytes(ua), attempts, agent_ms, lg);
+                                code = project.run_logged(heap, exec, clock, io, fs, src, checker, wd, buffer.bytes(ua), attempts, agent_ms, lg, "", "");
                             }
                             buffer.drop(heap, unit_agent);
                             if code == 0 {

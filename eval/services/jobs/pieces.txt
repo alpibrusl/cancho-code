@@ -1,0 +1,8 @@
+bearer_token: bearer_token
+token_tenant: ct_equal token_tenant
+transition: transition
+parse_job_id: parse_nat parse_job_id
+parse_list_query: parse_list_query
+valid_kind: kind_char valid_kind
+validate_create: parse_create validate_create
+app: *

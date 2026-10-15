@@ -32,6 +32,16 @@ for s in jobs invoices webhooks kvstore; do
     done
 done
 
+# the skeleton of a decomposed service (docs/project.md, "Services") is main.cho without its import lines, and the reference applications
+# build and pass their acceptance scenarios behind it once they carry those imports themselves (bare.sh): the decomposed path's fixed points
+[ "$(grep -v '^import ' "$root/eval/services/skeleton/main.cho")" = "$(cat "$root/eval/services/skeleton/main_bare.cho")" ] || { echo "FAIL: skeleton/main_bare.cho is not main.cho without its imports" >&2; fail=1; }
+bd=$(mktemp -d -t cc-services-bare-XXXXXX)
+sh "$root/eval/services/bare.sh" "$root/eval/services/kvstore/reference/project.cho" > "$bd/project.cho"
+out=$(run accept --bare kvstore "$bd/project.cho"); rc=$?
+expect "kvstore bare: acceptance exit code" "$rc" 0
+case "$out" in *"hold"*) ;; *) echo "FAIL: kvstore bare: no result line ($out)" >&2; fail=1 ;; esac
+rm -rf "$bd"
+
 d=$(mktemp -d -t cc-services-XXXXXX)
 printf 'edition 7;\nfn app_new() -> [] int { return true; }\n' > "$d/broken.cho"
 out=$(run accept jobs "$d/broken.cho"); rc=$?

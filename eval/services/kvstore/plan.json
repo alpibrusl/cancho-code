@@ -1,0 +1,254 @@
+{
+ "name": "kvstore",
+ "integration": "app",
+ "units": [
+  {
+   "id": "flag_value",
+   "signature": "fn flag_value[&c, &n](config: &c [byte], name: &n [byte]) -> [] (int, int)",
+   "description": "The value of a flag in the configuration text \"flag\\nvalue\\nflag\\nvalue\\n...\" (every argument after the program name followed by a newline), as (start, end) byte offsets into `config` (end exclusive, without the newline); (-1, -1) when the flag is absent. flag_value(\"--tokens\\ntokA:acme\\n\", \"--tokens\") is (9, 18); flag_value(\"--x\\n1\\n--tokens\\nt:a\\n\", \"--tokens\") is (15, 18); flag_value(\"--x\\n1\\n\", \"--tokens\") and flag_value(\"\", \"--tokens\") are (-1, -1). Never panics.",
+   "examples": [
+    "flag_value(\"--tokens\\ntokA:acme\\n\", \"--tokens\") == (9, 18)"
+   ],
+   "tests": [
+    "pub fn test_flag_value_1() -> [] int { let (a, b) = flag_value(\"--tokens\\ntokA:acme\\n\", \"--tokens\"); test.assert(a == 9 && b == 18); return 0; }",
+    "pub fn test_flag_value_2() -> [] int { let (a, b) = flag_value(\"--x\\n1\\n--tokens\\nt:a\\n\", \"--tokens\"); test.assert(a == 15 && b == 18); return 0; }",
+    "pub fn test_flag_value_3() -> [] int { let (a, b) = flag_value(\"--x\\n1\\n\", \"--tokens\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_flag_value_4() -> [] int { let (a, b) = flag_value(\"\", \"--tokens\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "bearer_token",
+   "signature": "fn bearer_token[&r](header: &r [byte]) -> [] &r [byte]",
+   "description": "The token of an Authorization header value: \"Bearer \" (capital B, exactly one space) followed by one or more characters, none of them a space or a control character (byte values 33 to 126 only); the token is a view into `header`. Anything else gives an empty slice: \"Bearer\", \"Bearer \", \"Bearer  tokA\" (two spaces), \"Bearer a b\", \"Basic dG9rQQ==\", \"\".",
+   "examples": [
+    "bearer_token(\"Bearer tokA\") == \"tokA\"",
+    "bearer_token(\"Bearer a b\") == \"\""
+   ],
+   "tests": [
+    "pub fn test_bearer_token_1() -> [] int { test.assert(bytes.equal(bearer_token(\"Bearer tokA\"), \"tokA\")); return 0; }",
+    "pub fn test_bearer_token_2() -> [] int { test.assert(bytes.equal(bearer_token(\"Bearer\"), \"\")); return 0; }",
+    "pub fn test_bearer_token_3() -> [] int { test.assert(bytes.equal(bearer_token(\"Bearer \"), \"\")); return 0; }",
+    "pub fn test_bearer_token_4() -> [] int { test.assert(bytes.equal(bearer_token(\"Bearer  tokA\"), \"\")); return 0; }",
+    "pub fn test_bearer_token_5() -> [] int { test.assert(bytes.equal(bearer_token(\"Bearer a b\"), \"\")); return 0; }",
+    "pub fn test_bearer_token_6() -> [] int { test.assert(bytes.equal(bearer_token(\"Basic dG9rQQ==\"), \"\")); return 0; }",
+    "pub fn test_bearer_token_7() -> [] int { test.assert(bytes.equal(bearer_token(\"\"), \"\")); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "tenant_range",
+   "signature": "fn tenant_range[&s, &t](spec: &s [byte], token: &t [byte]) -> [] (int, int)",
+   "description": "The tenant name for a token in a --tokens value \"tokenA:tenantA,tokenB:tenantB\" (entries separated by \",\", the token before the first \":\" of an entry, the tenant after it), as (start, end) offsets into `spec`, or (-1, -1) for an unknown or empty token. An entry with no \":\" or an empty token or an empty tenant is ignored; when two entries have the same token the first wins. Every entry is compared, with a comparison whose time does not depend on where the bytes first differ (no early exit on the first differing byte, none once an entry matched; a helper that ORs the differences of all the bytes of the configured token is the usual way; the work depends on the length of the configured token and not on where the two first differ). tenant_range(\"tokA:acme,tokB:globex\", \"tokB\") is (15, 21); with \"tok\", \"tokAA\" or \"\" it is (-1, -1); tenant_range(\"tokA:acme,bad,:x,y:\", \"y\") and tenant_range(\"\", \"tokA\") are (-1, -1).",
+   "examples": [
+    "tenant_range(\"tokA:acme,tokB:globex\", \"tokB\") == (15, 21)"
+   ],
+   "tests": [
+    "pub fn test_tenant_range_1() -> [] int { let (a, b) = tenant_range(\"tokA:acme,tokB:globex\", \"tokB\"); test.assert(a == 15 && b == 21); return 0; }",
+    "pub fn test_tenant_range_2() -> [] int { let (a, b) = tenant_range(\"tokA:acme,tokB:globex\", \"tokA\"); test.assert(a == 5 && b == 9); return 0; }",
+    "pub fn test_tenant_range_3() -> [] int { let (a, b) = tenant_range(\"tokA:acme,tokB:globex\", \"tok\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_tenant_range_4() -> [] int { let (a, b) = tenant_range(\"tokA:acme,tokB:globex\", \"tokAA\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_tenant_range_5() -> [] int { let (a, b) = tenant_range(\"tokA:acme,tokB:globex\", \"\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_tenant_range_6() -> [] int { let (a, b) = tenant_range(\"tokA:acme,bad,:x,y:\", \"y\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_tenant_range_7() -> [] int { let (a, b) = tenant_range(\"\", \"tokA\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_tenant_range_8() -> [] int { let (a, b) = tenant_range(\"t:a,t:b\", \"t\"); test.assert(a == 2 && b == 3); return 0; }"
+   ],
+   "deps": [],
+   "effort": "medium"
+  },
+  {
+   "id": "valid_key",
+   "signature": "fn valid_key[&r](key: &r [byte]) -> [] bool",
+   "description": "Is `key` a valid key: 1 to 64 characters, each a lowercase letter a-z, a digit, \".\", \"_\" or \"-\"? \"a\" and \"a.b_c-d\" are valid; \"\", \"Upper\", \"a b\", \"a/b\", \"a%20b\" and 65 characters are not; 64 are. You may add a helper for the character test.",
+   "examples": [
+    "valid_key(\"a.b_c-d\") == true",
+    "valid_key(\"Upper\") == false"
+   ],
+   "tests": [
+    "pub fn test_valid_key_1() -> [] int { test.assert(valid_key(\"a\")); return 0; }",
+    "pub fn test_valid_key_2() -> [] int { test.assert(valid_key(\"a.b_c-d\")); return 0; }",
+    "pub fn test_valid_key_3() -> [] int { test.assert(valid_key(\"\") == false); return 0; }",
+    "pub fn test_valid_key_4() -> [] int { test.assert(valid_key(\"Upper\") == false); return 0; }",
+    "pub fn test_valid_key_5() -> [] int { test.assert(valid_key(\"a b\") == false); return 0; }",
+    "pub fn test_valid_key_6() -> [] int { test.assert(valid_key(\"a/b\") == false); return 0; }",
+    "pub fn test_valid_key_7() -> [] int { test.assert(valid_key(\"a%20b\") == false); return 0; }",
+    "pub fn test_valid_key_8() -> [] int { test.assert(valid_key(\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\")); return 0; }",
+    "pub fn test_valid_key_9() -> [] int { test.assert(valid_key(\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\") == false); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "valid_prefix",
+   "signature": "fn valid_prefix[&r](prefix: &r [byte]) -> [] bool",
+   "description": "Is `prefix` a valid listing prefix: empty, or up to 64 characters of the key alphabet (lowercase letters, digits, \".\", \"_\", \"-\")? \"\", \"app.\" are valid; \"a'b\", \"%\" and 65 characters are not. The same character rule as valid_key (a character test helper is already in the file), but the empty text is allowed.",
+   "examples": [
+    "valid_prefix(\"\") == true",
+    "valid_prefix(\"%\") == false"
+   ],
+   "tests": [
+    "pub fn test_valid_prefix_1() -> [] int { test.assert(valid_prefix(\"\")); return 0; }",
+    "pub fn test_valid_prefix_2() -> [] int { test.assert(valid_prefix(\"app.\")); return 0; }",
+    "pub fn test_valid_prefix_3() -> [] int { test.assert(valid_prefix(\"a'b\") == false); return 0; }",
+    "pub fn test_valid_prefix_4() -> [] int { test.assert(valid_prefix(\"%\") == false); return 0; }",
+    "pub fn test_valid_prefix_5() -> [] int { test.assert(valid_prefix(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")); return 0; }",
+    "pub fn test_valid_prefix_6() -> [] int { test.assert(valid_prefix(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\") == false); return 0; }",
+    "pub fn test_valid_prefix_7() -> [] int { test.assert(valid_prefix(\"A\") == false); return 0; }"
+   ],
+   "deps": [
+    "valid_key"
+   ],
+   "effort": "low"
+  },
+  {
+   "id": "is_expired",
+   "signature": "fn is_expired(stored_ms: int, ttl_s: int, now_ms: int) -> [] bool",
+   "description": "Has an entry expired? `stored_ms` is when it was stored and `now_ms` the current time, both in milliseconds; `ttl_s` is its time to live in whole seconds, 0 for an entry with no expiry. Expired exactly when ttl_s > 0 and now_ms >= stored_ms + ttl_s * 1000. is_expired(1000, 0, 99999999) is false; (1000, 2, 2999) false; (1000, 2, 3000) true; (1000, 1, 1000) false.",
+   "examples": [
+    "is_expired(1000, 2, 3000) == true",
+    "is_expired(1000, 2, 2999) == false"
+   ],
+   "tests": [
+    "pub fn test_is_expired_1() -> [] int { test.assert(is_expired(1000, 0, 99999999) == false); return 0; }",
+    "pub fn test_is_expired_2() -> [] int { test.assert(is_expired(1000, 2, 2999) == false); return 0; }",
+    "pub fn test_is_expired_3() -> [] int { test.assert(is_expired(1000, 2, 3000)); return 0; }",
+    "pub fn test_is_expired_4() -> [] int { test.assert(is_expired(1000, 1, 1000) == false); return 0; }",
+    "pub fn test_is_expired_5() -> [] int { test.assert(is_expired(1000, 1, 2000)); return 0; }",
+    "pub fn test_is_expired_6() -> [] int { test.assert(is_expired(0, 86400, 86400000)); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "seconds_left",
+   "signature": "fn seconds_left(stored_ms: int, ttl_s: int, now_ms: int) -> [] int",
+   "description": "The whole seconds an entry has left, rounded UP: -1 for an entry with no expiry (ttl_s is 0), 0 once it is expired (now_ms >= stored_ms + ttl_s * 1000), otherwise ceil((stored_ms + ttl_s * 1000 - now_ms) / 1000). seconds_left(1000, 0, 5000) is -1; (1000, 2, 1000) is 2; (1000, 2, 1001) is 2; (1000, 2, 2000) is 1; (1000, 2, 2001) is 1; (1000, 2, 3000) is 0.",
+   "examples": [
+    "seconds_left(1000, 2, 1000) == 2",
+    "seconds_left(1000, 2, 3000) == 0"
+   ],
+   "tests": [
+    "pub fn test_seconds_left_1() -> [] int { test.assert(seconds_left(1000, 0, 5000) == 0 - 1); return 0; }",
+    "pub fn test_seconds_left_2() -> [] int { test.assert(seconds_left(1000, 2, 1000) == 2); return 0; }",
+    "pub fn test_seconds_left_3() -> [] int { test.assert(seconds_left(1000, 2, 1001) == 2); return 0; }",
+    "pub fn test_seconds_left_4() -> [] int { test.assert(seconds_left(1000, 2, 2000) == 1); return 0; }",
+    "pub fn test_seconds_left_5() -> [] int { test.assert(seconds_left(1000, 2, 2001) == 1); return 0; }",
+    "pub fn test_seconds_left_6() -> [] int { test.assert(seconds_left(1000, 2, 3000) == 0); return 0; }",
+    "pub fn test_seconds_left_7() -> [] int { test.assert(seconds_left(1000, 2, 9000) == 0); return 0; }",
+    "pub fn test_seconds_left_8() -> [] int { test.assert(seconds_left(0, 1, 999) == 1); return 0; }",
+    "pub fn test_seconds_left_9() -> [] int { test.assert(seconds_left(0, 3, 1) == 3); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "list_limit",
+   "signature": "fn list_limit[&q](query: &q [byte]) -> [] int",
+   "description": "The `limit` of the query string of GET /kv (without the \"?\"): 50 when no `limit` parameter is present, otherwise the number when it is 1 to 100 written as plain digits, otherwise -1 (an empty value, \"0\", \"101\", \"abc\", a sign). Other parameters are ignored. Use `http.query_value(query, \"limit\")`, which answers the (start, end) of a parameter's value, or (-1, -1) when absent: read the std.http part of the page you were given. list_limit(\"\") and list_limit(\"prefix=a\") are 50; \"limit=7\" is 7; \"prefix=a&limit=100\" is 100; \"limit=0\", \"limit=101\", \"limit=abc\", \"limit=\", \"limit=-1\" are -1.",
+   "examples": [
+    "list_limit(\"limit=7\") == 7",
+    "list_limit(\"\") == 50",
+    "list_limit(\"limit=\") == 0 - 1"
+   ],
+   "tests": [
+    "pub fn test_list_limit_1() -> [] int { test.assert(list_limit(\"\") == 50); return 0; }",
+    "pub fn test_list_limit_2() -> [] int { test.assert(list_limit(\"prefix=a\") == 50); return 0; }",
+    "pub fn test_list_limit_3() -> [] int { test.assert(list_limit(\"limit=7\") == 7); return 0; }",
+    "pub fn test_list_limit_4() -> [] int { test.assert(list_limit(\"prefix=a&limit=100\") == 100); return 0; }",
+    "pub fn test_list_limit_5() -> [] int { test.assert(list_limit(\"limit=0\") == 0 - 1); return 0; }",
+    "pub fn test_list_limit_6() -> [] int { test.assert(list_limit(\"limit=101\") == 0 - 1); return 0; }",
+    "pub fn test_list_limit_7() -> [] int { test.assert(list_limit(\"limit=abc\") == 0 - 1); return 0; }",
+    "pub fn test_list_limit_8() -> [] int { test.assert(list_limit(\"limit=\") == 0 - 1); return 0; }",
+    "pub fn test_list_limit_9() -> [] int { test.assert(list_limit(\"limit=-1\") == 0 - 1); return 0; }",
+    "pub fn test_list_limit_10() -> [] int { test.assert(list_limit(\"limit=1\") == 1); return 0; }",
+    "pub fn test_list_limit_11() -> [] int { test.assert(list_limit(\"limit=1000\") == 0 - 1); return 0; }"
+   ],
+   "deps": [],
+   "effort": "medium"
+  },
+  {
+   "id": "list_prefix",
+   "signature": "fn list_prefix[&q, &o](query: &q [byte], out: &!o [byte]) -> [] int",
+   "description": "The `prefix` of the query string of GET /kv (without the \"?\"), PERCENT-DECODED into `out` (which has room for 300 bytes): the decoded length. 0 when no `prefix` parameter is present or it is empty; -1 when the decoded text is not a valid prefix (valid_prefix) or cannot be decoded. Use `http.query_value(query, \"prefix\")` for the (start, end) of the value and `http.percent_decode(text, out, false)`, which writes the decoded bytes into `out` and answers their count, or a negative number for a malformed escape (read the std.http part of the page you were given). list_prefix(\"\", out) is 0; \"prefix=app.\" is 4 (out starts with \"app.\"); \"prefix=%61pp\" is 3 (out starts with \"app\"); \"prefix=%25\" and \"prefix=a%20b\" are -1.",
+   "examples": [
+    "list_prefix(\"prefix=app.\", out) == 4",
+    "list_prefix(\"prefix=%25\", out) == 0 - 1"
+   ],
+   "tests": [
+    "pub fn test_list_prefix_1() -> [] int { region r { let out = alloc_slice[r](300, byte_of(0)); let n = list_prefix(\"\", out); test.assert(n == 0); } return 0; }",
+    "pub fn test_list_prefix_2() -> [] int { region r { let out = alloc_slice[r](300, byte_of(0)); let n = list_prefix(\"prefix=app.\", out); test.assert(n == 4); test.assert(bytes.equal(out[0..n], \"app.\")); } return 0; }",
+    "pub fn test_list_prefix_3() -> [] int { region r { let out = alloc_slice[r](300, byte_of(0)); let n = list_prefix(\"prefix=%61pp\", out); test.assert(n == 3); test.assert(bytes.equal(out[0..n], \"app\")); } return 0; }",
+    "pub fn test_list_prefix_4() -> [] int { region r { let out = alloc_slice[r](300, byte_of(0)); let n = list_prefix(\"prefix=%25\", out); test.assert(n == 0 - 1); } return 0; }",
+    "pub fn test_list_prefix_5() -> [] int { region r { let out = alloc_slice[r](300, byte_of(0)); let n = list_prefix(\"prefix=a%20b\", out); test.assert(n == 0 - 1); } return 0; }",
+    "pub fn test_list_prefix_6() -> [] int { region r { let out = alloc_slice[r](300, byte_of(0)); let n = list_prefix(\"prefix=\", out); test.assert(n == 0); } return 0; }",
+    "pub fn test_list_prefix_7() -> [] int { region r { let out = alloc_slice[r](300, byte_of(0)); let n = list_prefix(\"limit=5&prefix=ab\", out); test.assert(n == 2); test.assert(bytes.equal(out[0..n], \"ab\")); } return 0; }",
+    "pub fn test_list_prefix_8() -> [] int { region r { let out = alloc_slice[r](300, byte_of(0)); let n = list_prefix(\"prefix=a'%20OR\", out); test.assert(n == 0 - 1); } return 0; }",
+    "pub fn test_list_prefix_9() -> [] int { region r { let out = alloc_slice[r](300, byte_of(0)); let n = list_prefix(\"prefix=app_\", out); test.assert(n == 4); test.assert(bytes.equal(out[0..n], \"app_\")); } return 0; }",
+    "pub fn test_list_prefix_10() -> [] int { region r { let out = alloc_slice[r](300, byte_of(0)); let n = list_prefix(\"prefix=%\", out); test.assert(n == 0 - 1); } return 0; }"
+   ],
+   "deps": [
+    "valid_prefix"
+   ],
+   "effort": "medium"
+  },
+  {
+   "id": "parse_put",
+   "signature": "fn parse_put[&b, &t](body: &b [byte], tape: &!t [int]) -> [] (int, int, int)",
+   "description": "Validate the body of PUT /kv/{key}. `tape` is a std.json tape with room for json.tape_len(body) ints: parse into it with json.parse(body, tape). Answers (code, value_node, ttl_s). Code 0 means valid: value_node is the tape node of the \"value\" string (the node right after the \"value\" key node) and ttl_s the time to live in seconds (0 when \"ttl_seconds\" is absent). Any other code (use 1 to 8) is a refusal, with value_node -1 and ttl_s 0. Refuse: invalid JSON; a body that is not an object; any member other than \"value\" and \"ttl_seconds\"; a member given twice; no \"value\"; \"value\" not a string; \"value\" of more than 1000 characters (Unicode characters, not bytes: a decoded value may take up to 4000 bytes; use json.string_length for a first bound and json.string_into into a 4000-byte buffer from `region r { let buf = alloc_slice[r](4000, byte_of(0)); ... }` with `utf8.count(...)` for the count; std.utf8 is already imported); a \"ttl_seconds\" that is not an integer (json.is_int: a float such as 1.5 or 2.0, a string, null), does not fit 64 bits (json.fits_int), or is outside 1..86400. {\"value\":\"x\"} is valid with ttl 0; {\"value\":\"\"} is valid; {\"value\":\"x\",\"ttl_seconds\":5} is valid with ttl 5. Must be pure (effect row []) and never panic. Object members: j = 1 is the first key node; the value of a key at node j is node j + 1; json.skip(tape, j + 1) is the next key node; json.count(tape, 0) is the member count; json.string_equals(body, tape, j, \"value\") compares a key (read the std.json section of the page you were given).",
+   "examples": [
+    "parse_put({\"value\":\"x\"}) == (0, 2, 0)"
+   ],
+   "tests": [
+    "fn kv_put[&h](heap: &!h Heap, body: &static [byte]) -> [heap] (int, int, int) { let tb = box_slice(heap, json.tape_len(body), 0); var c = 0 - 1; var n = 0 - 2; var t = 0 - 2; borrow mut tb as &!tw in { let (c1, n1, t1) = parse_put(body, contents(tw)); c = c1; n = n1; t = t1; } unbox_slice(heap, tb); return (c, n, t); }",
+    "pub fn test_parse_put_1[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"x\\\"}\"); test.assert(c == 0); test.assert(n == 2); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_2[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"x\\\",\\\"ttl_seconds\\\":5}\"); test.assert(c == 0); test.assert(t == 5); return 0; }",
+    "pub fn test_parse_put_3[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"\\\"}\"); test.assert(c == 0); return 0; }",
+    "pub fn test_parse_put_4[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"ttl_seconds\\\":5,\\\"value\\\":\\\"x\\\"}\"); test.assert(c == 0); test.assert(n == 4); test.assert(t == 5); return 0; }",
+    "pub fn test_parse_put_5[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"x\\\",\\\"extra\\\":1}\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_6[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"ttl_seconds\\\":5}\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_7[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":5}\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_8[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"x\\\",\\\"ttl_seconds\\\":0}\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_9[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"x\\\",\\\"ttl_seconds\\\":1.5}\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_10[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"x\\\",\\\"ttl_seconds\\\":86401}\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_11[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"x\\\",\\\"ttl_seconds\\\":null}\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_12[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"x\\\",\\\"value\\\":\\\"y\\\"}\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_13[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"[1]\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_14[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{nope\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_15[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_16[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"x\\\",\\\"ttl_seconds\\\":\\\"5\\\"}\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_17[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"x\\\",\\\"ttl_seconds\\\":2.0}\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_18[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"x\\\",\\\"ttl_seconds\\\":99999999999999999999}\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_19[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\"}\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_20[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"x\\\",\\\"ttl_seconds\\\":5,\\\"ttl_seconds\\\":6}\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_21[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\"}\"); test.assert(c == 0); return 0; }",
+    "pub fn test_parse_put_22[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\\\"}\"); test.assert(c == 0); return 0; }",
+    "pub fn test_parse_put_23[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\\\"}\"); test.assert(c != 0); test.assert(n == 0 - 1); test.assert(t == 0); return 0; }",
+    "pub fn test_parse_put_24[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"x\\\",\\\"ttl_seconds\\\":86400}\"); test.assert(c == 0); test.assert(t == 86400); return 0; }",
+    "pub fn test_parse_put_25[&h](heap: &!h Heap) -> [heap] int { let (c, n, t) = kv_put(heap, \"{\\\"value\\\":\\\"x\\\",\\\"ttl_seconds\\\":1}\"); test.assert(c == 0); test.assert(t == 1); return 0; }"
+   ],
+   "deps": [],
+   "effort": "medium"
+  },
+  {
+   "id": "app",
+   "signature": "fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer",
+   "description": "THE APPLICATION. Build the application: `struct App`, `app_new`, `app_handle`, `app_drop` and whatever helpers they need. The pure functions the task names under 'pure functions' are ALREADY in project.cho (units built and tested before this one): CALL them, do not write them again. project.cho already imports every module the task says it must not import, so use them qualified (`buffer.`, `bytes.`, `http.`, `json.`, `server.`) and import nothing.\n\nAlso define `struct App`, `fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App` and `fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int` (this unit's signature is app_handle). Std.utf8 is already imported. The functions flag_value, bearer_token, tenant_range, valid_key, valid_prefix, is_expired, seconds_left, list_limit, list_prefix and parse_put of the task are already written (and tested).\n\nTHE TASK\nBuild a cancho HTTP service \"kvstore\": a multi-tenant key-value store with expiry, as a REST API that is safe to put on the internet. The application is one file, project.cho, that defines `struct App`, `app_new`, `app_handle` and `app_drop` exactly as the fixed skeleton (eval/services/skeleton/main.cho, never edited) declares them; the skeleton owns the listener, the HTTP parsing and the response writing. Use std.http, std.json and std.map/std.vec/std.buffer as the toolbox; project.cho must NOT import std.buffer, std.bytes, std.http, std.io, std.json, std.map, std.option, std.result, std.route, std.vec or http.server (the skeleton imports them for the whole program: use them qualified, `json.`, `http.`, `server.`...). It may import other std modules (std.utf8, std.crypto, ...).\n\nHow this differs from the Lex original, so nothing is left to guess:\n - There are no environment variables. The tokens come from the command-line flag `--tokens tokenA:tenantA,tokenB:tenantB` (the skeleton passes every flag except `--port N` to app_new as the text `flag\\nvalue\\n...`, for example `--tokens\\ntokA:acme,tokB:globex\\n`). The port is `--port N`, consumed by the skeleton.\n - There is no database. All state lives in memory, in `App`, for the life of the process, and is lost when it exits; nothing is written to disk. The service must not need persistence across restarts. A `App` cannot grow a std.vec/std.map/std.buffer it owns from inside app_handle (a borrowed struct cannot give a resource up and take a bigger one back), so the store is allocated once, in app_new, with fixed capacity: see \"Capacity\".\n - A cancho listener binds the port on every interface and has no --host flag, so the Lex requirement \"listens on loopback only\" is dropped: do not try to meet it.\n - The Lex requirement about SQL injection (\"every query is parameterized\") has no counterpart without SQL; the behavioural half of it stays: a prefix that looks like SQL, or contains % or _, is never a wildcard and never an error of the server (see GET /kv).\n - The effects requirement becomes: the program may declare only args, heap, clock, net_in, conn_accept, conn_read, conn_write, poll, io_write/err_write (`cancho authority` reports them). No files, no processes, no foreign code.\n\nEach customer company (\"tenant\") has its own bearer token. A request carries \"Authorization: Bearer <token>\"; the token decides which tenant it acts for. Tokens are given at startup by `--tokens`, formatted \"token1:tenantA,token2:tenantB\" (entries separated by a comma, the token before the first colon of an entry, the tenant name after it; an entry with no colon or with an empty token or an empty tenant name is ignored; when two entries have the same token the first wins). The service must start and serve (every protected request answering 401) when `--tokens` is absent. Every tenant has its own separate key space: the same key in two tenants is two unrelated entries, and a tenant whose name is a prefix of another's (acm and acme) shares nothing with it.\n\nA key is 1 to 64 characters of lowercase letters (a-z), digits, \".\" , \"_\" or \"-\". The key in a path is the raw path segment: it is NOT percent-decoded, so \"a%20b\" is an invalid key. A value is a string of at most 1000 characters (Unicode code points, not bytes; the empty string is allowed). An entry may have a time to live in whole seconds, from 1 to 86400; with no time to live it never expires. An expired entry behaves exactly as if it had never existed. The clock is the `now_ms` that app_handle receives, in milliseconds: an entry stored at time S with time to live T is expired when now >= S + T*1000.\n\nRoutes. Every response is JSON with Content-Type application/json, except 204, which has no body. Every error body is {\"error\": \"<message>\"}.\n\n - PUT /kv/{key} -- body {\"value\": Str} or {\"value\": Str, \"ttl_seconds\": Int}. Stores the entry for the caller's tenant. 201 if the key did not exist (or had expired), 200 if it replaced a live entry. Replacing an entry also replaces its time to live: a PUT without ttl_seconds makes the entry permanent. The response body is {\"key\": ..., \"value\": ...}. An invalid key in the path is 400.\n - GET /kv/{key} -- 200 with {\"key\": ..., \"value\": ..., \"expires_in\": <whole seconds left, rounded up, or null when permanent>}; 404 if there is no live entry. An invalid key is 404.\n - DELETE /kv/{key} -- 204 with no body if a live entry was deleted; 404 if there was none (including an expired one). An invalid key is 404.\n - GET /kv?prefix=P&limit=N -- the caller's live keys in ascending (byte) order as {\"keys\": [...]}. \"prefix\" is optional: it is percent-decoded first, and must then be empty or up to 64 characters from the key alphabet, otherwise 400 (so `a' OR '1'='1`, `%` and `a b` are 400; `%61pp` is the prefix `app`); only keys that start with it are listed. \"limit\" is optional, a decimal integer from 1 to 100 (digits only, no sign), default 50, otherwise 400; at most that many keys are returned. An empty `limit=` is 400. Other query parameters are ignored.\n - Any other path is 404 (with or without a token). A path under /kv/ with a further slash (/kv/a/b) is such a path. A known path with another method (for example POST /kv, DELETE /kv, PATCH /kv/a) is 405, with an `Allow` header, once the caller is authenticated.\n\nOrder of checks for a request to /kv or /kv/{key}: authentication (401) first, then the method (405), then for a PUT the body size (413), then the key (400 for PUT, 404 for GET and DELETE), then the body (400).\n\nSecurity requirements. Each one is something an attacker will try:\n\n1. No token, a malformed Authorization header (\"Basic ...\", \"Bearer\" with no token, \"Bearer\" followed by two spaces or by a token containing a space), or an unknown token (including a prefix of a real token, or a real token with something appended): 401, and the store is not touched. A missing, a malformed and an unknown token give the identical generic 401 body; tokens are compared against every configured token with a constant-time comparison (the work must not depend on where the first differing byte is) and are never logged or echoed.\n2. A tenant can never read, overwrite, delete or list another tenant's entries. A key that only another tenant has is a 404, exactly like a key nobody has (same status, same body); never 403.\n3. A key or prefix that looks like SQL, a path-traversal string, or contains % or _ , is never interpreted: keys are invalid (400/404 as above), `_` and `.` are plain characters (the prefix `app_` matches `app_three` and not `apple`, and `app.` does not match `app_x`).\n4. The PUT body is strictly validated: it must be a JSON object; \"value\" is required and must be a string of at most 1000 characters; \"ttl_seconds\", if present, must be an integer from 1 to 86400 (a float such as 1.5 or 2.0, a string, null, or an integer outside the range, including one too large for 64 bits, is 400). Unknown fields are rejected with 400, and so is a field given twice. Invalid JSON, an empty body, an array or a scalar body are 400. A rejected PUT stores nothing and leaves an existing entry as it was.\n5. A request body larger than 4096 bytes is rejected with 413 before it is parsed (a body that cannot fit the skeleton's 16 KiB input buffer is answered 413 by the skeleton itself, before the application sees it, whatever the token).\n6. A request the HTTP parser refuses is answered 400 by the skeleton and never reaches the application.\n\nCapacity (honest about the in-memory store). The store is fixed in size. It must hold at least 1000 live entries at once whose key and value are each up to their limits (up to 64-character keys, 1000-character values, up to 4000 bytes of value in UTF-8), across any number of tenants. Replacing, deleting and expiry must give their room back: 10000 successive PUTs of a 1000-character value on the same key must all succeed (the first 201, the rest 200), and so must a hundred thousand PUT/DELETE cycles over a few keys. A PUT that would exceed the capacity answers 507 {\"error\": \"store full\"} and stores nothing. The service must never trap (crash) on any request.\n\nPure functions. The pure logic must be functions with no effect annotation (an empty row `[]`), each with examples, so that a plan can pin them. Names and signatures are exactly these (the `&r`-style names are region parameters; a slice that is returned is a view into the argument):\n\n  fn flag_value[&c, &n](config: &c [byte], name: &n [byte]) -> [] (int, int)\n      The value of a flag in the `flag\\nvalue\\n...` configuration text, as (start, end) into `config`; (-1, -1) when the flag is absent.\n      flag_value(\"--tokens\\ntokA:acme\\n\", \"--tokens\") == (9, 18)      flag_value(\"--x\\n1\\n--tokens\\nt:a\\n\", \"--tokens\") == (15, 18)      flag_value(\"--x\\n1\\n\", \"--tokens\") == (-1, -1)      flag_value(\"\", \"--tokens\") == (-1, -1)\n\n  fn bearer_token[&r](header: &r [byte]) -> [] &r [byte]\n      The token of an Authorization header value (\"Bearer \" followed by one or more characters, none of them a space or a control character), else an empty slice.\n      bearer_token(\"Bearer tokA\") == \"tokA\"      bearer_token(\"Bearer\") == \"\"      bearer_token(\"Bearer \") == \"\"      bearer_token(\"Bearer  tokA\") == \"\"      bearer_token(\"Bearer a b\") == \"\"      bearer_token(\"Basic dG9rQQ==\") == \"\"      bearer_token(\"\") == \"\"\n\n  fn tenant_range[&s, &t](spec: &s [byte], token: &t [byte]) -> [] (int, int)\n      The tenant name for a token in a `--tokens` value, as (start, end) into `spec`, or (-1, -1) for an unknown or empty token. Every entry is compared, with a comparison whose time does not depend on where the bytes first differ.\n      tenant_range(\"tokA:acme,tokB:globex\", \"tokB\") == (15, 21)      tenant_range(\"tokA:acme,tokB:globex\", \"tok\") == (-1, -1)      tenant_range(\"tokA:acme,tokB:globex\", \"tokAA\") == (-1, -1)      tenant_range(\"tokA:acme,tokB:globex\", \"\") == (-1, -1)      tenant_range(\"tokA:acme,bad,:x,y:\", \"y\") == (-1, -1)      tenant_range(\"\", \"tokA\") == (-1, -1)\n\n  fn valid_key[&r](key: &r [byte]) -> [] bool\n      valid_key(\"a\") == true      valid_key(\"a.b_c-d\") == true      valid_key(\"\") == false      valid_key(\"Upper\") == false      valid_key(\"a b\") == false      valid_key(\"a/b\") == false      valid_key(64 times \"k\") == true      valid_key(65 times \"k\") == false\n\n  fn valid_prefix[&r](prefix: &r [byte]) -> [] bool\n      Empty, or up to 64 characters of the key alphabet.\n      valid_prefix(\"\") == true      valid_prefix(\"app.\") == true      valid_prefix(\"a'b\") == false      valid_prefix(\"%\") == false      valid_prefix(65 times \"a\") == false\n\n  fn is_expired(stored_ms: int, ttl_s: int, now_ms: int) -> [] bool\n      ttl_s is 0 for an entry with no expiry. Expired when ttl_s > 0 and now_ms >= stored_ms + ttl_s * 1000.\n      is_expired(1000, 0, 99999999) == false      is_expired(1000, 2, 2999) == false      is_expired(1000, 2, 3000) == true      is_expired(1000, 1, 1000) == false\n\n  fn seconds_left(stored_ms: int, ttl_s: int, now_ms: int) -> [] int\n      Whole seconds left rounded up; -1 for an entry with no expiry; 0 once expired.\n      seconds_left(1000, 0, 5000) == -1      seconds_left(1000, 2, 1000) == 2      seconds_left(1000, 2, 1001) == 2      seconds_left(1000, 2, 2000) == 1      seconds_left(1000, 2, 2001) == 1      seconds_left(1000, 2, 3000) == 0\n\n  fn list_limit[&q](query: &q [byte]) -> [] int\n      The `limit` of a query string: 50 when absent, the integer when it is 1 to 100, -1 when invalid.\n      list_limit(\"\") == 50      list_limit(\"prefix=a\") == 50      list_limit(\"limit=7\") == 7      list_limit(\"prefix=a&limit=100\") == 100      list_limit(\"limit=0\") == -1      list_limit(\"limit=101\") == -1      list_limit(\"limit=abc\") == -1      list_limit(\"limit=\") == -1      list_limit(\"limit=-1\") == -1\n\n  fn list_prefix[&q, &o](query: &q [byte], out: &!o [byte]) -> [] int\n      The `prefix` of a query string percent-decoded into `out` (which has room for 300 bytes): its length, 0 when absent or empty, -1 when it is not a valid prefix.\n      list_prefix(\"\", out) == 0      list_prefix(\"prefix=app.\", out) == 4 (out starts with \"app.\")      list_prefix(\"prefix=%61pp\", out) == 3      list_prefix(\"prefix=%25\", out) == -1      list_prefix(\"prefix=a%20b\", out) == -1\n\n  fn parse_put[&b, &t](body: &b [byte], tape: &!t [int]) -> [] (int, int, int)\n      Validate a PUT body (`tape` is a std.json tape with room for json.tape_len(body) ints). Answers (code, value_node, ttl_s): code 0 means valid, value_node is the tape node of the \"value\" string and ttl_s is the time to live (0 when absent); any other code is a refusal (the service answers it as a 400), with value_node -1 and ttl_s 0.\n      {\"value\":\"x\"} -> code 0, ttl 0      {\"value\":\"x\",\"ttl_seconds\":5} -> code 0, ttl 5      {\"value\":\"\"} -> code 0      {\"value\":\"x\",\"extra\":1} -> code != 0      {\"ttl_seconds\":5} -> code != 0      {\"value\":5} -> code != 0      {\"value\":\"x\",\"ttl_seconds\":0} -> code != 0      {\"value\":\"x\",\"ttl_seconds\":1.5} -> code != 0      {\"value\":\"x\",\"ttl_seconds\":86401} -> code != 0      {\"value\":\"x\",\"ttl_seconds\":null} -> code != 0      {\"value\":\"x\",\"value\":\"y\"} -> code != 0      [1] -> code != 0      {nope -> code != 0      a value of 1001 characters -> code != 0\n\nCommand line. `bin --port N --tokens tokA:acme,tokB:globex`. The service prints nothing on a request and is never given anything but flags.\n\nVerification. Your program is run against a black-box acceptance script that builds it with the skeleton, starts it with the flags above and sends requests (including a few real two-second sleeps for expiry), and then against further checks you do not see. Every status code and body shape above is part of the contract.\n\n\nTHE APPLICATION INTERFACE\nThe service skeleton: the part of a cancho HTTP service that is the same for every service. It is `main.cho` of a service project; the project's\nown file (`project.cho`) holds the application, and the two are compiled together (files without a `module` header share one namespace, so this\nfile calls the application's functions unqualified).\n\nTHE APPLICATION INTERFACE (project.cho must define exactly these, with these signatures):\n\n    struct App { ... }                                   the service's state, any fields (a Vec, a Map, buffers, ints)\n    fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App\n    fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer\n    fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int\n\n`config` is every command-line argument after the program name, each followed by a newline (`--tokens\\ntokA:acme\\n`), minus `--port N`, which the\nskeleton consumes: the application parses the flags its brief names. `app_handle` gets one whole parsed request: `request` and `table` are what\n`std.http` parsed (use `http.method(request, table)`, `http.path(request, table)`, `http.query(request, table)`, `http.header(...)`), `body` the\nrequest body, `now_ms` the time in Unix milliseconds (`clock_unix_ms`, so a timestamp in a request can be compared with it; it is wall-clock time, not monotonic), and `out` an empty buffer to append the response to. It answers the response with\n`server.reply(heap, out, status, body, keep)` / `server.reply_with(.., extra_headers)` / `server.failure(heap, out, status, message, keep)`\n(module `http.server`; `keep` is `http.keeps_alive(table)`). It must answer something for EVERY request and never trap.\n\nWhat the skeleton does: `--port N` (required), listens on that port (a cancho listener binds the port on all interfaces: `bind` takes a port,\nnot an address), accepts, parses (`std.http`; a malformed request is answered 400 by the server and never reaches the application, a body that\ncannot fit the 16 KiB input buffer is answered 413 by the server), calls `app_handle`, sends the answer.",
+   "effort": "low",
+   "examples": [],
+   "deps": [
+    "flag_value",
+    "bearer_token",
+    "tenant_range",
+    "valid_key",
+    "valid_prefix",
+    "is_expired",
+    "seconds_left",
+    "list_limit",
+    "list_prefix",
+    "parse_put"
+   ]
+  }
+ ]
+}

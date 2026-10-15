@@ -1,0 +1,300 @@
+{
+ "name": "webhooks",
+ "integration": "app",
+ "units": [
+  {
+   "id": "name_ok",
+   "signature": "fn name_ok[&s](name: &s [byte]) -> [] bool",
+   "description": "Is `name` a valid SOURCE NAME: 1 to 32 characters, each a lowercase letter a-z, a digit, \"_\" or \"-\"? Anything else (empty, 33 or more characters, an uppercase letter, a space, any other byte) is false. It must never panic on any bytes. You may add a small helper function for the character test.",
+   "examples": [
+    "name_ok(\"alpha\") == true",
+    "name_ok(\"A\") == false",
+    "name_ok(\"\") == false"
+   ],
+   "tests": [
+    "pub fn test_name_ok_1() -> [] int { test.assert(name_ok(\"alpha\")); return 0; }",
+    "pub fn test_name_ok_2() -> [] int { test.assert(name_ok(\"a-b_9\")); return 0; }",
+    "pub fn test_name_ok_3() -> [] int { test.assert(name_ok(\"A\") == false); return 0; }",
+    "pub fn test_name_ok_4() -> [] int { test.assert(name_ok(\"\") == false); return 0; }",
+    "pub fn test_name_ok_5() -> [] int { test.assert(name_ok(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")); return 0; }",
+    "pub fn test_name_ok_6() -> [] int { test.assert(name_ok(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\") == false); return 0; }",
+    "pub fn test_name_ok_7() -> [] int { test.assert(name_ok(\"a b\") == false); return 0; }",
+    "pub fn test_name_ok_8() -> [] int { test.assert(name_ok(\"a:b\") == false); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "event_id_ok",
+   "signature": "fn event_id_ok[&s](id: &s [byte]) -> [] bool",
+   "description": "Is `id` a valid EVENT ID: 1 to 64 characters, each a letter (either case), a digit, \"_\" or \"-\"? Anything else (empty, 65 or more characters, a space, any other byte) is false. It must never panic on any bytes.",
+   "examples": [
+    "event_id_ok(\"Evt_1-a\") == true",
+    "event_id_ok(\"a b\") == false"
+   ],
+   "tests": [
+    "pub fn test_event_id_ok_1() -> [] int { test.assert(event_id_ok(\"Evt_1-a\")); return 0; }",
+    "pub fn test_event_id_ok_2() -> [] int { test.assert(event_id_ok(\"a b\") == false); return 0; }",
+    "pub fn test_event_id_ok_3() -> [] int { test.assert(event_id_ok(\"\") == false); return 0; }",
+    "pub fn test_event_id_ok_4() -> [] int { test.assert(event_id_ok(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")); return 0; }",
+    "pub fn test_event_id_ok_5() -> [] int { test.assert(event_id_ok(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\") == false); return 0; }",
+    "pub fn test_event_id_ok_6() -> [] int { test.assert(event_id_ok(\"a.b\") == false); return 0; }",
+    "pub fn test_event_id_ok_7() -> [] int { test.assert(event_id_ok(\"A-Z_09\")); return 0; }"
+   ],
+   "deps": [
+    "name_ok"
+   ],
+   "effort": "low"
+  },
+  {
+   "id": "secrets_ok",
+   "signature": "fn secrets_ok[&s](text: &s [byte]) -> [] bool",
+   "description": "Is `text` a valid --secrets value, \"name1:secret1,name2:secret2\"? At least one entry; entries are separated by \",\"; every entry has a \":\" and the part before the FIRST \":\" is a valid source name (name_ok); the secret after it is at least one character long and contains no \",\" and no \":\" (it may contain spaces and any other character). An empty text, an entry without \":\", an empty secret, an invalid name, a second \":\" in an entry, or an empty entry (a trailing \",\") makes the whole text invalid.",
+   "examples": [
+    "secrets_ok(\"a:x,b-2:y z\") == true",
+    "secrets_ok(\"a\") == false",
+    "secrets_ok(\"a:\") == false"
+   ],
+   "tests": [
+    "pub fn test_secrets_ok_1() -> [] int { test.assert(secrets_ok(\"a:x,b-2:y z\")); return 0; }",
+    "pub fn test_secrets_ok_2() -> [] int { test.assert(secrets_ok(\"a\") == false); return 0; }",
+    "pub fn test_secrets_ok_3() -> [] int { test.assert(secrets_ok(\"a:\") == false); return 0; }",
+    "pub fn test_secrets_ok_4() -> [] int { test.assert(secrets_ok(\"A:x\") == false); return 0; }",
+    "pub fn test_secrets_ok_5() -> [] int { test.assert(secrets_ok(\"a:x:y\") == false); return 0; }",
+    "pub fn test_secrets_ok_6() -> [] int { test.assert(secrets_ok(\"\") == false); return 0; }",
+    "pub fn test_secrets_ok_7() -> [] int { test.assert(secrets_ok(\"a:x,\") == false); return 0; }",
+    "pub fn test_secrets_ok_8() -> [] int { test.assert(secrets_ok(\"a:x\")); return 0; }",
+    "pub fn test_secrets_ok_9() -> [] int { test.assert(secrets_ok(\":x\") == false); return 0; }"
+   ],
+   "deps": [
+    "name_ok"
+   ],
+   "effort": "low"
+  },
+  {
+   "id": "secret_span",
+   "signature": "fn secret_span[&s, &n](text: &s [byte], name: &n [byte]) -> [] (int, int)",
+   "description": "Where the secret of source `name` lies in a valid secrets text (\"a:xy,b:z\"), as (start, end) byte offsets into `text` (end exclusive): the bytes after the first \":\" of the entry whose name equals `name`, up to the \",\" or the end. (-1, -1) when no entry has that name. The first entry of that name wins. Never panics.",
+   "examples": [
+    "secret_span(\"a:xy,b:z\", \"b\") == (7, 8)"
+   ],
+   "tests": [
+    "pub fn test_secret_span_1() -> [] int { let (a, b) = secret_span(\"a:xy,b:z\", \"b\"); test.assert(a == 7 && b == 8); return 0; }",
+    "pub fn test_secret_span_2() -> [] int { let (a, b) = secret_span(\"a:xy,b:z\", \"a\"); test.assert(a == 2 && b == 4); return 0; }",
+    "pub fn test_secret_span_3() -> [] int { let (a, b) = secret_span(\"a:xy,b:z\", \"c\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_secret_span_4() -> [] int { let (a, b) = secret_span(\"a:xy,b:z\", \"\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_secret_span_5() -> [] int { let (a, b) = secret_span(\"\", \"a\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_secret_span_6() -> [] int { let (a, b) = secret_span(\"a:x,a:y\", \"a\"); test.assert(a == 2 && b == 3); return 0; }"
+   ],
+   "deps": [
+    "secrets_ok"
+   ],
+   "effort": "low"
+  },
+  {
+   "id": "timestamp_value",
+   "signature": "fn timestamp_value[&s](text: &s [byte]) -> [] int",
+   "description": "The number an X-Timestamp header spells: 1 to 12 ASCII digits and nothing else (no sign, no space, no other byte). Its value, or -1 for the empty text, a text with any other byte, or 13 or more digits. Never overflows.",
+   "examples": [
+    "timestamp_value(\"1700000000\") == 1700000000",
+    "timestamp_value(\"12a\") == 0 - 1"
+   ],
+   "tests": [
+    "pub fn test_timestamp_value_1() -> [] int { test.assert(timestamp_value(\"1700000000\") == 1700000000); return 0; }",
+    "pub fn test_timestamp_value_2() -> [] int { test.assert(timestamp_value(\"0\") == 0); return 0; }",
+    "pub fn test_timestamp_value_3() -> [] int { test.assert(timestamp_value(\"\") == 0 - 1); return 0; }",
+    "pub fn test_timestamp_value_4() -> [] int { test.assert(timestamp_value(\"-5\") == 0 - 1); return 0; }",
+    "pub fn test_timestamp_value_5() -> [] int { test.assert(timestamp_value(\"12a\") == 0 - 1); return 0; }",
+    "pub fn test_timestamp_value_6() -> [] int { test.assert(timestamp_value(\"1234567890123\") == 0 - 1); return 0; }",
+    "pub fn test_timestamp_value_7() -> [] int { test.assert(timestamp_value(\"123456789012\") == 123456789012); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "timestamp_in_window",
+   "signature": "fn timestamp_in_window(ts: int, now_s: int) -> [] bool",
+   "description": "Is the timestamp `ts` (Unix seconds) within 300 seconds of `now_s`, in the past or in the future, 300 itself included? (1000, 1300) is true, (1000, 1301) is false.",
+   "examples": [
+    "timestamp_in_window(1000, 1300) == true",
+    "timestamp_in_window(1000, 1301) == false"
+   ],
+   "tests": [
+    "pub fn test_timestamp_in_window_1() -> [] int { test.assert(timestamp_in_window(1000, 1300)); return 0; }",
+    "pub fn test_timestamp_in_window_2() -> [] int { test.assert(timestamp_in_window(1000, 1301) == false); return 0; }",
+    "pub fn test_timestamp_in_window_3() -> [] int { test.assert(timestamp_in_window(1300, 1000)); return 0; }",
+    "pub fn test_timestamp_in_window_4() -> [] int { test.assert(timestamp_in_window(1301, 1000) == false); return 0; }",
+    "pub fn test_timestamp_in_window_5() -> [] int { test.assert(timestamp_in_window(700, 1000)); return 0; }",
+    "pub fn test_timestamp_in_window_6() -> [] int { test.assert(timestamp_in_window(699, 1000) == false); return 0; }",
+    "pub fn test_timestamp_in_window_7() -> [] int { test.assert(timestamp_in_window(1000, 1000)); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "signed_text",
+   "signature": "fn signed_text[&t, &b, &o](ts: &t [byte], body: &b [byte], out: &!o [byte]) -> [] int",
+   "description": "Write the text that is signed, `ts` + \".\" + `body` (the timestamp header text exactly as received, a full stop, the raw body bytes) into `out` starting at index 0, and answer its length len(ts) + 1 + len(body). If that length is larger than len(out), write nothing and answer -1. Never writes outside `out`.",
+   "examples": [
+    "signed_text(\"17\", \"{}\", out) == 5"
+   ],
+   "tests": [
+    "pub fn test_signed_text_1() -> [] int { region r { let out = alloc_slice[r](10, byte_of(0)); let n = signed_text(\"17\", \"{}\", out); test.assert(n == 5); test.assert(bytes.equal(out[0..5], \"17.{}\")); } return 0; }",
+    "pub fn test_signed_text_2() -> [] int { region r { let out = alloc_slice[r](4, byte_of(0)); let n = signed_text(\"17\", \"{}\", out); test.assert(n == 0 - 1); } return 0; }",
+    "pub fn test_signed_text_3() -> [] int { region r { let out = alloc_slice[r](5, byte_of(0)); let n = signed_text(\"17\", \"{}\", out); test.assert(n == 5); test.assert(bytes.equal(out[0..5], \"17.{}\")); } return 0; }",
+    "pub fn test_signed_text_4() -> [] int { region r { let out = alloc_slice[r](8, byte_of(0)); let n = signed_text(\"\", \"ab\", out); test.assert(n == 3); test.assert(bytes.equal(out[0..3], \".ab\")); } return 0; }",
+    "pub fn test_signed_text_5() -> [] int { region r { let out = alloc_slice[r](3, byte_of(0)); let n = signed_text(\"\", \"\", out); test.assert(n == 1); test.assert(int_of(out[0]) == 46); } return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "signature_decode",
+   "signature": "fn signature_decode[&s, &o](header: &s [byte], out: &!o [byte]) -> [] bool",
+   "description": "Decode an X-Signature header: exactly \"sha256=\" followed by exactly 64 LOWERCASE hex characters (0-9, a-f; uppercase is malformed) into 32 bytes written to out[0..32], and answer true. Any other text (wrong prefix, 63 or 65 hex characters, a non-hex character, uppercase hex, empty) answers false. It also answers false when len(out) < 32. Never panics, never writes outside `out`.",
+   "examples": [
+    "signature_decode(\"sha256=\" + 64 lowercase hex, out) == true"
+   ],
+   "tests": [
+    "pub fn test_signature_decode_1() -> [] int { region r { let out = alloc_slice[r](32, byte_of(0)); let ok = signature_decode(\"sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\", out); test.assert(ok); test.assert(int_of(out[0]) == 1); test.assert(int_of(out[1]) == 35); test.assert(int_of(out[2]) == 69); test.assert(int_of(out[7]) == 239); test.assert(int_of(out[8]) == 1); test.assert(int_of(out[31]) == 239); } return 0; }",
+    "pub fn test_signature_decode_2() -> [] int { region r { let out = alloc_slice[r](32, byte_of(0)); test.assert(signature_decode(\"sha256=0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF\", out) == false); } return 0; }",
+    "pub fn test_signature_decode_3() -> [] int { region r { let out = alloc_slice[r](32, byte_of(0)); test.assert(signature_decode(\"sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde\", out) == false); } return 0; }",
+    "pub fn test_signature_decode_4() -> [] int { region r { let out = alloc_slice[r](32, byte_of(0)); test.assert(signature_decode(\"sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0\", out) == false); } return 0; }",
+    "pub fn test_signature_decode_5() -> [] int { region r { let out = alloc_slice[r](32, byte_of(0)); test.assert(signature_decode(\"sha1=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\", out) == false); } return 0; }",
+    "pub fn test_signature_decode_6() -> [] int { region r { let out = alloc_slice[r](32, byte_of(0)); test.assert(signature_decode(\"sha256=g123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\", out) == false); } return 0; }",
+    "pub fn test_signature_decode_7() -> [] int { region r { let out = alloc_slice[r](32, byte_of(0)); test.assert(signature_decode(\"\", out) == false); } return 0; }",
+    "pub fn test_signature_decode_8() -> [] int { region r { let out = alloc_slice[r](31, byte_of(0)); test.assert(signature_decode(\"sha256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\", out) == false); } return 0; }",
+    "pub fn test_signature_decode_9() -> [] int { region r { let out = alloc_slice[r](32, byte_of(0)); test.assert(signature_decode(\"SHA256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\", out) == false); } return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "same_bytes",
+   "signature": "fn same_bytes[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool",
+   "description": "Do `x` and `y` hold the same bytes (same length, same contents)? The comparison must not stop at the first difference: when the lengths are equal it looks at every byte (it is used to compare signatures, so its time must not depend on where they differ). The length is not secret.",
+   "examples": [
+    "same_bytes(\"abc\", \"abc\") == true",
+    "same_bytes(\"abc\", \"abd\") == false"
+   ],
+   "tests": [
+    "pub fn test_same_bytes_1() -> [] int { test.assert(same_bytes(\"abc\", \"abc\")); return 0; }",
+    "pub fn test_same_bytes_2() -> [] int { test.assert(same_bytes(\"abc\", \"abd\") == false); return 0; }",
+    "pub fn test_same_bytes_3() -> [] int { test.assert(same_bytes(\"abc\", \"ab\") == false); return 0; }",
+    "pub fn test_same_bytes_4() -> [] int { test.assert(same_bytes(\"\", \"\")); return 0; }",
+    "pub fn test_same_bytes_5() -> [] int { test.assert(same_bytes(\"abc\", \"xbc\") == false); return 0; }",
+    "pub fn test_same_bytes_6() -> [] int { test.assert(same_bytes(\"\", \"a\") == false); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "token_ok",
+   "signature": "fn token_ok[&s](text: &s [byte]) -> [] bool",
+   "description": "Is `text` a valid admin token: one or more characters, each a printable ASCII character other than space (byte values 33 to 126)? Empty, or containing a space or any byte outside 33..126, is false.",
+   "examples": [
+    "token_ok(\"abc\") == true",
+    "token_ok(\"a b\") == false",
+    "token_ok(\"\") == false"
+   ],
+   "tests": [
+    "pub fn test_token_ok_1() -> [] int { test.assert(token_ok(\"abc\")); return 0; }",
+    "pub fn test_token_ok_2() -> [] int { test.assert(token_ok(\"a b\") == false); return 0; }",
+    "pub fn test_token_ok_3() -> [] int { test.assert(token_ok(\"\") == false); return 0; }",
+    "pub fn test_token_ok_4() -> [] int { test.assert(token_ok(\"~!\")); return 0; }",
+    "pub fn test_token_ok_5() -> [] int { test.assert(token_ok(\" \") == false); return 0; }",
+    "pub fn test_token_ok_6() -> [] int { test.assert(token_ok(\"adm-token-xyz\")); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "bearer_span",
+   "signature": "fn bearer_span[&s](header: &s [byte]) -> [] (int, int)",
+   "description": "The span (start, end) of the token in an Authorization header value: the header must be exactly \"Bearer \" (capital B, one space) followed by a valid token (token_ok: one or more printable ASCII characters other than space, up to the end of the header). \"Bearer abc\" is (7, 10). Anything else (\"bearer abc\", \"Bearer\", \"Bearer \", \"Bearer a b\", \"Basic x\", \"\") is (-1, -1).",
+   "examples": [
+    "bearer_span(\"Bearer abc\") == (7, 10)"
+   ],
+   "tests": [
+    "pub fn test_bearer_span_1() -> [] int { let (a, b) = bearer_span(\"Bearer abc\"); test.assert(a == 7 && b == 10); return 0; }",
+    "pub fn test_bearer_span_2() -> [] int { let (a, b) = bearer_span(\"bearer abc\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_bearer_span_3() -> [] int { let (a, b) = bearer_span(\"Bearer\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_bearer_span_4() -> [] int { let (a, b) = bearer_span(\"Bearer \"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_bearer_span_5() -> [] int { let (a, b) = bearer_span(\"Bearer a b\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_bearer_span_6() -> [] int { let (a, b) = bearer_span(\"Basic x\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_bearer_span_7() -> [] int { let (a, b) = bearer_span(\"\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_bearer_span_8() -> [] int { let (a, b) = bearer_span(\"Bearer  abc\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }"
+   ],
+   "deps": [
+    "token_ok"
+   ],
+   "effort": "low"
+  },
+  {
+   "id": "limit_value",
+   "signature": "fn limit_value[&s](text: &s [byte]) -> [] int",
+   "description": "The `limit` query value: a number from 1 to 100 written as plain decimal digits (no sign, no leading zero, no other character). Its value, or -1 for anything else: empty, \"0\", \"101\", \"05\", \"+5\", \"x\", \"1000\".",
+   "examples": [
+    "limit_value(\"7\") == 7",
+    "limit_value(\"101\") == 0 - 1"
+   ],
+   "tests": [
+    "pub fn test_limit_value_1() -> [] int { test.assert(limit_value(\"7\") == 7); return 0; }",
+    "pub fn test_limit_value_2() -> [] int { test.assert(limit_value(\"100\") == 100); return 0; }",
+    "pub fn test_limit_value_3() -> [] int { test.assert(limit_value(\"1\") == 1); return 0; }",
+    "pub fn test_limit_value_4() -> [] int { test.assert(limit_value(\"99\") == 99); return 0; }",
+    "pub fn test_limit_value_5() -> [] int { test.assert(limit_value(\"\") == 0 - 1); return 0; }",
+    "pub fn test_limit_value_6() -> [] int { test.assert(limit_value(\"0\") == 0 - 1); return 0; }",
+    "pub fn test_limit_value_7() -> [] int { test.assert(limit_value(\"101\") == 0 - 1); return 0; }",
+    "pub fn test_limit_value_8() -> [] int { test.assert(limit_value(\"05\") == 0 - 1); return 0; }",
+    "pub fn test_limit_value_9() -> [] int { test.assert(limit_value(\"+5\") == 0 - 1); return 0; }",
+    "pub fn test_limit_value_10() -> [] int { test.assert(limit_value(\"x\") == 0 - 1); return 0; }",
+    "pub fn test_limit_value_11() -> [] int { test.assert(limit_value(\"1000\") == 0 - 1); return 0; }",
+    "pub fn test_limit_value_12() -> [] int { test.assert(limit_value(\"-1\") == 0 - 1); return 0; }",
+    "pub fn test_limit_value_13() -> [] int { test.assert(limit_value(\"1.5\") == 0 - 1); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "flag_span",
+   "signature": "fn flag_span[&c, &f](config: &c [byte], flag: &f [byte]) -> [] (int, int)",
+   "description": "Find a flag in the configuration text \"flag\\nvalue\\nflag\\nvalue\\n...\" (each flag and each value followed by a newline). The span (start, end) of the value line that follows the FIRST line equal to `flag`, without the newline. (-1, -1) when the flag is absent or has no value line after it. In \"--a\\n1\\n--b\\n2\\n\" the flag \"--b\" is (10, 11).",
+   "examples": [
+    "flag_span(\"--a\\n1\\n--b\\n2\\n\", \"--b\") == (10, 11)"
+   ],
+   "tests": [
+    "pub fn test_flag_span_1() -> [] int { let (a, b) = flag_span(\"--a\\n1\\n--b\\n2\\n\", \"--b\"); test.assert(a == 10 && b == 11); return 0; }",
+    "pub fn test_flag_span_2() -> [] int { let (a, b) = flag_span(\"--a\\n1\\n\", \"--b\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_flag_span_3() -> [] int { let (a, b) = flag_span(\"--a\\n1\\n--a\\n2\\n\", \"--a\"); test.assert(a == 4 && b == 5); return 0; }",
+    "pub fn test_flag_span_4() -> [] int { let (a, b) = flag_span(\"--a\\n\", \"--a\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_flag_span_5() -> [] int { let (a, b) = flag_span(\"\", \"--a\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_flag_span_6() -> [] int { let (a, b) = flag_span(\"--a\\nxyz\\n\", \"--a\"); test.assert(a == 4 && b == 7); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "app",
+   "signature": "fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer",
+   "description": "THE APPLICATION. Build the application: `struct App`, `app_new`, `app_handle`, `app_drop` and whatever helpers they need. The pure functions the task names under 'pure functions' are ALREADY in project.cho (units built and tested before this one): CALL them, do not write them again. project.cho already imports every module the task says it must not import, so use them qualified (`buffer.`, `bytes.`, `http.`, `json.`, `server.`) and import nothing.\n\nAlso define `struct App`, `fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App` and `fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int` (this unit's signature is app_handle). Std.hmac is already imported.\n\nTHE TASK\nBuild a cancho service, the application half of an HTTP program, named \"webhooks\": a signed-webhook inbox REST API that is safe to put on the internet. The server loop (accepting connections, parsing requests with std.http, sending answers) is a fixed file you do not write; you write project.cho, which defines the application. Use std.hmac (HMAC-SHA256) for the signature and std.json / std.http for the rest; you write no cryptography of your own.\n\nTHE INTERFACE. project.cho starts with \"edition 7;\" and defines exactly (these signatures are fixed):\n\n    struct App { ... }                      the service state, any fields\n    fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App\n    fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer\n    fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int\n\n`config` is the command-line flags after the program name, each flag and each value followed by a newline (\"--secrets\\nalpha:k1\\n--admin-token\\nT\\n\"; \"--port N\" is consumed by the server). `request` and `table` are one parsed request (std.http: http.method, http.path, http.query, http.header(request, table, \"x-signature\") ...), `body` its body, `now_ms` the clock in MILLISECONDS SINCE 1970-01-01 UTC, and `out` an empty buffer to append the answer to with server.reply(heap, out, status, body, keep) or server.failure(heap, out, status, message, keep), where keep = http.keeps_alive(table); failure writes {\"error\": message}. app_handle must answer every request and never trap. Do NOT import std.buffer, std.bytes, std.http, std.io, std.json, std.map, std.option, std.result, std.route, std.vec or http.server: the fixed file imports them for the whole program, and you use them qualified (buffer., bytes., http., json., server. ...). Other std modules (std.hmac, std.crypto, std.utf8 ...) you import yourself.\n\nCONFIGURATION (flags, because a cancho program has no environment variables):\n  --secrets \"source1:secret1,source2:secret2\"   a source name is 1 to 32 characters of lowercase letters, digits, \"_\" or \"-\"; a secret is one or more characters, none of them \",\" or \":\" (it may contain spaces and any other character). If the flag is missing or its text is not of this form, the service has NO sources (every delivery is then 401).\n  --admin-token TOKEN                           the bearer token for reading events: one or more printable ASCII characters other than space. If the flag is missing or invalid, no token is accepted (GET /events is always 401).\nEvents live in memory for the life of the process; nothing is persisted and nothing needs to survive a restart (cancho has no SQL and no database; this replaces the SQLite store of the Lex original). The server binds its port on all interfaces (a cancho listener takes a port, not an address, so the loopback-only requirement of the original does not exist here).\n\nENDPOINTS, all answering JSON. Any other path is 404 {\"error\":...}; a known path with another method is 405 {\"error\":...} (GET on /hooks/{source}, anything but GET on /events).\n\nPOST /hooks/{source} -- a sender delivers one event. {source} is the rest of the path after \"/hooks/\" (a single segment; an empty segment or one containing \"/\" is 404). Headers: \"X-Timestamp\" (integer Unix seconds), \"X-Event-Id\" (1 to 64 characters of letters, digits, \"_\" or \"-\") and \"X-Signature\" of the form \"sha256=\" followed by exactly 64 lowercase hex characters. The signature is HMAC-SHA256, keyed with the source's secret, of the text <X-Timestamp header text> + \".\" + <raw request body bytes>. The body must be a JSON object. On success: 202 with {\"id\": <integer>, \"duplicate\": false}, and the event (source, event id, receive time, body) is stored. If the same source has already stored the same X-Event-Id, nothing is stored again and the answer is 200 with {\"id\": <the id of the first one>, \"duplicate\": true}. The same event id from different sources is independent. Event ids are positive integers that increase with arrival.\n  The checks run in this order and the first failure answers:\n    1. body longer than 256 bytes                       -> 413 (for any source, signed or not)\n    2. unknown source, or X-Signature missing/malformed/wrong -> 401 {\"error\":\"unauthorized\"}\n    3. X-Timestamp missing, not 1 to 12 ASCII digits, or outside the window -> 400\n    4. X-Event-Id missing or invalid                     -> 400\n    5. body not a JSON object (array, string, number, invalid JSON, empty) -> 400\n    6. the event store already holds 1000 events and this one would be new -> 503 {\"error\":...} (a duplicate is still answered 200)\n  The signature is computed over the X-Timestamp header text exactly as received (the empty text if the header is absent) and over the body bytes exactly as received, BEFORE the body is parsed; that is why a request with a missing or non-integer X-Timestamp is 401 unless its signature happens to be valid for that text, in which case it is 400.\n  A body larger than the server's 16 KiB input buffer never reaches the application: the server answers 413 itself. (The Lex original allowed 65536 bytes; a cancho answer must fit the server's 64 KiB output buffer, and a page of 100 events must fit it, so bodies are limited to 256 bytes here.)\n\nGET /events?source=NAME&limit=N -- requires \"Authorization: Bearer <admin token>\" (exactly \"Bearer\", one space, the token; anything else is malformed). Returns 200 {\"events\": [...]} ordered by id ascending, the first N matching events, each {\"id\": int, \"source\": \"...\", \"event_id\": \"...\", \"received_at\": <integer Unix seconds when it was received>, \"body\": <the JSON object that was sent>}. \"source\" is optional and, if present, must be exactly the name of a configured source (no percent-decoding: anything else, an empty value included, is 400). \"limit\" is optional, 1 to 100 written as plain digits without sign or leading zero, default 50 (anything else, an empty value included, is 400). Authentication is checked first: without the token, with a wrong token or with a malformed Authorization header the answer is 401 whatever the query says.\n\nSECURITY REQUIREMENTS. Each is something an attacker will try, and each must hold:\n 1. A missing, malformed or wrong X-Signature is 401 and nothing is stored. The signature covers the raw body bytes as received. A valid signature for one source is not accepted for another (different secrets). Uppercase hex is malformed.\n 2. An unknown source and a bad signature give the IDENTICAL 401 response (same status, same body), so an attacker cannot learn which sources exist.\n 3. Signatures and the admin token are compared in constant time (no early exit on the first differing byte), and secrets and the admin token are never echoed in any response.\n 4. Replay protection: X-Timestamp must be within 300 seconds of the server's clock (now_ms / 1000), past or future, 300 itself included; otherwise 400 and nothing is stored.\n 5. A body of more than 256 bytes is 413 before the signature is looked at. A body that is not a JSON object is 400, after the signature has been verified (an unsigned request is always 401, never 400).\n 6. GET /events without the token, with a wrong token or a malformed Authorization header is 401 and nothing is read; the token is compared in constant time. A \"source\" value such as a' OR '1'='1 is simply not a configured source (400).\n 7. The store holds at most 1000 events (fixed capacity: a borrowed App cannot grow a collection); see check 6 above.\n\nPURE FUNCTIONS. The logic below must be written as pure functions (empty effect row `[]`, no heap), with exactly these names and signatures, each with examples in your plan or tests; app_handle only calls them:\n    fn name_ok[&s](name: &s [byte]) -> [] bool                  \"alpha\" yes, \"A\" no, \"\" no, 33 characters no\n    fn event_id_ok[&s](id: &s [byte]) -> [] bool                \"Evt_1-a\" yes, \"a b\" no, 64 characters yes, 65 no\n    fn secrets_ok[&s](text: &s [byte]) -> [] bool               \"a:x,b-2:y z\" yes; \"a\" no, \"a:\" no, \"A:x\" no, \"a:x:y\" no, \"\" no\n    fn secret_span[&s, &n](text: &s [byte], name: &n [byte]) -> [] (int, int)   \"a:xy,b:z\" with \"b\" -> (7, 8); absent -> (-1, -1)\n    fn timestamp_value[&s](text: &s [byte]) -> [] int           \"1700000000\" -> 1700000000; \"\" , \"-5\", \"12a\", 13 digits -> -1\n    fn timestamp_in_window(ts: int, now_s: int) -> [] bool      (1000, 1300) yes, (1000, 1301) no, (1300, 1000) yes, (1301, 1000) no\n    fn signed_text[&t, &b, &o](ts: &t [byte], body: &b [byte], out: &!o [byte]) -> [] int   writes ts \".\" body into out, answers its length, or -1 if out is too small\n    fn signature_decode[&s, &o](header: &s [byte], out: &!o [byte]) -> [] bool   \"sha256=\" + 64 lowercase hex -> true and the 32 bytes in out[0..32]; anything else false\n    fn same_bytes[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool   equal length and contents, with no early exit on the first difference\n    fn token_ok[&s](text: &s [byte]) -> [] bool                 one or more printable ASCII characters other than space\n    fn bearer_span[&s](header: &s [byte]) -> [] (int, int)      \"Bearer abc\" -> (7, 10); \"bearer abc\", \"Bearer\", \"Bearer \", \"Bearer a b\", \"Basic x\" -> (-1, -1)\n    fn limit_value[&s](text: &s [byte]) -> [] int               \"7\" -> 7, \"100\" -> 100; \"\", \"0\", \"101\", \"05\", \"+5\", \"x\" -> -1\n    fn flag_span[&c, &f](config: &c [byte], flag: &f [byte]) -> [] (int, int)   in \"--a\\n1\\n--b\\n2\\n\", flag \"--b\" -> (10, 11); absent -> (-1, -1)\n\nAUTHORITY. The program may declare only these effects: args, heap, clock, net_in, conn_accept, conn_read, conn_write, poll, io_write, err_write (the fixed server file declares them; your project.cho needs only heap). It must never need a process, a file or foreign code. HMAC-SHA256 and the constant-time compare are ordinary pure code in cancho and need no capability.\n\n\nTHE APPLICATION INTERFACE\nThe service skeleton: the part of a cancho HTTP service that is the same for every service. It is `main.cho` of a service project; the project's\nown file (`project.cho`) holds the application, and the two are compiled together (files without a `module` header share one namespace, so this\nfile calls the application's functions unqualified).\n\nTHE APPLICATION INTERFACE (project.cho must define exactly these, with these signatures):\n\n    struct App { ... }                                   the service's state, any fields (a Vec, a Map, buffers, ints)\n    fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App\n    fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer\n    fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int\n\n`config` is every command-line argument after the program name, each followed by a newline (`--tokens\\ntokA:acme\\n`), minus `--port N`, which the\nskeleton consumes: the application parses the flags its brief names. `app_handle` gets one whole parsed request: `request` and `table` are what\n`std.http` parsed (use `http.method(request, table)`, `http.path(request, table)`, `http.query(request, table)`, `http.header(...)`), `body` the\nrequest body, `now_ms` the time in Unix milliseconds (`clock_unix_ms`, so a timestamp in a request can be compared with it; it is wall-clock time, not monotonic), and `out` an empty buffer to append the response to. It answers the response with\n`server.reply(heap, out, status, body, keep)` / `server.reply_with(.., extra_headers)` / `server.failure(heap, out, status, message, keep)`\n(module `http.server`; `keep` is `http.keeps_alive(table)`). It must answer something for EVERY request and never trap.\n\nWhat the skeleton does: `--port N` (required), listens on that port (a cancho listener binds the port on all interfaces: `bind` takes a port,\nnot an address), accepts, parses (`std.http`; a malformed request is answered 400 by the server and never reaches the application, a body that\ncannot fit the 16 KiB input buffer is answered 413 by the server), calls `app_handle`, sends the answer.",
+   "effort": "low",
+   "examples": [],
+   "deps": [
+    "name_ok",
+    "event_id_ok",
+    "secrets_ok",
+    "secret_span",
+    "timestamp_value",
+    "timestamp_in_window",
+    "signed_text",
+    "signature_decode",
+    "same_bytes",
+    "token_ok",
+    "bearer_span",
+    "limit_value",
+    "flag_span"
+   ]
+  }
+ ]
+}

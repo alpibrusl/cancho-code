@@ -1,0 +1,197 @@
+{
+ "name": "jobs",
+ "integration": "app",
+ "units": [
+  {
+   "id": "bearer_token",
+   "signature": "fn bearer_token[&v](header: &v [byte]) -> [] &v [byte]",
+   "description": "The token of an Authorization header value: what follows exactly \"Bearer \" (capital B, one space), as a view into `header`. An empty slice for anything else: no token after \"Bearer \", \"Bearer\" alone, \"bearer abc\", \"Basic abc\", the empty header. Never panics.",
+   "examples": [
+    "bearer_token(\"Bearer abc\") == \"abc\"",
+    "bearer_token(\"Basic abc\") == \"\""
+   ],
+   "tests": [
+    "pub fn test_bearer_token_1() -> [] int { test.assert(bytes.equal(bearer_token(\"Bearer abc\"), \"abc\")); return 0; }",
+    "pub fn test_bearer_token_2() -> [] int { test.assert(bytes.equal(bearer_token(\"Bearer \"), \"\")); return 0; }",
+    "pub fn test_bearer_token_3() -> [] int { test.assert(bytes.equal(bearer_token(\"Bearer\"), \"\")); return 0; }",
+    "pub fn test_bearer_token_4() -> [] int { test.assert(bytes.equal(bearer_token(\"bearer abc\"), \"\")); return 0; }",
+    "pub fn test_bearer_token_5() -> [] int { test.assert(bytes.equal(bearer_token(\"Basic abc\"), \"\")); return 0; }",
+    "pub fn test_bearer_token_6() -> [] int { test.assert(bytes.equal(bearer_token(\"\"), \"\")); return 0; }",
+    "pub fn test_bearer_token_7() -> [] int { test.assert(bytes.equal(bearer_token(\"Bearer a\"), \"a\")); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "token_tenant",
+   "signature": "fn token_tenant[&s, &t](spec: &s [byte], token: &t [byte]) -> [] (int, int)",
+   "description": "`spec` is the --tokens value \"token:tenant,token:tenant\" (the token is everything before the first \":\" of an entry, the tenant everything after it; several tokens may name one tenant). The (start, end) of the TENANT NAME inside `spec` for the entry whose token equals `token`, or (-1, -1) when none does. An entry with an empty token or an empty tenant is ignored; an empty `token` matches nothing; the first matching entry wins. The comparison of tokens must be constant time: compare EVERY entry completely, with no early exit on the first differing byte and no early exit once an entry matched (a helper that ORs the differences of all bytes of the longer text is the usual way). \"tokA:acme,tokB:globex\" with \"tokB\" is (15, 21).",
+   "examples": [
+    "token_tenant(\"tokA:acme,tokB:globex\", \"tokB\") == (15, 21)",
+    "token_tenant(\"a:x\", \"a:x\") == (-1, -1)"
+   ],
+   "tests": [
+    "pub fn test_token_tenant_1() -> [] int { let (a, b) = token_tenant(\"tokA:acme,tokB:globex\", \"tokB\"); test.assert(a == 15 && b == 21); return 0; }",
+    "pub fn test_token_tenant_2() -> [] int { let (a, b) = token_tenant(\"tokA:acme,tokB:globex\", \"tokA\"); test.assert(a == 5 && b == 9); return 0; }",
+    "pub fn test_token_tenant_3() -> [] int { let (a, b) = token_tenant(\"tokA:acme,tokB:globex\", \"tokC\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_token_tenant_4() -> [] int { let (a, b) = token_tenant(\"tokA:acme,tokB:globex\", \"\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_token_tenant_5() -> [] int { let (a, b) = token_tenant(\"a:x\", \"a:x\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_token_tenant_6() -> [] int { let (a, b) = token_tenant(\"tokA:,:x,tokB:t\", \"tokB\"); test.assert(a == 14 && b == 15); return 0; }",
+    "pub fn test_token_tenant_7() -> [] int { let (a, b) = token_tenant(\"tokA:acme\", \"tokAx\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_token_tenant_8() -> [] int { let (a, b) = token_tenant(\"tokA:acme\", \"tok\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }",
+    "pub fn test_token_tenant_9() -> [] int { let (a, b) = token_tenant(\"\", \"a\"); test.assert(a == 0 - 1 && b == 0 - 1); return 0; }"
+   ],
+   "deps": [],
+   "effort": "medium"
+  },
+  {
+   "id": "transition",
+   "signature": "fn transition(state: int, action: int) -> [] int",
+   "description": "The job state machine. States: 0 queued, 1 running, 2 done. Actions: 0 claim, 1 complete. The state after the move, or -1 when it is not allowed. Only transition(0, 0) is 1 (claim a queued job) and transition(1, 1) is 2 (complete a running job); every other pair is -1.",
+   "examples": [
+    "transition(0, 0) == 1",
+    "transition(1, 1) == 2",
+    "transition(1, 0) == 0 - 1"
+   ],
+   "tests": [
+    "pub fn test_transition_1() -> [] int { test.assert(transition(0, 0) == 1); return 0; }",
+    "pub fn test_transition_2() -> [] int { test.assert(transition(1, 1) == 2); return 0; }",
+    "pub fn test_transition_3() -> [] int { test.assert(transition(0, 1) == 0 - 1); return 0; }",
+    "pub fn test_transition_4() -> [] int { test.assert(transition(1, 0) == 0 - 1); return 0; }",
+    "pub fn test_transition_5() -> [] int { test.assert(transition(2, 0) == 0 - 1); return 0; }",
+    "pub fn test_transition_6() -> [] int { test.assert(transition(2, 1) == 0 - 1); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "parse_job_id",
+   "signature": "fn parse_job_id[&t](text: &t [byte]) -> [] int",
+   "description": "The job id a path segment spells: a positive integer written as plain decimal digits, at most 17 of them (so it cannot overflow). Its value, or -1 for the empty text, \"0\", a sign, a space, a letter, a dot, or 18 or more digits. \"12\" is 12; \"0\", \"\", \"-1\", \"1x\", \"1 \", \"123456789012345678\" are -1; \"12345678901234567\" is 12345678901234567. You may add a helper that reads a run of digits.",
+   "examples": [
+    "parse_job_id(\"12\") == 12",
+    "parse_job_id(\"0\") == 0 - 1"
+   ],
+   "tests": [
+    "pub fn test_parse_job_id_1() -> [] int { test.assert(parse_job_id(\"12\") == 12); return 0; }",
+    "pub fn test_parse_job_id_2() -> [] int { test.assert(parse_job_id(\"1\") == 1); return 0; }",
+    "pub fn test_parse_job_id_3() -> [] int { test.assert(parse_job_id(\"12345678901234567\") == 12345678901234567); return 0; }",
+    "pub fn test_parse_job_id_4() -> [] int { test.assert(parse_job_id(\"0\") == 0 - 1); return 0; }",
+    "pub fn test_parse_job_id_5() -> [] int { test.assert(parse_job_id(\"\") == 0 - 1); return 0; }",
+    "pub fn test_parse_job_id_6() -> [] int { test.assert(parse_job_id(\"-1\") == 0 - 1); return 0; }",
+    "pub fn test_parse_job_id_7() -> [] int { test.assert(parse_job_id(\"1x\") == 0 - 1); return 0; }",
+    "pub fn test_parse_job_id_8() -> [] int { test.assert(parse_job_id(\"1 \") == 0 - 1); return 0; }",
+    "pub fn test_parse_job_id_9() -> [] int { test.assert(parse_job_id(\"123456789012345678\") == 0 - 1); return 0; }",
+    "pub fn test_parse_job_id_10() -> [] int { test.assert(parse_job_id(\"abc\") == 0 - 1); return 0; }",
+    "pub fn test_parse_job_id_11() -> [] int { test.assert(parse_job_id(\"1.5\") == 0 - 1); return 0; }",
+    "pub fn test_parse_job_id_12() -> [] int { test.assert(parse_job_id(\"../etc/passwd\") == 0 - 1); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "parse_list_query",
+   "signature": "fn parse_list_query[&q](query: &q [byte]) -> [] (int, int, int, int)",
+   "description": "Read the query string of GET /jobs (without the \"?\") as (error, state, limit, after). error is 0 when every value that is present is valid, else 1. state: -1 when absent, else 0 for \"queued\", 1 for \"running\", 2 for \"done\" (exactly these lowercase words; anything else, an empty value included, is an error). limit: 20 when absent, else a number 1 to 50 written as plain digits (an empty value, \"0\", \"51\", a sign, a letter, a dot are errors). after: 0 when absent, else a non-negative integer of at most 17 plain digits (a sign or an empty value is an error). Values are taken as written, never percent-decoded; other parameters are ignored. Use `http.query_value(query, \"name\")`, which answers the (start, end) of the value of a parameter, or (-1, -1): look it up in the standard library page you were given. When error is 1 the other three numbers are not examined.",
+   "examples": [
+    "parse_list_query(\"\") == (0, -1, 20, 0)",
+    "parse_list_query(\"state=running&limit=5&after=7\") == (0, 1, 5, 7)"
+   ],
+   "tests": [
+    "pub fn test_parse_list_query_1() -> [] int { let (a, b, c, d) = parse_list_query(\"\"); test.assert(a == 0 && b == 0 - 1 && c == 20 && d == 0); return 0; }",
+    "pub fn test_parse_list_query_2() -> [] int { let (a, b, c, d) = parse_list_query(\"state=running&limit=5&after=7\"); test.assert(a == 0 && b == 1 && c == 5 && d == 7); return 0; }",
+    "pub fn test_parse_list_query_3() -> [] int { let (a, b, c, d) = parse_list_query(\"state=queued&x=1\"); test.assert(a == 0 && b == 0 && c == 20 && d == 0); return 0; }",
+    "pub fn test_parse_list_query_4() -> [] int { let (a, b, c, d) = parse_list_query(\"limit=50\"); test.assert(a == 0 && b == 0 - 1 && c == 50 && d == 0); return 0; }",
+    "pub fn test_parse_list_query_5() -> [] int { let (a, b, c, d) = parse_list_query(\"state=done&after=0\"); test.assert(a == 0 && b == 2 && c == 20 && d == 0); return 0; }",
+    "pub fn test_parse_list_query_6() -> [] int { let (a, b, c, d) = parse_list_query(\"limit=0\"); test.assert(a == 1); return 0; }",
+    "pub fn test_parse_list_query_7() -> [] int { let (a, b, c, d) = parse_list_query(\"state=bogus\"); test.assert(a == 1); return 0; }",
+    "pub fn test_parse_list_query_8() -> [] int { let (a, b, c, d) = parse_list_query(\"after=-1\"); test.assert(a == 1); return 0; }",
+    "pub fn test_parse_list_query_9() -> [] int { let (a, b, c, d) = parse_list_query(\"state=QUEUED\"); test.assert(a == 1); return 0; }",
+    "pub fn test_parse_list_query_10() -> [] int { let (a, b, c, d) = parse_list_query(\"limit=51\"); test.assert(a == 1); return 0; }",
+    "pub fn test_parse_list_query_11() -> [] int { let (a, b, c, d) = parse_list_query(\"limit=\"); test.assert(a == 1); return 0; }",
+    "pub fn test_parse_list_query_12() -> [] int { let (a, b, c, d) = parse_list_query(\"limit=1.5\"); test.assert(a == 1); return 0; }",
+    "pub fn test_parse_list_query_13() -> [] int { let (a, b, c, d) = parse_list_query(\"limit=+5\"); test.assert(a == 1); return 0; }",
+    "pub fn test_parse_list_query_14() -> [] int { let (a, b, c, d) = parse_list_query(\"state=\"); test.assert(a == 1); return 0; }",
+    "pub fn test_parse_list_query_15() -> [] int { let (a, b, c, d) = parse_list_query(\"after=\"); test.assert(a == 1); return 0; }",
+    "pub fn test_parse_list_query_16() -> [] int { let (a, b, c, d) = parse_list_query(\"after=1.5\"); test.assert(a == 1); return 0; }",
+    "pub fn test_parse_list_query_17() -> [] int { let (a, b, c, d) = parse_list_query(\"state=queued' OR '1'='1\"); test.assert(a == 1); return 0; }"
+   ],
+   "deps": [
+    "parse_job_id"
+   ],
+   "effort": "medium"
+  },
+  {
+   "id": "valid_kind",
+   "signature": "fn valid_kind[&k](kind: &k [byte]) -> [] bool",
+   "description": "Is `kind` a valid job kind: 1 to 40 bytes, each a lowercase letter a-z, a digit, \"_\" or \"-\"? \"build-1_x\" is true; \"\", \"Deploy\", \"a b\" and 41 characters are false.",
+   "examples": [
+    "valid_kind(\"build-1_x\") == true",
+    "valid_kind(\"Deploy\") == false"
+   ],
+   "tests": [
+    "pub fn test_valid_kind_1() -> [] int { test.assert(valid_kind(\"build-1_x\")); return 0; }",
+    "pub fn test_valid_kind_2() -> [] int { test.assert(valid_kind(\"\") == false); return 0; }",
+    "pub fn test_valid_kind_3() -> [] int { test.assert(valid_kind(\"Deploy\") == false); return 0; }",
+    "pub fn test_valid_kind_4() -> [] int { test.assert(valid_kind(\"a b\") == false); return 0; }",
+    "pub fn test_valid_kind_5() -> [] int { test.assert(valid_kind(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")); return 0; }",
+    "pub fn test_valid_kind_6() -> [] int { test.assert(valid_kind(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\") == false); return 0; }",
+    "pub fn test_valid_kind_7() -> [] int { test.assert(valid_kind(\"0-_\")); return 0; }",
+    "pub fn test_valid_kind_8() -> [] int { test.assert(valid_kind(\"a.b\") == false); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "validate_create",
+   "signature": "fn validate_create[&h, &b](heap: &!h Heap, body: &b [byte]) -> [heap] int",
+   "description": "Validate the body of POST /jobs. 0 when it is valid; otherwise the first of: 1 not JSON (including the empty body and very deep nesting); 2 JSON but not an object; 3 an unknown field (the only allowed members are \"kind\" and \"payload\"); 4 \"kind\" missing or not a string; 5 \"kind\" is a string but not a valid kind (valid_kind, after JSON-decoding its escapes; also more than 40 characters); 6 \"payload\" missing or not a string; 7 \"payload\" longer than 1000 characters (Unicode characters, not bytes; the decoded payload may need up to 4000 bytes; the empty payload is valid). It allocates its parse tape from the heap with `box_slice(heap, json.tape_len(body), 0)` and must free everything it allocates (`unbox_slice`). Use std.json: json.parse(body, tape), json.is_object, json.count, json.get(body, tape, 0, \"kind\"), json.is_string, json.string_equals, json.string_length, json.string_into(body, tape, node, out), json.skip (read the std.json section of the page you were given), and std.utf8 (already imported: `utf8.count(bytes)` counts characters). It must never panic on any bytes.",
+   "examples": [
+    "validate_create(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"\\\"}\") == 0"
+   ],
+   "tests": [
+    "fn jobs_code[&h](heap: &!h Heap, body: &static [byte]) -> [heap] int { return validate_create(heap, body); }",
+    "pub fn test_validate_create_1[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"\\\"}\") == 0); return 0; }",
+    "pub fn test_validate_create_2[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"\\\",\\\"state\\\":\\\"done\\\"}\") == 3); return 0; }",
+    "pub fn test_validate_create_3[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"kind\\\":\\\"X\\\",\\\"payload\\\":\\\"\\\"}\") == 5); return 0; }",
+    "pub fn test_validate_create_4[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"not json\") == 1); return 0; }",
+    "pub fn test_validate_create_5[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"\") == 1); return 0; }",
+    "pub fn test_validate_create_6[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"[1]\") == 2); return 0; }",
+    "pub fn test_validate_create_7[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"\\\"s\\\"\") == 2); return 0; }",
+    "pub fn test_validate_create_8[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"payload\\\":\\\"\\\"}\") == 4); return 0; }",
+    "pub fn test_validate_create_9[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"kind\\\":5,\\\"payload\\\":\\\"\\\"}\") == 4); return 0; }",
+    "pub fn test_validate_create_10[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"kind\\\":\\\"x\\\"}\") == 6); return 0; }",
+    "pub fn test_validate_create_11[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":5}\") == 6); return 0; }",
+    "pub fn test_validate_create_12[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\"}\") == 0); return 0; }",
+    "pub fn test_validate_create_13[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\"}\") == 7); return 0; }",
+    "pub fn test_validate_create_14[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"kind\\\":\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\",\\\"payload\\\":\\\"\\\"}\") == 5); return 0; }",
+    "pub fn test_validate_create_15[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"\\\",\\\"id\\\":1}\") == 3); return 0; }",
+    "pub fn test_validate_create_16[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"\\\",\\\"tenant\\\":\\\"t\\\"}\") == 3); return 0; }",
+    "pub fn test_validate_create_17[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\\\"}\") == 0); return 0; }",
+    "pub fn test_validate_create_18[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\\\"}\") == 7); return 0; }",
+    "pub fn test_validate_create_19[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"a \\\\\\\"quoted\\\\\\\" \\\\n line\\\"}\") == 0); return 0; }",
+    "pub fn test_validate_create_20[&h](heap: &!h Heap) -> [heap] int { test.assert(jobs_code(heap, \"{\\\"kind\\\":\\\"b\\\\u0041\\\",\\\"payload\\\":\\\"\\\"}\") == 5); return 0; }"
+   ],
+   "deps": [
+    "valid_kind"
+   ],
+   "effort": "medium"
+  },
+  {
+   "id": "app",
+   "signature": "fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer",
+   "description": "THE APPLICATION. Build the application: `struct App`, `app_new`, `app_handle`, `app_drop` and whatever helpers they need. The pure functions the task names under 'pure functions' are ALREADY in project.cho (units built and tested before this one): CALL them, do not write them again. project.cho already imports every module the task says it must not import, so use them qualified (`buffer.`, `bytes.`, `http.`, `json.`, `server.`) and import nothing.\n\nAlso define `struct App`, `fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App` and `fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int` (this unit's signature is app_handle). Std.utf8 is already imported.\n\nTHE TASK\nBuild a cancho HTTP service named \"jobs\": a multi-tenant job-queue REST API that is safe to put on the internet. It is the application half of a cancho service: you write `project.cho` (module-less, with `edition 7;`), and it is compiled together with the fixed skeleton `eval/services/skeleton/main.cho` (the socket loop and `main`) and the `http-server` package. Read the header of the skeleton first: it fixes the interface you must define,\n\n    struct App { ... }\n    fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App\n    fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer\n    fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int\n\nand says which std modules the skeleton already imports for the whole program (project.cho must NOT import std.buffer, std.bytes, std.http, std.io, std.json, std.map, std.option, std.result, std.route, std.vec or http.server; use them qualified: `buffer.`, `bytes.`, `http.`, `json.`, `server.`). Other std modules (std.utf8, std.hmac, std.crypto, std.fmt ...) you import yourself. `app_handle` answers EVERY request exactly once, with `server.reply`, `server.reply_with`, `server.failure` or `server.failure_with`, and never traps.\n\nHow this differs from a service built on a web framework and a database (these are deliberate, not omissions):\n- There are no environment variables. The service is configured by command-line flags, which the skeleton hands to `app_new` as `config`: every argument after the program name, each followed by a newline, with `--port N` removed (for example \"--tokens\\ntokA:acme,tokB:globex\\n\").\n- There is no database. All state lives in memory, in `App`, for the life of the process. Nothing is persisted and nothing is required to survive a restart. Note that `app_handle` receives `App` by `&!` borrow and a borrowed struct cannot give up a growable `Vec`/`Buffer`/`Map` field to be replaced: keep the data in fixed-capacity boxed slices (`Box[[int]]`, `Box[[byte]]`). The service must hold at least 2000 jobs and 2 MiB of job text; when it cannot hold one more job, a create answers 503 {\"error\": ...} rather than trapping.\n- A cancho listener binds the port on all interfaces (there is no `--host`), so there is no loopback-only requirement.\n- There is no web framework, schema or ORM package: `std.http` (headers, query), `std.json` (parse and write), `std.route` (optional) and `server.reply` are the toolbox. The input buffer of one request is 16 KiB and the output buffer of one answer is 64 KiB; a request that does not fit is refused with 413 by the skeleton itself.\n\nFlags: `--tokens token1:tenantA,token2:tenantB` (comma-separated entries `token:tenant`; the token is everything before the first \":\", the tenant everything after it; several tokens may name one tenant; an entry with an empty token or an empty tenant is ignored). With no `--tokens` no token is valid, so every request is 401. The skeleton adds `--port N`.\n\nEach customer company (\"tenant\") has its own bearer token. A request carries \"Authorization: Bearer <token>\"; the token decides which tenant it acts for.\n\nA job has an integer id (unique, positive, assigned by the service), a tenant, a \"kind\", a \"payload\", and a \"state\" that is one of \"queued\", \"running\" or \"done\". A new job starts \"queued\". The only allowed moves are queued to running (a worker claims it) and running to done (the worker completes it). Nothing moves backwards and nothing is skipped.\n\nEvery response is JSON (Content-Type: application/json). A job is the object {\"id\": <int>, \"tenant\": <string>, \"kind\": <string>, \"payload\": <string>, \"state\": <string>}. Every error is {\"error\": <short text>}.\n\nEndpoints:\n\n- POST /jobs -- body {\"kind\": Str, \"payload\": Str}. Creates a queued job owned by the caller's tenant and returns the job. 201 on success. An optional \"Idempotency-Key\" header makes the call safe to repeat: the same key sent again by the same tenant returns the original job (as it is now, in whatever state it has reached) with 200 and creates nothing. Two different tenants may use the same key independently. An empty Idempotency-Key value is the same as no header. A body is validated before the key is looked at.\n- GET /jobs/{id} -- returns one job (200).\n- GET /jobs?state=queued&limit=20&after=7 -- lists the caller's tenant's jobs ordered by id ascending. \"state\" is optional and must be one of the three states. \"limit\" is optional, an integer from 1 to 50, default 20. \"after\" is optional, a non-negative integer: only jobs with an id greater than it are returned. The response is {\"jobs\": [...], \"next_after\": <id of the last job in \"jobs\", or null when \"jobs\" is empty>}. A page may hold FEWER than \"limit\" jobs: it stops adding jobs once its JSON has passed 48000 bytes, so that it fits the 64 KiB output buffer; \"next_after\" is then the last job it did contain, and asking again with that \"after\" continues exactly where it stopped. Query values are taken as written (never percent-decoded); anything else in the query string is ignored.\n- POST /jobs/{id}/claim -- moves a queued job to running. 200 with the job. 409 if the job is not queued.\n- POST /jobs/{id}/complete -- moves a running job to done. 200 with the job. 409 if the job is not running.\n\nAny other method on these paths is 405 with an \"Allow\" header (404 is also tolerated); any other path is 404.\n\nSecurity requirements. Each one is something an attacker will try, and each must have a test:\n\n1. Authentication comes first, for every request to any path: no token, a malformed Authorization header, or an unknown token is 401 and nothing else is looked at or changed. The header must be exactly \"Bearer \" (capital B, one space) followed by the token; \"Bearer\" alone, \"bearer tokA\", \"Basic ...\", a token with extra characters before or after it (a second space after \"Bearer\", or a longer or shorter token; trailing whitespace is removed from header values by the HTTP parser, so it cannot be told apart and is not tested), or an empty token are all 401. (The header NAME is case-insensitive as in any HTTP.) A missing token and an unknown token return the identical generic 401 body.\n2. A tenant can never see or change another tenant's job. Asking for an id that belongs to someone else returns 404, exactly the same response as an id that does not exist -- never 403, so existence does not leak. This includes claim and complete (a foreign claim must not change the job).\n3. \"state\", \"limit\" and \"after\" values that are not valid are 400, whatever they look like: `queued' OR '1'='1`, \"QUEUED\", \"\", \"0\", \"51\", \"abc\", \"-1\", \"1.5\", \"+5\". Nothing from the request is ever used as anything but data.\n4. The create body is strictly validated: kind is 1 to 40 characters of lowercase letters (a-z), digits, \"_\" or \"-\"; payload is a string of at most 1000 characters (Unicode characters, not bytes; the empty string is allowed). Unknown fields are rejected with 400 -- in particular a body that tries to set \"id\", \"tenant\", \"tenant_id\" or \"state\" is rejected, so a client can neither choose its owner nor start a job in a later state. Missing fields, fields of the wrong JSON type, a body that is not a JSON object, an empty body and invalid JSON (including very deep nesting) are all 400. The payload is stored and returned verbatim (quotes, SQL text, non-ASCII all come back as sent).\n5. A request body larger than 4096 bytes is rejected with 413 before it is parsed (4096 bytes exactly is accepted). This applies after authentication; a request the skeleton refuses for not fitting its 16 KiB input buffer is also 413, and an unauthenticated oversize request may therefore be answered 401 or 413 -- never 500.\n6. The id in the path must be a positive integer written as decimal digits (at most 17); anything else (including \"0\", \"-1\", \"abc\", \"1 OR 1=1\", \"../etc/passwd\", \"1.5\") is 404. Paths are not percent-decoded.\n7. Tokens are compared in constant time against every configured token (no early exit on the first mismatch, no early exit on the first differing byte), tokens are never logged or echoed in a response, and the 401 body is the same for every failure.\n8. Listening address: not applicable (see the differences above).\n\nEffects. The service may declare only the effects a server needs: args, heap, clock, net_in, conn_accept, conn_read, conn_write, poll, io_write and err_write (`cancho authority` on the three files is checked); in particular no file, process or foreign-code access. The pure logic must be pure functions with no effect annotation (a row of `[]`, except that `validate_create` allocates its parse tape and so declares `[heap]`), each with examples, with exactly these names and signatures so they can be tested on their own. States are numbered 0 queued, 1 running, 2 done; actions 0 claim, 1 complete.\n\n    fn bearer_token[&v](header: &v [byte]) -> [] &v [byte]\n        the token after exactly \"Bearer \"; an empty slice for anything else.\n        bearer_token(\"Bearer abc\") is \"abc\"; bearer_token(\"Bearer \") , bearer_token(\"Bearer\"), bearer_token(\"bearer abc\"), bearer_token(\"Basic abc\") and bearer_token(\"\") are empty.\n    fn token_tenant[&s, &t](spec: &s [byte], token: &t [byte]) -> [] (int, int)\n        spec is the --tokens value. The (start, end) of the tenant name inside spec for the entry whose token equals token (compared in constant time, every entry compared), or (-1, -1) when none does.\n        token_tenant(\"tokA:acme,tokB:globex\", \"tokB\") is (15, 21); token_tenant(..., \"tokC\") is (-1, -1); token_tenant(..., \"\") is (-1, -1); token_tenant(\"a:x\", \"a:x\") is (-1, -1).\n    fn transition(state: int, action: int) -> [] int\n        the state after the move, or -1 when it is not allowed. transition(0,0) is 1, transition(1,1) is 2, every other pair is -1.\n    fn parse_job_id[&t](text: &t [byte]) -> [] int\n        a positive integer of at most 17 decimal digits, else -1. parse_job_id(\"12\") is 12; \"0\", \"\", \"-1\", \"1x\", \"1 \", \"123456789012345678\" are -1.\n    fn parse_list_query[&q](query: &q [byte]) -> [] (int, int, int, int)\n        (error, state, limit, after) from the query string without its \"?\". error is 0 when every given value is valid, else 1. state is -1 when absent, else 0..2; limit defaults to 20, after to 0.\n        parse_list_query(\"\") is (0,-1,20,0); parse_list_query(\"state=running&limit=5&after=7\") is (0,1,5,7); parse_list_query(\"limit=0\").0 is 1; parse_list_query(\"state=bogus\").0 is 1; parse_list_query(\"after=-1\").0 is 1.\n    fn valid_kind[&k](kind: &k [byte]) -> [] bool\n        1 to 40 bytes of a-z 0-9 _ -. valid_kind(\"build-1_x\") is true; \"\", \"Deploy\", \"a b\", and 41 characters are false.\n    fn validate_create[&h, &b](heap: &!h Heap, body: &b [byte]) -> [heap] int\n        0 when body is a valid create body, else 1 not JSON, 2 not an object, 3 unknown field, 4 kind missing or not a string, 5 kind invalid, 6 payload missing or not a string, 7 payload longer than 1000 characters. validate_create(h, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"\\\"}\") is 0; with an extra \"state\" field it is 3; \"{\\\"kind\\\":\\\"X\\\",\\\"payload\\\":\\\"\\\"}\" is 5.\n\nSuggested way to work: the pure functions first (with their examples as `fn test_*` checks if you like), then the stores in `App`, then `app_handle`. The tests that grade the service start the built binary with `--port N --tokens ...` and speak HTTP to it.\n\n\nTHE APPLICATION INTERFACE\nThe service skeleton: the part of a cancho HTTP service that is the same for every service. It is `main.cho` of a service project; the project's\nown file (`project.cho`) holds the application, and the two are compiled together (files without a `module` header share one namespace, so this\nfile calls the application's functions unqualified).\n\nTHE APPLICATION INTERFACE (project.cho must define exactly these, with these signatures):\n\n    struct App { ... }                                   the service's state, any fields (a Vec, a Map, buffers, ints)\n    fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App\n    fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer\n    fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int\n\n`config` is every command-line argument after the program name, each followed by a newline (`--tokens\\ntokA:acme\\n`), minus `--port N`, which the\nskeleton consumes: the application parses the flags its brief names. `app_handle` gets one whole parsed request: `request` and `table` are what\n`std.http` parsed (use `http.method(request, table)`, `http.path(request, table)`, `http.query(request, table)`, `http.header(...)`), `body` the\nrequest body, `now_ms` the time in Unix milliseconds (`clock_unix_ms`, so a timestamp in a request can be compared with it; it is wall-clock time, not monotonic), and `out` an empty buffer to append the response to. It answers the response with\n`server.reply(heap, out, status, body, keep)` / `server.reply_with(.., extra_headers)` / `server.failure(heap, out, status, message, keep)`\n(module `http.server`; `keep` is `http.keeps_alive(table)`). It must answer something for EVERY request and never trap.\n\nWhat the skeleton does: `--port N` (required), listens on that port (a cancho listener binds the port on all interfaces: `bind` takes a port,\nnot an address), accepts, parses (`std.http`; a malformed request is answered 400 by the server and never reaches the application, a body that\ncannot fit the 16 KiB input buffer is answered 413 by the server), calls `app_handle`, sends the answer.",
+   "effort": "low",
+   "examples": [],
+   "deps": [
+    "bearer_token",
+    "token_tenant",
+    "transition",
+    "parse_job_id",
+    "parse_list_query",
+    "valid_kind",
+    "validate_create"
+   ]
+  }
+ ]
+}

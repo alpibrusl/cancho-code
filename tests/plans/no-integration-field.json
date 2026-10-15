@@ -1,0 +1,1 @@
+{"name":"svc","units":[{"id":"a","signature":"fn dbl(x: int) -> [] int","examples":["dbl(1) == 2"],"deps":[]},{"id":"b","signature":"fn tpl(x: int) -> [] int","examples":["tpl(1) == 3"],"deps":[]},{"id":"app","signature":"fn app_handle[&h](heap: &!h Heap) -> [heap] int","examples":[],"deps":["a","b"]}]}

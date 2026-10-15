@@ -60,6 +60,13 @@ for p in "$root"/eval/*/plan.json; do
     expect "$(basename "$(dirname "$p")") plan: valid" "$out" "$(printf '[PLAN]\tvalid')"
 done
 
+# the hand plans of the four services (docs/project.md, "Services") are valid, and each names its integration unit
+for p in "$root"/eval/services/*/plan.json; do
+    out=$("$exe" "$p" 2>&1); rc=$?
+    expect "service $(basename "$(dirname "$p")") plan: valid" "$out" "$(printf '[PLAN]\tvalid')"
+    grep -q '"integration": "app"' "$p" || { echo "FAIL: service $(basename "$(dirname "$p")") plan: no integration unit" >&2; fail=1; }
+done
+
 out=$("$exe" "$root/eval/csv/plan.json" 2>&1); rc=$?
 expect "csv plan: exit code" "$rc" 0
 expect "csv plan: output" "$out" "$(printf '[PLAN]\tvalid')"

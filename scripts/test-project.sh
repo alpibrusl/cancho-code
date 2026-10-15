@@ -11,6 +11,9 @@
 #   option      a unit whose examples are Option results: run as a match; a wrong Some value is refused, the right answer accepted
 #   described   a unit's description reaches the agent in the task, decoded, with the instruction not to write tests
 #   rawtests    a unit's own `tests` replace the example-derived ones; region parameters in a signature are accepted
+#   service     a plan with an `integration` unit (docs/plan.md): the pure unit is tested with the lib files beside it, the integration unit has no
+#               examples and is judged by the acceptance command (builds the whole thing with a fixed main), its scenario output reaches the agent
+#               as feedback, a failing scenario is retried within the attempt ceiling, never-satisfied is `stuck`, a rerun keeps both units
 #   no plan     an invalid plan: its errors, then no_plan, exit 3, the agent never asked
 #   usage       no arguments, and a plan that is not there: exit 2
 #
@@ -155,6 +158,57 @@ expect "rawtests: exit code" "$r" 0
 expect "rawtests: verdict" "$(verdict "$out")" done
 expect "rawtests: the empty-string test refused the first answer" "$(order "$lg")" "a a"
 grep -q 'test_a_raw_2' "$wd/tests-a.cho" || { echo "FAIL: rawtests: the unit's own test is not in its tests file" >&2; fail=1; }
+rm -rf "$wd" "$rc"
+
+# service: the integration unit. The acceptance command and the lib files are the driver's 7th and 8th arguments (as `fix` takes them)
+SV="$T/service"
+runs() { # plan wd recipes log
+    "$exe" "$CANCHO" "$1" "$2" "sh $T/agent.sh $3 $4" 4 60 "sh $SV/accept.sh $CANCHO $SV/svc-main.cho $SV/lib.cho" "$SV/lib.cho" 2>&1
+}
+set -- $(mk); wd=$1; rc=$2; lg=$3
+cp "$SV"/recipes/*.sh "$rc"/
+out=$(runs "$SV/plan.json" "$wd" "$rc" "$lg"); r=$?
+expect "service: exit code" "$r" 0
+expect "service: verdict" "$(verdict "$out")" done
+expect "service: unit lines" "$(units "$out")" "a:building a:verified app:building app:verified"
+expect "service: agent order" "$(order "$lg")" "a app"
+[ -f "$wd/tests-app.cho" ] && { echo "FAIL: service: the integration unit got a tests file" >&2; fail=1; }
+expect "service: the state" "$(order "$wd/state.txt")" "verified a verified app"
+# a second run keeps both: the integration unit is re-verified by the acceptance command
+out=$(runs "$SV/plan.json" "$wd" "$rc" "$lg"); r=$?
+expect "service: rerun exit code" "$r" 0
+expect "service: rerun keeps both" "$(units "$out")" "a:kept app:kept"
+rm -rf "$wd" "$rc"
+
+# service, scenario feedback: the application's first answer fails the scenario; the scenario's own output is in the feedback the agent reads
+# on the next attempt, and the second answer verifies
+set -- $(mk); wd=$1; rc=$2; lg=$3
+cp "$SV"/recipes/*.sh "$rc"/
+printf 'printf "\nfn app_run(x: int) -> [] int { return double(x); }\n" >> "$1"\n' > "$rc/app.1.sh"
+printf 'grep -q "SCENARIO app_run(20): expected 41 got 40" "$1.feedback" || exit 3\nsed -i.bak "s/double(x);/double(x) + 1;/" "$1"\n' > "$rc/app.2.sh"
+out=$(runs "$SV/plan.json" "$wd" "$rc" "$lg"); r=$?
+expect "service feedback: exit code" "$r" 0
+expect "service feedback: agent order" "$(order "$lg")" "a app app"
+expect "service feedback: the integration unit took two attempts" "$(printf '%s\n' "$out" | grep 'ISSUE_VERDICT.*verified' | tail -1 | cut -f3)" "attempts 2"
+rm -rf "$wd" "$rc"
+
+# service, never satisfied: the pure unit stays verified, the integration unit fails, stuck
+set -- $(mk); wd=$1; rc=$2; lg=$3
+cp "$SV"/recipes/*.sh "$rc"/
+printf 'sed -i.bak "/fn app_run/d" "$1"; printf "\nfn app_run(x: int) -> [] int { return double(x) + 2; }\n" >> "$1"\n' > "$rc/app.sh"
+out=$(runs "$SV/plan.json" "$wd" "$rc" "$lg"); r=$?
+expect "service stuck: exit code" "$r" 1
+expect "service stuck: verdict" "$(verdict "$out")" stuck
+expect "service stuck: unit lines" "$(units "$out")" "a:building a:verified app:building app:failed"
+expect "service stuck: the state has a only" "$(order "$wd/state.txt")" "verified a"
+rm -rf "$wd" "$rc"
+
+# an integration unit and no acceptance command: a usage error, the agent is never asked
+set -- $(mk); wd=$1; rc=$2; lg=$3
+out=$(run "$SV/plan.json" "$wd" "$rc" "$lg"); r=$?
+expect "service no command: exit code" "$r" 2
+case "$out" in *"no acceptance command"*) ;; *) echo "FAIL: service no command: no message ('$out')" >&2; fail=1 ;; esac
+expect "service no command: the agent was never asked" "$(wc -c < "$lg" | tr -d ' ')" 0
 rm -rf "$wd" "$rc"
 
 # no plan
