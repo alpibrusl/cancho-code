@@ -1,0 +1,1037 @@
+{
+ "conditions": {
+  "d16": "guide v1, plan v1, --max-tokens 16000",
+  "d48": "guide v1, plan v1, --max-tokens 48000",
+  "g2": "guide v2 (header names lowercase), plan v2 (examples carry the cases), --max-tokens 48000",
+  "g4": "guide v4 (adds: extra header lines end in CRLF), plan v2, --max-tokens 48000 (kvstore only)",
+  "g3": "guide v3 (adds the 64 KiB region rule), plan v2, --max-tokens 48000"
+ },
+ "runs": [
+  {
+   "label": "d16",
+   "service": "invoices",
+   "run": 1,
+   "verdict": "provider_error",
+   "units_verified": 8,
+   "units_total": 9,
+   "plan_units": 9,
+   "attack": null,
+   "attack_note": "no application: the project does not build with the skeleton",
+   "calls": 15,
+   "out_tokens": 68872,
+   "thinking_tokens": 63039,
+   "cost_usd": 0.042923,
+   "seconds": 329.0,
+   "pure_calls": 12,
+   "pure_out_tokens": 20872,
+   "pure_units_verified": 8,
+   "app_calls": 3,
+   "app_outcomes": [
+    "cut_off",
+    "cut_off",
+    "cut_off"
+   ],
+   "app_out_tokens": [
+    16000,
+    16000,
+    16000
+   ],
+   "app_thinking_tokens": [
+    16000,
+    16000,
+    16000
+   ]
+  },
+  {
+   "label": "d16",
+   "service": "invoices",
+   "run": 2,
+   "verdict": "stuck",
+   "units_verified": 6,
+   "units_total": 7,
+   "plan_units": 9,
+   "attack": null,
+   "attack_note": "no application: the project does not build with the skeleton",
+   "calls": 11,
+   "out_tokens": 20161,
+   "thinking_tokens": 15148,
+   "cost_usd": 0.014573,
+   "seconds": 102.7,
+   "pure_calls": 11,
+   "pure_out_tokens": 20161,
+   "pure_units_verified": 6,
+   "app_calls": 0,
+   "app_outcomes": [],
+   "app_out_tokens": [],
+   "app_thinking_tokens": []
+  },
+  {
+   "label": "d16",
+   "service": "jobs",
+   "run": 1,
+   "verdict": "provider_error",
+   "units_verified": 7,
+   "units_total": 8,
+   "plan_units": 8,
+   "attack": null,
+   "attack_note": "no application: the project does not build with the skeleton",
+   "calls": 13,
+   "out_tokens": 67891,
+   "thinking_tokens": 62167,
+   "cost_usd": 0.040695,
+   "seconds": 317.1,
+   "pure_calls": 10,
+   "pure_out_tokens": 19891,
+   "pure_units_verified": 7,
+   "app_calls": 3,
+   "app_outcomes": [
+    "cut_off",
+    "cut_off",
+    "cut_off"
+   ],
+   "app_out_tokens": [
+    16000,
+    16000,
+    16000
+   ],
+   "app_thinking_tokens": [
+    16000,
+    16000,
+    16000
+   ]
+  },
+  {
+   "label": "d16",
+   "service": "jobs",
+   "run": 2,
+   "verdict": "provider_error",
+   "units_verified": 7,
+   "units_total": 8,
+   "plan_units": 8,
+   "attack": null,
+   "attack_note": "no application: the project does not build with the skeleton",
+   "calls": 13,
+   "out_tokens": 65152,
+   "thinking_tokens": 60310,
+   "cost_usd": 0.039228,
+   "seconds": 305.3,
+   "pure_calls": 10,
+   "pure_out_tokens": 17152,
+   "pure_units_verified": 7,
+   "app_calls": 3,
+   "app_outcomes": [
+    "cut_off",
+    "cut_off",
+    "cut_off"
+   ],
+   "app_out_tokens": [
+    16000,
+    16000,
+    16000
+   ],
+   "app_thinking_tokens": [
+    16000,
+    16000,
+    16000
+   ]
+  },
+  {
+   "label": "d16",
+   "service": "kvstore",
+   "run": 1,
+   "verdict": "provider_error",
+   "units_verified": 10,
+   "units_total": 11,
+   "plan_units": 11,
+   "attack": null,
+   "attack_note": "no application: the project does not build with the skeleton",
+   "calls": 14,
+   "out_tokens": 66608,
+   "thinking_tokens": 62508,
+   "cost_usd": 0.040847,
+   "seconds": 330.4,
+   "pure_calls": 11,
+   "pure_out_tokens": 18608,
+   "pure_units_verified": 10,
+   "app_calls": 3,
+   "app_outcomes": [
+    "cut_off",
+    "cut_off",
+    "cut_off"
+   ],
+   "app_out_tokens": [
+    16000,
+    16000,
+    16000
+   ],
+   "app_thinking_tokens": [
+    16000,
+    16000,
+    16000
+   ]
+  },
+  {
+   "label": "d16",
+   "service": "kvstore",
+   "run": 2,
+   "verdict": "provider_error",
+   "units_verified": 10,
+   "units_total": 11,
+   "plan_units": 11,
+   "attack": null,
+   "attack_note": "no application: the project does not build with the skeleton",
+   "calls": 16,
+   "out_tokens": 66689,
+   "thinking_tokens": 61186,
+   "cost_usd": 0.04183,
+   "seconds": 326.4,
+   "pure_calls": 13,
+   "pure_out_tokens": 18689,
+   "pure_units_verified": 10,
+   "app_calls": 3,
+   "app_outcomes": [
+    "cut_off",
+    "cut_off",
+    "cut_off"
+   ],
+   "app_out_tokens": [
+    16000,
+    16000,
+    16000
+   ],
+   "app_thinking_tokens": [
+    16000,
+    16000,
+    16000
+   ]
+  },
+  {
+   "label": "d16",
+   "service": "webhooks",
+   "run": 1,
+   "verdict": "provider_error",
+   "units_verified": 13,
+   "units_total": 14,
+   "plan_units": 14,
+   "attack": null,
+   "attack_note": "no application: the project does not build with the skeleton",
+   "calls": 16,
+   "out_tokens": 52821,
+   "thinking_tokens": 49945,
+   "cost_usd": 0.033745,
+   "seconds": 282.0,
+   "pure_calls": 13,
+   "pure_out_tokens": 4821,
+   "pure_units_verified": 13,
+   "app_calls": 3,
+   "app_outcomes": [
+    "cut_off",
+    "cut_off",
+    "cut_off"
+   ],
+   "app_out_tokens": [
+    16000,
+    16000,
+    16000
+   ],
+   "app_thinking_tokens": [
+    16000,
+    16000,
+    16000
+   ]
+  },
+  {
+   "label": "d16",
+   "service": "webhooks",
+   "run": 2,
+   "verdict": "provider_error",
+   "units_verified": 13,
+   "units_total": 14,
+   "plan_units": 14,
+   "attack": null,
+   "attack_note": "no application: the project does not build with the skeleton",
+   "calls": 17,
+   "out_tokens": 56418,
+   "thinking_tokens": 52704,
+   "cost_usd": 0.036558,
+   "seconds": 298.7,
+   "pure_calls": 14,
+   "pure_out_tokens": 8418,
+   "pure_units_verified": 13,
+   "app_calls": 3,
+   "app_outcomes": [
+    "cut_off",
+    "cut_off",
+    "cut_off"
+   ],
+   "app_out_tokens": [
+    16000,
+    16000,
+    16000
+   ],
+   "app_thinking_tokens": [
+    16000,
+    16000,
+    16000
+   ]
+  },
+  {
+   "label": "d48",
+   "service": "invoices",
+   "run": 1,
+   "verdict": "stuck",
+   "units_verified": 8,
+   "units_total": 9,
+   "plan_units": 9,
+   "attack": null,
+   "attack_note": "no application: the project does not build with the skeleton",
+   "calls": 11,
+   "out_tokens": 49773,
+   "thinking_tokens": 41337,
+   "cost_usd": 0.030922,
+   "seconds": 231.6,
+   "pure_calls": 9,
+   "pure_out_tokens": 19383,
+   "pure_units_verified": 8,
+   "app_calls": 2,
+   "app_outcomes": [
+    "written",
+    "written"
+   ],
+   "app_out_tokens": [
+    26570,
+    3820
+   ],
+   "app_thinking_tokens": [
+    22321,
+    3588
+   ]
+  },
+  {
+   "label": "d48",
+   "service": "invoices",
+   "run": 2,
+   "verdict": "stuck",
+   "units_verified": 6,
+   "units_total": 7,
+   "plan_units": 9,
+   "attack": null,
+   "attack_note": "no application: the project does not build with the skeleton",
+   "calls": 9,
+   "out_tokens": 16881,
+   "thinking_tokens": 13276,
+   "cost_usd": 0.011624,
+   "seconds": 91.9,
+   "pure_calls": 9,
+   "pure_out_tokens": 16881,
+   "pure_units_verified": 6,
+   "app_calls": 0,
+   "app_outcomes": [],
+   "app_out_tokens": [],
+   "app_thinking_tokens": []
+  },
+  {
+   "label": "d48",
+   "service": "jobs",
+   "run": 1,
+   "verdict": "stuck",
+   "units_verified": 7,
+   "units_total": 8,
+   "plan_units": 8,
+   "attack": null,
+   "attack_note": "no application: the project does not build with the skeleton",
+   "calls": 12,
+   "out_tokens": 47193,
+   "thinking_tokens": 36907,
+   "cost_usd": 0.031,
+   "seconds": 215.0,
+   "pure_calls": 9,
+   "pure_out_tokens": 16929,
+   "pure_units_verified": 7,
+   "app_calls": 3,
+   "app_outcomes": [
+    "written",
+    "written",
+    "written"
+   ],
+   "app_out_tokens": [
+    24649,
+    2036,
+    3579
+   ],
+   "app_thinking_tokens": [
+    19521,
+    1568,
+    3242
+   ]
+  },
+  {
+   "label": "d48",
+   "service": "jobs",
+   "run": 2,
+   "verdict": "stuck",
+   "units_verified": 7,
+   "units_total": 8,
+   "plan_units": 8,
+   "attack": null,
+   "attack_note": "no application: the project does not build with the skeleton",
+   "calls": 11,
+   "out_tokens": 56679,
+   "thinking_tokens": 45821,
+   "cost_usd": 0.034425,
+   "seconds": 248.2,
+   "pure_calls": 9,
+   "pure_out_tokens": 20386,
+   "pure_units_verified": 7,
+   "app_calls": 2,
+   "app_outcomes": [
+    "written",
+    "written"
+   ],
+   "app_out_tokens": [
+    34839,
+    1454
+   ],
+   "app_thinking_tokens": [
+    28725,
+    927
+   ]
+  },
+  {
+   "label": "d48",
+   "service": "kvstore",
+   "run": 1,
+   "verdict": "stuck",
+   "units_verified": 10,
+   "units_total": 11,
+   "plan_units": 11,
+   "attack": null,
+   "attack_note": "no application: the project does not build with the skeleton",
+   "calls": 19,
+   "out_tokens": 61677,
+   "thinking_tokens": 47493,
+   "cost_usd": 0.045762,
+   "seconds": 298.1,
+   "pure_calls": 13,
+   "pure_out_tokens": 16134,
+   "pure_units_verified": 10,
+   "app_calls": 6,
+   "app_outcomes": [
+    "written",
+    "written",
+    "written",
+    "no_program",
+    "no_program",
+    "written"
+   ],
+   "app_out_tokens": [
+    34486,
+    1116,
+    1179,
+    2968,
+    3194,
+    2600
+   ],
+   "app_thinking_tokens": [
+    28293,
+    914,
+    296,
+    2647,
+    2848,
+    1920
+   ]
+  },
+  {
+   "label": "d48",
+   "service": "kvstore",
+   "run": 2,
+   "verdict": "stuck",
+   "units_verified": 10,
+   "units_total": 11,
+   "plan_units": 11,
+   "attack": null,
+   "attack_note": "no application: the project does not build with the skeleton",
+   "calls": 16,
+   "out_tokens": 51727,
+   "thinking_tokens": 40975,
+   "cost_usd": 0.037769,
+   "seconds": 254.2,
+   "pure_calls": 11,
+   "pure_out_tokens": 14398,
+   "pure_units_verified": 10,
+   "app_calls": 5,
+   "app_outcomes": [
+    "written",
+    "written",
+    "no_program",
+    "no_program",
+    "written"
+   ],
+   "app_out_tokens": [
+    26127,
+    753,
+    3440,
+    4119,
+    2890
+   ],
+   "app_thinking_tokens": [
+    20748,
+    498,
+    3024,
+    3735,
+    2396
+   ]
+  },
+  {
+   "label": "d48",
+   "service": "webhooks",
+   "run": 1,
+   "verdict": "stuck",
+   "units_verified": 13,
+   "units_total": 14,
+   "plan_units": 14,
+   "attack": null,
+   "attack_note": "no application: the project does not build with the skeleton",
+   "calls": 15,
+   "out_tokens": 26721,
+   "thinking_tokens": 18983,
+   "cost_usd": 0.020067,
+   "seconds": 144.9,
+   "pure_calls": 13,
+   "pure_out_tokens": 4034,
+   "pure_units_verified": 13,
+   "app_calls": 2,
+   "app_outcomes": [
+    "written",
+    "written"
+   ],
+   "app_out_tokens": [
+    20881,
+    1806
+   ],
+   "app_thinking_tokens": [
+    16441,
+    1323
+   ]
+  },
+  {
+   "label": "d48",
+   "service": "webhooks",
+   "run": 2,
+   "verdict": "done",
+   "units_verified": 14,
+   "units_total": 14,
+   "plan_units": 14,
+   "attack": {
+    "passed": 129,
+    "of": 129
+   },
+   "attack_note": null,
+   "calls": 15,
+   "out_tokens": 33935,
+   "thinking_tokens": 24331,
+   "cost_usd": 0.024067,
+   "seconds": 197.2,
+   "pure_calls": 13,
+   "pure_out_tokens": 6887,
+   "pure_units_verified": 13,
+   "app_calls": 2,
+   "app_outcomes": [
+    "written",
+    "written"
+   ],
+   "app_out_tokens": [
+    23907,
+    3141
+   ],
+   "app_thinking_tokens": [
+    19132,
+    1420
+   ]
+  },
+  {
+   "label": "g2",
+   "service": "invoices",
+   "run": 1,
+   "verdict": "done",
+   "units_verified": 9,
+   "units_total": 9,
+   "plan_units": 9,
+   "attack": {
+    "passed": 145,
+    "of": 165
+   },
+   "attack_note": null,
+   "calls": 12,
+   "out_tokens": 42885,
+   "thinking_tokens": 33419,
+   "cost_usd": 0.028382,
+   "seconds": 204.6,
+   "pure_calls": 10,
+   "pure_out_tokens": 18781,
+   "pure_units_verified": 8,
+   "app_calls": 2,
+   "app_outcomes": [
+    "written",
+    "written"
+   ],
+   "app_out_tokens": [
+    23069,
+    1035
+   ],
+   "app_thinking_tokens": [
+    18606,
+    564
+   ]
+  },
+  {
+   "label": "g2",
+   "service": "invoices",
+   "run": 2,
+   "verdict": "done",
+   "units_verified": 9,
+   "units_total": 9,
+   "plan_units": 9,
+   "attack": {
+    "passed": 145,
+    "of": 165
+   },
+   "attack_note": null,
+   "calls": 12,
+   "out_tokens": 44960,
+   "thinking_tokens": 35489,
+   "cost_usd": 0.029244,
+   "seconds": 222.1,
+   "pure_calls": 10,
+   "pure_out_tokens": 21089,
+   "pure_units_verified": 8,
+   "app_calls": 2,
+   "app_outcomes": [
+    "written",
+    "written"
+   ],
+   "app_out_tokens": [
+    22624,
+    1247
+   ],
+   "app_thinking_tokens": [
+    18172,
+    718
+   ]
+  },
+  {
+   "label": "g2",
+   "service": "jobs",
+   "run": 1,
+   "verdict": "done",
+   "units_verified": 8,
+   "units_total": 8,
+   "plan_units": 8,
+   "attack": {
+    "passed": 188,
+    "of": 188
+   },
+   "attack_note": null,
+   "calls": 11,
+   "out_tokens": 52193,
+   "thinking_tokens": 40479,
+   "cost_usd": 0.033094,
+   "seconds": 239.1,
+   "pure_calls": 10,
+   "pure_out_tokens": 23556,
+   "pure_units_verified": 7,
+   "app_calls": 1,
+   "app_outcomes": [
+    "written"
+   ],
+   "app_out_tokens": [
+    28637
+   ],
+   "app_thinking_tokens": [
+    23033
+   ]
+  },
+  {
+   "label": "g2",
+   "service": "jobs",
+   "run": 2,
+   "verdict": "done",
+   "units_verified": 8,
+   "units_total": 8,
+   "plan_units": 8,
+   "attack": {
+    "passed": 188,
+    "of": 188
+   },
+   "attack_note": null,
+   "calls": 12,
+   "out_tokens": 43923,
+   "thinking_tokens": 34085,
+   "cost_usd": 0.029499,
+   "seconds": 207.5,
+   "pure_calls": 9,
+   "pure_out_tokens": 17193,
+   "pure_units_verified": 7,
+   "app_calls": 3,
+   "app_outcomes": [
+    "written",
+    "written",
+    "written"
+   ],
+   "app_out_tokens": [
+    24233,
+    926,
+    1571
+   ],
+   "app_thinking_tokens": [
+    19485,
+    394,
+    930
+   ]
+  },
+  {
+   "label": "g2",
+   "service": "kvstore",
+   "run": 1,
+   "verdict": "done",
+   "units_verified": 11,
+   "units_total": 11,
+   "plan_units": 11,
+   "attack": {
+    "passed": 110,
+    "of": 225
+   },
+   "attack_note": null,
+   "calls": 13,
+   "out_tokens": 42936,
+   "thinking_tokens": 33726,
+   "cost_usd": 0.027345,
+   "seconds": 220.1,
+   "pure_calls": 12,
+   "pure_out_tokens": 17902,
+   "pure_units_verified": 10,
+   "app_calls": 1,
+   "app_outcomes": [
+    "written"
+   ],
+   "app_out_tokens": [
+    25034
+   ],
+   "app_thinking_tokens": [
+    20362
+   ]
+  },
+  {
+   "label": "g2",
+   "service": "kvstore",
+   "run": 2,
+   "verdict": "done",
+   "units_verified": 11,
+   "units_total": 11,
+   "plan_units": 11,
+   "attack": {
+    "passed": 111,
+    "of": 225
+   },
+   "attack_note": null,
+   "calls": 15,
+   "out_tokens": 51497,
+   "thinking_tokens": 39110,
+   "cost_usd": 0.034197,
+   "seconds": 252.9,
+   "pure_calls": 13,
+   "pure_out_tokens": 18448,
+   "pure_units_verified": 10,
+   "app_calls": 2,
+   "app_outcomes": [
+    "written",
+    "written"
+   ],
+   "app_out_tokens": [
+    31612,
+    1437
+   ],
+   "app_thinking_tokens": [
+    25393,
+    897
+   ]
+  },
+  {
+   "label": "g2",
+   "service": "webhooks",
+   "run": 1,
+   "verdict": "done",
+   "units_verified": 14,
+   "units_total": 14,
+   "plan_units": 14,
+   "attack": {
+    "passed": 129,
+    "of": 129
+   },
+   "attack_note": null,
+   "calls": 15,
+   "out_tokens": 36612,
+   "thinking_tokens": 27849,
+   "cost_usd": 0.02615,
+   "seconds": 202.8,
+   "pure_calls": 14,
+   "pure_out_tokens": 7048,
+   "pure_units_verified": 13,
+   "app_calls": 1,
+   "app_outcomes": [
+    "written"
+   ],
+   "app_out_tokens": [
+    29564
+   ],
+   "app_thinking_tokens": [
+    24014
+   ]
+  },
+  {
+   "label": "g2",
+   "service": "webhooks",
+   "run": 2,
+   "verdict": "done",
+   "units_verified": 14,
+   "units_total": 14,
+   "plan_units": 14,
+   "attack": {
+    "passed": 129,
+    "of": 129
+   },
+   "attack_note": null,
+   "calls": 16,
+   "out_tokens": 34629,
+   "thinking_tokens": 24345,
+   "cost_usd": 0.025868,
+   "seconds": 196.5,
+   "pure_calls": 13,
+   "pure_out_tokens": 7103,
+   "pure_units_verified": 13,
+   "app_calls": 3,
+   "app_outcomes": [
+    "written",
+    "written",
+    "written"
+   ],
+   "app_out_tokens": [
+    24427,
+    1951,
+    1148
+   ],
+   "app_thinking_tokens": [
+    19349,
+    865,
+    0
+   ]
+  },
+  {
+   "label": "g3",
+   "service": "invoices",
+   "run": 1,
+   "verdict": "done",
+   "units_verified": 9,
+   "units_total": 9,
+   "plan_units": 9,
+   "attack": {
+    "passed": 163,
+    "of": 165
+   },
+   "attack_note": null,
+   "calls": 10,
+   "out_tokens": 49257,
+   "thinking_tokens": 40645,
+   "cost_usd": 0.030991,
+   "seconds": 232.6,
+   "pure_calls": 9,
+   "pure_out_tokens": 18623,
+   "pure_units_verified": 8,
+   "app_calls": 1,
+   "app_outcomes": [
+    "written"
+   ],
+   "app_out_tokens": [
+    30634
+   ],
+   "app_thinking_tokens": [
+    25534
+   ]
+  },
+  {
+   "label": "g3",
+   "service": "invoices",
+   "run": 2,
+   "verdict": "done",
+   "units_verified": 9,
+   "units_total": 9,
+   "plan_units": 9,
+   "attack": {
+    "passed": 163,
+    "of": 165
+   },
+   "attack_note": null,
+   "calls": 11,
+   "out_tokens": 47599,
+   "thinking_tokens": 38066,
+   "cost_usd": 0.029854,
+   "seconds": 231.1,
+   "pure_calls": 9,
+   "pure_out_tokens": 19612,
+   "pure_units_verified": 8,
+   "app_calls": 2,
+   "app_outcomes": [
+    "written",
+    "written"
+   ],
+   "app_out_tokens": [
+    25997,
+    1990
+   ],
+   "app_thinking_tokens": [
+    21700,
+    706
+   ]
+  },
+  {
+   "label": "g3",
+   "service": "kvstore",
+   "run": 1,
+   "verdict": "done",
+   "units_verified": 11,
+   "units_total": 11,
+   "plan_units": 11,
+   "attack": {
+    "passed": 21,
+    "of": 225
+   },
+   "attack_note": null,
+   "calls": 14,
+   "out_tokens": 52835,
+   "thinking_tokens": 41315,
+   "cost_usd": 0.034964,
+   "seconds": 255.1,
+   "pure_calls": 13,
+   "pure_out_tokens": 20712,
+   "pure_units_verified": 10,
+   "app_calls": 1,
+   "app_outcomes": [
+    "written"
+   ],
+   "app_out_tokens": [
+    32123
+   ],
+   "app_thinking_tokens": [
+    26425
+   ]
+  },
+  {
+   "label": "g3",
+   "service": "kvstore",
+   "run": 2,
+   "verdict": "done",
+   "units_verified": 11,
+   "units_total": 11,
+   "plan_units": 11,
+   "attack": {
+    "passed": 21,
+    "of": 225
+   },
+   "attack_note": null,
+   "calls": 13,
+   "out_tokens": 48228,
+   "thinking_tokens": 37865,
+   "cost_usd": 0.031365,
+   "seconds": 235.5,
+   "pure_calls": 11,
+   "pure_out_tokens": 17897,
+   "pure_units_verified": 10,
+   "app_calls": 2,
+   "app_outcomes": [
+    "written",
+    "written"
+   ],
+   "app_out_tokens": [
+    29188,
+    1143
+   ],
+   "app_thinking_tokens": [
+    23483,
+    556
+   ]
+  },
+  {
+   "label": "g4",
+   "service": "kvstore",
+   "run": 1,
+   "verdict": "done",
+   "units_verified": 11,
+   "units_total": 11,
+   "plan_units": 11,
+   "attack": {
+    "passed": 224,
+    "of": 225
+   },
+   "attack_note": null,
+   "calls": 14,
+   "out_tokens": 56322,
+   "thinking_tokens": 44830,
+   "cost_usd": 0.037936,
+   "seconds": 270.0,
+   "pure_calls": 12,
+   "pure_out_tokens": 19288,
+   "pure_units_verified": 10,
+   "app_calls": 2,
+   "app_outcomes": [
+    "written",
+    "written"
+   ],
+   "app_out_tokens": [
+    36211,
+    823
+   ],
+   "app_thinking_tokens": [
+    30218,
+    624
+   ]
+  },
+  {
+   "label": "g4",
+   "service": "kvstore",
+   "run": 2,
+   "verdict": "done",
+   "units_verified": 11,
+   "units_total": 11,
+   "plan_units": 11,
+   "attack": {
+    "passed": 225,
+    "of": 225
+   },
+   "attack_note": null,
+   "calls": 15,
+   "out_tokens": 46969,
+   "thinking_tokens": 35778,
+   "cost_usd": 0.032564,
+   "seconds": 230.8,
+   "pure_calls": 12,
+   "pure_out_tokens": 17072,
+   "pure_units_verified": 10,
+   "app_calls": 3,
+   "app_outcomes": [
+    "written",
+    "written",
+    "written"
+   ],
+   "app_out_tokens": [
+    26065,
+    1794,
+    2038
+   ],
+   "app_thinking_tokens": [
+    21363,
+    727,
+    1222
+   ]
+  }
+ ]
+}
