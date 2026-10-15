@@ -72,6 +72,11 @@ pre.code { background: var(--soft); border: 1px solid var(--line); border-radius
 code { font: .9em var(--mono); }
 .steps { max-width: 46rem; margin: 0 auto; padding-left: 1.2rem; }
 .steps li { margin: .4rem 0; }
+.boardbox { max-width: 56rem; margin: 2rem auto 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
+.boardbox .tabs { display: flex; gap: .4rem; padding: .5rem; border-bottom: 1px solid var(--line); background: var(--soft); flex-wrap: wrap; }
+.boardbox .tabs button { font: 600 .85rem var(--font); padding: .4rem .8rem; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+.boardbox .tabs button[aria-selected="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.boardbox iframe { display: block; width: 100%; height: 640px; border: 0; background: var(--bg); }
 footer { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(--muted); font-size: .9rem; text-align: center; }
 </style>
 </head>
@@ -147,6 +152,14 @@ footer { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(-
     <div class="card"><div class="ic">📋</div><h3>A board, not a transcript</h3><p>A read-only page shows every unit as waiting, building, verified or stuck, with its attempts, the compiler's refusals, tokens and cost. <a href="board.html">Open it</a> and load a run's <code>board.json</code>.</p></div>
     <div class="card"><div class="ic">▶️</div><h3>Resumes</h3><p>Killed halfway? The next run keeps the verified units and does not ask for the plan again.</p></div>
   </div>
+  <div class="boardbox">
+    <div class="tabs" role="tablist" aria-label="Example runs">
+      <button type="button" role="tab" aria-selected="true" data-src="demo/done.json">A finished run (one retry)</button>
+      <button type="button" role="tab" aria-selected="false" data-src="demo/stuck.json">A run that got stuck</button>
+    </div>
+    <iframe id="boardframe" title="The board of a real run" src="board.html?data=demo/done.json" loading="lazy"></iframe>
+  </div>
+  <p class="fine">The board above is <a href="board.html">docs/board.html</a> showing two real runs of Claude Haiku 5.5 (the <code>csvline</code> and <code>roman</code> libraries, each built from a hand-written plan). The second run is a failure on purpose: <code>from_roman</code> was refused twice for the same reason, the loop stopped it and named it, and the unit that had verified stayed verified.</p>
   <p class="fine">Example, one run: Claude Haiku 5.5 built the <code>roman</code> library from its brief alone, 6 units, 88 seconds, $0.013, and passed the hidden audit 439/439. One run on one task; the numbers below are the larger measurement. Details: <a href="https://github.com/alpibrusl/cancho-code/blob/main/docs/build.md">docs/build.md</a>, <a href="https://github.com/alpibrusl/cancho-code/blob/main/docs/dashboard.md">docs/dashboard.md</a>.</p>
 </div></section>
 
@@ -219,6 +232,14 @@ export CANCHO_PACKAGES=&lt;compiler-checkout&gt;/packages
       if (j >= l[1].length) { html += '<span class="' + l[0] + '">' + esc(l[1]) + "</span>\n"; i++; j = 0; timer = setTimeout(tick, l[0] === "b" ? 900 : 450); }
       else { timer = setTimeout(tick, 14); }
     })();
+  }
+  var frame = document.getElementById("boardframe");
+  var tabs = document.querySelectorAll(".boardbox .tabs button");
+  for (var t = 0; t < tabs.length; t++) {
+    tabs[t].addEventListener("click", function () {
+      for (var u = 0; u < tabs.length; u++) { tabs[u].setAttribute("aria-selected", tabs[u] === this ? "true" : "false"); }
+      frame.src = "board.html?data=" + this.getAttribute("data-src");
+    });
   }
   full();
   var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;

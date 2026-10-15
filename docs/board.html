@@ -201,10 +201,17 @@ function accept(text, from) {
   render(d);
 }
 
+// The data file: board.json next to this page, or `?data=<a .json path next to it>` (a relative path of plain characters, never a URL).
+var source = "board.json";
+try {
+  var asked = new URLSearchParams(location.search).get("data");
+  if (asked && /^[A-Za-z0-9_\/.-]+\.json$/.test(asked) && asked.indexOf("..") < 0 && asked.charAt(0) !== "/") source = asked;
+} catch (e) { /* keep the default */ }
+
 function load() {
-  fetch("board.json", { cache: "no-store" })
+  fetch(source, { cache: "no-store" })
     .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
-    .then(function (t) { accept(t, "board.json"); })
+    .then(function (t) { accept(t, source); })
     .catch(function () {
       if (!state.data) notice("No board.json next to this page could be read (opened from a file, or none there yet). Use “Open board.json” or drop the file on this page.", false);
       else notice("board.json could not be read again; showing what was loaded.", false);
