@@ -219,11 +219,11 @@ footer { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(-
   <p class="lead">Paste this into Claude Code, Codex or any coding agent that can run commands. It installs cancho-code, proves the install with a test that needs no key, and only then asks you which model to use.</p>
   <div class="promptbox">
     <div class="pbar"><span>prompt</span><span><button type="button" id="copyprompt">Copy</button> <a href="https://raw.githubusercontent.com/alpibrusl/cancho-code/main/docs/agent-prompt.md">raw</a></span></div>
-    <pre id="agentprompt">Install cancho-code and try it on one small task. Work in a new empty directory, keep every path free of spaces, and never use sudo.
+    <pre id="agentprompt">Install cancho-code and try it on one small task. Work in a new empty directory, keep every path free of spaces, and never use sudo. Run steps 2 to 4 in one shell session (or repeat the two `export` lines in every command): `export` and `cd` do not survive a fresh shell.
 
-1. Check that `git`, `cargo` (Rust, via rustup), a C compiler (`cc`) and `sh` exist. If one is missing, stop and tell me which; do not install system packages on your own.
+1. Check that `git`, `cargo` (Rust, stable, via rustup), a C compiler (`cc`) and `sh` exist. If one is missing, stop and tell me which; do not install system packages on your own.
 
-2. Get the two repositories side by side:
+2. Get the two repositories side by side, both cloned into the new empty directory (call it the parent):
    git clone https://github.com/alpibrusl/cancho-code.git
    git clone https://github.com/alpibrusl/cancho.git
    git -C cancho checkout "$(cat cancho-code/.cancho-rev)"
@@ -233,11 +233,12 @@ footer { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(-
    export CANCHO="$PWD/cancho/target/release/cancho"
    export CANCHO_PACKAGES="$PWD/cancho/packages"
 
-4. Build the two tools and prove the install works. This needs no network, no key and no model:
+4. Build the two tools and prove the install works. This needs no network, no key and no model. Start from the parent directory:
    cd cancho-code
    sh scripts/build-agent.sh &amp;&amp; sh scripts/build-cancho-build.sh
    sh scripts/test-build.sh        # must end with: build gate: ok
    "$CANCHO" agent-guidelines &gt; guidelines.md
+   Lines such as `ld: warning: no platform load command ...` and `Killed: 9` during these commands are expected (the gate kills a run on purpose to test resuming); only the final `build gate: ok` line matters.
 
 5. A real build needs a model. Ask me which one I want to use, and wait:
    - Claude: ask me for the PATH of a file that holds my Anthropic API key (mode 600). Never read, print, copy or log that file, and never put the key in a command line or an environment variable; the tool takes the path.
