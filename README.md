@@ -38,6 +38,8 @@ compiler and the task's own examples say so — never because the model says so.
 
 ## Try it
 
+**Or ask your coding agent to do it:** paste [`docs/agent-prompt.md`](docs/agent-prompt.md) into Claude Code, Codex or similar. It installs everything, proves the install with a test that needs no key, and only then asks which model to use.
+
 ```sh
 git clone https://github.com/alpibrusl/cancho-code.git && cd cancho-code
 export CANCHO=<path-to-the-cancho-binary>      # the commit named in .cancho-rev

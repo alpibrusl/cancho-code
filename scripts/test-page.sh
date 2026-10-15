@@ -31,6 +31,10 @@ for name, code in blocks:
         sys.exit("block %s has no build command" % name)
     cmd = re.sub(r"-o \./%s\b" % name, "-o %s/%s" % (tmp, name), " ".join(cmds[0].split()))
     open("%s/build-%s.sh" % (tmp, name), "w").write(cmd + "\n")
+# the prompt the page offers an agent is the file docs/agent-prompt.md, word for word
+m = re.search(r'<pre id="agentprompt">(.*?)</pre>', page, re.S)
+if not m or html.unescape(m.group(1)) != open(sys.argv[-3].rsplit("/", 1)[0] + "/agent-prompt.md", encoding="utf-8").read():
+    sys.exit("the prompt on the page is not docs/agent-prompt.md")
 # every repository path the page names
 paths = set()
 for m in re.finditer(r"\b((?:eval|scripts|tests|src|docs)/[A-Za-z0-9_./<>&;-]+)", html.unescape(page)):
