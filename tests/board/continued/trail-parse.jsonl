@@ -1,0 +1,4 @@
+{"attempt":0,"agent_ms":34545,"outcome":"refused","sig":"type-mismatch:expected `[byte]`, found `Buffer`","decision":"retry"}
+{"attempt":1,"agent_ms":19729,"outcome":"refused","sig":"type-mismatch:expected `[byte]`, found `Buffer`","decision":"signature"}
+{"attempt":2,"agent_ms":10900,"outcome":"refused","sig":"type-mismatch:expected `[byte]`, found `Buffer`","decision":"retry"}
+{"attempt":3,"agent_ms":900,"outcome":"refused","sig":"acceptance:test_parse_1 FAILED","decision":"ceiling"}

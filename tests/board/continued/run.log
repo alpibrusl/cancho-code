@@ -1,0 +1,21 @@
+[PLAN]	valid
+[UNIT]	key	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	key	verified
+[UNIT]	parse	building
+[ISSUE_VERDICT]	failed	signature
+[UNIT]	parse	failed
+[UNIT]	get	skipped
+[PROJECT_VERDICT]	stuck
+[PLAN]	valid
+[RETRY]	parse	hint
+[UNIT]	parse	building
+[ISSUE_VERDICT]	failed	ceiling
+[UNIT]	parse	failed
+[UNIT]	get	skipped
+[PROJECT_VERDICT]	stuck
+[PATCH]	parse	applying
+[PATCH]	parse	refused
+[UNIT]	get	skipped
+[PROJECT_VERDICT]	stuck

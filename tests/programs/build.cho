@@ -7,6 +7,7 @@ edition 7;
 // Exit codes: 0 done, 1 stuck or the final gate failed, 2 usage, 3 plan_failed, 4 provider_error.
 
 import build;
+import project;
 import std.bytes;
 import std.io;
 
@@ -27,23 +28,48 @@ fn digits_of[&a](text: &a [byte]) -> [] int {
     return n;
 }
 
-// The value after `--name`, or "" when the option is absent (the last one wins).
-fn opt[&g](g: &g Args, name: &static [byte]) -> [args] &static [byte] {
+// How many words an option takes with its name: `--patch <unit> <file>` takes two, every other option one.
+fn width[&a](name: &a [byte]) -> [] int {
+    if bytes.equal(name, "--patch") {
+        return 3;
+    }
+    return 2;
+}
+
+// The value after `--name`, or "" when the option is absent (the last one wins). `nth` 1 is its first value, 2 the second (`--patch`'s file).
+fn opt_at[&g](g: &g Args, name: &static [byte], nth: int) -> [args] &static [byte] {
     var found = "";
     var i = 5;
-    while i + 1 < arg_count(g) {
+    while i + nth < arg_count(g) {
         if bytes.equal(arg(g, i), name) {
-            found = arg(g, i + 1);
+            found = arg(g, i + nth);
         }
-        i = i + 2;
+        i = i + width(arg(g, i));
     }
     return found;
+}
+
+fn opt[&g](g: &g Args, name: &static [byte]) -> [args] &static [byte] {
+    return opt_at(g, name, 1);
+}
+
+// Was `--name` given at all (even with an empty value)?
+fn given_opt[&g](g: &g Args, name: &static [byte]) -> [args] bool {
+    var i = 5;
+    while i < arg_count(g) {
+        if bytes.equal(arg(g, i), name) {
+            return true;
+        }
+        i = i + width(arg(g, i));
+    }
+    return false;
 }
 
 fn known[&a](name: &a [byte]) -> [] bool {
     return bytes.equal(name, "--provider") || bytes.equal(name, "--model") || bytes.equal(name, "--guide") || bytes.equal(name, "--review-guide")
         || bytes.equal(name, "--review") || bytes.equal(name, "--contract") || bytes.equal(name, "--rounds") || bytes.equal(name, "--attempts")
-        || bytes.equal(name, "--agent-seconds") || bytes.equal(name, "--plan-seconds");
+        || bytes.equal(name, "--agent-seconds") || bytes.equal(name, "--plan-seconds")
+        || bytes.equal(name, "--retry") || bytes.equal(name, "--hint") || bytes.equal(name, "--patch");
 }
 
 // A word that goes into a shell command line: letters, digits and . _ / + : = @ % , - only.
@@ -81,11 +107,15 @@ fn main(world: World) -> [] int {
     var attempts = 4;
     var agent_seconds = 30;
     var plan_seconds = 900;
+    var retry = "";
+    var hint = "";
+    var patch = "";
+    var pfile = "";
     var given = false;
     borrow mut console as &!ci in {
         borrow args as &g in {
             if arg_count(g) < 5 {
-                io.error_all(ci, "usage: build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [--guide <file>] [--review on --review-guide <file>] [--contract <file>] [--rounds N] [--attempts N] [--agent-seconds N] [--plan-seconds N]\n");
+                io.error_all(ci, "usage: build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [--guide <file>] [--review on --review-guide <file>] [--contract <file>] [--rounds N] [--attempts N] [--agent-seconds N] [--plan-seconds N] [--retry <unit> [--hint <text>]] [--patch <unit> <file>]\n");
             } else {
                 given = true;
                 checker = arg(g, 1);
@@ -117,13 +147,34 @@ fn main(world: World) -> [] int {
                 }
                 var i = 5;
                 while i < arg_count(g) {
-                    if known(arg(g, i)) == false || i + 1 >= arg_count(g) {
-                        io.error_all(ci, "build: an option it does not know, or without a value: ");
+                    if known(arg(g, i)) == false || i + width(arg(g, i)) > arg_count(g) {
+                        io.error_all(ci, "build: an option it does not know, or without its value: ");
                         io.error_all(ci, arg(g, i));
                         io.error_all(ci, "\n");
                         given = false;
                     }
-                    i = i + 2;
+                    i = i + width(arg(g, i));
+                }
+                // --retry <unit> [--hint <text>] and --patch <unit> <file> re-open a unit of the plan the earlier run left (docs/build.md). The hint
+                // is free text and never goes through a shell: it reaches the agent in the task file.
+                retry = opt(g, "--retry");
+                hint = opt(g, "--hint");
+                patch = opt(g, "--patch");
+                pfile = opt_at(g, "--patch", 2);
+                if given_opt(g, "--retry") && len(retry) == 0 {
+                    io.error_all(ci, "build: --retry needs a unit\n");
+                    given = false;
+                }
+                if given_opt(g, "--patch") && len(patch) == 0 {
+                    io.error_all(ci, "build: --patch needs a unit\n");
+                    given = false;
+                }
+                if (len(retry) > 0 && plain(retry) == false) || (len(patch) > 0 && plain(patch) == false) || (len(pfile) > 0 && plain(pfile) == false) {
+                    io.error_all(ci, "build: a unit and a patch file may hold only letters, digits and . _ / + : = @ % , -\n");
+                    given = false;
+                }
+                if project.redo_args_ok(ci, retry, given_opt(g, "--hint"), hint, patch, pfile) == false {
+                    given = false;
                 }
                 let r = opt(g, "--review");
                 if bytes.equal(r, "on") {
@@ -174,7 +225,7 @@ fn main(world: World) -> [] int {
                     borrow mut console as &!i in {
                         borrow mut h as &!hh in {
                             if given {
-                                status = build.run(hh, x, c, i, fz, checker, brief, wd, agent, provider, model, guide, review_guide, contract, review, rounds, attempts, agent_seconds * 1000, plan_seconds * 1000);
+                                status = build.run(hh, x, c, i, fz, checker, brief, wd, agent, provider, model, guide, review_guide, contract, review, rounds, attempts, agent_seconds * 1000, plan_seconds * 1000, retry, hint, patch, pfile);
                             } else {
                                 io.error_all(i, "build: the brief cannot be read\n");
                             }

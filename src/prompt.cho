@@ -156,26 +156,69 @@ pub fn feedback_text[&h, &s, &f](heap: &!h Heap, source: &s [byte], feedback: &f
     return out;
 }
 
+// The task without its `HINT: ` lines, and the hint: those lines' text after the prefix, one per line (a person's words about the unit, written
+// by the project driver when a unit is re-opened with `--retry <unit> --hint "..."`, docs/build.md). A task with no such line comes back as it
+// was, byte for byte.
+fn split_hint[&h, &t](heap: &!h Heap, task: &t [byte]) -> [heap] (buffer.Buffer, buffer.Buffer) {
+    var rest = buffer.empty(heap, len(task) + 8);
+    var hint = buffer.empty(heap, 64);
+    var have = false;
+    var i = 0;
+    while i < len(task) {
+        var e = i;
+        while e < len(task) && int_of(task[e]) != 10 {
+            e = e + 1;
+        }
+        let line = task[i..e];
+        if len(line) >= 6 && int_of(line[0]) == 72 && int_of(line[1]) == 73 && int_of(line[2]) == 78 && int_of(line[3]) == 84 && int_of(line[4]) == 58 && int_of(line[5]) == 32 {
+            if have {
+                hint = buffer.push(heap, hint, byte_of(10));
+            }
+            have = true;
+            hint = buffer.append(heap, hint, line[6..len(line)]);
+        } else {
+            rest = buffer.append(heap, rest, line);
+            if e < len(task) {
+                rest = buffer.push(heap, rest, byte_of(10));
+            }
+        }
+        i = e + 1;
+    }
+    return (rest, hint);
+}
+
 // The prompt: the task (or the instruction to fix), the checker's current
 // output, then the file between rules.
 fn compose[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte], patch: bool) -> [heap] buffer.Buffer {
     var p = buffer.empty(heap, 4096);
-    let job = trimmed(task);
-    if len(job) > 0 {
-        p = buffer.append(heap, p, "Your task, for the cancho program below:\n");
-        p = buffer.append(heap, p, job);
-        if patch {
-            p = buffer.append(heap, p, "\n\nThe file below is kept as it is. Reply with ONLY the code to ADD or CHANGE: the function(s) this task asks for, and any helper functions or types it needs, as complete top-level items. Do not repeat the other items of the file; if you must change one, give its complete new definition. No `edition` line, no imports the file already has, no tests, no markdown fences, no explanation.\n");
+    let (rest, hint) = split_hint(heap, task);
+    borrow rest as &rq in {
+    borrow hint as &hq in {
+        let job = trimmed(buffer.bytes(rq));
+        let said = trimmed(buffer.bytes(hq));
+        if len(job) > 0 {
+            p = buffer.append(heap, p, "Your task, for the cancho program below:\n");
+            p = buffer.append(heap, p, job);
+            if len(said) > 0 {
+                p = buffer.append(heap, p, "\n\nWhat the person who runs this build says about this unit (they have read the earlier attempts; take it into account, but the compiler and the tests still decide whether the code is right):\n");
+                p = buffer.append(heap, p, said);
+            }
+            if patch {
+                p = buffer.append(heap, p, "\n\nThe file below is kept as it is. Reply with ONLY the code to ADD or CHANGE: the function(s) this task asks for, and any helper functions or types it needs, as complete top-level items. Do not repeat the other items of the file; if you must change one, give its complete new definition. No `edition` line, no imports the file already has, no tests, no markdown fences, no explanation.\n");
+            } else {
+                p = buffer.append(heap, p, "\n\nReply with the complete file, with the task done, and nothing else: no markdown fences, no explanation.\n");
+            }
         } else {
-            p = buffer.append(heap, p, "\n\nReply with the complete file, with the task done, and nothing else: no markdown fences, no explanation.\n");
-        }
-    } else {
-        if patch {
-            p = buffer.append(heap, p, "The cancho program below is refused by its compiler. Reply with ONLY the complete corrected definition of each item that must change, as top-level items, and nothing else: not the items that are fine, no `edition` line, no markdown fences, no explanation.\n");
-        } else {
-            p = buffer.append(heap, p, "The cancho program below is refused by its compiler. Reply with the complete corrected file and nothing else: no markdown fences, no explanation.\n");
+            if patch {
+                p = buffer.append(heap, p, "The cancho program below is refused by its compiler. Reply with ONLY the complete corrected definition of each item that must change, as top-level items, and nothing else: not the items that are fine, no `edition` line, no markdown fences, no explanation.\n");
+            } else {
+                p = buffer.append(heap, p, "The cancho program below is refused by its compiler. Reply with the complete corrected file and nothing else: no markdown fences, no explanation.\n");
+            }
         }
     }
+    }
+    buffer.drop(heap, rest);
+    buffer.drop(heap, hint);
     let fb = feedback_text(heap, source, feedback);
     borrow fb as &fr in {
         if len(buffer.bytes(fr)) > 0 {

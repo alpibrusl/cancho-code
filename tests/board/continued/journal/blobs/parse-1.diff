@@ -1,0 +1,9 @@
+--- parse-0.code.cho
++++ parse-1.code.cho
+@@ -1,5 +1,5 @@
+ fn tok_parse[&r](text: &r [byte]) -> [] int {
+     var total = 0;
+-    var b = buffer.empty(heap, 8);
++    var b = buffer.empty(heap, 16);
+     return total;
+ }

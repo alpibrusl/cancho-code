@@ -17,7 +17,10 @@
 #   - the run directory is byte-identical (contents, names, mtimes) after the tool ran: it never writes there, and an output
 #     path inside the run directory is refused (exit 2) and writes nothing;
 #   - usage errors exit 2; a plan found through run.json's `plan` path gives the same board as plan.json beside it;
-#   - docs/board.html has the detail panel (dialog, Escape) and the Story view, and shows no retry command (there is none yet);
+#   - docs/board.html has the detail panel (dialog, Escape) and the Story view; `--retry`/`--hint` appear in it ONLY in the one marked note that tells
+#     a person how to continue a stuck unit (docs/build.md): the note is shown for a stuck unit only, its text is built from board.json's run (brief,
+#     provider, model) with a placeholder for what the board cannot know, and a value that is not a plain word is never put in it (run under node
+#     when there is one); the board still runs nothing;
 #   - docs/board.html makes no request to another host, has no build step, no write path, reads board.json and offers a file picker.
 set -u
 
@@ -237,7 +240,7 @@ sys.exit(1 if bad else 0)
 PY
 
 # ---- the page ----------------------------------------------------------------------------------------------------------------------
-page="$root/docs/board.html"
+page="${BOARD_PAGE:-$root/docs/board.html}"
 if [ ! -f "$page" ]; then
     bad "docs/board.html does not exist"
 else
@@ -255,7 +258,38 @@ else
     grep -q "Escape" "$page" || bad "docs/board.html: the detail panel does not close on Escape"
     grep -q "not recorded" "$page" || bad "docs/board.html does not say 'not recorded' for what the journal lacks"
     grep -q 'id="view-story"' "$page" || bad "docs/board.html has no Story view"
-    grep -nE -- '--retry|--hint' "$page" >"$work/retry" && { bad "docs/board.html shows a command that does not exist yet:"; head -3 "$work/retry" >&2; }
+    # `--retry` and `--hint` are named by the page in exactly one place: the note between the retry-note markers
+    expect "docs/board.html: one retry note (begin marker)" "$(grep -c 'retry-note:begin' "$page")" 1
+    expect "docs/board.html: one retry note (end marker)" "$(grep -c 'retry-note:end' "$page")" 1
+    first=$(grep -n 'retry-note:begin' "$page" | head -1 | cut -d: -f1); last=$(grep -n 'retry-note:end' "$page" | head -1 | cut -d: -f1)
+    [ -n "$first" ] && [ -n "$last" ] || { first=0; last=0; }
+    grep -nE -- '--retry|--hint' "$page" | cut -d: -f1 >"$work/retry.lines"
+    [ -s "$work/retry.lines" ] || bad "docs/board.html does not show the command to retry a stuck unit"
+    while read -r ln; do
+        { [ "$ln" -gt "$first" ] && [ "$ln" -lt "$last" ]; } || bad "docs/board.html names --retry/--hint outside the retry note (line $ln)"
+    done < "$work/retry.lines"
+    grep -q 'if (u.column === "stuck") body.appendChild(retryNote(' "$page" || bad "docs/board.html: the retry note is not shown for a stuck unit only"
+    [ "$(grep -c 'retryNote(' "$page")" = 2 ] || bad "docs/board.html: the retry note is built in more than one place"
+    if command -v node >/dev/null 2>&1; then
+        sed -n "$((first + 1)),$((last - 1))p" "$page" > "$work/retry-note.js"
+        node - "$work/retry-note.js" "$root/tests/board/expected/stuck.json" "$root/tests/board/expected/continued.json" <<'JS' || fail=1
+const fs = require("fs");
+const code = fs.readFileSync(process.argv[2], "utf8");
+const retryCommand = new Function(code + "; return retryCommand;")();
+const stuck = JSON.parse(fs.readFileSync(process.argv[3], "utf8")), cont = JSON.parse(fs.readFileSync(process.argv[4], "utf8"));
+const want = [
+  [retryCommand(stuck.run, "parse"), 'build <checker> <brief.txt> <workdir> <agent-command> --provider anthropic --model claude-haiku-5-5 --retry parse --hint "<what you know about this unit>"'],
+  [retryCommand(cont.run, "parse"), 'build <checker> /runs/tokens/brief.txt <workdir> <agent-command> --provider anthropic --model claude-haiku-5-5 --retry parse --hint "<what you know about this unit>"'],
+  [retryCommand({ brief: "x; rm -rf /", provider: "a b", model: "$(id)" }, "u"), 'build <checker> <brief.txt> <workdir> <agent-command> --provider <provider> --model <model> --retry u --hint "<what you know about this unit>"'],
+  [retryCommand(null, "u"), 'build <checker> <brief.txt> <workdir> <agent-command> --provider <provider> --model <model> --retry u --hint "<what you know about this unit>"'],
+];
+let bad = 0;
+for (const [got, w] of want) if (got !== w) { console.error("FAIL: retry note: wanted\n  " + w + "\ngot\n  " + got); bad = 1; }
+process.exit(bad);
+JS
+    else
+        echo "note: no node on PATH: the retry note's text was not run" >&2
+    fi
     # it only reads: no way to send anything anywhere
     grep -nE "method: *['\"](POST|PUT|DELETE|PATCH)|XMLHttpRequest|sendBeacon|WebSocket|\.send\(|localStorage|sessionStorage|document\.cookie|<form" "$page" >"$work/write" && { bad "docs/board.html has a write path:"; head -5 "$work/write" >&2; }
     # one static file: no build step

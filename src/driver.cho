@@ -136,22 +136,26 @@ fn agent_note[&h, &z, &e, &l, &w](heap: &!h Heap, fs: &z Fs(""), errp: &e [byte]
 // verified unit (the §4 contract), so a later regression has a clean
 // copy to restore from.
 pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int, accept: &q [byte], accept_timeout_ms: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
-    return run_core(heap, exec, clock, io, fs, file, agent, check_cmd, snap_prefix, max_attempts, k_signature, agent_timeout_ms, accept, accept_timeout_ms, "", "");
+    return run_core(heap, exec, clock, io, fs, file, agent, check_cmd, snap_prefix, max_attempts, k_signature, agent_timeout_ms, accept, accept_timeout_ms, "", "", 0, "", false);
 }
 
 // `run_issue` for a unit of a project, with the journal (docs/journal.md): every attempt of `unit` is recorded in `jdir` (the journal directory,
 // `<workdir>/journal`, which exists): the code, the checker's whole answer, the acceptance output, the diff, the agent's stderr (a copy of `<file>.agent.err`, which
 // the project driver's agent command writes) and what the agent left in `<file>.call/`; nothing else about the loop changes.
-pub fn run_issue_journal[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int, accept: &q [byte], accept_timeout_ms: int, jdir: &j [byte], unit: &u [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
+pub fn run_issue_journal[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u, &ht](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int, accept: &q [byte], accept_timeout_ms: int, jdir: &j [byte], unit: &u [byte], base: int, hint: &ht [byte], human: bool) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
     trail.make_call_dir(heap, exec, clock, file);
-    return run_core(heap, exec, clock, io, fs, file, agent, check_cmd, snap_prefix, max_attempts, k_signature, agent_timeout_ms, accept, accept_timeout_ms, jdir, unit);
+    return run_core(heap, exec, clock, io, fs, file, agent, check_cmd, snap_prefix, max_attempts, k_signature, agent_timeout_ms, accept, accept_timeout_ms, jdir, unit, base, hint, human);
 }
 
-fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int, accept: &q [byte], accept_timeout_ms: int, jdir: &j [byte], unit: &u [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
+fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u, &ht](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int, accept: &q [byte], accept_timeout_ms: int, jdir: &j [byte], unit: &u [byte], base: int, hint: &ht [byte], human: bool) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
     var tpath = buffer.append(heap, buffer.empty(heap, 256), file);
     tpath = buffer.append(heap, tpath, ".trail.jsonl");
-    borrow tpath as &tq0 in {
-        trail.begin(fs, buffer.bytes(tq0));
+    // A re-opened unit (`base` > 0, docs/build.md `--retry`) continues the unit's trail: the earlier records stay and the attempt numbers go on
+    // from them, while the budgets below (`attempts`, `consecutive`) start fresh.
+    if base == 0 {
+        borrow tpath as &tq0 in {
+            trail.begin(fs, buffer.bytes(tq0));
+        }
     }
     var errpath = buffer.append(heap, buffer.empty(heap, 256), file);
     errpath = buffer.append(heap, errpath, ".agent.err");
@@ -195,7 +199,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
         var jchk = buffer.empty(heap, 16);
         var jacc = buffer.empty(heap, 16);
         var jexit = 0 - 1;
-        let jn = attempts;
+        let jn = base + attempts;
         borrow fbcmd as &fq in {
             let fb = checker.run(heap, exec, clock, file, buffer.bytes(fq), 4096, 30000);
             checker.drop(heap, fb);
@@ -261,7 +265,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
                                     // its model, a missing tool): named in its own verdict
                                     // and in the trail, not read as a looping model.
                                     borrow tpath as &tq in {
-                                        note(heap, fs, tq, attempts, agent_ms, "none", "", "agent_exit");
+                                        note(heap, fs, tq, base + attempts, agent_ms, "none", "", "agent_exit");
                                     }
                                     io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
                                     ended = Ended::Unavailable;
@@ -342,7 +346,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
                                         match outcome {
                                             loop_check.Outcome::Verified => {
                                                 borrow tpath as &tq in {
-                                                    note(heap, fs, tq, attempts, agent_ms, "verified", "", "verified");
+                                                    note(heap, fs, tq, base + attempts, agent_ms, "verified", "", "verified");
                                                 }
                                                 // Snapshot the verified state
                                                 // (§4): the newest copy that
@@ -359,7 +363,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
                                             }
                                             loop_check.Outcome::Retryable => {
                                                 borrow tpath as &tq in {
-                                                    note(heap, fs, tq, attempts, agent_ms, "refused", "", "regressed");
+                                                    note(heap, fs, tq, base + attempts, agent_ms, "refused", "", "regressed");
                                                 }
                                                 // Regressed between the two
                                                 // runs: back on the board,
@@ -369,7 +373,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
                                             }
                                             loop_check.Outcome::PlanDefect => {
                                                 borrow tpath as &tq in {
-                                                    note(heap, fs, tq, attempts, agent_ms, "defect", "", "defect");
+                                                    note(heap, fs, tq, base + attempts, agent_ms, "defect", "", "defect");
                                                 }
                                                 io.write_all(io, "[ISSUE_VERDICT]\tfailed\tdefect\n");
                                                 ended = Ended::PlanDefect;
@@ -377,7 +381,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
                                             }
                                             loop_check.Outcome::ProviderOutage => {
                                                 borrow tpath as &tq in {
-                                                    note(heap, fs, tq, attempts, agent_ms, "outage", "", "provider");
+                                                    note(heap, fs, tq, base + attempts, agent_ms, "outage", "", "provider");
                                                 }
                                                 io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tchecker\n");
                                                 ended = Ended::Unavailable;
@@ -388,7 +392,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
                                     loop_check.Decision::StopIssueDefect => {
                                         borrow tpath as &tq in {
                                             borrow this_sig as &tb in {
-                                                note(heap, fs, tq, attempts, agent_ms, oname, buffer.bytes(tb), "defect");
+                                                note(heap, fs, tq, base + attempts, agent_ms, oname, buffer.bytes(tb), "defect");
                                             }
                                         }
                                         buffer.drop(heap, this_sig);
@@ -399,7 +403,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
                                     loop_check.Decision::StopIssueCeiling => {
                                         borrow tpath as &tq in {
                                             borrow this_sig as &tb in {
-                                                note(heap, fs, tq, attempts, agent_ms, oname, buffer.bytes(tb), "ceiling");
+                                                note(heap, fs, tq, base + attempts, agent_ms, oname, buffer.bytes(tb), "ceiling");
                                             }
                                         }
                                         buffer.drop(heap, this_sig);
@@ -410,7 +414,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
                                     loop_check.Decision::StopIssueSignature => {
                                         borrow tpath as &tq in {
                                             borrow this_sig as &tb in {
-                                                note(heap, fs, tq, attempts, agent_ms, oname, buffer.bytes(tb), "signature");
+                                                note(heap, fs, tq, base + attempts, agent_ms, oname, buffer.bytes(tb), "signature");
                                             }
                                         }
                                         buffer.drop(heap, this_sig);
@@ -421,7 +425,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
                                     loop_check.Decision::StopRunProvider => {
                                         borrow tpath as &tq in {
                                             borrow this_sig as &tb in {
-                                                note(heap, fs, tq, attempts, agent_ms, oname, buffer.bytes(tb), "provider");
+                                                note(heap, fs, tq, base + attempts, agent_ms, oname, buffer.bytes(tb), "provider");
                                             }
                                         }
                                         buffer.drop(heap, this_sig);
@@ -432,7 +436,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
                                     loop_check.Decision::Retry => {
                                         borrow tpath as &tq in {
                                             borrow this_sig as &tb in {
-                                                note(heap, fs, tq, attempts, agent_ms, oname, buffer.bytes(tb), "retry");
+                                                note(heap, fs, tq, base + attempts, agent_ms, oname, buffer.bytes(tb), "retry");
                                             }
                                         }
                                         // `consecutive` counts the attempts, this one
@@ -454,7 +458,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
 }
                             process.Ran::TimedOut => {
                                 borrow tpath as &tq in {
-                                    note(heap, fs, tq, attempts, agent_ms, "none", "", "agent_timeout");
+                                    note(heap, fs, tq, base + attempts, agent_ms, "none", "", "agent_timeout");
                                 }
                                 io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
                                 ended = Ended::Unavailable;
@@ -462,7 +466,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
                             }
                             process.Ran::TooMuch => {
                                 borrow tpath as &tq in {
-                                    note(heap, fs, tq, attempts, agent_ms, "none", "", "agent_output");
+                                    note(heap, fs, tq, base + attempts, agent_ms, "none", "", "agent_output");
                                 }
                                 io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
                                 ended = Ended::Unavailable;
@@ -470,7 +474,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
                             }
                             process.Ran::Signaled(s) => {
                                 borrow tpath as &tq in {
-                                    note(heap, fs, tq, attempts, agent_ms, "none", "", "agent_signal");
+                                    note(heap, fs, tq, base + attempts, agent_ms, "none", "", "agent_signal");
                                 }
                                 io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
                                 ended = Ended::Unavailable;
@@ -478,7 +482,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
                             }
                             process.Ran::Failed(e) => {
                                 borrow tpath as &tq in {
-                                    note(heap, fs, tq, attempts, agent_ms, "none", "", "agent_failed");
+                                    note(heap, fs, tq, base + attempts, agent_ms, "none", "", "agent_failed");
                                 }
                                 io.write_all(io, "[ISSUE_VERDICT]\tunavailable\tagent\n");
                                 ended = Ended::Unavailable;
@@ -492,7 +496,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec
         if len(jdir) > 0 {
             borrow jchk as &jcq in {
                 borrow jacc as &jaq in {
-                    trail.journal_attempt(heap, exec, clock, fs, jdir, unit, jn, file, buffer.bytes(jcq), buffer.bytes(jaq), jexit);
+                    trail.journal_attempt(heap, exec, clock, fs, jdir, unit, jn, file, buffer.bytes(jcq), buffer.bytes(jaq), jexit, hint, human);
                 }
             }
         }

@@ -1,0 +1,6 @@
+Here is the function.
+```
+fn tok_key_ok[&r](key: &r [byte]) -> [] bool {
+    return len(key) > 0;
+}
+```

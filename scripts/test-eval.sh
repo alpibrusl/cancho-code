@@ -76,7 +76,7 @@ case "$(printf '%s\n' "$out" | grep 'duration_format:')" in "  duration_format: 
 pexe=$(mktemp -t cc-eval-proj-XXXXXX)
 "$CANCHO" build "$root/tests/programs/project.cho" "$root/src/project.cho" "$root/src/plan.cho" "$root/src/driver.cho" \
     "$root/src/checker.cho" "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" \
-    "$root/src/acceptance.cho" --std --backend cranelift -o "$pexe" >/dev/null 2>&1 || { echo "FAIL: duration: the project driver did not build" >&2; fail=1; }
+    "$root/src/acceptance.cho" "$root/src/splice.cho" --std --backend cranelift -o "$pexe" >/dev/null 2>&1 || { echo "FAIL: duration: the project driver did not build" >&2; fail=1; }
 for which in reference mutated; do
     wd=$(mktemp -d -t cc-eval-wd-XXXXXX); rcp=$(mktemp -d -t cc-eval-rc-XXXXXX); : > "$wd/agent.log"
     [ "$which" = reference ] && src="$root/eval/duration/reference.cho" || src="$d/dur-mutated.cho"

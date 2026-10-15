@@ -16,6 +16,14 @@
 #   service     a plan with an `integration` unit (docs/plan.md): the pure unit is tested with the lib files beside it, the integration unit has no
 #               examples and is judged by the acceptance command (builds the whole thing with a fixed main), its scenario output reaches the agent
 #               as feedback, a failing scenario is retried within the attempt ceiling, never-satisfied is `stuck`, a rerun keeps both units
+#   retry       a stuck unit re-opened with `--retry <unit> --hint "..."`: its state is reset, ONLY it and the units that need it are worked on, the hint
+#               reaches the agent's task (one `HINT:` line per line, never through a shell), the attempt numbers and the trail go on from the earlier
+#               attempts, its budget (attempts, same-signature) starts fresh, and the journal says so (`hint` on its attempts, `retry` on its unit_start)
+#   retry verified  a verified unit re-opened: it is rebuilt, the units that need it are checked again after it, one that broke is rebuilt
+#   patch       `--patch <unit> <file>`: the person's code is spliced like a model's reply and verified with no agent call; a refused one (compiler or
+#               examples) leaves project.cho and the state as they were and shows the refusal; the journal records outcome `human_patch`
+#   redo usage  a unit that is not in the plan, an empty hint, --retry with --patch, a hint with no --retry, a patch file that is not there: exit 2, the
+#               work directory byte-identical, the agent never asked
 #   no plan     an invalid plan: its errors, then no_plan, exit 3, the agent never asked
 #   usage       no arguments, and a plan that is not there: exit 2
 #
@@ -25,10 +33,11 @@ set -u
 CANCHO="${CANCHO:-cancho}"
 command -v "$CANCHO" >/dev/null 2>&1 || { echo "no cancho on PATH; set CANCHO=" >&2; exit 2; }
 root=$(cd "$(dirname "$0")/.." && pwd)
+SRC="${PROJECT_SRC:-$root/src}"   # a directory to take src/ from: how the mutation runs judge a broken copy
 exe=$(mktemp -t cc-project-XXXXXX)
-"$CANCHO" build "$root/tests/programs/project.cho" "$root/src/project.cho" "$root/src/plan.cho" "$root/src/driver.cho" \
-    "$root/src/checker.cho" "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" \
-    "$root/src/acceptance.cho" --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
+"$CANCHO" build "$root/tests/programs/project.cho" "$SRC/project.cho" "$SRC/plan.cho" "$SRC/driver.cho" \
+    "$SRC/checker.cho" "$SRC/signature.cho" "$SRC/loop_check.cho" "$SRC/snapshot.cho" "$SRC/trail.cho" \
+    "$SRC/acceptance.cho" "$SRC/splice.cho" --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }
@@ -250,6 +259,184 @@ expect "service no command: exit code" "$r" 2
 case "$out" in *"no acceptance command"*) ;; *) echo "FAIL: service no command: no message ('$out')" >&2; fail=1 ;; esac
 expect "service no command: the agent was never asked" "$(wc -c < "$lg" | tr -d ' ')" 0
 rm -rf "$wd" "$rc"
+
+
+# ---- re-opening a unit: --retry, --hint, --patch ------------------------------------------------------------------------------------------
+runx() { # plan wd recipes log attempts [extra args...]
+    p=$1; w=$2; r=$3; l=$4; n=$5; shift 5
+    "$exe" "$CANCHO" "$p" "$w" "sh $T/agent.sh $r $l" "$n" 60 "$@" 2>&1
+}
+# the events of the journal as "kind unit n outcome hint?" lines, for a unit
+jevents() { python3 - "$1" "$2" <<'PY'
+import json, sys
+for line in open(sys.argv[1] + "/journal/events.jsonl"):
+    e = json.loads(line)
+    if e.get("unit") != sys.argv[2]:
+        continue
+    print(e["kind"], e.get("n", "-"), e.get("outcome", "-"), e.get("decision", "-"), "hint=" + e["hint"] if "hint" in e else "nohint",
+          "retry" if e.get("retry") else "", "patch" if e.get("patch") else "", "prompt" if "prompt" in e else "noprompt", "code" if "code" in e else "nocode")
+PY
+}
+WRONG='sed -i.bak "/fn double/d" "$1"; printf "\nfn double(x: int) -> [] int { return x + 3; }\n" >> "$1"'
+
+# retry: a is stuck (always wrong without the hint); the hint makes it right. Only a and its dependent c are worked on again; b is kept as it is.
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf '%s\n' "$WRONG" > "$rc/a.sh"
+out=$(runx "$T/plan.json" "$wd" "$rc" "$lg" 4)
+expect "retry: the first run is stuck" "$(verdict "$out")" stuck
+expect "retry: the first run's agent order" "$(order "$lg")" "a a b"
+expect "retry: the state of the stuck run" "$(order "$wd/state.txt")" "verified b"
+printf 'if grep -q "^HINT: multiply, do not add$" "$1.task"; then printf "\nfn double(x: int) -> [] int { return x * 2; }\n" >> "$1"; else %s; fi\n' "$WRONG" > "$rc/a.sh"
+printf 'if grep -q "^HINT" "$1.task"; then exit 4; fi\nprintf "\nfn big_double(x: int) -> [] bool { return is_big(double(x)); }\n" >> "$1"\n' > "$rc/c.sh"
+out=$(runx "$T/plan.json" "$wd" "$rc" "$lg" 4 --retry a --hint "multiply, do not add"); r=$?
+expect "retry: exit code" "$r" 0
+expect "retry: verdict" "$(verdict "$out")" done
+expect "retry: only a and c were asked again (b is kept)" "$(order "$lg")" "a a b a c"
+expect "retry: unit lines" "$(units "$out")" "b:kept a:building a:verified c:building c:verified"
+printf '%s\n' "$out" | grep -q "^\[RETRY\]	a	hint$" || { echo "FAIL: retry: no '[RETRY] a hint' line" >&2; fail=1; }
+expect "retry: the state" "$(order "$wd/state.txt")" "verified a verified b verified c"
+expect "retry: the unit's trail kept the earlier attempts and went on (0 1 2)" "$(python3 -c 'import json,sys; print(" ".join(str(json.loads(l)["attempt"]) for l in open(sys.argv[1])))' "$wd/trail-a.jsonl")" "0 1 2"
+expect "retry: the journal's story of a" "$(jevents "$wd" a | tr '\n' ';')" "unit_start - - - nohint   noprompt nocode;attempt 0 acceptance_failed retry nohint   noprompt code;attempt 1 acceptance_failed signature nohint   noprompt code;unit_end - - - nohint   noprompt nocode;unit_start - - - nohint retry  noprompt nocode;attempt 2 verified verified hint=multiply, do not add   noprompt code;unit_end - - - nohint   noprompt nocode;"
+expect "retry: c's attempt has no hint" "$(jevents "$wd" c | grep -c 'hint=')" 0
+[ -f "$wd/journal/blobs/a-a0-code.cho" ] && [ -f "$wd/journal/blobs/a-a2-code.cho" ] || { echo "FAIL: retry: the blobs of the earlier attempts and the new one are not both there" >&2; fail=1; }
+rm -rf "$wd" "$rc"
+
+# retry: the budget starts fresh. Two attempts are allowed; the unit ended on them; the retry gets two more (the first wrong, the second right)
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf '%s\n' "$WRONG" > "$rc/a.sh"
+out=$(runx "$T/plan.json" "$wd" "$rc" "$lg" 2)
+expect "retry fresh: the first run is stuck on the ceiling" "$(verdict "$out")" stuck
+printf '%s\n' "$WRONG" > "$rc/a.3.sh"
+printf 'sed -i.bak "/fn double/d" "$1"; printf "\nfn double(x: int) -> [] int { return x * 2; }\n" >> "$1"\n' > "$rc/a.4.sh"
+out=$(runx "$T/plan.json" "$wd" "$rc" "$lg" 2 --retry a)
+expect "retry fresh: verdict" "$(verdict "$out")" done
+expect "retry fresh: it took its own two attempts" "$(printf '%s\n' "$out" | grep 'ISSUE_VERDICT.*verified' | head -1 | cut -f3)" "attempts 2"
+printf '%s\n' "$out" | grep -q "^\[RETRY\]	a$" || { echo "FAIL: retry fresh: no '[RETRY] a' line (no hint given)" >&2; fail=1; }
+expect "retry fresh: no hint, no HINT line, no hint field" "$(grep -c '^HINT' "$wd/project.cho.task"; jevents "$wd" a | grep -c 'hint=')" "0
+0"
+rm -rf "$wd" "$rc"
+
+# retry: the hint is data. Quotes, a $( ), backticks and a second line reach the task byte for byte, one HINT line per line, and nothing is run
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf '%s\n' "$WRONG" > "$rc/a.sh"
+out=$(runx "$T/plan.json" "$wd" "$rc" "$lg" 4)
+printf 'grep -qF "HINT: use \\"x\\" \\$(touch %s/pwned) and \\`id\\`" "$1.task" || exit 4\ngrep -qF "HINT: second line" "$1.task" || exit 5\nprintf "\\nfn double(x: int) -> [] int { return x * 2; }\\n" >> "$1"\n' "$wd" > "$rc/a.sh"
+out=$(runx "$T/plan.json" "$wd" "$rc" "$lg" 4 --retry a --hint 'use "x" $(touch '"$wd"'/pwned) and `id`
+second line'); r=$?
+expect "retry hint as data: exit code (4/5: a line of the hint did not reach the task)" "$r" 0
+[ -e "$wd/pwned" ] && { echo "FAIL: retry hint as data: the hint was run by a shell" >&2; fail=1; }
+rm -rf "$wd" "$rc"
+
+# retry of a VERIFIED unit: its state is reset, it is rebuilt with the hint, and the units that need it are checked again after it: here b's
+# new answer breaks c's second example, the sweep finds it, c is rebuilt
+set -- $(mk); wd=$1; rc=$2; lg=$3
+out=$(run "$T/plan.json" "$wd" "$rc" "$lg")
+expect "retry verified: the first run is done" "$(verdict "$out")" done
+printf 'grep -q "^HINT: strictly more than nine$" "$1.task" || exit 4\nsed -i.bak "s/x > 10/x > 9/" "$1"\n' > "$rc/b.2.sh"
+printf 'sed -i.bak "s/is_big(double(x))/(double(x) > 10)/" "$1"\n' > "$rc/c.2.sh"
+out=$(runx "$T/plan.json" "$wd" "$rc" "$lg" 4 --retry b --hint "strictly more than nine"); r=$?
+expect "retry verified: exit code" "$r" 0
+expect "retry verified: verdict" "$(verdict "$out")" done
+expect "retry verified: unit lines (a, c kept at the start; b rebuilt; c found broken by the sweep and rebuilt)" "$(units "$out")" "a:kept c:kept b:building b:verified c:regressed c:building c:verified"
+expect "retry verified: only b and c were asked again" "$(order "$lg")" "a b c b c"
+expect "retry verified: the state" "$(order "$wd/state.txt")" "verified a verified b verified c"
+case "$(jevents "$wd" b | tr '\n' ';')" in *"attempt 1 verified verified hint=strictly more than nine"*) ;; *) echo "FAIL: retry verified: b's attempt 1 does not carry the hint: $(jevents "$wd" b | tr '\n' ';')" >&2; fail=1 ;; esac
+python3 - "$wd" <<'PY' || { echo "FAIL: retry verified: the sweep after b did not name c as regressed" >&2; fail=1; }
+import json, sys
+sw = [json.loads(l) for l in open(sys.argv[1] + "/journal/events.jsonl") if '"sweep"' in l]
+assert any(e["after_unit"] == "b" and e["regressed"] == ["c"] and e["held"] == ["a"] for e in sw), sw
+PY
+rm -rf "$wd" "$rc"
+
+# patch: the person's code, in the shape of a model's reply (fences and talk around it), is verified with no agent call
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf '%s\n' "$WRONG" > "$rc/a.sh"
+out=$(runx "$T/plan.json" "$wd" "$rc" "$lg" 4)
+before=$(cat "$wd/project.cho")
+printf 'Here is the function:\n```cancho\nfn double(x: int) -> [] int {\n    return x * 2;\n}\n```\nthat is all.\n' > "$wd.patch-good.txt"
+out=$(runx "$T/plan.json" "$wd" "$rc" "$lg" 4 --patch a "$wd.patch-good.txt"); r=$?
+expect "patch: exit code" "$r" 0
+expect "patch: verdict" "$(verdict "$out")" done
+expect "patch: the agent was asked for c only (a patch is not a model call)" "$(order "$lg")" "a a b c"
+expect "patch: unit lines" "$(units "$out")" "b:kept a:verified c:building c:verified"
+printf '%s\n' "$out" | grep -q "^\[PATCH\]	a	applying$" && printf '%s\n' "$out" | grep -q "^\[PATCH\]	a	verified$" || { echo "FAIL: patch: no [PATCH] applying / verified lines: $out" >&2; fail=1; }
+grep -q 'return x \* 2' "$wd/project.cho" || { echo "FAIL: patch: the person's code is not in project.cho" >&2; fail=1; }
+expect "patch: the state" "$(order "$wd/state.txt")" "verified a verified b verified c"
+expect "patch: the trail went on (0 1 2)" "$(python3 -c 'import json,sys; print(" ".join(str(json.loads(l)["attempt"]) for l in open(sys.argv[1])))' "$wd/trail-a.jsonl")" "0 1 2"
+expect "patch: the journal records a human_patch attempt: no prompt, no reply, the code" "$(jevents "$wd" a | grep -E 'attempt 2|patch' | tr '\n' ';')" "unit_start - - - nohint  patch noprompt nocode;attempt 2 human_patch verified nohint   noprompt code;"
+python3 - "$wd" <<'PY' || { echo "FAIL: patch: the human_patch attempt has a prompt or reply blob, or tokens" >&2; fail=1; }
+import json, sys
+e = [json.loads(l) for l in open(sys.argv[1] + "/journal/events.jsonl")]
+a = [x for x in e if x.get("outcome") == "human_patch"]
+assert len(a) == 1 and not ({"prompt", "reply", "tokens"} & set(a[0])), a
+PY
+[ -s "$wd/usage.jsonl" ] && { echo "FAIL: patch: a model-call log was written" >&2; fail=1; }
+rm -rf "$wd" "$rc" "$wd.patch-good.txt"
+
+# patch refused: by the examples, by the compiler, by the splice. project.cho, the state and the agent log are as they were; the refusal is shown
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf '%s\n' "$WRONG" > "$rc/a.sh"
+out=$(runx "$T/plan.json" "$wd" "$rc" "$lg" 4)
+cp "$wd/project.cho" "$wd.before"; cp "$wd/state.txt" "$wd.state"
+printf 'fn double(x: int) -> [] int { return x + 7; }\n' > "$wd.p1.txt"
+printf 'fn double(x: int) -> [] int { return true; }\n' > "$wd.p2.txt"
+printf 'this is talk, not code\n' > "$wd.p3.txt"
+printf 'fn double(x: int) -> [] int { return x * 2; }\nfn double(x: int) -> [] int { return x * 3; }\n' > "$wd.p4.txt"
+for k in 1 2 3 4; do
+    out=$(runx "$T/plan.json" "$wd" "$rc" "$lg" 4 --patch a "$wd.p$k.txt"); r=$?
+    expect "patch refused $k: exit code (stuck)" "$r" 1
+    expect "patch refused $k: verdict" "$(verdict "$out")" stuck
+    printf '%s\n' "$out" | grep -q "^\[PATCH\]	a	refused$" || { echo "FAIL: patch refused $k: no '[PATCH] a refused': $out" >&2; fail=1; }
+    cmp -s "$wd/project.cho" "$wd.before" || { echo "FAIL: patch refused $k: project.cho was not restored" >&2; fail=1; }
+    cmp -s "$wd/state.txt" "$wd.state" || { echo "FAIL: patch refused $k: the state changed" >&2; fail=1; }
+    expect "patch refused $k: the agent was never asked" "$(order "$lg")" "a a b"
+    case "$k" in
+        1) case "$out" in *"double(2) == 4"*) ;; *) echo "FAIL: patch refused 1: the examples' refusal is not shown: $out" >&2; fail=1 ;; esac ;;
+        2) case "$out" in *'"refused"'*) ;; *) echo "FAIL: patch refused 2: the compiler's refusal is not shown: $out" >&2; fail=1 ;; esac ;;
+        3|4) case "$out" in *SPLICE_ERROR*) ;; *) echo "FAIL: patch refused $k: the splice's refusal is not shown: $out" >&2; fail=1 ;; esac ;;
+    esac
+done
+expect "patch refused: each try is an attempt in the journal (outcome human_patch, none verified)" "$(jevents "$wd" a | grep -c 'attempt [0-9]* human_patch')" 4
+expect "patch refused: none of them verified" "$(jevents "$wd" a | grep 'human_patch' | grep -c ' verified ')" 0
+expect "patch refused: the trail numbers go on" "$(python3 -c 'import json,sys; print(" ".join(str(json.loads(l)["attempt"]) for l in open(sys.argv[1])))' "$wd/trail-a.jsonl")" "0 1 2 3 4 5"
+rm -rf "$wd" "$rc" "$wd".before "$wd".state "$wd".p?.txt
+# a refused patch of a VERIFIED unit leaves it verified (and the run is stuck: what was asked did not happen)
+set -- $(mk); wd=$1; rc=$2; lg=$3
+out=$(run "$T/plan.json" "$wd" "$rc" "$lg")
+cp "$wd/project.cho" "$wd.before"
+printf 'fn is_big(x: int) -> [] bool { return x > 100; }\n' > "$wd.p.txt"
+out=$(runx "$T/plan.json" "$wd" "$rc" "$lg" 4 --patch b "$wd.p.txt"); r=$?
+expect "patch refused (verified unit): exit code" "$r" 1
+cmp -s "$wd/project.cho" "$wd.before" || { echo "FAIL: patch refused (verified unit): project.cho was not restored" >&2; fail=1; }
+expect "patch refused (verified unit): b stays verified" "$(order "$wd/state.txt")" "verified a verified b verified c"
+expect "patch refused (verified unit): the agent was not asked" "$(order "$lg")" "a b c"
+rm -rf "$wd" "$rc" "$wd.before" "$wd.p.txt"
+
+# redo usage: nothing is changed, nothing is asked of the agent
+usage_case() { # name expected-message-part args...
+    name=$1; part=$2; shift 2
+    set -- "$@"
+    w=$(mktemp -d -t cc-project-wd-XXXXXX); r=$(mktemp -d -t cc-project-rc-XXXXXX); l="$r/agent.log"; : > "$l"; cp "$T"/recipes-good/*.sh "$r"/
+    before=$(cd "$w" && find . -type f | sort | xargs cksum 2>/dev/null)
+    o=$(runx "$T/plan.json" "$w" "$r" "$l" 4 "$@"); rr=$?
+    expect "redo usage ($name): exit code" "$rr" 2
+    case "$o" in *"$part"*) ;; *) echo "FAIL: redo usage ($name): no message with '$part': $o" >&2; fail=1 ;; esac
+    expect "redo usage ($name): the work directory is untouched" "$(cd "$w" && find . -type f | sort | xargs cksum 2>/dev/null)" "$before"
+    expect "redo usage ($name): the agent was never asked" "$(wc -c < "$l" | tr -d ' ')" 0
+    rm -rf "$w" "$r"
+}
+PATCHOK=$(mktemp -t cc-project-patch-XXXXXX); printf 'fn double(x: int) -> [] int { return x * 2; }\n' > "$PATCHOK"
+usage_case "unit not in the plan" "does not have" --retry nosuch --hint x
+usage_case "patch unit not in the plan" "does not have" --patch nosuch "$PATCHOK"
+usage_case "empty hint" "empty" --retry a --hint ""
+usage_case "retry and patch" "together" --retry a --patch b "$PATCHOK"
+usage_case "retry and patch for the same unit" "together" --retry a --patch a "$PATCHOK"
+usage_case "hint without retry" "goes with --retry" --hint x
+usage_case "patch file missing" "cannot be read" --patch a /no/such/patch.txt
+usage_case "patch file empty" "cannot be read" --patch a /dev/null
+usage_case "retry without a unit" "needs a unit" --retry ""
+usage_case "unknown option" "does not know" --frobnicate
+rm -f "$PATCHOK"
 
 # no plan
 set -- $(mk); wd=$1; rc=$2; lg=$3
