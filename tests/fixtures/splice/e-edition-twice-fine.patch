@@ -1,0 +1,3 @@
+edition 7;
+edition 7;
+fn q() -> [] int { return 1; }

@@ -1,0 +1,6 @@
+```
+fn a() -> [] int { return 1; }
+```
+```
+fn b() -> [] int { return 2; }
+```

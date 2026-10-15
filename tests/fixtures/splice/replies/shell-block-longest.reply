@@ -1,0 +1,6 @@
+```sh
+cancho check this_is_a_very_long_command --std --backend cranelift project.cho main.cho
+```
+```
+fn a() -> [] int { return 1; }
+```

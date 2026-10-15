@@ -1,0 +1,55 @@
+# name<TAB>exit code<TAB>text the report must contain
+s-replace-fn	0	replaced fn helper
+s-append-fn	0	added fn extra
+s-pub-to-nonpub	0	replaced fn other
+s-nonpub-to-pub	0	replaced fn helper
+s-struct-replace	0	replaced struct Point
+s-enum-add	0	added enum Color
+s-res-struct	0	added struct Owner2
+s-struct-semi	0	added enum Never
+s-type-kind-change	0	replaced enum Point
+s-import-dedupe	0	kept import std.buffer
+s-import-after-last	0	added import g.h
+s-import-no-imports	0	added import std.list
+s-import-no-edition	0	added import std.buffer
+s-import-alias	0	added import std.signals as sg
+s-edition-dropped	0	dropped edition
+s-edition-only	0	dropped edition
+s-main	0	replaced fn main
+s-braces-in-string	0	added fn after
+s-braces-in-char	0	added fn d
+s-braces-in-comment	0	added fn d
+s-braces-in-existing	0	replaced fn t
+s-unicode	0	replaced fn u
+s-comments-above	0	replaced fn a
+s-multiple	0	added struct N
+s-crlf-existing	0	added fn c
+s-crlf-patch	0	added fn x
+s-no-trailing-newline	0	added fn b
+s-trailing-blank-lines	0	replaced fn a
+s-empty-existing	0	added fn a
+s-empty-existing-import	0	added import a.b
+s-first-occurrence	0	replaced fn a
+s-indented-item	0	replaced fn a
+s-generic-fn	0	added fn g
+s-text-between-comments	0	added fn z
+s-free-comment-only-existing	0	added fn a
+e-no-item	1	patch: no item
+e-empty-patch	1	patch: no item
+e-prose	1	1:patch: text outside any item: Here is the code:
+e-unclosed	1	1:patch: item never closes (unbalanced braces): fn a() -> [] int {
+e-unclosed-string	1	item never closes
+e-unclosed-line3	1	3:patch: item never closes
+e-fn-semicolon	1	item never closes
+e-stray-middle	1	2:patch: text outside any item: let x = 5;
+e-stray-trailing	1	2:patch: text outside any item: }
+e-stray-existing	1	2:existing: text outside any item: module x;
+e-unclosed-existing	1	2:existing: item never closes
+e-both-bad	1	existing: text outside
+e-dup-fn	1	3:patch: defines fn a twice (first at line 1)
+e-dup-import	1	defines import a.b twice
+e-dup-type	1	defines type T twice
+e-name-missing	1	text outside any item
+e-edition-twice-fine	0	dropped edition
+e-char-quote-unclosed	0	added fn a
+s-big-file	0	replaced fn big_150

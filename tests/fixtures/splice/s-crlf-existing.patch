@@ -1,0 +1,2 @@
+fn b() -> [] int { return 3; }
+fn c() -> [] int { return 4; }

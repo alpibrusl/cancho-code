@@ -1,0 +1,16 @@
+edition 7;
+
+// A `main` for checking a library that has none (the reference of an eval item): the splice gate compiles it beside the spliced file.
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(io);
+    release(ffi);
+    release(fs);
+    release(heap);
+    release(args);
+    release(net);
+    release(clock);
+    release(signals);
+    release(exec);
+    return 0;
+}

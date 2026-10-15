@@ -84,6 +84,16 @@ check("efficiency over visible tokens", r["efficiency_visible"], round(180 / 530
 # unit a: thinking 60 + 200 = 260 of 400
 check("unit a thinking", (r["per_unit"]["a"]["thinking"], r["per_unit"]["a"]["out"]), (260, 400))
 
+# patch mode (run.json "patch": true): the model returned only the unit, so program_chars is the patch and all of a kept call is mandatory (share 1.0), not the growth of a file it did not rewrite
+w2 = os.path.join(d, "run2"); os.makedirs(w2)
+for fn in ("usage.jsonl", "run.log", "audit.txt"):
+    open(os.path.join(w2, fn), "w").write(open(os.path.join(w, fn)).read())
+json.dump({"scaffold_chars": 40, "seconds": 12, "provider": "anthropic", "model": "m", "patch": True}, open(os.path.join(w2, "run.json"), "w"))
+rp = metrics.analyze(w2, None, prices)
+check("patch mode: kept calls are all mandatory", (rp["per_unit"]["a"]["mandatory_share"], rp["per_unit"]["b"]["mandatory_share"]), (1.0, 1.0))
+# mandatory out = kept 300 + 600 = 900 of 1750
+check("patch mode: efficiency equals the kept share", rp["efficiency"], round(900 / 1750, 4))
+
 # a prompt over the limit is priced at the higher tier: in 1500, out 10 -> 1500 x 2.0 + 10 x 10 = 3100 micro-USD
 d2 = os.path.join(d, "over"); os.makedirs(d2)
 open(os.path.join(d2, "usage.jsonl"), "w").write(json.dumps(call("UNIT: a", "written", 1500, 10, 0, 0, 50)) + "\n")
@@ -114,7 +124,7 @@ r4 = metrics.analyze(d4, None, prices)
 check("empty: calls", r4["calls"], 0)
 check("empty: efficiency", r4["efficiency"], None)
 
-print("metrics: 31 checks")
+print("metrics: 33 checks")
 sys.exit(1 if fails else 0)
 PY
 rc=$?

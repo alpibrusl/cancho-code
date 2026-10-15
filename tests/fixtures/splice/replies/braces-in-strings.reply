@@ -1,0 +1,5 @@
+fn a() -> [] int {
+    let s = "}}}";
+    return 1;
+}
+Hope that helps }

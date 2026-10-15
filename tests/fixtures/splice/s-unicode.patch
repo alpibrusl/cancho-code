@@ -1,0 +1,3 @@
+// 😀
+fn u() -> [] int { return len("日"); }
+fn v() -> [] int { return 1; }

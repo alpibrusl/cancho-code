@@ -1,0 +1,5 @@
+Here:
+fn a() -> [] int {
+    return 1;
+}
+Hope this helps!

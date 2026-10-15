@@ -1,0 +1,5 @@
+edition 7;
+import std.list;
+fn a() -> [] int {
+    return 1;
+}

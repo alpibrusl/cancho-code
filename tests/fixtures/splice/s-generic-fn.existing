@@ -1,0 +1,12 @@
+edition 7;
+import std.buffer;
+
+// helper comment
+// second line
+fn helper(x: int) -> [] int {
+    return x + 1;
+}
+
+struct Point { x: int, y: int }
+
+pub fn other() -> [] int { return 0; }

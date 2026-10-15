@@ -1,0 +1,3 @@
+import e.f;
+import g.h;
+fn g() -> [] int { return 2; }

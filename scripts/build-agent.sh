@@ -9,5 +9,5 @@ C="${CANCHO_PACKAGES:-}"
 [ -d "$C" ] || C="$(dirname "$(dirname "$(dirname "$(command -v "$CANCHO")")")")/packages"
 [ -d "$C" ] || { echo "build-agent: no cancho packages found; set CANCHO_PACKAGES" >&2; exit 2; }
 mkdir -p "$root/build"
-exec "$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" "$root/src/prompt.cho" "$root/src/planprompt.cho" "$root/src/plan.cho" "$root/src/cases.cho" "$root/src/review.cho" "$root/src/provider.cho" "$root/src/reply.cho" \
+exec "$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" "$root/src/prompt.cho" "$root/src/planprompt.cho" "$root/src/plan.cho" "$root/src/cases.cho" "$root/src/review.cho" "$root/src/splice.cho" "$root/src/provider.cho" "$root/src/reply.cho" \
     "$root/vendor/fetch_io.cho" "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho --std --backend cranelift -o "$root/build/cancho-agent"

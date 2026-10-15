@@ -1,0 +1,5 @@
+reasoning with fn x() -> [] int { return 0; }
+</think>
+fn a() -> [] int {
+    return 1;
+}

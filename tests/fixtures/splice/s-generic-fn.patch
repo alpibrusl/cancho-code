@@ -1,0 +1,1 @@
+fn g[&r, &s](x: &r [byte], y: &s [byte]) -> [] int { return len(x); }

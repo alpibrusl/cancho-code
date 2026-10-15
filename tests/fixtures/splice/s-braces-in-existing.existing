@@ -1,0 +1,8 @@
+edition 7;
+
+fn s() -> [] int {
+    let a = "}"; // {{{
+    return 1;
+}
+
+fn t() -> [] int { return 2; }

@@ -1,0 +1,783 @@
+edition 7;
+
+module splice;
+
+// The edit mode (docs/plan.md, "edit mode"). The measured waste of a project build is that for every unit the model re-emits the WHOLE
+// project file. Here it returns only what the unit adds (a PATCH: the function and the helpers, types and imports it needs) and this module
+// puts it into the file:
+//
+//   patch_span(reply)          where the patch is in a model's reply, or (-1, -1)
+//   splice(existing, patch)    the new file, a report, and a code (0, or 1 with the file unchanged and `[SPLICE_ERROR]` lines)
+//
+// Both are pure. The rules (what an item is, its identity, where things go, the errors) are written once, in tests/reference/splice_ref.py,
+// which scripts/test-splice.sh holds this module to, byte for byte; the gate also rebuilds every eval reference by splicing its items in.
+
+import std.buffer;
+import std.bytes;
+
+// ---- bytes (reply.cho's) ----------------------------------------------------------
+
+fn match_at[&s, &l](s: &s [byte], i: int, lit: &l [byte]) -> [] bool {
+    if i < 0 || i + len(lit) > len(s) {
+        return false;
+    }
+    var k = 0;
+    var ok = true;
+    while k < len(lit) {
+        if int_of(s[i + k]) != int_of(lit[k]) {
+            ok = false;
+        }
+        k = k + 1;
+    }
+    return ok;
+}
+
+// The first place in [from, to) where `lit` starts and ends inside it, or -1.
+fn find_in[&s, &l](s: &s [byte], from: int, to: int, lit: &l [byte]) -> [] int {
+    var i = from;
+    var found = 0 - 1;
+    while found < 0 && i + len(lit) <= to {
+        if match_at(s, i, lit) {
+            found = i;
+        }
+        i = i + 1;
+    }
+    return found;
+}
+
+// The last such place in [from, to), or -1.
+fn rfind_in[&s, &l](s: &s [byte], from: int, to: int, lit: &l [byte]) -> [] int {
+    var i = to - len(lit);
+    var found = 0 - 1;
+    while found < 0 && i >= from {
+        if match_at(s, i, lit) {
+            found = i;
+        }
+        i = i - 1;
+    }
+    return found;
+}
+
+// Python's `str.isspace` on ASCII: space, \t \n \v \f \r.
+fn is_space(c: int) -> [] bool {
+    return c == 32 || (c >= 9 && c <= 13);
+}
+
+fn blank[&s](s: &s [byte], lo: int, hi: int) -> [] bool {
+    var i = lo;
+    var all = true;
+    while i < hi {
+        if is_space(int_of(s[i])) == false {
+            all = false;
+        }
+        i = i + 1;
+    }
+    return all;
+}
+
+// [A-Za-z0-9_+-]: what a fence's language tag is made of.
+fn is_info(c: int) -> [] bool {
+    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95 || c == 43 || c == 45;
+}
+
+// A fenced block that starts at or after `from`: (where its text starts, where
+// it ends, where to look for the next one), or (-1, 0, 0). An opener is three
+// backticks, a language tag, spaces or tabs, and a newline; the block ends at
+// the next three backticks, wherever they are.
+fn next_block[&s](s: &s [byte], lo: int, hi: int, from: int) -> [] (int, int, int) {
+    var p = from;
+    var result = (0 - 1, 0, 0);
+    var searching = true;
+    while searching {
+        let i = find_in(s, p, hi, "```");
+        if i < 0 {
+            searching = false;
+        } else {
+            var j = i + 3;
+            while j < hi && is_info(int_of(s[j])) {
+                j = j + 1;
+            }
+            while j < hi && (int_of(s[j]) == 32 || int_of(s[j]) == 9) {
+                j = j + 1;
+            }
+            if j < hi && int_of(s[j]) == 10 {
+                let close = find_in(s, j + 1, hi, "```");
+                if close >= 0 {
+                    result = (j + 1, close, close + 3);
+                    searching = false;
+                } else {
+                    p = i + 1;
+                }
+            } else {
+                p = i + 1;
+            }
+        }
+    }
+    return result;
+}
+
+fn byte_at[&t](t: &t [byte], i: int) -> [] int {
+    if i < 0 || i >= len(t) {
+        return 0 - 1;
+    }
+    return int_of(t[i]);
+}
+
+fn is_ws(c: int) -> [] bool {
+    return c == 32 || c == 9 || c == 10 || c == 13;
+}
+
+fn is_ident(c: int) -> [] bool {
+    return (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95;
+}
+
+// ---- items ---------------------------------------------------------------------------
+
+// An item keyword at `i`: (kind, length) with kind 0 edition, 1 import, 2 fn, 3 struct, 4 enum; -1 when there is none.
+fn kw_info[&t](t: &t [byte], i: int) -> [] (int, int) {
+    if match_at(t, i, "pub res struct ") {
+        return (3, 15);
+    }
+    if match_at(t, i, "res struct ") {
+        return (3, 11);
+    }
+    if match_at(t, i, "pub struct ") {
+        return (3, 11);
+    }
+    if match_at(t, i, "struct ") {
+        return (3, 7);
+    }
+    if match_at(t, i, "pub enum ") {
+        return (4, 9);
+    }
+    if match_at(t, i, "enum ") {
+        return (4, 5);
+    }
+    if match_at(t, i, "pub fn ") {
+        return (2, 7);
+    }
+    if match_at(t, i, "fn ") {
+        return (2, 3);
+    }
+    if match_at(t, i, "import ") {
+        return (1, 7);
+    }
+    if match_at(t, i, "edition ") {
+        return (0, 8);
+    }
+    return (0 - 1, 0);
+}
+
+// The end (exclusive) of the item whose header scan starts at `start`, or -1 when it never closes. The matcher skips string literals,
+// char literals and `//` comments.
+fn scan_body[&t](t: &t [byte], start: int, semi_ends: bool) -> [] int {
+    let n = len(t);
+    var i = start;
+    var depth = 0;
+    var opened = false;
+    var result = 0 - 2;
+    while i < n && result == 0 - 2 {
+        let c = int_of(t[i]);
+        if c == 47 && i + 1 < n && int_of(t[i + 1]) == 47 {
+            while i < n && int_of(t[i]) != 10 {
+                i = i + 1;
+            }
+        } else if c == 34 {
+            i = i + 1;
+            while i < n && int_of(t[i]) != 34 {
+                if int_of(t[i]) == 92 {
+                    i = i + 2;
+                } else {
+                    i = i + 1;
+                }
+            }
+            if i >= n {
+                result = 0 - 1;
+            } else {
+                i = i + 1;
+            }
+        } else if c == 39 {
+            if i + 3 < n && int_of(t[i + 1]) == 92 && int_of(t[i + 3]) == 39 {
+                i = i + 4;
+            } else if i + 2 < n && int_of(t[i + 1]) != 92 && int_of(t[i + 1]) != 10 && int_of(t[i + 2]) == 39 {
+                i = i + 3;
+            } else {
+                i = i + 1;
+            }
+        } else if c == 123 {
+            depth = depth + 1;
+            opened = true;
+            i = i + 1;
+        } else if c == 125 {
+            if depth > 0 {
+                depth = depth - 1;
+            }
+            i = i + 1;
+            if opened && depth == 0 {
+                result = i;
+            }
+        } else if c == 59 && !opened && depth == 0 {
+            if semi_ends {
+                result = i + 1;
+            } else {
+                result = 0 - 1;
+            }
+        } else {
+            i = i + 1;
+        }
+    }
+    if result == 0 - 2 {
+        return 0 - 1;
+    }
+    return result;
+}
+
+fn line_end[&t](t: &t [byte], from: int) -> [] int {
+    var e = from;
+    while e < len(t) && int_of(t[e]) != 10 {
+        e = e + 1;
+    }
+    return e;
+}
+
+// Parse `t` into items. `tab` holds six ints per item (kind, start, end, name start, name end, keyword position) while there is room. The
+// answer: (how many items, status, position, end of the last item): status 0 ok, 1 stray text at the position, 2 the item whose keyword is
+// at the position never closes.
+fn parse_items[&t, &x](t: &t [byte], tab: &!x [int]) -> [] (int, int, int, int) {
+    let n = len(t);
+    let cap = len(tab) / 6;
+    var cnt = 0;
+    var last = 0;
+    var i = 0;
+    var st = 0;
+    var epos = 0;
+    var done = false;
+    while !done {
+        while i < n && is_ws(int_of(t[i])) {
+            i = i + 1;
+        }
+        if i >= n {
+            done = true;
+        } else {
+            let start = i;
+            var kwpos = i;
+            var free = false;
+            if match_at(t, i, "//") {
+                var j = i;
+                var scanning = true;
+                while scanning {
+                    let eol = line_end(t, j);
+                    var k = j;
+                    while k < eol && (int_of(t[k]) == 32 || int_of(t[k]) == 9) {
+                        k = k + 1;
+                    }
+                    if k + 2 <= eol && match_at(t, k, "//") {
+                        j = eol + 1;
+                        if j >= n {
+                            j = n;
+                            scanning = false;
+                        }
+                    } else {
+                        scanning = false;
+                    }
+                }
+                var k = j;
+                while k < n && (int_of(t[k]) == 32 || int_of(t[k]) == 9) {
+                    k = k + 1;
+                }
+                let (kk, kl) = kw_info(t, k);
+                if kk < 0 {
+                    i = j;
+                    free = true;
+                } else {
+                    kwpos = k;
+                }
+            }
+            if !free {
+                let (kind, klen) = kw_info(t, kwpos);
+                if kind < 0 {
+                    st = 1;
+                    epos = i;
+                    done = true;
+                } else {
+                    var q = kwpos + klen;
+                    var end = 0 - 1;
+                    var ns = q;
+                    var ne = q;
+                    var stray = false;
+                    if kind <= 1 {
+                        let semi = find_in(t, q, n, ";");
+                        if semi >= 0 {
+                            end = semi + 1;
+                            if kind == 1 {
+                                ns = q;
+                                ne = semi;
+                                while ns < ne && is_ws(int_of(t[ns])) {
+                                    ns = ns + 1;
+                                }
+                                while ne > ns && is_ws(int_of(t[ne - 1])) {
+                                    ne = ne - 1;
+                                }
+                            }
+                        }
+                    } else {
+                        while q < n && int_of(t[q]) == 32 {
+                            q = q + 1;
+                        }
+                        ns = q;
+                        ne = q;
+                        while ne < n && is_ident(int_of(t[ne])) {
+                            ne = ne + 1;
+                        }
+                        var k = ne;
+                        while k < n && (int_of(t[k]) == 32 || int_of(t[k]) == 9) {
+                            k = k + 1;
+                        }
+                        let c = byte_at(t, k);
+                        var fine = false;
+                        if kind == 2 {
+                            fine = c == 40 || c == 91;
+                        } else {
+                            fine = c == 123 || c == 59 || c == 91;
+                        }
+                        if ne == ns || !fine {
+                            stray = true;
+                        } else {
+                            end = scan_body(t, ne, kind != 2);
+                        }
+                    }
+                    if stray {
+                        st = 1;
+                        epos = i;
+                        done = true;
+                    } else if end < 0 {
+                        st = 2;
+                        epos = kwpos;
+                        done = true;
+                    } else {
+                        if cnt < cap {
+                            tab[6 * cnt] = kind;
+                            tab[6 * cnt + 1] = start;
+                            tab[6 * cnt + 2] = end;
+                            tab[6 * cnt + 3] = ns;
+                            tab[6 * cnt + 4] = ne;
+                            tab[6 * cnt + 5] = kwpos;
+                        }
+                        cnt = cnt + 1;
+                        last = end;
+                        i = end;
+                    }
+                }
+            }
+        }
+    }
+    return (cnt, st, epos, last);
+}
+
+// ---- the patch in a reply -------------------------------------------------------------
+
+fn starts_item_line[&s](s: &s [byte], i: int) -> [] bool {
+    return match_at(s, i, "fn ") || match_at(s, i, "pub fn ") || match_at(s, i, "struct ") || match_at(s, i, "pub struct ")
+        || match_at(s, i, "res struct ") || match_at(s, i, "pub res struct ") || match_at(s, i, "enum ") || match_at(s, i, "pub enum ")
+        || match_at(s, i, "import ") || match_at(s, i, "//") || match_at(s, i, "edition ");
+}
+
+fn segment_patch[&s](s: &s [byte], lo: int, hi: int) -> [] (int, int) {
+    var a = lo;
+    var b = hi;
+    // the longest fenced block (the first of equal length)
+    var best = 0 - 1;
+    var best_a = 0;
+    var best_b = 0;
+    var from = lo;
+    var scanning = true;
+    while scanning {
+        let (cs, ce, resume) = next_block(s, lo, hi, from);
+        if cs < 0 {
+            scanning = false;
+        } else {
+            if best < 0 || ce - cs > best {
+                best = ce - cs;
+                best_a = cs;
+                best_b = ce;
+            }
+            from = resume;
+        }
+    }
+    if best >= 0 {
+        a = best_a;
+        b = best_b;
+    }
+    // an unopened or unclosed fence left at either end
+    var k = a;
+    while k < b && is_space(int_of(s[k])) {
+        k = k + 1;
+    }
+    if match_at(s, k, "```") && k + 3 <= b {
+        var j = k + 3;
+        while j < b && is_info(int_of(s[j])) {
+            j = j + 1;
+        }
+        while j < b && (int_of(s[j]) == 32 || int_of(s[j]) == 9) {
+            j = j + 1;
+        }
+        if j < b && int_of(s[j]) == 10 {
+            a = j + 1;
+        }
+    }
+    var e = b;
+    while e > a && is_space(int_of(s[e - 1])) {
+        e = e - 1;
+    }
+    if e - 3 >= a && match_at(s, e - 3, "```") {
+        var q = e - 3;
+        while q > a && (int_of(s[q - 1]) == 32 || int_of(s[q - 1]) == 9) {
+            q = q - 1;
+        }
+        if q > a && int_of(s[q - 1]) == 10 {
+            b = q - 1;
+        }
+    }
+    // the first line that begins an item and from which an item parses
+    var found = false;
+    var rs = 0 - 1;
+    var re = 0 - 1;
+    region r {
+        let tab = alloc_slice[r](60, 0);
+        var i = a;
+        while i < b && !found {
+            var at_line = i == a || int_of(s[i - 1]) == 10;
+            if at_line == false && i - 7 >= a && match_at(s, i - 7, "<think>") && (i - 7 == a || int_of(s[i - 8]) == 10) {
+                at_line = true;
+            }
+            if at_line && starts_item_line(s, i) {
+                let (cnt, st, epos, last) = parse_items(s[i..b], tab);
+                if cnt > 0 || st == 2 {
+                    found = true;
+                    rs = i;
+                    if st == 2 {
+                        var end = b;
+                        while end > i && int_of(s[end - 1]) == 10 {
+                            end = end - 1;
+                        }
+                        re = end;
+                    } else {
+                        re = i + last;
+                    }
+                }
+            }
+            i = i + 1;
+        }
+    }
+    return (rs, re);
+}
+
+// The patch in a model's answer: where it starts and ends in `answer`, or (-1, -1). Fences and `</think>` as `reply.program_span`; then from
+// the first line that begins an item (or a `//` comment) to the end of the last item that closes (an item that never closes runs to the end).
+pub fn patch_span[&s](answer: &s [byte]) -> [] (int, int) {
+    var hi = len(answer);
+    var result = (0 - 1, 0 - 1);
+    var searching = true;
+    while searching {
+        let t = rfind_in(answer, 0, hi, "</think>");
+        if t < 0 {
+            result = segment_patch(answer, 0, hi);
+            searching = false;
+        } else {
+            if blank(answer, t + 8, hi) == false {
+                let (a, b) = segment_patch(answer, t + 8, hi);
+                if a >= 0 {
+                    result = (a, b);
+                    searching = false;
+                }
+            }
+            hi = t;
+        }
+    }
+    return result;
+}
+
+// ---- splicing -------------------------------------------------------------------------
+
+fn tag_of(kind: int) -> [] int {
+    if kind >= 3 {
+        return 3;
+    }
+    return kind;
+}
+
+fn line_of[&t](t: &t [byte], pos: int) -> [] int {
+    var n = 1;
+    var i = 0;
+    while i < pos {
+        if int_of(t[i]) == 10 {
+            n = n + 1;
+        }
+        i = i + 1;
+    }
+    return n;
+}
+
+// Do item `a` of `ta` (in `x`) and item `b` of `tb` (in `y`) have one identity?
+fn same_ident[&x, &y, &p, &q](x: &x [byte], ta: &p [int], a: int, y: &y [byte], tb: &q [int], b: int) -> [] bool {
+    if tag_of(ta[6 * a]) != tag_of(tb[6 * b]) {
+        return false;
+    }
+    return bytes.equal(x[ta[6 * a + 3]..ta[6 * a + 4]], y[tb[6 * b + 3]..tb[6 * b + 4]]);
+}
+
+fn put_line[&h, &w](heap: &!h Heap, rep: buffer.Buffer, tag: &static [byte], who: &w [byte], line: int, msg: &static [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, rep, tag);
+    b = buffer.push_nat(heap, b, line);
+    b = buffer.append(heap, b, ":");
+    b = buffer.append(heap, b, who);
+    return buffer.append(heap, b, msg);
+}
+
+// The error of a parse that stopped (status 1 or 2) on `t`, with the first 40 bytes of its line.
+fn put_parse_error[&h, &t](heap: &!h Heap, rep: buffer.Buffer, who: &static [byte], t: &t [byte], st: int, pos: int) -> [heap] buffer.Buffer {
+    var b = rep;
+    if st == 1 {
+        b = put_line(heap, b, "[SPLICE_ERROR]\t-\t", who, line_of(t, pos), ": text outside any item: ");
+    } else {
+        b = put_line(heap, b, "[SPLICE_ERROR]\t-\t", who, line_of(t, pos), ": item never closes (unbalanced braces): ");
+    }
+    var e = line_end(t, pos);
+    while e > pos && int_of(t[e - 1]) == 13 {
+        e = e - 1;
+    }
+    if e > pos + 40 {
+        e = pos + 40;
+    }
+    b = buffer.append(heap, b, t[pos..e]);
+    return buffer.push(heap, b, byte_of(10));
+}
+
+fn put_ident[&h, &t, &p](heap: &!h Heap, out: buffer.Buffer, t: &t [byte], tab: &p [int], k: int) -> [heap] buffer.Buffer {
+    var b = out;
+    let tg = tag_of(tab[6 * k]);
+    if tg == 1 {
+        b = buffer.append(heap, b, "import ");
+    } else if tg == 2 {
+        b = buffer.append(heap, b, "fn ");
+    } else {
+        b = buffer.append(heap, b, "type ");
+    }
+    return buffer.append(heap, b, t[tab[6 * k + 3]..tab[6 * k + 4]]);
+}
+
+fn put_note[&h, &t, &p](heap: &!h Heap, rep: buffer.Buffer, verb: &static [byte], t: &t [byte], tab: &p [int], k: int, with_word: bool) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, rep, "[SPLICE_NOTE]\t");
+    b = buffer.append(heap, b, verb);
+    if with_word {
+        let kind = tab[6 * k];
+        if kind == 2 {
+            b = buffer.append(heap, b, "fn ");
+        } else if kind == 3 {
+            b = buffer.append(heap, b, "struct ");
+        } else {
+            b = buffer.append(heap, b, "enum ");
+        }
+    }
+    b = buffer.append(heap, b, t[tab[6 * k + 3]..tab[6 * k + 4]]);
+    return buffer.push(heap, b, byte_of(10));
+}
+
+// Put the patch into the file. The answer: the new file, the report, 0 (done; `[SPLICE_NOTE]` lines say what changed) or 1 (nothing
+// changed; `[SPLICE_ERROR]<TAB>-<TAB>LINE:MESSAGE` lines say why).
+pub fn splice[&h, &s, &p](heap: &!h Heap, existing: &s [byte], patch: &p [byte]) -> [heap] (buffer.Buffer, buffer.Buffer, int) {
+    var rep = buffer.empty(heap, 256);
+    var out = buffer.empty(heap, len(existing) + len(patch) + 64);
+    var code = 0;
+    let teb = box_slice(heap, 6 * (len(existing) / 4 + 16), 0);
+    let tpb = box_slice(heap, 6 * (len(patch) / 4 + 16), 0);
+    borrow mut teb as &!ew in {
+        borrow mut tpb as &!pw in {
+            let te = contents(ew);
+            let tp = contents(pw);
+            let (ne, se, pe, le) = parse_items(existing, te);
+            let (np, sp, pp, lp) = parse_items(patch, tp);
+            var bad = false;
+            if se != 0 {
+                rep = put_parse_error(heap, rep, "existing", existing, se, pe);
+                bad = true;
+            }
+            if sp != 0 {
+                rep = put_parse_error(heap, rep, "patch", patch, sp, pp);
+                bad = true;
+            }
+            if sp == 0 && np == 0 {
+                rep = put_line(heap, rep, "[SPLICE_ERROR]\t-\t", "patch", 1, ": no item (a fn, struct, enum, import or edition line)\n");
+                bad = true;
+            }
+            if sp == 0 {
+                var k = 0;
+                while k < np {
+                    if tp[6 * k] != 0 {
+                        var j = 0;
+                        var first = 0 - 1;
+                        while j < k && first < 0 {
+                            if tp[6 * j] != 0 && same_ident(patch, tp, j, patch, tp, k) {
+                                first = j;
+                            }
+                            j = j + 1;
+                        }
+                        if first >= 0 {
+                            rep = put_line(heap, rep, "[SPLICE_ERROR]\t-\t", "patch", line_of(patch, tp[6 * k + 5]), ": defines ");
+                            rep = put_ident(heap, rep, patch, tp, k);
+                            rep = buffer.append(heap, rep, " twice (first at line ");
+                            rep = buffer.push_nat(heap, rep, line_of(patch, tp[6 * first + 5]));
+                            rep = buffer.append(heap, rep, ")\n");
+                            bad = true;
+                        }
+                    }
+                    k = k + 1;
+                }
+            }
+            if bad {
+                out = buffer.append(heap, out, existing);
+                code = 1;
+            } else {
+                // what each patch item does: replace the first item of the file with its identity, be added, or (an import) be inserted
+                let rb = box_slice(heap, ne + 1, 0 - 1);
+                let ab = box_slice(heap, np + 1, 0);
+                borrow mut rb as &!rw in {
+                    borrow mut ab as &!aw in {
+                        let repl = contents(rw);
+                        let act = contents(aw);
+                        var k = 0;
+                        while k < np {
+                            let kind = tp[6 * k];
+                            if kind == 0 {
+                                rep = buffer.append(heap, rep, "[SPLICE_NOTE]\tdropped edition\n");
+                            } else if kind == 1 {
+                                var have = false;
+                                var e = 0;
+                                while e < ne {
+                                    if te[6 * e] == 1 && same_ident(existing, te, e, patch, tp, k) {
+                                        have = true;
+                                    }
+                                    e = e + 1;
+                                }
+                                if have {
+                                    rep = put_note(heap, rep, "kept import ", patch, tp, k, false);
+                                } else {
+                                    rep = put_note(heap, rep, "added import ", patch, tp, k, false);
+                                    act[k] = 1;
+                                }
+                            } else {
+                                var idx = 0 - 1;
+                                var e = 0;
+                                while e < ne && idx < 0 {
+                                    if same_ident(existing, te, e, patch, tp, k) {
+                                        idx = e;
+                                    }
+                                    e = e + 1;
+                                }
+                                if idx >= 0 {
+                                    rep = put_note(heap, rep, "replaced ", patch, tp, k, true);
+                                    repl[idx] = k;
+                                } else {
+                                    rep = put_note(heap, rep, "added ", patch, tp, k, true);
+                                    act[k] = 2;
+                                }
+                            }
+                            k = k + 1;
+                        }
+                        // the anchor of new imports: the last import, else the first edition line
+                        var anchor = 0 - 1;
+                        var e = 0;
+                        while e < ne {
+                            if te[6 * e] == 1 {
+                                anchor = e;
+                            }
+                            e = e + 1;
+                        }
+                        if anchor < 0 {
+                            e = 0;
+                            while e < ne && anchor < 0 {
+                                if te[6 * e] == 0 {
+                                    anchor = e;
+                                }
+                                e = e + 1;
+                            }
+                        }
+                        var inserts = buffer.empty(heap, 64);
+                        k = 0;
+                        while k < np {
+                            if act[k] == 1 {
+                                inserts = buffer.push(heap, inserts, byte_of(10));
+                                inserts = buffer.append(heap, inserts, patch[tp[6 * k + 1]..tp[6 * k + 2]]);
+                            }
+                            k = k + 1;
+                        }
+                        var first_out = buffer.empty(heap, len(existing) + 64);
+                        if anchor < 0 {
+                            k = 0;
+                            var any = false;
+                            while k < np {
+                                if act[k] == 1 {
+                                    first_out = buffer.append(heap, first_out, patch[tp[6 * k + 1]..tp[6 * k + 2]]);
+                                    first_out = buffer.push(heap, first_out, byte_of(10));
+                                    any = true;
+                                }
+                                k = k + 1;
+                            }
+                            if any {
+                                first_out = buffer.push(heap, first_out, byte_of(10));
+                            }
+                        }
+                        var pos = 0;
+                        e = 0;
+                        while e < ne {
+                            if repl[e] >= 0 {
+                                let pk = repl[e];
+                                first_out = buffer.append(heap, first_out, existing[pos..te[6 * e + 1]]);
+                                first_out = buffer.append(heap, first_out, patch[tp[6 * pk + 1]..tp[6 * pk + 2]]);
+                            } else {
+                                first_out = buffer.append(heap, first_out, existing[pos..te[6 * e + 2]]);
+                            }
+                            pos = te[6 * e + 2];
+                            if e == anchor {
+                                borrow inserts as &ir in {
+                                    first_out = buffer.append(heap, first_out, buffer.bytes(ir));
+                                }
+                            }
+                            e = e + 1;
+                        }
+                        buffer.drop(heap, inserts);
+                        first_out = buffer.append(heap, first_out, existing[pos..len(existing)]);
+                        // trailing whitespace off, the appended items after one blank line each, one newline at the end
+                        var tl = 0;
+                        borrow first_out as &fr in {
+                            tl = buffer.size(fr);
+                            while tl > 0 && is_ws(int_of(buffer.bytes(fr)[tl - 1])) {
+                                tl = tl - 1;
+                            }
+                            buffer.drop(heap, out);
+                            out = buffer.append(heap, buffer.empty(heap, len(existing) + len(patch) + 64), buffer.bytes(fr)[0..tl]);
+                        }
+                        buffer.drop(heap, first_out);
+                        k = 0;
+                        while k < np {
+                            if act[k] == 2 {
+                                if tl > 0 {
+                                    out = buffer.append(heap, out, "\n\n");
+                                }
+                                tl = tl + 1;
+                                out = buffer.append(heap, out, patch[tp[6 * k + 1]..tp[6 * k + 2]]);
+                            }
+                            k = k + 1;
+                        }
+                        out = buffer.push(heap, out, byte_of(10));
+                    }
+                }
+                unbox_slice(heap, ab);
+                unbox_slice(heap, rb);
+            }
+        }
+    }
+    unbox_slice(heap, tpb);
+    unbox_slice(heap, teb);
+    return (out, rep, code);
+}

@@ -1,0 +1,6 @@
+```cancho
+fn a() -> [] int {
+    return 1;
+}
+```
+</think>

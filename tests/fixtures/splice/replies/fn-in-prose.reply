@@ -1,0 +1,4 @@
+fn is a keyword in cancho, so here:
+fn a() -> [] int {
+    return 1;
+}
