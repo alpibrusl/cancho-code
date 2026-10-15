@@ -72,6 +72,28 @@ pre.code { background: var(--soft); border: 1px solid var(--line); border-radius
 code { font: .9em var(--mono); }
 .steps { max-width: 46rem; margin: 0 auto; padding-left: 1.2rem; }
 .steps li { margin: .4rem 0; }
+.demo { display: grid; grid-template-columns: 1fr; gap: 1rem; max-width: 64rem; margin: 0 auto; align-items: start; }
+@media (min-width: 60rem) { .demo { grid-template-columns: 1fr 1fr; } }
+.demo .term { margin: 0; max-width: none; }
+.demo .term pre { min-height: 20rem; font-size: .8rem; }
+.kb { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.12); overflow: hidden; }
+.kbhead { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: .55rem .8rem; border-bottom: 1px solid var(--line); font-size: .85rem; }
+.kbhead span { font: .78rem var(--mono); color: var(--muted); }
+.kbcols { display: grid; grid-template-columns: repeat(4, 1fr); gap: .4rem; padding: .6rem; min-height: 20rem; }
+@media (max-width: 40rem) { .kbcols { grid-template-columns: repeat(2, 1fr); min-height: 0; } }
+.kbcol { background: var(--soft); border-radius: 8px; padding: .4rem; border-top: 3px solid var(--line); min-width: 0; }
+.kbcol[data-col="building"] { border-top-color: var(--accent); }
+.kbcol[data-col="verified"] { border-top-color: var(--good); }
+.kbcol[data-col="stuck"] { border-top-color: var(--bad); }
+.kbcol h4 { margin: 0 0 .4rem; font: 700 .72rem var(--font); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.kbcards { display: grid; gap: .4rem; }
+.kcard { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: .4rem .5rem; font-size: .78rem; line-height: 1.35; animation: kin .35s ease; }
+.kcard b { display: block; font: 600 .8rem var(--mono); overflow-wrap: anywhere; }
+.kcard .m { color: var(--muted); display: block; }
+.kcard .bad { color: var(--bad); font-weight: 600; display: block; }
+.kcard .ok { color: var(--good); font-weight: 600; }
+@keyframes kin { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .kcard { animation: none; } }
 .boardbox { max-width: 56rem; margin: 2rem auto 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
 .boardbox .tabs { display: flex; gap: .4rem; padding: .5rem; border-bottom: 1px solid var(--line); background: var(--soft); flex-wrap: wrap; }
 .boardbox .tabs button { font: 600 .85rem var(--font); padding: .4rem .8rem; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
@@ -96,11 +118,22 @@ footer { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(-
 </div>
 
 <div class="wrap" style="padding-bottom:2.5rem">
-  <div class="term" role="img" aria-label="Replay of a real build log: a function is refused by the compiler, the model retries, and it is verified">
-    <div class="bar"><i></i><i></i><i></i> a real run, replayed <button id="replay" type="button">↻ replay</button></div>
-    <pre id="screen"></pre>
+  <div class="demo">
+    <div class="term" role="img" aria-label="Replay of a real build log: four units are built one at a time; one is refused by the compiler, retried and verified">
+      <div class="bar"><i></i><i></i><i></i> the terminal <button id="replay" type="button">↻ replay</button></div>
+      <pre id="screen"></pre>
+    </div>
+    <div class="kb" aria-label="The same run as a board">
+      <div class="kbhead"><b>The same run, as a board</b><span id="kbstat"></span></div>
+      <div class="kbcols">
+        <div class="kbcol" data-col="waiting"><h4>Waiting</h4><div class="kbcards"></div></div>
+        <div class="kbcol" data-col="building"><h4>Building</h4><div class="kbcards"></div></div>
+        <div class="kbcol" data-col="verified"><h4>Verified</h4><div class="kbcards"></div></div>
+        <div class="kbcol" data-col="stuck"><h4>Stuck</h4><div class="kbcards"></div></div>
+      </div>
+    </div>
   </div>
-  <p class="caption">A real run (Claude Haiku 5.5 building the <code>editdistance</code> library, six units; the middle of the log is elided). The attempt lines come from the run's trail file. It is a replay of the log, not a live session.</p>
+  <p class="caption">One real run (Claude Haiku 5.5 building the <code>tokenbucket</code> library from a hand-written plan: 4 units, 17 seconds, $0.0023, 46 of 46 hidden checks). The left is its log, the right is the board the dashboard makes from the same files; the board is replayed in step with the log here. The refusal line comes from the run's trail file. Not a live session. <a href="board.html?data=demo/tokenbucket.json">Open this run in the full board</a>.</p>
 </div>
 
 <section class="alt" id="why"><div class="wrap">
@@ -154,12 +187,12 @@ footer { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(-
   </div>
   <div class="boardbox">
     <div class="tabs" role="tablist" aria-label="Example runs">
-      <button type="button" role="tab" aria-selected="true" data-src="demo/done.json">A finished run (one retry)</button>
+      <button type="button" role="tab" aria-selected="true" data-src="demo/tokenbucket.json">The run above</button>
       <button type="button" role="tab" aria-selected="false" data-src="demo/stuck.json">A run that got stuck</button>
     </div>
-    <iframe id="boardframe" title="The board of a real run" src="board.html?data=demo/done.json" loading="lazy"></iframe>
+    <iframe id="boardframe" title="The board of a real run" src="board.html?data=demo/tokenbucket.json" loading="lazy"></iframe>
   </div>
-  <p class="fine">The board above is <a href="board.html">docs/board.html</a> showing two real runs of Claude Haiku 5.5 (the <code>csvline</code> and <code>roman</code> libraries, each built from a hand-written plan). The second run is a failure on purpose: <code>from_roman</code> was refused twice for the same reason, the loop stopped it and named it, and the unit that had verified stayed verified.</p>
+  <p class="fine">The board above is <a href="board.html">docs/board.html</a> showing two real runs of Claude Haiku 5.5, each built from a hand-written plan: the <code>tokenbucket</code> run from the top of the page, and a <code>roman</code> run. The second run is a failure on purpose: <code>from_roman</code> was refused twice for the same reason, the loop stopped it and named it, and the unit that had verified stayed verified.</p>
   <p class="fine">Example, one run: Claude Haiku 5.5 built the <code>roman</code> library from its brief alone, 6 units, 88 seconds, $0.013, and passed the hidden audit 439/439. One run on one task; the numbers below are the larger measurement. Details: <a href="https://github.com/alpibrusl/cancho-code/blob/main/docs/build.md">docs/build.md</a>, <a href="https://github.com/alpibrusl/cancho-code/blob/main/docs/dashboard.md">docs/dashboard.md</a>.</p>
 </div></section>
 
@@ -206,33 +239,73 @@ export CANCHO_PACKAGES=&lt;compiler-checkout&gt;/packages
 <script>
 (function () {
   var screen = document.getElementById("screen");
+  // A real run: its log lines (the [UNIT]/[ISSUE_VERDICT] lines are the run's own) and, beside each, what the board does.
+  var units = [{"id": "refill", "fn": "bucket_refill", "deps": [], "cost": 0.000274, "attempts": 1}, {"id": "take", "fn": "bucket_take", "deps": [], "cost": 0.000256, "attempts": 1}, {"id": "retry", "fn": "retry_after_ms", "deps": [], "cost": 0.000525, "attempts": 1}, {"id": "allow", "fn": "bucket_allow", "deps": ["refill", "take", "retry"], "cost": 0.001259, "attempts": 2}];
   var lines = [
     ["d", "$ project plan.json work/ \"cancho-agent --provider anthropic --model claude-haiku-5-5\""],
     ["g", "[PLAN]            valid"],
-    ["a", "[UNIT]            min3          building"],
-    ["g", "[ISSUE_VERDICT]   verified      attempts 1"],
-    ["a", "[UNIT]            char_count    building"],
-    ["b", "  attempt 0  refused   expected an expression, found `if`"],
+    ["a", "[UNIT]            refill    building", {u: "refill", s: "building"}],
+    ["g", "[ISSUE_VERDICT]   verified  attempts 1", {u: "refill", s: "verified"}],
+    ["a", "[UNIT]            take      building", {u: "take", s: "building"}],
+    ["g", "[ISSUE_VERDICT]   verified  attempts 1", {u: "take", s: "verified"}],
+    ["a", "[UNIT]            retry     building", {u: "retry", s: "building"}],
+    ["g", "[ISSUE_VERDICT]   verified  attempts 1", {u: "retry", s: "verified"}],
+    ["a", "[UNIT]            allow     building", {u: "allow", s: "building"}],
+    ["b", "  attempt 0  refused   unknown type `Allow`", {u: "allow", s: "refused"}],
     ["d", "             the compiler's message goes back to the model"],
     ["g", "  attempt 1  verified"],
-    ["g", "[ISSUE_VERDICT]   verified      attempts 2"],
-    ["d", "             ...4 more units, each checked, earlier ones re-checked"],
+    ["g", "[ISSUE_VERDICT]   verified  attempts 2", {u: "allow", s: "verified"}],
     ["g", "[PROJECT_VERDICT] done"]
   ];
+  var cols = {}, nodes = document.querySelectorAll(".kbcol");
+  for (var n = 0; n < nodes.length; n++) { cols[nodes[n].getAttribute("data-col")] = nodes[n].querySelector(".kbcards"); }
+  var stat = document.getElementById("kbstat");
+  var state = {};
+  function reset() { state = {}; for (var i = 0; i < units.length; i++) { state[units[i].id] = {col: "waiting", refused: false, att: 0}; } }
+  function money(x) { return "$" + x.toFixed(4); }
+  function drawBoard() {
+    var k, done = 0, cost = 0;
+    for (k in cols) { cols[k].innerHTML = ""; }
+    for (var i = 0; i < units.length; i++) {
+      var u = units[i], st = state[u.id], el = document.createElement("div");
+      el.className = "kcard";
+      var h = "<b>" + u.fn + "</b>";
+      if (u.deps.length) { h += '<span class="m">needs ' + u.deps.join(", ") + "</span>"; }
+      if (st.col === "building") { h += '<span class="m">attempt ' + (st.att + 1) + "</span>"; if (st.refused) { h += '<span class="bad">refused, retrying</span>'; } }
+      if (st.col === "verified") { done++; cost += u.cost; h += '<span class="ok">verified</span> <span class="m">' + u.attempts + " attempt" + (u.attempts > 1 ? "s" : "") + " · " + money(u.cost) + "</span>"; }
+      el.innerHTML = h; cols[st.col].appendChild(el);
+    }
+    stat.textContent = done + " / " + units.length + " verified · " + money(cost);
+  }
+  function act(a) {
+    if (!a) { return; }
+    var st = state[a.u];
+    if (a.s === "building") { st.col = "building"; }
+    else if (a.s === "refused") { st.refused = true; st.att = 1; }
+    else if (a.s === "verified") { st.col = "verified"; st.refused = false; }
+    drawBoard();
+  }
   function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
-  function full() { screen.innerHTML = lines.map(function (l) { return '<span class="' + l[0] + '">' + esc(l[1]) + "</span>"; }).join("\n"); }
+  function span(l, text) { return '<span class="' + l[0] + '">' + esc(text) + "</span>"; }
+  function full() {
+    reset();
+    for (var i = 0; i < lines.length; i++) { if (lines[i][2]) { var a = lines[i][2]; if (a.s === "building") { state[a.u].col = "building"; } else if (a.s === "verified") { state[a.u].col = "verified"; state[a.u].refused = false; } } }
+    screen.innerHTML = lines.map(function (l) { return span(l, l[1]); }).join("\n");
+    drawBoard();
+  }
   var timer = null;
   function play() {
-    clearTimeout(timer); screen.innerHTML = "";
+    clearTimeout(timer); screen.innerHTML = ""; reset(); drawBoard();
     var i = 0, j = 0, html = "";
     (function tick() {
       if (i >= lines.length) { return; }
       var l = lines[i];
       j += 3;
-      var shown = l[1].slice(0, j);
-      screen.innerHTML = html + '<span class="' + l[0] + '">' + esc(shown) + "</span>";
-      if (j >= l[1].length) { html += '<span class="' + l[0] + '">' + esc(l[1]) + "</span>\n"; i++; j = 0; timer = setTimeout(tick, l[0] === "b" ? 900 : 450); }
-      else { timer = setTimeout(tick, 14); }
+      screen.innerHTML = html + span(l, l[1].slice(0, j));
+      if (j >= l[1].length) {
+        html += span(l, l[1]) + "\n"; act(l[2]); i++; j = 0;
+        timer = setTimeout(tick, l[0] === "b" ? 1100 : 550);
+      } else { timer = setTimeout(tick, 14); }
     })();
   }
   var frame = document.getElementById("boardframe");
@@ -243,7 +316,7 @@ export CANCHO_PACKAGES=&lt;compiler-checkout&gt;/packages
       frame.src = "board.html?data=" + this.getAttribute("data-src");
     });
   }
-  full();
+  reset(); full();
   var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   document.getElementById("replay").addEventListener("click", function () { if (reduce) { full(); } else { play(); } });
   if (!reduce) { play(); }
