@@ -5,11 +5,12 @@
 #     agent.sh <recipe-dir> <log> <project.cho>
 #
 # <recipe-dir>/<unit>.<n>.sh runs on the n-th request for that unit (n = 1, 2, ...), else <recipe-dir>/<unit>.sh; it gets the project
-# file as $1. No recipe at all: the agent exits 3 (an agent that fails).
+# file as $1. It says one line on its standard error (the driver keeps that, `agent-<unit>.log`). No recipe at all: the agent exits 3 (an agent that fails).
 recipes=$1; log=$2; file=$3
 unit=$(sed -n 's/^UNIT: //p' "$file.task" | head -1)
 echo "$unit" >> "$log"
 n=$(grep -c "^$unit\$" "$log")
+echo "stub-agent: unit $unit request $n" >&2
 if [ -f "$recipes/$unit.$n.sh" ]; then sh "$recipes/$unit.$n.sh" "$file"
 elif [ -f "$recipes/$unit.sh" ]; then sh "$recipes/$unit.sh" "$file"
 else exit 3

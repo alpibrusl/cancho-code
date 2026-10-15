@@ -14,7 +14,7 @@ build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m>
 | `--guide <file>` | how to write a plan ([plan-guide.md](plan-guide.md)); required unless the work directory already holds a valid `plan.json` |
 | `--review on --review-guide <file>` | the blind re-derivation of every case ([review-guide.md](review-guide.md)) |
 | `--contract <file>` | exact public signatures the plan must keep |
-| `--rounds N` | the plan agent's own retry rounds (3) |
+| `--rounds N` | the plan agent's own retry rounds (3). A round whose reply was cut off by the output bound (a model that thinks first can use all of it before the first byte) is asked again with the bound doubled, at most 32000, and told which case it was; the unit agent does the same for a patch cut off (`agent-<id>.log` shows `a sample was cut off` and `the bound for the next round is N`) |
 | `--attempts N`, `--agent-seconds N` | per unit: the attempt ceiling (4) and the cap on one agent turn (30) |
 | `--plan-seconds N` | the cap on the whole plan call (900) |
 
@@ -59,20 +59,21 @@ Exit 2 is a usage error (nothing was run). A killed run is resumed by running th
 | `plan.log` | the plan agent's standard error and output (the rounds it was rejected in) |
 | `state.txt` | `verified <id>` per verified unit |
 | `trail-<id>.jsonl` | the unit's trail, kept whatever its outcome |
+| `agent-<id>.log` | the unit agent's standard error, per attempt, kept whatever the outcome ([docs/project.md](project.md)): where to look when a unit ends `provider_error` or `stuck` |
 | `usage.jsonl` | one JSON line per API call, plan and units, written by the agent |
 | `project.cho`, `main.cho`, `tests-<id>.cho`, ... | the project driver's files ([docs/project.md](project.md)) |
 | `run.log` | the lines below, appended by every run |
 | `build.json` | the run as a whole, rewritten after each stage and at the end |
 
-`run.log` holds `[BUILD_STAGE]<TAB>plan|plan<TAB>reused|build`, `[PLAN]` and `[PLAN_ERROR]`, `[UNIT]<TAB><id><TAB>building|verified|kept|regressed|failed|skipped|unavailable`, `[PROJECT_VERDICT]` and `[BUILD_VERDICT]`. The loop's per-attempt `[ACCEPTANCE]` and `[ISSUE_VERDICT]` lines go to the console only; the attempts are in the trails.
+`run.log` holds `[BUILD_STAGE]<TAB>plan|plan<TAB>reused|build`, `[PLAN]` and `[PLAN_ERROR]`, `[PLAN_REVIEW]<TAB>reviewed|unreviewed` (only when the plan agent ran with `--review on`: `unreviewed` means the review gave no usable answer twice, so the plan's cases were kept without a second reader; the plan agent's words are in `plan.log`), `[UNIT]<TAB><id><TAB>building|verified|kept|regressed|failed|skipped|unavailable`, `[AGENT_LOG]<TAB><id><TAB>agent-<id>.log` (after a unit that did not verify), `[PROJECT_VERDICT]` and `[BUILD_VERDICT]`. The loop's per-attempt `[ACCEPTANCE]` and `[ISSUE_VERDICT]` lines go to the console only; the attempts are in the trails.
 
 `build.json`, one line:
 
 ```json
-{"brief":"/.../eval/roman/brief.txt","stage":"build","plan_valid":true,"units_total":6,"units_verified":2,"verdict":"","started_unix":1792068476,"seconds":412,"provider":"anthropic","model":"claude-haiku-5-5"}
+{"brief":"/.../eval/roman/brief.txt","stage":"build","plan_valid":true,"units_total":6,"units_verified":2,"verdict":"","started_unix":1792068476,"seconds":412,"provider":"anthropic","model":"claude-haiku-5-5","review":"reviewed"}
 ```
 
-`stage` is the stage in progress (`plan`, `build`) and `done` once the run has ended, with `verdict` set to the word above (empty before). `units_verified` is counted from `state.txt` at each write; during the build, `state.txt` is the live count. `started_unix` and `seconds` are of this invocation (Unix seconds from the wall clock, which can step; the number is a stamp, not a timer). A run that is killed leaves the file as of its last stage.
+`review` is `reviewed`, `unreviewed` or `none` (no review, or no plan.log), read from the plan agent's output; it is never silent when a plan stands without its review. `stage` is the stage in progress (`plan`, `build`) and `done` once the run has ended, with `verdict` set to the word above (empty before). `units_verified` is counted from `state.txt` at each write; during the build, `state.txt` is the live count. `started_unix` and `seconds` are of this invocation (Unix seconds from the wall clock, which can step; the number is a stamp, not a timer). A run that is killed leaves the file as of its last stage.
 
 ## Gate and authority
 

@@ -48,7 +48,7 @@ err-res-shape-empty	1	expect for a Result must be
 err-res-shape-other	1	expect for a Result must be
 err-res-ok-type	1	expect "ok" must be a JSON integer, got a string
 err-opt-expect	1	expect must be a JSON integer, got a string
-err-unsup-param-float	1	signature uses a type that cases cannot express (float); give tests instead
+err-unsup-param-float	1	signature uses a type that cases cannot express (float); give tests instead: delete the `cases` of this unit and write `tests` for it
 err-unsup-param-mutslice	1	(&!a [byte])
 err-unsup-param-list	1	(&a list.List[int])
 err-unsup-ret-float	1	(float)
@@ -118,3 +118,5 @@ err-unsup-vec-int	1	(&v vec.Vec[int])
 err-unsup-list-owned	1	(list.List[Box[Box[[byte]]]])
 err-list-noheap	1	takes no heap parameter
 err-errint-range	1	expect "err" is out of the range of int
+err-unsup-opt-box	1	(option.Option[Box[[byte]]]); give tests instead: delete the `cases` of this unit and write `tests` for it (cancho test functions; the guide's section "When cases cannot express a signature" shows one), and keep one `examples` entry `CALL == VALUE` that calls this unit's own function. Or change the signature to types cases can express: int, bool, buffer.Buffer (owned text)
+err-unsup-ints	1	(&k [int]); give tests instead: delete the `cases`

@@ -20,6 +20,8 @@ import sys
 WS = " \t\n\r"
 INT_MIN, INT_MAX = -(1 << 63), (1 << 63) - 1
 MAX_PARAMS = 32
+TESTS_HINT = ('give tests instead: delete the `cases` of this unit and write `tests` for it (cancho test functions; the guide\'s section "When cases cannot express a signature" shows one), and keep one `examples` entry `CALL == VALUE` that calls this unit\'s own function. Or change the signature to types cases can express: int, bool, buffer.Buffer (owned text), &r [byte], Box[[byte]], list.List[Box[Box[[byte]]]], and option.Option or result.Result of int, bool, buffer.Buffer or &r [byte]')
+
 
 
 def trim(s):
@@ -639,7 +641,7 @@ def expand_unit(unit, report):
         return None
     name, ptexts, row, rtext = parsed
     if len(ptexts) > MAX_PARAMS:
-        err("-", "the signature has more than %d parameters; give tests instead" % MAX_PARAMS)
+        err("-", "the signature has more than %d parameters; " % MAX_PARAMS + TESTS_HINT)
         return None
     params = []
     heaps = 0
@@ -650,17 +652,17 @@ def expand_unit(unit, report):
             if heaps > 1:
                 c = None
         if c is None:
-            err("-", "signature uses a type that cases cannot express (%s); give tests instead" % t)
+            err("-", "signature uses a type that cases cannot express (%s); " % t + TESTS_HINT)
             return None
         params.append(c)
     ret = classify_ret(rtext)
     if ret[0] is None:
-        err("-", "signature uses a type that cases cannot express (%s); give tests instead" % ret[1])
+        err("-", "signature uses a type that cases cannot express (%s); " % ret[1] + TESTS_HINT)
         return None
     outer, rv, re_, topt = ret
     has_heap = any(k == P_HEAP for k, _ in params)
     if (rv in (V_BUF, V_LIST, V_BOX) or re_ == 2) and not has_heap:
-        err("-", "the function returns a buffer.Buffer but takes no heap parameter; give tests instead")
+        err("-", "the function returns a buffer.Buffer but takes no heap parameter; " + TESTS_HINT)
         return None
     sid = sid_of(who)
     argparams = [p for p in params if p[0] != P_HEAP]

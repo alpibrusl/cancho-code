@@ -8,6 +8,8 @@
 #   regression  building b breaks a: after b verifies the sweep finds it (`a regressed`), a is rebuilt, the project ends done
 #   resume      the agent fails on c: provider_error, exit 4, the state keeps a and b; a second run keeps them (no rebuild) and builds c
 #   stuck       a never verifies: it fails, an independent unit (b) is still built, its dependent (c) is skipped; stuck, exit 1
+#   agent log   the agent's standard error is kept per unit, per attempt (`agent-<id>.log`, header `=== attempt N: <how>`), bounded to the last 4096
+#               bytes of a turn, also for a unit whose agent failed (the provider error's cause is there); run.log-style `[AGENT_LOG]` line for a unit that did not verify
 #   option      a unit whose examples are Option results: run as a match; a wrong Some value is refused, the right answer accepted
 #   described   a unit's description reaches the agent in the task, decoded, with the instruction not to write tests
 #   rawtests    a unit's own `tests` replace the example-derived ones; region parameters in a signature are accepted
@@ -113,6 +115,44 @@ expect "stuck: unit lines" "$(units "$out")" "a:building a:failed b:building b:v
 expect "stuck: agent order (b was still built)" "$(order "$lg")" "a a b"
 expect "stuck: the state has b only" "$(order "$wd/state.txt")" "verified b"
 expect "stuck: the failed unit's trail was kept (two records)" "$(wc -l < "$wd/trail-a.jsonl" 2>/dev/null | tr -d ' ')" 2
+rm -rf "$wd" "$rc"
+
+# agent log: the agent's standard error is kept, per unit, per attempt, whatever the outcome (a provider error had no recorded cause)
+set -- $(mk); wd=$1; rc=$2; lg=$3
+out=$(run "$T/plan.json" "$wd" "$rc" "$lg"); r=$?
+expect "agent log: happy exit" "$r" 0
+expect "agent log: a verified unit's log has its one attempt" "$(grep -c '^=== attempt' "$wd/agent-a.log")" 1
+grep -q '^=== attempt 1: exit 0 after [0-9]* ms$' "$wd/agent-a.log" || { echo "FAIL: agent log: no 'attempt 1: exit 0' header in agent-a.log: $(cat "$wd/agent-a.log")" >&2; fail=1; }
+grep -q '^stub-agent: unit a request 1$' "$wd/agent-a.log" || { echo "FAIL: agent log: the agent's stderr line is not in agent-a.log" >&2; fail=1; }
+case "$out" in *'[AGENT_LOG]'*) echo "FAIL: agent log: an [AGENT_LOG] line for units that all verified" >&2; fail=1 ;; esac
+rm -rf "$wd" "$rc"
+# two attempts of a unit that never verifies: both are in the log, in order, and the run says where the log is
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf 'sed -i.bak "/fn double/d" "$1"; printf "\\nfn double(x: int) -> [] int { return x + 3; }\\n" >> "$1"\n' > "$rc/a.sh"
+out=$(run "$T/plan-failing.json" "$wd" "$rc" "$lg"); r=$?
+expect "agent log: stuck exit" "$r" 1
+expect "agent log: the failed unit's two attempts" "$(grep '^=== attempt' "$wd/agent-a.log" | cut -d: -f1 | tr '\n' ' ')" "=== attempt 1 === attempt 2 "
+printf '%s\n' "$out" | grep -q "^\[AGENT_LOG\]	a	agent-a.log$" || { echo "FAIL: agent log: no [AGENT_LOG] line for the failed unit a" >&2; fail=1; }
+rm -rf "$wd" "$rc"
+# an agent that fails (exit 3, no recipe): the unit is unavailable, and its log says exit 3 and what the agent said
+set -- $(mk); wd=$1; rc=$2; lg=$3
+mv "$rc/c.sh" "$rc/c.sh.later"
+printf 'echo "provider said: overloaded" >&2; exit 7\n' > "$rc/c.sh"
+out=$(run "$T/plan.json" "$wd" "$rc" "$lg"); r=$?
+expect "agent log: provider error exit" "$r" 4
+grep -q '^=== attempt 1: exit 7 after [0-9]* ms$' "$wd/agent-c.log" || { echo "FAIL: agent log: no 'exit 7' header in agent-c.log: $(cat "$wd/agent-c.log" 2>&1)" >&2; fail=1; }
+grep -q '^provider said: overloaded$' "$wd/agent-c.log" || { echo "FAIL: agent log: the cause of the failure is not in agent-c.log" >&2; fail=1; }
+printf '%s\n' "$out" | grep -q "^\[AGENT_LOG\]	c	agent-c.log$" || { echo "FAIL: agent log: no [AGENT_LOG] line for the unavailable unit c" >&2; fail=1; }
+rm -rf "$wd" "$rc"
+# bounded: a turn that says 20000 bytes keeps the last 4096 of them, and says it cut
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf 'i=0; while [ $i -lt 400 ]; do echo "line $i xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" >&2; i=$((i+1)); done; echo END-OF-STDERR >&2; printf "\\nfn double(x: int) -> [] int { return x * 2; }\\n" >> "$1"\n' > "$rc/a.sh"
+out=$(run "$T/plan.json" "$wd" "$rc" "$lg"); r=$?
+expect "agent log: bounded run exit" "$r" 0
+grep -q 'earlier output cut' "$wd/agent-a.log" || { echo "FAIL: agent log: a long stderr is not marked cut" >&2; fail=1; }
+grep -q '^END-OF-STDERR$' "$wd/agent-a.log" || { echo "FAIL: agent log: the end of a long stderr is not kept" >&2; fail=1; }
+grep -q '^line 0 ' "$wd/agent-a.log" && { echo "FAIL: agent log: the start of a long stderr was kept (not bounded)" >&2; fail=1; }
+[ "$(wc -c < "$wd/agent-a.log")" -le 4400 ] || { echo "FAIL: agent log: agent-a.log is $(wc -c < "$wd/agent-a.log") bytes (bound is the last 4096 of a turn plus its header)" >&2; fail=1; }
 rm -rf "$wd" "$rc"
 
 # option: an example whose result is an Option (`f(x) == option.Option::Some(y)` / `option.Option::None`) is run as a match, because the

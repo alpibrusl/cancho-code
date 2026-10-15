@@ -61,6 +61,64 @@ fn note[&h, &z, &t, &o, &s, &d](heap: &!h Heap, fs: &z Fs(""), tpath: &t buffer.
     return trail.record(heap, fs, buffer.bytes(tpath), attempt, ms, outcome, sig, decision, 65536);
 }
 
+// The agent's standard error, kept (docs/project.md): the project driver runs the agent with its standard error sent to `<file>.agent.err`; after every
+// turn, whatever its outcome, this appends the last 4096 bytes of it to `<file>.agent.log` under a header `=== attempt N: <how> after M ms`, so a
+// provider error that ended a unit has its cause on disk. A log that would pass 60000 bytes stops growing (the header still says the turn happened).
+fn agent_note[&h, &z, &e, &l, &w](heap: &!h Heap, fs: &z Fs(""), errp: &e [byte], logp: &l [byte], attempt: int, ms: int, how: &w [byte], code: int) -> [heap, fs_read(""), fs_write("")] int {
+    let cap = 60000;
+    let store = box_slice(heap, cap, byte_of(0));
+    let errs = box_slice(heap, 65536, byte_of(0));
+    var b = buffer.empty(heap, 512);
+    var r = -1;
+    borrow mut store as &!sw in {
+        borrow mut errs as &!ew in {
+            var n = fs_read(fs, logp, contents(sw));
+            if n < 0 {
+                n = 0;
+            }
+            var m = fs_read(fs, errp, contents(ew));
+            if m < 0 {
+                m = 0;
+            }
+            if n < cap - 8192 {
+                b = buffer.append(heap, b, contents(sw)[0..n]);
+                b = buffer.append(heap, b, "=== attempt ");
+                b = buffer.push_nat(heap, b, attempt);
+                b = buffer.append(heap, b, ": ");
+                b = buffer.append(heap, b, how);
+                if code >= 0 {
+                    b = buffer.push(heap, b, byte_of(32));
+                    b = buffer.push_nat(heap, b, code);
+                }
+                b = buffer.append(heap, b, " after ");
+                b = buffer.push_nat(heap, b, ms);
+                b = buffer.append(heap, b, " ms\n");
+                var from = 0;
+                if m > 4096 {
+                    from = m - 4096;
+                    b = buffer.append(heap, b, "[earlier output cut]\n");
+                }
+                b = buffer.append(heap, b, contents(ew)[from..m]);
+                if m > 0 && int_of(contents(ew)[m - 1]) != 10 {
+                    b = buffer.push(heap, b, byte_of(10));
+                }
+                if m == 0 {
+                    b = buffer.append(heap, b, "[no standard error]\n");
+                }
+                borrow b as &bb in {
+                    if fs_write(fs, logp, buffer.bytes(bb)) == len(buffer.bytes(bb)) {
+                        r = 0;
+                    }
+                }
+            }
+        }
+    }
+    buffer.drop(heap, b);
+    unbox_slice(heap, errs);
+    unbox_slice(heap, store);
+    return r;
+}
+
 // Drive one issue: `agent` runs before every check (it is the editor —
 // an LLM in production, a shell stand-in in the gate), `check_cmd` is the
 // checker command for `file`, and the budgets are the design's §4.
@@ -82,6 +140,13 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q](heap: &!h Heap, exec: &
     tpath = buffer.append(heap, tpath, ".trail.jsonl");
     borrow tpath as &tq0 in {
         trail.begin(fs, buffer.bytes(tq0));
+    }
+    var errpath = buffer.append(heap, buffer.empty(heap, 256), file);
+    errpath = buffer.append(heap, errpath, ".agent.err");
+    var logpath = buffer.append(heap, buffer.empty(heap, 256), file);
+    logpath = buffer.append(heap, logpath, ".agent.log");
+    borrow logpath as &lq0 in {
+        fs_write(fs, buffer.bytes(lq0), "");
     }
     // The checker's current answer for the file goes to `<file>.feedback`
     // before every agent turn (docs/parity.md P1): the agent has no way to ask
@@ -122,6 +187,9 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q](heap: &!h Heap, exec: &
         // below is the only oracle (design §2 — done is what the gate
         // says, never what the model claims). A provider outage here is
         // the same wait-not-burn stop as the checker's.
+        borrow errpath as &eq0 in {
+            fs_write(fs, buffer.bytes(eq0), "");
+        }
         match process.channels() {
             process.Channels::Failed(e) => {
                 ended = Ended::Unavailable;
@@ -139,6 +207,32 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q](heap: &!h Heap, exec: &
                         let (agent_out, agent_ran) = process.capture(heap, clock, child, to_child, from_child, "", 4096, agent_timeout_ms);
                         buffer.drop(heap, agent_out);
                         let agent_ms = clock_ms(clock) - t0;
+                        var how = "failed";
+                        var how_code = 0 - 1;
+                        match agent_ran {
+                            process.Ran::Code(n) => {
+                                how = "exit";
+                                how_code = n;
+                            }
+                            process.Ran::TimedOut => {
+                                how = "timed out";
+                            }
+                            process.Ran::TooMuch => {
+                                how = "too much output";
+                            }
+                            process.Ran::Signaled(s) => {
+                                how = "killed by signal";
+                                how_code = s;
+                            }
+                            process.Ran::Failed(e) => {
+                                how = "could not be run";
+                            }
+                        }
+                        borrow errpath as &eq1 in {
+                            borrow logpath as &lq1 in {
+                                agent_note(heap, fs, buffer.bytes(eq1), buffer.bytes(lq1), attempts + 1, agent_ms, how, how_code);
+                            }
+                        }
                         match agent_ran {
                             process.Ran::Code(n) => {
                                 if n != 0 {
@@ -371,6 +465,8 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q](heap: &!h Heap, exec: &
         }
     }
     buffer.drop(heap, last);
+    buffer.drop(heap, errpath);
+    buffer.drop(heap, logpath);
     buffer.drop(heap, tpath);
     buffer.drop(heap, accpath);
     buffer.drop(heap, fbcmd);

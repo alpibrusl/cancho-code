@@ -2,6 +2,7 @@
 # The plan gate (docs/parity.md P3, docs/plan.md): `plancheck` on one fixture per rule, with the rule and the unit of every
 # [PLAN_ERROR] line asserted in order, the verdict line, and the exit code. tests/plans/expected.txt is the table.
 #
+# Each message names what the model must change (tests/plans/messages.txt: the field, the function, the callee): it is the next round's only teacher.
 # Also: a valid plan prints exactly `[PLAN]<TAB>valid`; every error line has four fields and a non-empty message; and the usage
 # cases (no argument, a file that is not there, a file of 1 MiB or more) exit 2.
 set -u
@@ -41,6 +42,13 @@ while IFS= read -r line; do
         expect "$name: verdict" "$(printf '%s\n' "$out" | grep '^\[PLAN\]' | tail -1)" "$(printf '[PLAN]\tinvalid')"
     fi
 done < "${exe}.table"
+
+# the message is what a model reads on the next round: it names the field, the function, the callee
+grep -v '^#' "$root/tests/plans/messages.txt" | while IFS="$tab" read -r name piece; do
+    [ -n "$name" ] || continue
+    msg=$("$exe" "$root/tests/plans/$name.json" 2>&1 | grep '^\[PLAN_ERROR\]' | head -1 | awk -F'\t' '{print $4}')
+    case "$msg" in *"$piece"*) ;; *) echo "FAIL: $name: the message lacks '$piece': $msg" >&2; exit 1 ;; esac
+done || fail=1
 
 "$exe" >/dev/null 2>&1; expect "usage: no argument" "$?" 2
 "$exe" "$root/tests/plans/does-not-exist.json" >/dev/null 2>&1; expect "usage: a file that is not there" "$?" 2

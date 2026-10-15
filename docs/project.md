@@ -19,8 +19,9 @@ project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds
 | `legend-<id>.txt` | test name and example text, one per line |
 | `state.txt` | one line `verified <id>` per verified unit, rewritten whole after every change: what a resumed run keeps |
 | `trail-<id>.jsonl` | the unit's trail (the P0 record), copied after the unit **whatever its outcome**: a unit that failed is the one whose trail is wanted |
+| `agent-<id>.log` | the **agent's standard error**, kept per unit and per attempt, copied after the unit whatever its outcome (a provider error that ended a unit has its cause here). The driver runs the unit agent with its standard error sent to `project.cho.agent.err`; after every turn (a turn that exited, timed out, was killed, or could not be run) it appends to `project.cho.agent.log` a header `=== attempt N: exit CODE after M ms` (or `timed out`, `too much output`, `killed by signal S`, `could not be run`) and the last 4096 bytes of what the turn wrote (`[earlier output cut]` when it wrote more, `[no standard error]` when nothing); the file stops growing at 60000 bytes. `N` counts the agent's turns in this unit from 1. A unit that did not verify is also named on the console and in `run.log`: `[AGENT_LOG]<TAB><id><TAB>agent-<id>.log` |
 | `project.cho.before` | `project.cho` as it was before the unit was built; a unit that fails (not one that is merely unavailable) puts it back, so the units that do not depend on it still build on a file without the failed unit's leftovers |
-| `project.cho.feedback`, `.acceptance`, `.trail.jsonl`, `project.cho.snap<N>.cho`... | what `fix`'s loop writes beside its file (the loop is reused: `driver.run_issue`) |
+| `project.cho.feedback`, `.acceptance`, `.trail.jsonl`, `.agent.err`, `.agent.log`, `project.cho.snap<N>.cho`... | what `fix`'s loop writes beside its file (the loop is reused: `driver.run_issue`) |
 
 Files without a `module` header share one namespace when compiled together, so the tests call the functions unqualified.
 

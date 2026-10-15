@@ -10,7 +10,8 @@
 #   questions   the model needs a decision (agent exit 3): plan_failed
 #   unreachable the agent cannot reach the API: provider_error, exit 4, the project step never runs
 #   resume      a run killed (SIGKILL) while building the third unit: build.json says stage build; the next run asks for no plan, keeps a and b
-#   provider    the unit agent fails: provider_error, exit 4, the state keeps what verified, build.json agrees
+#   review      a plan the agent's review could not confirm ("the plan stands unreviewed" in plan.log) is built, and run.log (`[PLAN_REVIEW]`) and build.json (`review`) say unreviewed; a reviewed one says reviewed; with no review, none
+#   provider    the unit agent fails: provider_error, exit 4, the state keeps what verified, build.json agrees; run.log names the unit's agent log (`[AGENT_LOG]`), which holds the turn's header and the agent's standard error
 #   stuck       a unit never verifies: stuck, exit 1, build.json counts the verified ones
 #   names       the brief names its public functions (`- name(...) : ...`): a plan that does not declare one is refused (`brief-name`), plan_failed, exit 3; a plan that does is built; a valid plan.json that lacks one is not reused
 #   usage       missing arguments, provider, model or guide, a relative checker, `..`, an unknown option, a brief that is not there: exit 2, nothing run
@@ -191,6 +192,30 @@ expect "resume: build.json units_verified" "$(jf "$wd" units_verified)" 3
 expect "resume: build.json stage" "$(jf "$wd" stage)" done
 rm -rf "$wd" "$rc" "$wd.out"
 
+# review: a plan the review could not confirm is kept, and the run says so (run.log, build.json); a reviewed one says that; no review says nothing
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf 'cp "%s" "$1"\necho "cancho-agent: the review answer was unusable:" >&2\necho "cancho-agent: the review gave no usable answer; the plan stands unreviewed" >&2\n' "$P/plan.json" > "$rc/plan.sh"
+out=$(run "$wd" "$rc" "$lg" --review on --review-guide "$B/review-guide.txt"); r=$?
+expect "unreviewed: exit code (the build goes on)" "$r" 0
+expect "unreviewed: verdict" "$(verdict "$out")" done
+expect "unreviewed: stdout says so" "$(printf '%s\n' "$out" | grep '^\[PLAN_REVIEW\]' | cut -f2)" unreviewed
+expect "unreviewed: run.log says so" "$(grep '^\[PLAN_REVIEW\]' "$wd/run.log" | cut -f2)" unreviewed
+expect "unreviewed: build.json review" "$(jf "$wd" review)" unreviewed
+grep -q 'stands unreviewed' "$wd/plan.log" || { echo "FAIL: unreviewed: plan.log lacks the agent's words" >&2; fail=1; }
+rm -rf "$wd" "$rc"
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf 'cp "%s" "$1"\nprintf "cancho-agent: review:\\n[REVIEW_DROPPED]\\ta\\t2\\tplanner 1 reviewer 2\\n[REVIEW]\\tkept 5 of 6 cases\\n" >&2\n' "$P/plan.json" > "$rc/plan.sh"
+out=$(run "$wd" "$rc" "$lg" --review on --review-guide "$B/review-guide.txt"); r=$?
+expect "reviewed: exit code" "$r" 0
+expect "reviewed: run.log says so" "$(grep '^\[PLAN_REVIEW\]' "$wd/run.log" | cut -f2)" reviewed
+expect "reviewed: build.json review" "$(jf "$wd" review)" reviewed
+rm -rf "$wd" "$rc"
+set -- $(mk); wd=$1; rc=$2; lg=$3
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "no review: no [PLAN_REVIEW] line" "$(grep -c '^\[PLAN_REVIEW\]' "$wd/run.log")" 0
+expect "no review: build.json review" "$(jf "$wd" review)" none
+rm -rf "$wd" "$rc"
+
 # provider: the unit agent for c fails
 set -- $(mk); wd=$1; rc=$2; lg=$3
 mv "$rc/c.sh" "$rc/c.sh.later"
@@ -202,6 +227,9 @@ expect "provider: build.json verdict" "$(jf "$wd" verdict)" provider_error
 expect "provider: build.json units_verified" "$(jf "$wd" units_verified)" 2
 expect "provider: build.json stage" "$(jf "$wd" stage)" done
 expect "provider: run.log verdict" "$(grep '^\[BUILD_VERDICT\]' "$wd/run.log" | cut -f2)" provider_error
+expect "provider: run.log says where the failed unit's agent log is" "$(grep '^\[AGENT_LOG\]' "$wd/run.log" | tr '\t' ':')" "[AGENT_LOG]:c:agent-c.log"
+grep -q '^=== attempt 1: exit 3 after [0-9]* ms$' "$wd/agent-c.log" 2>/dev/null || { echo "FAIL: provider: agent-c.log lacks the failed turn's header" >&2; fail=1; }
+grep -q 'stub-agent: unit c' "$wd/agent-c.log" 2>/dev/null || { echo "FAIL: provider: agent-c.log lacks the agent's stderr" >&2; fail=1; }
 rm -rf "$wd" "$rc"
 
 # stuck: a is always wrong, b is independent, c depends on a

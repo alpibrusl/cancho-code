@@ -1,0 +1,23 @@
+{
+ "name": "x",
+ "units": [
+  {
+   "id": "ini_get",
+   "signature": "fn ini_get[&h, &t, &s](heap: &!h Heap, text: &t [byte], section: &s [byte]) -> [heap] option.Option[Box[[byte]]]",
+   "description": "d",
+   "examples": [
+    "ini_get(\"a\") == 1"
+   ],
+   "cases": [
+    {
+     "args": [
+      "a=1",
+      "s"
+     ],
+     "expect": "1"
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

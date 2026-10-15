@@ -1762,6 +1762,12 @@ fn put_helpers[&h, &d, &n, &g](heap: &!h Heap, out: buffer.Buffer, sid: &d [byte
     return b;
 }
 
+// What the planner is told when `cases` cannot take a unit: exactly what to write (the reports of the three "give tests instead" errors end with
+// it). One line. tests/reference/cases_ref.py holds the same text.
+fn tests_hint() -> [] &static [byte] {
+    return "give tests instead: delete the `cases` of this unit and write `tests` for it (cancho test functions; the guide's section \"When cases cannot express a signature\" shows one), and keep one `examples` entry `CALL == VALUE` that calls this unit's own function. Or change the signature to types cases can express: int, bool, buffer.Buffer (owned text), &r [byte], Box[[byte]], list.List[Box[Box[[byte]]]], and option.Option or result.Result of int, bool, buffer.Buffer or &r [byte]";
+}
+
 // ---- one unit -------------------------------------------------------------------
 
 // The cases of the unit at `un`, with the signature `sig` read. Fills `gen`; `errs` says whether the unit was fine.
@@ -1775,7 +1781,11 @@ fn unit_cases[&h, &s, &t, &w, &d, &x, &g](heap: &!h Heap, gen: Gen, src: &s [byt
     }
     if status == 3 {
         let Gen { rep, items, exs, nex, used, errs } = g2;
-        g2 = Gen { rep: emit(heap, rep, who, 0, "the signature has more than 32 parameters; give tests instead"), items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
+        var r = line_head(heap, rep, who, 0);
+        r = buffer.append(heap, r, "the signature has more than 32 parameters; ");
+        r = buffer.append(heap, r, tests_hint());
+        r = buffer.push(heap, r, byte_of(10));
+        g2 = Gen { rep: r, items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
         return g2;
     }
     if status == 2 {
@@ -1783,13 +1793,19 @@ fn unit_cases[&h, &s, &t, &w, &d, &x, &g](heap: &!h Heap, gen: Gen, src: &s [byt
         var r = line_head(heap, rep, who, 0);
         r = buffer.append(heap, r, "signature uses a type that cases cannot express (");
         r = buffer.append(heap, r, sig[sg[9]..sg[10]]);
-        r = buffer.append(heap, r, "); give tests instead\n");
+        r = buffer.append(heap, r, "); ");
+        r = buffer.append(heap, r, tests_hint());
+        r = buffer.push(heap, r, byte_of(10));
         g2 = Gen { rep: r, items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
         return g2;
     }
     if (sg[7] == 2 || sg[7] == 4 || sg[7] == 5 || sg[8] == 2) && sg[11] == 0 {
         let Gen { rep, items, exs, nex, used, errs } = g2;
-        g2 = Gen { rep: emit(heap, rep, who, 0, "the function returns a buffer.Buffer but takes no heap parameter; give tests instead"), items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
+        var r = line_head(heap, rep, who, 0);
+        r = buffer.append(heap, r, "the function returns a buffer.Buffer but takes no heap parameter; ");
+        r = buffer.append(heap, r, tests_hint());
+        r = buffer.push(heap, r, byte_of(10));
+        g2 = Gen { rep: r, items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
         return g2;
     }
     let name = sig[sg[0]..sg[1]];

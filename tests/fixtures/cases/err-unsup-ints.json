@@ -1,0 +1,27 @@
+{
+ "name": "x",
+ "units": [
+  {
+   "id": "ini_get",
+   "signature": "fn sm_get[&k](keys: &k [int], n: int, key: int) -> [] option.Option[int]",
+   "description": "d",
+   "examples": [
+    "ini_get(\"a\") == 1"
+   ],
+   "cases": [
+    {
+     "args": [
+      [
+       1,
+       2
+      ],
+      2,
+      1
+     ],
+     "expect": 1
+    }
+   ],
+   "deps": []
+  }
+ ]
+}
