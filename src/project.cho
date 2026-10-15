@@ -11,9 +11,8 @@ module project;
 
 import acceptance;
 import driver;
-import journal;
 import plan;
-import runjournal;
+import trail;
 import snapshot;
 import std.buffer;
 import std.bytes;
@@ -520,15 +519,15 @@ fn note_id[&h, &d](heap: &!h Heap, ids: buffer.Buffer, id: &d [byte]) -> [heap] 
 
 // The sweep event of a `recheck` (docs/journal.md), when it checked anything; ends the two lists.
 fn sweep_event[&h, &c, &z, &w, &b](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), wd: &w [byte], skip: int, broke: &b [byte], held_ids: buffer.Buffer, bad_ids: buffer.Buffer) -> [heap, clock, fs_read(""), fs_write("")] int {
-    let jd = runjournal.dir_of(heap, wd);
+    let jd = trail.journal_dir(heap, wd);
     borrow jd as &jq in {
         borrow held_ids as &hq in {
             borrow bad_ids as &bq in {
                 if len(buffer.bytes(hq)) + len(buffer.bytes(bq)) > 0 {
                     if skip >= 0 {
-                        runjournal.sweep(heap, clock, fs, buffer.bytes(jq), broke, buffer.bytes(hq), buffer.bytes(bq));
+                        trail.journal_sweep(heap, clock, fs, buffer.bytes(jq), broke, buffer.bytes(hq), buffer.bytes(bq));
                     } else {
-                        runjournal.sweep(heap, clock, fs, buffer.bytes(jq), "", buffer.bytes(hq), buffer.bytes(bq));
+                        trail.journal_sweep(heap, clock, fs, buffer.bytes(jq), "", buffer.bytes(hq), buffer.bytes(bq));
                     }
                 }
             }
@@ -602,7 +601,7 @@ fn build[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb](heap:
     var prefix = buffer.append(heap, buffer.empty(heap, 128), wd);
     prefix = buffer.append(heap, prefix, "/project.cho.snap");
     let accept = unit_accept(heap, checker, wd, id, u == integ, accept_cmd, libs);
-    let jd = runjournal.dir_of(heap, wd);
+    let jd = trail.journal_dir(heap, wd);
     var status = 1;
     borrow jd as &jq in {
     borrow file as &fb in {
@@ -642,16 +641,52 @@ fn build[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb](heap:
     return status;
 }
 
+// `unit_start`: the unit, the function it adds (from its signature) and the units it depends on. `node` is the unit's object in the plan's tape.
+fn unit_start_event[&h, &c, &z, &d, &s, &t](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), dir: &d [byte], src: &s [byte], tape: &t [int], node: int) -> [heap, clock, fs_read(""), fs_write("")] int {
+    var w = trail.begin_event(heap, clock_unix_ms(clock), "unit_start");
+    var id = trail.add_string(heap, buffer.empty(heap, 32), src, tape, json.get(src, tape, node, "id"));
+    borrow id as &iq in {
+        w = trail.put_str(heap, w, "unit", buffer.bytes(iq));
+    }
+    buffer.drop(heap, id);
+    var sig = trail.add_string(heap, buffer.empty(heap, 96), src, tape, json.get(src, tape, node, "signature"));
+    borrow sig as &sq in {
+        let (a, e) = plan.name_range(buffer.bytes(sq));
+        if a >= 0 {
+            w = trail.put_str(heap, w, "function", buffer.bytes(sq)[a..e]);
+        }
+    }
+    buffer.drop(heap, sig);
+    w = json.put_key(heap, w, "deps");
+    w = json.begin_array(heap, w);
+    let ds = json.get(src, tape, node, "deps");
+    if ds >= 0 && json.is_array(tape, ds) {
+        var j = ds + 1;
+        var left = json.count(tape, ds);
+        while left > 0 {
+            var dep = trail.add_string(heap, buffer.empty(heap, 32), src, tape, j);
+            borrow dep as &dq in {
+                w = json.put_string(heap, w, buffer.bytes(dq));
+            }
+            buffer.drop(heap, dep);
+            j = json.skip(tape, j);
+            left = left - 1;
+        }
+    }
+    w = json.end_array(heap, w);
+    return trail.end_event(heap, fs, dir, w);
+}
+
 // The unit's journal event (docs/journal.md): its start (`ended` false), or its end in `state` (the attempts are those of its trail).
 fn unit_event[&h, &c, &z, &s, &t, &n, &w, &d](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), wd: &w [byte], src: &s [byte], tape: &t [int], node: int, id: &d [byte], state: &static [byte], ended: bool) -> [heap, clock, fs_read(""), fs_write("")] int {
-    let jd = runjournal.dir_of(heap, wd);
+    let jd = trail.journal_dir(heap, wd);
     let tp = in_wd(heap, wd, "project.cho.trail.jsonl", "", "");
     borrow jd as &jq in {
         borrow tp as &tq in {
             if ended {
-                runjournal.unit_end(heap, clock, fs, buffer.bytes(jq), id, state, buffer.bytes(tq));
+                trail.unit_end(heap, clock, fs, buffer.bytes(jq), id, state, buffer.bytes(tq));
             } else {
-                runjournal.unit_start(heap, clock, fs, buffer.bytes(jq), src, tape, node);
+                unit_start_event(heap, clock, fs, buffer.bytes(jq), src, tape, node);
             }
         }
     }
@@ -864,9 +899,9 @@ pub fn run_logged[&h, &x, &c, &i, &z, &s, &k, &w, &a, &l, &ac, &lb](heap: &!h He
         io.error_all(io, "project: the work directory cannot be written\n");
         return 2;
     }
-    let jd0 = runjournal.dir_of(heap, wd);
+    let jd0 = trail.journal_dir(heap, wd);
     borrow jd0 as &jq0 in {
-        journal.begin(heap, exec, clock, buffer.bytes(jq0));
+        trail.journal_dirs(heap, exec, clock, buffer.bytes(jq0));
     }
     buffer.drop(heap, jd0);
     var status = 1;
@@ -897,10 +932,10 @@ pub fn run_logged[&h, &x, &c, &i, &z, &s, &k, &w, &a, &l, &ac, &lb](heap: &!h He
 // written, 3 no plan, 4 the agent or the checker is away).
 pub fn run[&h, &x, &c, &i, &z, &s, &k, &w, &a, &ac, &lb](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], checker: &k [byte], wd: &w [byte], agent: &a [byte], attempts: int, agent_ms: int, accept: &ac [byte], libs: &lb [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write, err_write] int {
     let started = clock_unix_ms(clock);
-    let jd = runjournal.dir_of(heap, wd);
+    let jd = trail.journal_dir(heap, wd);
     borrow jd as &jq in {
-        journal.begin(heap, exec, clock, buffer.bytes(jq));
-        runjournal.run_start(heap, clock, fs, buffer.bytes(jq), "", "", "", false, 0, attempts, agent_ms, 0);
+        trail.journal_dirs(heap, exec, clock, buffer.bytes(jq));
+        trail.run_start(heap, clock, fs, buffer.bytes(jq), "", "", "", false, 0, attempts, agent_ms, 0);
     }
     let status = run_logged(heap, exec, clock, io, fs, src, checker, wd, agent, attempts, agent_ms, "", accept, libs);
     var code = status;
@@ -921,7 +956,7 @@ pub fn run[&h, &x, &c, &i, &z, &s, &k, &w, &a, &ac, &lb](heap: &!h Heap, exec: &
     }
     borrow jd as &jq2 in {
         let now = clock_unix_ms(clock);
-        runjournal.run_end(heap, now, fs, buffer.bytes(jq2), word, code, (now - started) / 1000);
+        trail.run_end(heap, now, fs, buffer.bytes(jq2), word, code, (now - started) / 1000);
     }
     buffer.drop(heap, jd);
     return code;

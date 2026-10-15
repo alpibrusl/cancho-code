@@ -57,7 +57,7 @@ elif [ "$variant" = agent ]; then
   C="${CANCHO_PACKAGES:-}"
   [ -d "$C" ] || C="$(dirname "$(dirname "$(command -v "$CANCHO")")")/packages"
   [ -d "$C" ] || { echo "check-authority: no cancho packages found; set CANCHO_PACKAGES" >&2; exit 2; }
-  files=("$here/src/cancho_agent.cho" "$here/src/anthropic.cho" "$here/src/ollama.cho" "$here/src/prompt.cho" "$here/src/planprompt.cho" "$here/src/plan.cho" "$here/src/cases.cho" "$here/src/review.cho" "$here/src/splice.cho" "$here/src/provider.cho" "$here/src/reply.cho"
+  files=("$here/src/cancho_agent.cho" "$here/src/anthropic.cho" "$here/src/ollama.cho" "$here/src/prompt.cho" "$here/src/planprompt.cho" "$here/src/plan.cho" "$here/src/cases.cho" "$here/src/review.cho" "$here/src/splice.cho" "$here/src/provider.cho" "$here/src/reply.cho" "$here/src/calls.cho"
     "$here/vendor/fetch_io.cho" "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho)
 elif [ "$variant" = plan ]; then
   pinned=$here/docs/authority-plan.json
@@ -68,15 +68,15 @@ elif [ "$variant" = board ]; then
 elif [ "$variant" = project ]; then
   pinned=$here/docs/authority-project.json
   files=("$here/tests/programs/project.cho" "$here/src/project.cho" "$here/src/plan.cho" "$here/src/driver.cho" "$here/src/checker.cho"
-    "$here/src/signature.cho" "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho" "$here/src/journal.cho" "$here/src/runjournal.cho" "$here/src/acceptance.cho")
+    "$here/src/signature.cho" "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho" "$here/src/acceptance.cho")
 elif [ "$variant" = build ]; then
   pinned=$here/docs/authority-build.json
   files=("$here/tests/programs/build.cho" "$here/src/build.cho" "$here/src/project.cho" "$here/src/plan.cho" "$here/src/driver.cho" "$here/src/checker.cho"
-    "$here/src/signature.cho" "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho" "$here/src/journal.cho" "$here/src/runjournal.cho" "$here/src/acceptance.cho")
+    "$here/src/signature.cho" "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho" "$here/src/acceptance.cho")
 else
   pinned=$here/docs/authority.json
   files=("$here/tests/programs/fix.cho" "$here/src/driver.cho" "$here/src/checker.cho" "$here/src/signature.cho"
-    "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho" "$here/src/journal.cho" "$here/src/acceptance.cho")
+    "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho" "$here/src/acceptance.cho")
 fi
 
 work=$(mktemp -d)

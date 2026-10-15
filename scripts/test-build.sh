@@ -24,7 +24,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 SRC="${BUILD_SRC:-$root/src}"
 exe=$(mktemp -t cc-build-XXXXXX)
 "$CANCHO" build "$root/tests/programs/build.cho" "$SRC/build.cho" "$SRC/project.cho" "$SRC/plan.cho" "$SRC/driver.cho" \
-    "$SRC/checker.cho" "$SRC/signature.cho" "$SRC/loop_check.cho" "$SRC/snapshot.cho" "$SRC/trail.cho" "$SRC/journal.cho" "$SRC/runjournal.cho" \
+    "$SRC/checker.cho" "$SRC/signature.cho" "$SRC/loop_check.cho" "$SRC/snapshot.cho" "$SRC/trail.cho" \
     "$SRC/acceptance.cho" --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 fail=0

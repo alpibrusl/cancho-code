@@ -19,7 +19,10 @@ module trail;
 // dropped and the call answers -1, never a truncated line. A trail is a few
 // hundred bytes per attempt, so the copy is not a cost that matters.
 
+import acceptance;
 import std.buffer;
+import std.bytes;
+import std.json;
 
 // `text` with `"`, `\` and control bytes escaped for a JSON string.
 fn escaped[&h, &t](heap: &!h Heap, out: buffer.Buffer, text: &t [byte]) -> [heap] buffer.Buffer {
@@ -80,4 +83,719 @@ pub fn record[&h, &z, &p, &o, &s, &d](heap: &!h Heap, fs: &z Fs(""), path: &p [b
         buffer.drop(heap, b);
         return r;
     }
+}
+
+// ---- the journal (docs/journal.md) -------------------------------------------
+//
+// What a run leaves so that the whole story can be told afterwards: `<workdir>/journal/events.jsonl` (the events in the order they happened, one
+// JSON object per line) and `<workdir>/journal/blobs/` (the texts they name, none over `blob_cap()` bytes). The driver records each attempt
+// (`journal_attempt`), the project driver and the build command the units, sweeps and the run. The native agent has its own half (src/calls.cho).
+// It lives in this module because the module is already in every program that runs the loop.
+
+// The most a blob holds. A longer text is cut and ends with `marker()`, which the cut text plus the marker never exceed.
+pub fn blob_cap() -> [] int {
+    return 262144;
+}
+
+fn marker() -> [] &static [byte] {
+    return "\n[... cut here: a journal blob holds at most 262144 bytes ...]\n";
+}
+
+// `<dir>/<one><two>`.
+pub fn path_under[&h, &d, &a, &b](heap: &!h Heap, dir: &d [byte], one: &a [byte], two: &b [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, buffer.empty(heap, len(dir) + len(one) + len(two) + 8), dir);
+    b = buffer.append(heap, b, "/");
+    b = buffer.append(heap, b, one);
+    b = buffer.append(heap, b, two);
+    return b;
+}
+
+// `<one><two>`.
+pub fn path_cat[&h, &a, &b](heap: &!h Heap, one: &a [byte], two: &b [byte]) -> [heap] buffer.Buffer {
+    return buffer.append(heap, buffer.append(heap, buffer.empty(heap, len(one) + len(two) + 8), one), two);
+}
+
+// `<dir>/blobs/<name>`.
+pub fn blob_path[&h, &d, &n](heap: &!h Heap, dir: &d [byte], name: &n [byte]) -> [heap] buffer.Buffer {
+    return path_under(heap, dir, "blobs/", name);
+}
+
+// `<unit>-a<n>-<what>`: the name of an attempt's blob.
+pub fn attempt_name[&h, &u, &w](heap: &!h Heap, unit: &u [byte], n: int, what: &w [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, buffer.empty(heap, 64), unit);
+    b = buffer.append(heap, b, "-a");
+    b = buffer.push_nat(heap, b, n);
+    b = buffer.append(heap, b, "-");
+    b = buffer.append(heap, b, what);
+    return b;
+}
+
+// ---- events ---------------------------------------------------------------
+
+// Add `line` (one JSON object, no newline) to `<dir>/events.jsonl`: 0, or -1 when it could not be written or the file is full (2 MiB:
+// the events are small, the bulk is in the blobs; a run that fills it stops being recorded, it does not stop).
+pub fn journal_emit[&h, &z, &d, &l](heap: &!h Heap, fs: &z Fs(""), dir: &d [byte], line: &l [byte]) -> [heap, fs_read(""), fs_write("")] int {
+    let room = 2097152;
+    let ep = path_under(heap, dir, "events.jsonl", "");
+    let tp = path_under(heap, dir, "events.jsonl.tmp", "");
+    let store = box_slice(heap, room, byte_of(0));
+    var b = buffer.empty(heap, 512);
+    var full = false;
+    borrow ep as &eq in {
+        borrow mut store as &!sw in {
+            let n = fs_read(fs, buffer.bytes(eq), contents(sw));
+            if n >= room {
+                full = true;
+            } else if n > 0 {
+                b = buffer.append(heap, b, contents(sw)[0..n]);
+            }
+        }
+    }
+    unbox_slice(heap, store);
+    var r = -1;
+    if full == false {
+        b = buffer.append(heap, b, line);
+        b = buffer.push(heap, b, byte_of(10));
+        borrow b as &bb in {
+            borrow tp as &tq in {
+                borrow ep as &eq2 in {
+                    let all = buffer.bytes(bb);
+                    if fs_write(fs, buffer.bytes(tq), all) == len(all) {
+                        match fs_rename(fs, buffer.bytes(tq), buffer.bytes(eq2)) {
+                            Done::Ok(k) => { r = 0; }
+                            Done::Failed(e) => { }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    buffer.drop(heap, b);
+    buffer.drop(heap, ep);
+    buffer.drop(heap, tp);
+    return r;
+}
+
+// An event being written: `{"t_ms": <now>, "kind": "<kind>"` and the caller adds the rest.
+pub fn begin_event[&h](heap: &!h Heap, now_ms: int, kind: &static [byte]) -> [heap] json.Writer {
+    var w = json.writer(heap, 512);
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "t_ms");
+    w = json.put_int(heap, w, now_ms);
+    w = json.put_key(heap, w, "kind");
+    w = json.put_string(heap, w, kind);
+    return w;
+}
+
+// End the event and add it to the 
+pub fn end_event[&h, &z, &d](heap: &!h Heap, fs: &z Fs(""), dir: &d [byte], w: json.Writer) -> [heap, fs_read(""), fs_write("")] int {
+    let done = json.end_object(heap, w);
+    let line = json.finish(done);
+    var r = -1;
+    borrow line as &lb in {
+        r = journal_emit(heap, fs, dir, buffer.bytes(lb));
+    }
+    buffer.drop(heap, line);
+    return r;
+}
+
+// A string field.
+pub fn put_str[&h, &t](heap: &!h Heap, w: json.Writer, key: &static [byte], text: &t [byte]) -> [heap] json.Writer {
+    var o = json.put_key(heap, w, key);
+    o = json.put_string(heap, o, text);
+    return o;
+}
+
+pub fn put_num[&h](heap: &!h Heap, w: json.Writer, key: &static [byte], n: int) -> [heap] json.Writer {
+    var o = json.put_key(heap, w, key);
+    o = json.put_int(heap, o, n);
+    return o;
+}
+
+pub fn put_flag[&h](heap: &!h Heap, w: json.Writer, key: &static [byte], v: bool) -> [heap] json.Writer {
+    var o = json.put_key(heap, w, key);
+    o = json.put_bool(heap, o, v);
+    return o;
+}
+
+// ---- blobs ----------------------------------------------------------------
+
+// Write `text` as the blob `name`, cut to the cap with the marker: 0, or -1 when it could not be written.
+pub fn blob_put[&h, &z, &d, &n, &t](heap: &!h Heap, fs: &z Fs(""), dir: &d [byte], name: &n [byte], text: &t [byte]) -> [heap, fs_write("")] int {
+    let p = blob_path(heap, dir, name);
+    var b = buffer.empty(heap, len(text) + 96);
+    let keep = blob_cap() - 96;
+    if len(text) > keep {
+        b = buffer.append(heap, b, text[0..keep]);
+        b = buffer.append(heap, b, marker());
+    } else {
+        b = buffer.append(heap, b, text);
+    }
+    var r = -1;
+    borrow p as &pb in {
+        borrow b as &bb in {
+            let all = buffer.bytes(bb);
+            if fs_write(fs, buffer.bytes(pb), all) == len(all) {
+                r = 0;
+            }
+        }
+    }
+    buffer.drop(heap, b);
+    buffer.drop(heap, p);
+    return r;
+}
+
+// Copy the file `from` as the blob `name` (cut to the cap): 0, or -1 when `from` cannot be read or the blob cannot be written.
+pub fn blob_copy[&h, &z, &d, &n, &f](heap: &!h Heap, fs: &z Fs(""), dir: &d [byte], name: &n [byte], from: &f [byte]) -> [heap, fs_read(""), fs_write("")] int {
+    let store = box_slice(heap, blob_cap() + 1, byte_of(0));
+    var r = -1;
+    borrow mut store as &!sw in {
+        let n = fs_read(fs, from, contents(sw));
+        if n >= 0 {
+            r = blob_put(heap, fs, dir, name, contents(sw)[0..n]);
+        }
+    }
+    unbox_slice(heap, store);
+    return r;
+}
+
+// Whether the blob `name` is there.
+pub fn blob_there[&h, &z, &d, &n](heap: &!h Heap, fs: &z Fs(""), dir: &d [byte], name: &n [byte]) -> [heap, fs_read("")] bool {
+    let p = blob_path(heap, dir, name);
+    var there = false;
+    borrow p as &pb in {
+        region g {
+            let probe = alloc_slice[g](16, byte_of(0));
+            there = fs_read(fs, buffer.bytes(pb), probe) >= 0;
+        }
+    }
+    buffer.drop(heap, p);
+    return there;
+}
+
+// ---- reading JSON back ----------------------------------------------------
+
+// The string at node `i`, decoded, appended to `b`.
+pub fn add_string[&h, &s, &t](heap: &!h Heap, b: buffer.Buffer, src: &s [byte], tape: &t [int], i: int) -> [heap] buffer.Buffer {
+    var out = b;
+    if i < 0 || json.is_string(tape, i) == false {
+        return out;
+    }
+    if json.string_plain(tape, i) {
+        out = buffer.append(heap, out, json.string_view(src, tape, i));
+    } else {
+        let n = json.string_length(src, tape, i);
+        if n > 0 {
+            region r {
+                let tmp = alloc_slice[r](n, byte_of(0));
+                json.string_into(src, tape, i, tmp);
+                out = buffer.append(heap, out, tmp[0..n]);
+            }
+        }
+    }
+    return out;
+}
+
+// The integer at node `i` (0 when it is not one).
+pub fn int_at[&s, &t](src: &s [byte], tape: &t [int], i: int) -> [] int {
+    if i >= 0 && json.is_int(tape, i) {
+        return json.to_int(src, tape, i);
+    }
+    return 0;
+}
+
+// ---- running a shell command ----------------------------------------------
+
+// Run `cmd` with `sh -c` (the same way an acceptance command is run: bounded output, a deadline). The caller ends it with ` #`.
+pub fn journal_sh[&h, &x, &c, &m](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, cmd: &m [byte]) -> [heap, exec(""), clock, poll] int {
+    let r = acceptance.run(heap, exec, clock, cmd, "", 4096, 60000);
+    let acceptance.Result { held, why, said } = r;
+    buffer.drop(heap, why);
+    buffer.drop(heap, said);
+    return held;
+}
+
+// Make `<dir>/blobs` (and `<dir>`): the journal's directories. A program cannot make a directory; the shell can.
+pub fn journal_dirs[&h, &x, &c, &d](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, dir: &d [byte]) -> [heap, exec(""), clock, poll] int {
+    var cmd = buffer.append(heap, buffer.empty(heap, len(dir) + 32), "mkdir -p ");
+    cmd = buffer.append(heap, cmd, dir);
+    cmd = buffer.append(heap, cmd, "/blobs #");
+    var r = 2;
+    borrow cmd as &cb in {
+        r = journal_sh(heap, exec, clock, buffer.bytes(cb));
+    }
+    buffer.drop(heap, cmd);
+    return r;
+}
+
+// ---- the attempt ----------------------------------------------------------
+
+// The last line of `text` (without its newline).
+fn last_line_of[&t](text: &t [byte]) -> [] &t [byte] {
+    var e = len(text);
+    while e > 0 && int_of(text[e - 1]) == 10 {
+        e = e - 1;
+    }
+    var a = e;
+    while a > 0 && int_of(text[a - 1]) != 10 {
+        a = a - 1;
+    }
+    return text[a..e];
+}
+
+// The unit agent's `meta.json` beside the project file (docs/md): put its tokens, the stop reason, the number of samples and the primer flag
+// into the event. A file that is not a JSON object leaves all of them out.
+fn put_meta[&h, &z, &d](heap: &!h Heap, fs: &z Fs(""), w: json.Writer, call: &d [byte]) -> [heap, fs_read("")] json.Writer {
+    var o = w;
+    let mp = path_under(heap, call, "meta.json", "");
+    region r {
+        let text = alloc_slice[r](8192, byte_of(0));
+        var n = 0 - 1;
+        borrow mp as &mq in {
+            n = fs_read(fs, buffer.bytes(mq), text);
+        }
+        if n > 0 && n < 8192 {
+            let src = text[0..n];
+            let tb = box_slice(heap, json.tape_len(src), 0);
+            borrow mut tb as &!tw in {
+                let tape = contents(tw);
+                let nodes = json.parse(src, tape);
+                if nodes > 0 && json.is_object(tape, 0) {
+                    let tk = json.get(src, tape, 0, "tokens");
+                    if tk >= 0 && json.is_object(tape, tk) {
+                        o = json.put_key(heap, o, "tokens");
+                        o = json.begin_object(heap, o);
+                        o = put_num(heap, o, "in", int_at(src, tape, json.get(src, tape, tk, "in")));
+                        o = put_num(heap, o, "out", int_at(src, tape, json.get(src, tape, tk, "out")));
+                        o = put_num(heap, o, "thinking", int_at(src, tape, json.get(src, tape, tk, "thinking")));
+                        o = put_num(heap, o, "cache_write", int_at(src, tape, json.get(src, tape, tk, "cache_write")));
+                        o = put_num(heap, o, "cache_read", int_at(src, tape, json.get(src, tape, tk, "cache_read")));
+                        o = json.end_object(heap, o);
+                    }
+                    let st = json.get(src, tape, 0, "stop");
+                    if st >= 0 && json.is_string(tape, st) {
+                        var sb = add_string(heap, buffer.empty(heap, 32), src, tape, st);
+                        borrow sb as &sq in {
+                            o = put_str(heap, o, "stop", buffer.bytes(sq));
+                        }
+                        buffer.drop(heap, sb);
+                    }
+                    let sm = json.get(src, tape, 0, "samples");
+                    if sm >= 0 && json.is_int(tape, sm) {
+                        o = put_num(heap, o, "samples", int_at(src, tape, sm));
+                    }
+                    let pm = json.get(src, tape, 0, "primer");
+                    if pm >= 0 && json.is_bool(tape, pm) && json.to_bool(tape, pm) {
+                        o = put_flag(heap, o, "primer", true);
+                    }
+                }
+            }
+            unbox_slice(heap, tb);
+        }
+    }
+    buffer.drop(heap, mp);
+    return o;
+}
+
+// The agent's sidecars are removed before each turn, so that a turn that leaves none is recorded as having left none.
+pub fn clear_call[&z, &f](fs: &z Fs(""), file: &f [byte]) -> [fs_write("")] int {
+    region r {
+        var names = 0;
+        while names < 4 {
+            var p = alloc_slice[r](len(file) + 24, byte_of(0));
+            var k = 0;
+            while k < len(file) {
+                p[k] = file[k];
+                k = k + 1;
+            }
+            var tail = ".call/prompt.txt";
+            if names == 1 {
+                tail = ".call/reply.txt";
+            } else if names == 2 {
+                tail = ".call/meta.json";
+            } else if names == 3 {
+                tail = ".call/stderr.txt";
+            }
+            var j = 0;
+            while j < len(tail) {
+                p[k + j] = tail[j];
+                j = j + 1;
+            }
+            fs_remove(fs, p[0..k + len(tail)]);
+            names = names + 1;
+        }
+    }
+    return 0;
+}
+
+// The agent command as the driver runs it for a journalled unit: the same command with its standard error going to `<file>.call/stderr.txt`
+// (the command is `-c` NUL `<shell command>` NUL; any other shape is left as it is, and its stderr is not kept).
+pub fn wrap_agent[&h, &a, &f](heap: &!h Heap, agent: &a [byte], file: &f [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.empty(heap, len(agent) + len(file) + 48);
+    if len(agent) > 4 && int_of(agent[0]) == 45 && int_of(agent[1]) == 99 && int_of(agent[2]) == 0 && int_of(agent[len(agent) - 1]) == 0 {
+        b = buffer.append(heap, b, agent[0..len(agent) - 1]);
+        b = buffer.append(heap, b, " 2> ");
+        b = buffer.append(heap, b, file);
+        b = buffer.append(heap, b, ".call/stderr.txt");
+        b = buffer.push(heap, b, byte_of(0));
+    } else {
+        b = buffer.append(heap, b, agent);
+    }
+    return b;
+}
+
+// The directory the agent leaves its sidecars in: `<file>.call`.
+pub fn make_call_dir[&h, &x, &c, &f](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, file: &f [byte]) -> [heap, exec(""), clock, poll] int {
+    var cmd = buffer.append(heap, buffer.empty(heap, len(file) + 32), "mkdir -p ");
+    cmd = buffer.append(heap, cmd, file);
+    cmd = buffer.append(heap, cmd, ".call #");
+    var r = 2;
+    borrow cmd as &cb in {
+        r = journal_sh(heap, exec, clock, buffer.bytes(cb));
+    }
+    buffer.drop(heap, cmd);
+    return r;
+}
+
+// Record one attempt of `unit` on `file` (the project file): 0, or -1 when this iteration of the loop left no trail record to read (the agent
+// could not be started) or the journal could not be written. `n` is the attempt (0-based, as the trail counts), `checker_text` the checker's
+// whole answer after the attempt and `accept_text` the acceptance command's whole output (empty: none), `agent_exit` the agent's exit code (-1: not
+// known). The numbers (attempt, agent time, outcome, signature, decision) are those of the trail record the loop has just written; the
+// prompt, reply, tokens, stop reason and stderr are what the agent left in `<file>.call/`.
+pub fn journal_attempt[&h, &x, &c, &z, &d, &u, &f, &k, &a](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &z Fs(""), dir: &d [byte], unit: &u [byte], n: int, file: &f [byte], checker_text: &k [byte], accept_text: &a [byte], agent_exit: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write("")] int {
+    let tp = buffer.append(heap, buffer.append(heap, buffer.empty(heap, len(file) + 24), file), ".trail.jsonl");
+    let call = buffer.append(heap, buffer.append(heap, buffer.empty(heap, len(file) + 24), file), ".call");
+    var result = -1;
+    region r {
+        let text = alloc_slice[r](65536, byte_of(0));
+        var got = 0 - 1;
+        borrow tp as &tq in {
+            got = fs_read(fs, buffer.bytes(tq), text);
+        }
+        if got > 0 {
+            let line = last_line_of(text[0..got]);
+            let tb = box_slice(heap, json.tape_len(line), 0);
+            borrow mut tb as &!tw in {
+                let tape = contents(tw);
+                let nodes = json.parse(line, tape);
+                if nodes > 0 && json.is_object(tape, 0) && int_at(line, tape, json.get(line, tape, 0, "attempt")) == n && json.get(line, tape, 0, "attempt") >= 0 {
+                    borrow call as &callq in {
+                        result = journal_attempt_record(heap, exec, clock, fs, dir, unit, n, file, buffer.bytes(callq), checker_text, accept_text, agent_exit, line, tape);
+                    }
+                }
+            }
+            unbox_slice(heap, tb);
+        }
+    }
+    buffer.drop(heap, tp);
+    buffer.drop(heap, call);
+    return result;
+}
+
+// The rest of `attempt`, once the trail record is parsed: the blobs, the diff and the event.
+fn journal_attempt_record[&h, &x, &c, &z, &d, &u, &f, &cl, &k, &a, &s, &t](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &z Fs(""), dir: &d [byte], unit: &u [byte], n: int, file: &f [byte], call: &cl [byte], checker_text: &k [byte], accept_text: &a [byte], agent_exit: int, line: &s [byte], tape: &t [int]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write("")] int {
+    var outcome = add_string(heap, buffer.empty(heap, 16), line, tape, json.get(line, tape, 0, "outcome"));
+    var decision = add_string(heap, buffer.empty(heap, 16), line, tape, json.get(line, tape, 0, "decision"));
+    var sig = add_string(heap, buffer.empty(heap, 64), line, tape, json.get(line, tape, 0, "sig"));
+    let ms = int_at(line, tape, json.get(line, tape, 0, "agent_ms"));
+    // The outcome the journal names: the trail's, but a refusal that came from the acceptance command, and an agent that did not answer, say so.
+    var named = buffer.empty(heap, 24);
+    borrow outcome as &oq in {
+        borrow decision as &dq in {
+            if bytes.starts_with(buffer.bytes(dq), "agent_") {
+                named = buffer.append(heap, named, "agent_failed");
+            } else if bytes.equal(buffer.bytes(oq), "refused") && len(accept_text) > 0 {
+                named = buffer.append(heap, named, "acceptance_failed");
+            } else {
+                named = buffer.append(heap, named, buffer.bytes(oq));
+            }
+        }
+    }
+    var agent_failed = false;
+    borrow named as &nq0 in {
+        agent_failed = bytes.equal(buffer.bytes(nq0), "agent_failed");
+    }
+    var w = begin_event(heap, clock_unix_ms(clock), "attempt");
+    w = put_str(heap, w, "unit", unit);
+    w = put_num(heap, w, "n", n);
+    borrow named as &nq in {
+        w = put_str(heap, w, "outcome", buffer.bytes(nq));
+    }
+    borrow decision as &dq2 in {
+        w = put_str(heap, w, "decision", buffer.bytes(dq2));
+    }
+    borrow sig as &sq in {
+        w = put_str(heap, w, "signature", buffer.bytes(sq));
+    }
+    w = put_num(heap, w, "ms", ms);
+    if agent_exit >= 0 {
+        w = put_num(heap, w, "exit", agent_exit);
+    }
+    w = put_meta(heap, fs, w, call);
+    // the blobs the agent left, then the driver's own
+    w = blob_field(heap, fs, dir, w, "prompt", unit, n, "prompt.txt", call, "prompt.txt");
+    w = blob_field(heap, fs, dir, w, "reply", unit, n, "reply.txt", call, "reply.txt");
+    w = blob_field(heap, fs, dir, w, "stderr", unit, n, "stderr.txt", call, "stderr.txt");
+    if blob_there(heap, fs, dir, "primer.txt") == false {
+        let pp = path_under(heap, call, "primer.txt", "");
+        borrow pp as &pq in {
+            blob_copy(heap, fs, dir, "primer.txt", buffer.bytes(pq));
+        }
+        buffer.drop(heap, pp);
+    }
+    w = blob_field(heap, fs, dir, w, "feedback", unit, n, "feedback.txt", file, ".feedback");
+    if agent_failed == false {
+        w = blob_field(heap, fs, dir, w, "code", unit, n, "code.cho", file, "");
+    }
+    if len(checker_text) > 0 {
+        let nm = attempt_name(heap, unit, n, "checker.json");
+        borrow nm as &mq in {
+            if blob_put(heap, fs, dir, buffer.bytes(mq), checker_text) == 0 {
+                w = put_str(heap, w, "checker", buffer.bytes(mq));
+            }
+        }
+        buffer.drop(heap, nm);
+    }
+    if len(accept_text) > 0 {
+        let nm = attempt_name(heap, unit, n, "acceptance.txt");
+        borrow nm as &mq in {
+            if blob_put(heap, fs, dir, buffer.bytes(mq), accept_text) == 0 {
+                w = put_str(heap, w, "acceptance", buffer.bytes(mq));
+            }
+        }
+        buffer.drop(heap, nm);
+    }
+    if agent_failed == false {
+        w = diff_field(heap, exec, clock, fs, dir, w, unit, n, file);
+    }
+    buffer.drop(heap, outcome);
+    buffer.drop(heap, decision);
+    buffer.drop(heap, sig);
+    buffer.drop(heap, named);
+    return end_event(heap, fs, dir, w);
+}
+
+// Copy `<base><suffix>` as the attempt's blob `<unit>-a<n>-<name>` and name it in the event under `key`; nothing when it is not there.
+fn blob_field[&h, &z, &d, &u, &b, &e](heap: &!h Heap, fs: &z Fs(""), dir: &d [byte], w: json.Writer, key: &static [byte], unit: &u [byte], n: int, name: &static [byte], base: &b [byte], suffix: &e [byte]) -> [heap, fs_read(""), fs_write("")] json.Writer {
+    var o = w;
+    var from = buffer.append(heap, buffer.empty(heap, len(base) + 32), base);
+    if len(suffix) > 0 && int_of(suffix[0]) != 46 {
+        from = buffer.push(heap, from, byte_of(47));
+    }
+    from = buffer.append(heap, from, suffix);
+    let nm = attempt_name(heap, unit, n, name);
+    borrow from as &fq in {
+        borrow nm as &nq in {
+            if blob_copy(heap, fs, dir, buffer.bytes(nq), buffer.bytes(fq)) == 0 {
+                o = put_str(heap, o, key, buffer.bytes(nq));
+            }
+        }
+    }
+    buffer.drop(heap, from);
+    buffer.drop(heap, nm);
+    return o;
+}
+
+// The diff of this attempt's code against the previous attempt's (against the file as it was before the unit, `<file>.before`, for the first),
+// as a unified diff in the blob `<unit>-a<n>-diff.txt`; nothing when there is nothing to compare with.
+fn diff_field[&h, &x, &c, &z, &d, &u, &f](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &z Fs(""), dir: &d [byte], w: json.Writer, unit: &u [byte], n: int, file: &f [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write("")] json.Writer {
+    var o = w;
+    // what to compare with
+    var prev = buffer.empty(heap, 128);
+    var label = buffer.empty(heap, 32);
+    var have = false;
+    if n == 0 {
+        prev = buffer.append(heap, prev, file);
+        prev = buffer.append(heap, prev, ".before");
+        label = buffer.append(heap, label, "before");
+        let probe = box_slice(heap, 1, byte_of(0));
+        borrow mut probe as &!pw in {
+            borrow prev as &pq in {
+                have = fs_read(fs, buffer.bytes(pq), contents(pw)) >= 0;
+            }
+        }
+        unbox_slice(heap, probe);
+    } else {
+        let pn = attempt_name(heap, unit, n - 1, "code.cho");
+        borrow pn as &pnq in {
+            have = blob_there(heap, fs, dir, buffer.bytes(pnq));
+            if have {
+                buffer.drop(heap, prev);
+                prev = blob_path(heap, dir, buffer.bytes(pnq));
+            }
+        }
+        buffer.drop(heap, pn);
+        label = buffer.append(heap, label, "a");
+        label = buffer.push_nat(heap, label, n - 1);
+    }
+    let cur = attempt_name(heap, unit, n, "code.cho");
+    var there = false;
+    borrow cur as &cq0 in {
+        there = blob_there(heap, fs, dir, buffer.bytes(cq0));
+    }
+    if have && there {
+        let dn = attempt_name(heap, unit, n, "diff.txt");
+        let tmp = attempt_name(heap, unit, n, "diff.tmp");
+        var cp = buffer.empty(heap, 16);
+        borrow cur as &curq in {
+            buffer.drop(heap, cp);
+            cp = blob_path(heap, dir, buffer.bytes(curq));
+        }
+        var tp = buffer.empty(heap, 16);
+        borrow tmp as &tmpq in {
+            buffer.drop(heap, tp);
+            tp = blob_path(heap, dir, buffer.bytes(tmpq));
+        }
+        var cmd = buffer.append(heap, buffer.empty(heap, 512), "diff -u -L ");
+        borrow label as &lq in {
+            cmd = buffer.append(heap, cmd, buffer.bytes(lq));
+        }
+        cmd = buffer.append(heap, cmd, " -L a");
+        cmd = buffer.push_nat(heap, cmd, n);
+        cmd = buffer.push(heap, cmd, byte_of(32));
+        borrow prev as &pq2 in {
+            cmd = buffer.append(heap, cmd, buffer.bytes(pq2));
+        }
+        cmd = buffer.push(heap, cmd, byte_of(32));
+        borrow cp as &cpq in {
+            cmd = buffer.append(heap, cmd, buffer.bytes(cpq));
+        }
+        cmd = buffer.append(heap, cmd, " > ");
+        borrow tp as &tpq in {
+            cmd = buffer.append(heap, cmd, buffer.bytes(tpq));
+        }
+        cmd = buffer.append(heap, cmd, " #");
+        borrow cmd as &cmq in {
+            journal_sh(heap, exec, clock, buffer.bytes(cmq));
+        }
+        borrow dn as &dnq in {
+            borrow tp as &tpq2 in {
+                if blob_copy(heap, fs, dir, buffer.bytes(dnq), buffer.bytes(tpq2)) == 0 {
+                    o = put_str(heap, o, "diff", buffer.bytes(dnq));
+                }
+                fs_remove(fs, buffer.bytes(tpq2));
+            }
+        }
+        buffer.drop(heap, cmd);
+        buffer.drop(heap, dn);
+        buffer.drop(heap, tmp);
+        buffer.drop(heap, cp);
+        buffer.drop(heap, tp);
+    }
+    buffer.drop(heap, cur);
+    buffer.drop(heap, prev);
+    buffer.drop(heap, label);
+    return o;
+}
+
+// `<wd>/journal`.
+pub fn journal_dir[&h, &w](heap: &!h Heap, wd: &w [byte]) -> [heap] buffer.Buffer {
+    return path_under(heap, wd, "journal", "");
+}
+
+// `run_start`: where the run began. `brief` is the path as it was given; an empty provider, model or brief (a project run by hand has none) is left out.
+pub fn run_start[&h, &c, &z, &d, &b, &p, &m](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), dir: &d [byte], brief: &b [byte], provider: &p [byte], model: &m [byte], review: bool, rounds: int, attempts: int, agent_ms: int, plan_ms: int) -> [heap, clock, fs_read(""), fs_write("")] int {
+    var w = begin_event(heap, clock_unix_ms(clock), "run_start");
+    if len(brief) > 0 {
+        w = put_str(heap, w, "brief", brief);
+    }
+    if len(provider) > 0 {
+        w = put_str(heap, w, "provider", provider);
+    }
+    if len(model) > 0 {
+        w = put_str(heap, w, "model", model);
+    }
+    w = json.put_key(heap, w, "options");
+    w = json.begin_object(heap, w);
+    w = put_flag(heap, w, "review", review);
+    if rounds > 0 {
+        w = put_num(heap, w, "rounds", rounds);
+    }
+    w = put_num(heap, w, "attempts", attempts);
+    w = put_num(heap, w, "agent_seconds", agent_ms / 1000);
+    if plan_ms > 0 {
+        w = put_num(heap, w, "plan_seconds", plan_ms / 1000);
+    }
+    w = json.end_object(heap, w);
+    return end_event(heap, fs, dir, w);
+}
+
+// `run_end`: the verdict word, the exit code, the seconds this invocation took.
+pub fn run_end[&h, &z, &d, &v](heap: &!h Heap, now_ms: int, fs: &z Fs(""), dir: &d [byte], verdict: &v [byte], code: int, seconds: int) -> [heap, fs_read(""), fs_write("")] int {
+    var w = begin_event(heap, now_ms, "run_end");
+    w = put_str(heap, w, "verdict", verdict);
+    w = put_num(heap, w, "exit", code);
+    w = put_num(heap, w, "seconds", seconds);
+    return end_event(heap, fs, dir, w);
+}
+
+// `plan_final`: whether the plan the build goes on with is valid, how many units it has, and the plan itself (a blob copied from `plan_path`;
+// left out when there is none to copy).
+pub fn plan_final[&h, &c, &z, &d, &p](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), dir: &d [byte], valid: bool, units: int, plan_path: &p [byte]) -> [heap, clock, fs_read(""), fs_write("")] int {
+    let now = clock_unix_ms(clock);
+    var w = begin_event(heap, now, "plan_final");
+    w = put_flag(heap, w, "valid", valid);
+    w = put_num(heap, w, "units", units);
+    var name = buffer.append(heap, buffer.empty(heap, 32), "plan-");
+    name = buffer.push_nat(heap, name, now);
+    name = buffer.append(heap, name, ".json");
+    borrow name as &nq in {
+        if blob_copy(heap, fs, dir, buffer.bytes(nq), plan_path) == 0 {
+            w = put_str(heap, w, "plan", buffer.bytes(nq));
+        }
+    }
+    buffer.drop(heap, name);
+    return end_event(heap, fs, dir, w);
+}
+
+// The number of records the unit's trail holds so far: its 
+fn attempts_so_far[&z, &p](fs: &z Fs(""), trail_path: &p [byte]) -> [fs_read("")] int {
+    var n = 0;
+    region r {
+        let text = alloc_slice[r](65536, byte_of(0));
+        let got = fs_read(fs, trail_path, text);
+        var i = 0;
+        while i < got {
+            if int_of(text[i]) == 10 {
+                n = n + 1;
+            }
+            i = i + 1;
+        }
+    }
+    return n;
+}
+
+// `unit_end`: `state` is verified, stuck or unavailable; the attempts are counted from the trail of the unit (`trail_path`).
+pub fn unit_end[&h, &c, &z, &d, &u, &p](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), dir: &d [byte], unit: &u [byte], state: &static [byte], trail_path: &p [byte]) -> [heap, clock, fs_read(""), fs_write("")] int {
+    var w = begin_event(heap, clock_unix_ms(clock), "unit_end");
+    w = put_str(heap, w, "unit", unit);
+    w = put_str(heap, w, "state", state);
+    w = put_num(heap, w, "attempts", attempts_so_far(fs, trail_path));
+    return end_event(heap, fs, dir, w);
+}
+
+// One `[...]` of names from a comma-separated list.
+fn put_names[&h, &l](heap: &!h Heap, w: json.Writer, key: &static [byte], names: &l [byte]) -> [heap] json.Writer {
+    var o = json.put_key(heap, w, key);
+    o = json.begin_array(heap, o);
+    if len(names) > 0 {
+        var k = 1;
+        let total = bytes.count_byte(names, 44) + 1;
+        while k <= total {
+            o = json.put_string(heap, o, bytes.field(names, 44, k));
+            k = k + 1;
+        }
+    }
+    o = json.end_array(heap, o);
+    return o;
+}
+
+// `sweep`: after unit `after` verified (empty: the check at the start of a resumed run), the units that were re-checked and held and those that
+// no longer did. Both are comma-separated lists of unit ids.
+pub fn journal_sweep[&h, &c, &z, &d, &a, &k, &g](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), dir: &d [byte], after: &a [byte], held: &k [byte], regressed: &g [byte]) -> [heap, clock, fs_read(""), fs_write("")] int {
+    var w = begin_event(heap, clock_unix_ms(clock), "sweep");
+    w = put_str(heap, w, "after_unit", after);
+    w = put_names(heap, w, "held", held);
+    w = put_names(heap, w, "regressed", regressed);
+    return end_event(heap, fs, dir, w);
 }
