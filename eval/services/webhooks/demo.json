@@ -1,0 +1,97 @@
+{
+ "intro": "Signed webhook receiver. Senders (alpha, beta) sign `timestamp.body` with HMAC-SHA256; replays, bad signatures and old timestamps are refused; an admin reads the events.",
+ "steps": [
+  {
+   "title": "an unsigned delivery is refused",
+   "method": "POST",
+   "path": "/hooks/alpha",
+   "headers": {
+    "X-Timestamp": "{ts}",
+    "X-Event-Id": "e0"
+   },
+   "body": {
+    "n": 1
+   }
+  },
+  {
+   "title": "a correctly signed delivery is accepted",
+   "method": "POST",
+   "path": "/hooks/alpha",
+   "headers": {
+    "X-Timestamp": "{ts}",
+    "X-Event-Id": "e1"
+   },
+   "body": {
+    "n": 1
+   },
+   "hmac": {
+    "header": "X-Signature",
+    "secret": "s3cret-alpha",
+    "over": "{ts}.{body}",
+    "prefix": "sha256="
+   }
+  },
+  {
+   "title": "the same event id again is a duplicate (200, stored once)",
+   "method": "POST",
+   "path": "/hooks/alpha",
+   "headers": {
+    "X-Timestamp": "{ts}",
+    "X-Event-Id": "e1"
+   },
+   "body": {
+    "n": 1
+   },
+   "hmac": {
+    "header": "X-Signature",
+    "secret": "s3cret-alpha",
+    "over": "{ts}.{body}",
+    "prefix": "sha256="
+   }
+  },
+  {
+   "title": "a signature made with the wrong secret is refused",
+   "method": "POST",
+   "path": "/hooks/alpha",
+   "headers": {
+    "X-Timestamp": "{ts}",
+    "X-Event-Id": "e2"
+   },
+   "body": {
+    "n": 2
+   },
+   "hmac": {
+    "header": "X-Signature",
+    "secret": "not-the-secret",
+    "over": "{ts}.{body}",
+    "prefix": "sha256="
+   }
+  },
+  {
+   "title": "an old timestamp (replay window) is refused",
+   "method": "POST",
+   "path": "/hooks/alpha",
+   "headers": {
+    "X-Timestamp": "1000",
+    "X-Event-Id": "e3"
+   },
+   "body": {
+    "n": 3
+   },
+   "hmac": {
+    "header": "X-Signature",
+    "secret": "s3cret-alpha",
+    "over": "1000.{body}",
+    "prefix": "sha256="
+   }
+  },
+  {
+   "title": "the admin reads the events",
+   "method": "GET",
+   "path": "/events?limit=10",
+   "headers": {
+    "Authorization": "Bearer adm-token-xyz"
+   }
+  }
+ ]
+}

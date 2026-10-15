@@ -1,0 +1,79 @@
+{
+ "intro": "Invoices per tenant (acme: tokA and tokC, globex: tokB). Create, read, filter by customer, pay (idempotent).",
+ "steps": [
+  {
+   "title": "no token is refused",
+   "method": "GET",
+   "path": "/invoices"
+  },
+  {
+   "title": "acme creates an invoice",
+   "method": "POST",
+   "path": "/invoices",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   },
+   "body": {
+    "customer": "Ada Lovelace",
+    "amount_cents": 12500,
+    "currency": "EUR"
+   },
+   "save": {
+    "id": "id"
+   }
+  },
+  {
+   "title": "a float amount is refused",
+   "method": "POST",
+   "path": "/invoices",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   },
+   "body": {
+    "customer": "Ada",
+    "amount_cents": 1.5,
+    "currency": "EUR"
+   }
+  },
+  {
+   "title": "read it back",
+   "method": "GET",
+   "path": "/invoices/{id}",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   }
+  },
+  {
+   "title": "filter by customer (percent-encoded)",
+   "method": "GET",
+   "path": "/invoices?customer=Ada%20Lovelace",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   }
+  },
+  {
+   "title": "globex cannot pay acme's invoice (404)",
+   "method": "POST",
+   "path": "/invoices/{id}/pay",
+   "headers": {
+    "Authorization": "Bearer tokB"
+   }
+  },
+  {
+   "title": "acme pays it",
+   "method": "POST",
+   "path": "/invoices/{id}/pay",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   }
+  },
+  {
+   "title": "paying again is harmless",
+   "method": "POST",
+   "path": "/invoices/{id}/pay",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   }
+  }
+ ]
+}

@@ -1,0 +1,52 @@
+{
+ "service": "kvstore",
+ "attack_checks": 225,
+ "accept_checks": 59,
+ "reference_loc": 752,
+ "pure_functions": [
+  "flag_value[&c,&n](config:&c [byte], name:&n [byte]) -> [] (int,int)",
+  "bearer_token[&r](header:&r [byte]) -> [] &r [byte]",
+  "tenant_range[&s,&t](spec:&s [byte], token:&t [byte]) -> [] (int,int)",
+  "valid_key[&r](key:&r [byte]) -> [] bool",
+  "valid_prefix[&r](prefix:&r [byte]) -> [] bool",
+  "is_expired(stored_ms:int, ttl_s:int, now_ms:int) -> [] bool",
+  "seconds_left(stored_ms:int, ttl_s:int, now_ms:int) -> [] int",
+  "list_limit[&q](query:&q [byte]) -> [] int",
+  "list_prefix[&q,&o](query:&q [byte], out:&!o [byte]) -> [] int",
+  "parse_put[&b,&t](body:&b [byte], tape:&!t [int]) -> [] (int,int,int)"
+ ],
+ "differences_from_lex": [
+  "KV_TOKENS/KV_PORT/KV_DB/KV_HOST environment variables -> --tokens flag and the skeleton's --port; no KV_DB and no KV_HOST",
+  "no SQLite: state is in memory for the life of the process, nothing persists across restarts (brief says so)",
+  "'listens on loopback by default' dropped: a cancho listener binds all interfaces and has no --host; the attack's loopback check is removed",
+  "'every query is parameterized' replaced by its behavioural half: SQL-looking prefixes/keys and % _ are never wildcards (400 / literal)",
+  "grants net,sql,env,fs_write,time -> authority check of args,heap,clock,net_in,conn_*,poll,io/err_write (svc.authority_ok)",
+  "no lex-web/lex-schema/lex-orm: std.http, std.json, skeleton are the toolbox",
+  "added to the brief (the Lex one left them open): 405 for a known path with another method, 404 for unknown paths, order of checks (401, 405, 413, key, body), prefix is percent-decoded before validation, key in the path is not percent-decoded, duplicate JSON fields are 400, ttl_seconds null/float/string/out of range is 400, value length counts code points, tenant names are prefixes of each other share nothing, fixed-capacity store with 507 and a no-leak requirement (10000 replacements of one key)",
+  "dropped from the Lex attack: 'listens on loopback only', the 'trailing space' check is kept but accepts 401 or 404 because an HTTP parser may trim header whitespace"
+ ],
+ "pitfalls": [
+  "a borrowed App (&!a App) cannot give up a std.map/std.vec/std.buffer field and take a grown one back (app.m = map.put(heap, app.m, ..) is 'expected Map, found &!a Map'), and `borrow mut app.f as ...` is not syntax; so a growable collection cannot live in App. The reference allocates fixed Boxes once (hash table of row numbers, row table, byte arena) and mutates them through contents(app.f); growth is replaced by a documented capacity and compaction",
+  "every helper that takes `app: &!a App` needs `[&a]` in its generics, and a function that declares [heap] must really use the heap (app_new must allocate)",
+  "a region arena is 64 KiB: json tapes (3 ints per node, tape_len of a 4 KiB body is ~100 KiB) must be box_slice on the heap, not alloc_slice",
+  "JSON string length must be counted in code points (json.string_into then utf8.count), not bytes; a 1000-character value can be 4000 bytes, and the body limit is 4096 bytes",
+  "python http.client json.dumps escapes non-ASCII to \\uXXXX (6 bytes each): the attack sends raw UTF-8 for the 2-byte and 4-byte character checks",
+  "an early-exit token compare is not observable; the attack checks the neighbours instead (prefix of a token, token with a suffix, two spaces)",
+  "std.map.hash is public and usable for an own table; tombstones in an open-addressed table need a rebuild or the probe loop never ends",
+  "no `break`/`continue`; negative literals are written 0 - 1 in existing code but -1 also parses"
+ ],
+ "validation": {
+  "reference_accept": "59/59",
+  "reference_attack": "225/225",
+  "mutations_caught": {
+   "m1_shared_keyspace (all tenants share one key space)": "B cannot read A's key; B cannot delete A's key; foreign key and missing key give the identical 404; tenant 'acm' ... (14 checks)",
+   "m2_limit_101 (limit upper bound 101)": "limit='101' -> 400",
+   "m3_unknown_field_ok": "unknown field -> 400; unknown field with ttl -> 400; rejected PUTs stored nothing",
+   "m4_body_limit_ge (4096-byte body gets 413)": "body of 4096 bytes is parsed (400 for a long value, not 413)",
+   "m5_floor_seconds (expires_in rounded down)": "expires_in is rounded up (3 right after the PUT); ttl 3 entry after 1.4 s: expires_in 2",
+   "m6_replace_keeps_ttl": "replaced-to-permanent entry survives",
+   "m7_403 instead of 404 for a missing key on DELETE": "DELETE missing -> 404; B cannot delete A's key; expired entry DELETE -> 404"
+  },
+  "trivial_404_app": "accept 10/59, attack 53/225, both finish in 3 s / 6 s"
+ }
+}

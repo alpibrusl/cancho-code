@@ -1,0 +1,34 @@
+edition 7;
+
+struct App { hits: int }
+
+fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App {
+    let probe = buffer.empty(heap, 8);
+    buffer.drop(heap, probe);
+    return App { hits: 0 };
+}
+
+fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer {
+    app.hits = app.hits + 1;
+    let keep = http.keeps_alive(table);
+    if bytes_eq(http.path(request, table), "/health") {
+        return server.reply(heap, out, 200, "{\"ok\":true}", keep);
+    }
+    return server.failure(heap, out, 404, "not found", keep);
+}
+
+fn bytes_eq[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool {
+    if len(x) != len(y) { return false; }
+    var i = 0;
+    while i < len(x) {
+        if int_of(x[i]) != int_of(y[i]) { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int {
+    let probe = buffer.empty(heap, 8);
+    buffer.drop(heap, probe);
+    return 0;
+}

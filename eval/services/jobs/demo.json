@@ -1,0 +1,104 @@
+{
+ "intro": "A multi-tenant job queue. Two tenants (acme: tokA, globex: tokB); jobs move queued -> running -> done and nobody sees another tenant's jobs.",
+ "steps": [
+  {
+   "title": "no token is refused",
+   "method": "GET",
+   "path": "/jobs"
+  },
+  {
+   "title": "acme creates a job",
+   "method": "POST",
+   "path": "/jobs",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   },
+   "body": {
+    "kind": "resize-image",
+    "payload": "cat.png"
+   },
+   "save": {
+    "id": "id"
+   }
+  },
+  {
+   "title": "the same call with an Idempotency-Key creates once",
+   "method": "POST",
+   "path": "/jobs",
+   "headers": {
+    "Authorization": "Bearer tokA",
+    "Idempotency-Key": "k1"
+   },
+   "body": {
+    "kind": "email",
+    "payload": "welcome"
+   }
+  },
+  {
+   "title": "...and replayed returns the original (200)",
+   "method": "POST",
+   "path": "/jobs",
+   "headers": {
+    "Authorization": "Bearer tokA",
+    "Idempotency-Key": "k1"
+   },
+   "body": {
+    "kind": "email",
+    "payload": "welcome"
+   }
+  },
+  {
+   "title": "acme lists its queued jobs",
+   "method": "GET",
+   "path": "/jobs?state=queued&limit=10",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   }
+  },
+  {
+   "title": "globex cannot see acme's job (404, the same as a missing one)",
+   "method": "GET",
+   "path": "/jobs/{id}",
+   "headers": {
+    "Authorization": "Bearer tokB"
+   }
+  },
+  {
+   "title": "a worker claims it",
+   "method": "POST",
+   "path": "/jobs/{id}/claim",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   }
+  },
+  {
+   "title": "claiming twice is a conflict",
+   "method": "POST",
+   "path": "/jobs/{id}/claim",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   }
+  },
+  {
+   "title": "complete it",
+   "method": "POST",
+   "path": "/jobs/{id}/complete",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   }
+  },
+  {
+   "title": "a body that tries to choose its owner is refused",
+   "method": "POST",
+   "path": "/jobs",
+   "headers": {
+    "Authorization": "Bearer tokA"
+   },
+   "body": {
+    "kind": "x",
+    "payload": "y",
+    "tenant": "globex"
+   }
+  }
+ ]
+}

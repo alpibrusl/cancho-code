@@ -6,7 +6,7 @@ edition 7;
 // `cancho check` as the only oracle. Every ending prints its §6 verdict
 // line; there is no state in which it runs silently.
 //
-//     fix <checker-path> <project.cho> <agent-command> [attempts [agent-seconds [acceptance-command [acceptance-seconds]]]]
+//     fix <checker-path> <project.cho> <agent-command> [attempts [agent-seconds [acceptance-command [acceptance-seconds [extra-files]]]]]
 //
 //   checker-path   the compiler binary, by its absolute path (measured:
 //                  the child of exec_spawn gets no PATH of its own)
@@ -20,6 +20,8 @@ edition 7;
 //                  checker verifies it: exit 0 holds (`[ACCEPTANCE] pass`),
 //                  anything else is a retryable failure whose output the agent
 //                  reads in <project>.feedback (default: none; seconds, default 60)
+//   extra-files    files the checker is given beside the project file, separated by spaces (a service is its application, the
+//                  fixed skeleton and a package, not one file); default: none
 //
 // Beside the file the run leaves `<file>.trail.jsonl` (one record per
 // attempt), `<file>.feedback` (the checker's last answer, which the agent
@@ -69,10 +71,11 @@ fn main(world: World) -> [] int {
     var agent_seconds = 30;
     var accept_text = "";
     var accept_seconds = 60;
+    var extra = "";
     borrow mut console as &!ci in {
     borrow args as &g in {
         if arg_count(g) < 4 {
-            io.error_all(ci, "usage: fix <checker> <project.cho> <agent-cmd> [attempts [agent-seconds [acceptance-cmd [acceptance-seconds]]]]\n");
+            io.error_all(ci, "usage: fix <checker> <project.cho> <agent-cmd> [attempts [agent-seconds [acceptance-cmd [acceptance-seconds [extra-files]]]]]\n");
         } else {
             checker_path = arg(g, 1);
             file = arg(g, 2);
@@ -88,6 +91,9 @@ fn main(world: World) -> [] int {
             }
             if arg_count(g) > 7 {
                 accept_seconds = digits_of(arg(g, 7));
+            }
+            if arg_count(g) > 8 {
+                extra = arg(g, 8);
             }
         }
     }
@@ -116,6 +122,10 @@ fn main(world: World) -> [] int {
                         cmd = buffer.append(hh, cmd, checker_path);
                         cmd = buffer.append(hh, cmd, " check --std --output json --backend cranelift ");
                         cmd = buffer.append(hh, cmd, file);
+                        if len(extra) > 0 {
+                            cmd = buffer.append(hh, cmd, " ");
+                            cmd = buffer.append(hh, cmd, extra);
+                        }
                         cmd = buffer.append(hh, cmd, "\0");
                         // The agent command, same shape: the file is its
                         // argument.

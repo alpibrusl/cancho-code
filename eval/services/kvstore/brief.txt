@@ -1,0 +1,78 @@
+Build a cancho HTTP service "kvstore": a multi-tenant key-value store with expiry, as a REST API that is safe to put on the internet. The application is one file, project.cho, that defines `struct App`, `app_new`, `app_handle` and `app_drop` exactly as the fixed skeleton (eval/services/skeleton/main.cho, never edited) declares them; the skeleton owns the listener, the HTTP parsing and the response writing. Use std.http, std.json and std.map/std.vec/std.buffer as the toolbox; project.cho must NOT import std.buffer, std.bytes, std.http, std.io, std.json, std.map, std.option, std.result, std.route, std.vec or http.server (the skeleton imports them for the whole program: use them qualified, `json.`, `http.`, `server.`...). It may import other std modules (std.utf8, std.crypto, ...).
+
+How this differs from the Lex original, so nothing is left to guess:
+ - There are no environment variables. The tokens come from the command-line flag `--tokens tokenA:tenantA,tokenB:tenantB` (the skeleton passes every flag except `--port N` to app_new as the text `flag\nvalue\n...`, for example `--tokens\ntokA:acme,tokB:globex\n`). The port is `--port N`, consumed by the skeleton.
+ - There is no database. All state lives in memory, in `App`, for the life of the process, and is lost when it exits; nothing is written to disk. The service must not need persistence across restarts. A `App` cannot grow a std.vec/std.map/std.buffer it owns from inside app_handle (a borrowed struct cannot give a resource up and take a bigger one back), so the store is allocated once, in app_new, with fixed capacity: see "Capacity".
+ - A cancho listener binds the port on every interface and has no --host flag, so the Lex requirement "listens on loopback only" is dropped: do not try to meet it.
+ - The Lex requirement about SQL injection ("every query is parameterized") has no counterpart without SQL; the behavioural half of it stays: a prefix that looks like SQL, or contains % or _, is never a wildcard and never an error of the server (see GET /kv).
+ - The effects requirement becomes: the program may declare only args, heap, clock, net_in, conn_accept, conn_read, conn_write, poll, io_write/err_write (`cancho authority` reports them). No files, no processes, no foreign code.
+
+Each customer company ("tenant") has its own bearer token. A request carries "Authorization: Bearer <token>"; the token decides which tenant it acts for. Tokens are given at startup by `--tokens`, formatted "token1:tenantA,token2:tenantB" (entries separated by a comma, the token before the first colon of an entry, the tenant name after it; an entry with no colon or with an empty token or an empty tenant name is ignored; when two entries have the same token the first wins). The service must start and serve (every protected request answering 401) when `--tokens` is absent. Every tenant has its own separate key space: the same key in two tenants is two unrelated entries, and a tenant whose name is a prefix of another's (acm and acme) shares nothing with it.
+
+A key is 1 to 64 characters of lowercase letters (a-z), digits, "." , "_" or "-". The key in a path is the raw path segment: it is NOT percent-decoded, so "a%20b" is an invalid key. A value is a string of at most 1000 characters (Unicode code points, not bytes; the empty string is allowed). An entry may have a time to live in whole seconds, from 1 to 86400; with no time to live it never expires. An expired entry behaves exactly as if it had never existed. The clock is the `now_ms` that app_handle receives, in milliseconds: an entry stored at time S with time to live T is expired when now >= S + T*1000.
+
+Routes. Every response is JSON with Content-Type application/json, except 204, which has no body. Every error body is {"error": "<message>"}.
+
+ - PUT /kv/{key} -- body {"value": Str} or {"value": Str, "ttl_seconds": Int}. Stores the entry for the caller's tenant. 201 if the key did not exist (or had expired), 200 if it replaced a live entry. Replacing an entry also replaces its time to live: a PUT without ttl_seconds makes the entry permanent. The response body is {"key": ..., "value": ...}. An invalid key in the path is 400.
+ - GET /kv/{key} -- 200 with {"key": ..., "value": ..., "expires_in": <whole seconds left, rounded up, or null when permanent>}; 404 if there is no live entry. An invalid key is 404.
+ - DELETE /kv/{key} -- 204 with no body if a live entry was deleted; 404 if there was none (including an expired one). An invalid key is 404.
+ - GET /kv?prefix=P&limit=N -- the caller's live keys in ascending (byte) order as {"keys": [...]}. "prefix" is optional: it is percent-decoded first, and must then be empty or up to 64 characters from the key alphabet, otherwise 400 (so `a' OR '1'='1`, `%` and `a b` are 400; `%61pp` is the prefix `app`); only keys that start with it are listed. "limit" is optional, a decimal integer from 1 to 100 (digits only, no sign), default 50, otherwise 400; at most that many keys are returned. An empty `limit=` is 400. Other query parameters are ignored.
+ - Any other path is 404 (with or without a token). A path under /kv/ with a further slash (/kv/a/b) is such a path. A known path with another method (for example POST /kv, DELETE /kv, PATCH /kv/a) is 405, with an `Allow` header, once the caller is authenticated.
+
+Order of checks for a request to /kv or /kv/{key}: authentication (401) first, then the method (405), then for a PUT the body size (413), then the key (400 for PUT, 404 for GET and DELETE), then the body (400).
+
+Security requirements. Each one is something an attacker will try:
+
+1. No token, a malformed Authorization header ("Basic ...", "Bearer" with no token, "Bearer" followed by two spaces or by a token containing a space), or an unknown token (including a prefix of a real token, or a real token with something appended): 401, and the store is not touched. A missing, a malformed and an unknown token give the identical generic 401 body; tokens are compared against every configured token with a constant-time comparison (the work must not depend on where the first differing byte is) and are never logged or echoed.
+2. A tenant can never read, overwrite, delete or list another tenant's entries. A key that only another tenant has is a 404, exactly like a key nobody has (same status, same body); never 403.
+3. A key or prefix that looks like SQL, a path-traversal string, or contains % or _ , is never interpreted: keys are invalid (400/404 as above), `_` and `.` are plain characters (the prefix `app_` matches `app_three` and not `apple`, and `app.` does not match `app_x`).
+4. The PUT body is strictly validated: it must be a JSON object; "value" is required and must be a string of at most 1000 characters; "ttl_seconds", if present, must be an integer from 1 to 86400 (a float such as 1.5 or 2.0, a string, null, or an integer outside the range, including one too large for 64 bits, is 400). Unknown fields are rejected with 400, and so is a field given twice. Invalid JSON, an empty body, an array or a scalar body are 400. A rejected PUT stores nothing and leaves an existing entry as it was.
+5. A request body larger than 4096 bytes is rejected with 413 before it is parsed (a body that cannot fit the skeleton's 16 KiB input buffer is answered 413 by the skeleton itself, before the application sees it, whatever the token).
+6. A request the HTTP parser refuses is answered 400 by the skeleton and never reaches the application.
+
+Capacity (honest about the in-memory store). The store is fixed in size. It must hold at least 1000 live entries at once whose key and value are each up to their limits (up to 64-character keys, 1000-character values, up to 4000 bytes of value in UTF-8), across any number of tenants. Replacing, deleting and expiry must give their room back: 10000 successive PUTs of a 1000-character value on the same key must all succeed (the first 201, the rest 200), and so must a hundred thousand PUT/DELETE cycles over a few keys. A PUT that would exceed the capacity answers 507 {"error": "store full"} and stores nothing. The service must never trap (crash) on any request.
+
+Pure functions. The pure logic must be functions with no effect annotation (an empty row `[]`), each with examples, so that a plan can pin them. Names and signatures are exactly these (the `&r`-style names are region parameters; a slice that is returned is a view into the argument):
+
+  fn flag_value[&c, &n](config: &c [byte], name: &n [byte]) -> [] (int, int)
+      The value of a flag in the `flag\nvalue\n...` configuration text, as (start, end) into `config`; (-1, -1) when the flag is absent.
+      flag_value("--tokens\ntokA:acme\n", "--tokens") == (9, 18)      flag_value("--x\n1\n--tokens\nt:a\n", "--tokens") == (15, 18)      flag_value("--x\n1\n", "--tokens") == (-1, -1)      flag_value("", "--tokens") == (-1, -1)
+
+  fn bearer_token[&r](header: &r [byte]) -> [] &r [byte]
+      The token of an Authorization header value ("Bearer " followed by one or more characters, none of them a space or a control character), else an empty slice.
+      bearer_token("Bearer tokA") == "tokA"      bearer_token("Bearer") == ""      bearer_token("Bearer ") == ""      bearer_token("Bearer  tokA") == ""      bearer_token("Bearer a b") == ""      bearer_token("Basic dG9rQQ==") == ""      bearer_token("") == ""
+
+  fn tenant_range[&s, &t](spec: &s [byte], token: &t [byte]) -> [] (int, int)
+      The tenant name for a token in a `--tokens` value, as (start, end) into `spec`, or (-1, -1) for an unknown or empty token. Every entry is compared, with a comparison whose time does not depend on where the bytes first differ.
+      tenant_range("tokA:acme,tokB:globex", "tokB") == (15, 21)      tenant_range("tokA:acme,tokB:globex", "tok") == (-1, -1)      tenant_range("tokA:acme,tokB:globex", "tokAA") == (-1, -1)      tenant_range("tokA:acme,tokB:globex", "") == (-1, -1)      tenant_range("tokA:acme,bad,:x,y:", "y") == (-1, -1)      tenant_range("", "tokA") == (-1, -1)
+
+  fn valid_key[&r](key: &r [byte]) -> [] bool
+      valid_key("a") == true      valid_key("a.b_c-d") == true      valid_key("") == false      valid_key("Upper") == false      valid_key("a b") == false      valid_key("a/b") == false      valid_key(64 times "k") == true      valid_key(65 times "k") == false
+
+  fn valid_prefix[&r](prefix: &r [byte]) -> [] bool
+      Empty, or up to 64 characters of the key alphabet.
+      valid_prefix("") == true      valid_prefix("app.") == true      valid_prefix("a'b") == false      valid_prefix("%") == false      valid_prefix(65 times "a") == false
+
+  fn is_expired(stored_ms: int, ttl_s: int, now_ms: int) -> [] bool
+      ttl_s is 0 for an entry with no expiry. Expired when ttl_s > 0 and now_ms >= stored_ms + ttl_s * 1000.
+      is_expired(1000, 0, 99999999) == false      is_expired(1000, 2, 2999) == false      is_expired(1000, 2, 3000) == true      is_expired(1000, 1, 1000) == false
+
+  fn seconds_left(stored_ms: int, ttl_s: int, now_ms: int) -> [] int
+      Whole seconds left rounded up; -1 for an entry with no expiry; 0 once expired.
+      seconds_left(1000, 0, 5000) == -1      seconds_left(1000, 2, 1000) == 2      seconds_left(1000, 2, 1001) == 2      seconds_left(1000, 2, 2000) == 1      seconds_left(1000, 2, 2001) == 1      seconds_left(1000, 2, 3000) == 0
+
+  fn list_limit[&q](query: &q [byte]) -> [] int
+      The `limit` of a query string: 50 when absent, the integer when it is 1 to 100, -1 when invalid.
+      list_limit("") == 50      list_limit("prefix=a") == 50      list_limit("limit=7") == 7      list_limit("prefix=a&limit=100") == 100      list_limit("limit=0") == -1      list_limit("limit=101") == -1      list_limit("limit=abc") == -1      list_limit("limit=") == -1      list_limit("limit=-1") == -1
+
+  fn list_prefix[&q, &o](query: &q [byte], out: &!o [byte]) -> [] int
+      The `prefix` of a query string percent-decoded into `out` (which has room for 300 bytes): its length, 0 when absent or empty, -1 when it is not a valid prefix.
+      list_prefix("", out) == 0      list_prefix("prefix=app.", out) == 4 (out starts with "app.")      list_prefix("prefix=%61pp", out) == 3      list_prefix("prefix=%25", out) == -1      list_prefix("prefix=a%20b", out) == -1
+
+  fn parse_put[&b, &t](body: &b [byte], tape: &!t [int]) -> [] (int, int, int)
+      Validate a PUT body (`tape` is a std.json tape with room for json.tape_len(body) ints). Answers (code, value_node, ttl_s): code 0 means valid, value_node is the tape node of the "value" string and ttl_s is the time to live (0 when absent); any other code is a refusal (the service answers it as a 400), with value_node -1 and ttl_s 0.
+      {"value":"x"} -> code 0, ttl 0      {"value":"x","ttl_seconds":5} -> code 0, ttl 5      {"value":""} -> code 0      {"value":"x","extra":1} -> code != 0      {"ttl_seconds":5} -> code != 0      {"value":5} -> code != 0      {"value":"x","ttl_seconds":0} -> code != 0      {"value":"x","ttl_seconds":1.5} -> code != 0      {"value":"x","ttl_seconds":86401} -> code != 0      {"value":"x","ttl_seconds":null} -> code != 0      {"value":"x","value":"y"} -> code != 0      [1] -> code != 0      {nope -> code != 0      a value of 1001 characters -> code != 0
+
+Command line. `bin --port N --tokens tokA:acme,tokB:globex`. The service prints nothing on a request and is never given anything but flags.
+
+Verification. Your program is run against a black-box acceptance script that builds it with the skeleton, starts it with the flags above and sends requests (including a few real two-second sleeps for expiry), and then against further checks you do not see. Every status code and body shape above is part of the contract.
