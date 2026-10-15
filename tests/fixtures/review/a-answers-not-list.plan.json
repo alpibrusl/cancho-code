@@ -1,0 +1,72 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "add",
+   "signature": "fn add(a: int, b: int) -> [] int",
+   "description": "adds",
+   "cases": [
+    {
+     "args": [
+      1,
+      2
+     ],
+     "expect": 3
+    },
+    {
+     "args": [
+      5,
+      5
+     ],
+     "expect": 10
+    },
+    {
+     "args": [
+      0,
+      0
+     ],
+     "expect": 0
+    },
+    {
+     "args": [
+      -1,
+      1
+     ],
+     "expect": 0
+    }
+   ],
+   "deps": []
+  },
+  {
+   "id": "noc",
+   "signature": "fn n() -> [] int",
+   "examples": [
+    "n() == 1"
+   ],
+   "deps": []
+  },
+  {
+   "id": "txt",
+   "signature": "fn t[&r](s: &r [byte]) -> [] result.Result[int, int]",
+   "cases": [
+    {
+     "args": [
+      "ab"
+     ],
+     "expect": {
+      "ok": 2
+     }
+    },
+    {
+     "args": [
+      ""
+     ],
+     "expect": {
+      "err": 1
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

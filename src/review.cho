@@ -1,0 +1,665 @@
+edition 7;
+
+module review;
+
+// The blind second pass over a plan's `cases` (docs/plan.md, "review"). About 1 in 80 expected values a planner model writes is wrong
+// (arithmetic it cannot do), and each makes its unit unsatisfiable. So a second model re-derives every expected value from the unit's
+// description alone, never seeing the planner's, and a program compares:
+//
+//   blind(plan)           the reviewer's questions: for each unit with `cases`, its id, signature, description and the `args` of each case.
+//                         Never an `expect`, an `examples` line or `tests`: those hold the values the reviewer must not be anchored by.
+//   apply(plan, answers)  `answers` is {"units":[{"id","answers":[{"expect": V} | {"skip": true}, ...]}]}, aligned with the cases. A case
+//                         survives iff the answer is {"expect": V} and V equals the planner's `expect`. The plan comes back with the other
+//                         cases removed (everything else as it was), a report and a code (0 usable, 1 not; then the plan is the input).
+//
+// Equality (see tests/reference/review_ref.py, which this is held to): null = null; booleans by value; integers numerically, and 1 is not
+// 1.0 (a float is another answer; two floats by value); a text is a JSON string or {"bytes": [0..255, ...]} and two texts are equal iff
+// their bytes are, so {"bytes":[104,105]} equals "hi" and {"bytes":[255]} equals no string; arrays element by element; objects by their
+// keys and values; and {"err": x}: equal iff both x are the same integer or neither is an integer (as cases.expand compares an error
+// payload only when it is an integer, {"err": true} and {"err": "msg"} are one answer).
+//
+// The JSON helpers below are cases.cho's (copied: its functions are private, and its API stays as it is).
+
+import std.buffer;
+import std.bytes;
+import std.json;
+
+fn byte_at[&t](t: &t [byte], i: int) -> [] int {
+    if i < 0 || i >= len(t) {
+        return 0 - 1;
+    }
+    return int_of(t[i]);
+}
+
+fn put_key_of[&h, &s, &t](heap: &!h Heap, w: json.Writer, src: &s [byte], tape: &t [int], i: int) -> [heap] json.Writer {
+    let n = json.string_length(src, tape, i);
+    let sb = box_slice(heap, n + 1, byte_of(0));
+    var out = w;
+    borrow mut sb as &!kw in {
+        let text = contents(kw);
+        json.string_into(src, tape, i, text);
+        out = json.put_key(heap, out, text[0..n]);
+    }
+    unbox_slice(heap, sb);
+    return out;
+}
+
+fn put_string_of[&h, &s, &t](heap: &!h Heap, w: json.Writer, src: &s [byte], tape: &t [int], i: int) -> [heap] json.Writer {
+    let n = json.string_length(src, tape, i);
+    let sb = box_slice(heap, n + 1, byte_of(0));
+    var out = w;
+    borrow mut sb as &!kw in {
+        let text = contents(kw);
+        json.string_into(src, tape, i, text);
+        out = json.put_string(heap, out, text[0..n]);
+    }
+    unbox_slice(heap, sb);
+    return out;
+}
+
+// The value at node `i`, as it was.
+fn copy_value[&h, &s, &t](heap: &!h Heap, w: json.Writer, src: &s [byte], tape: &t [int], i: int) -> [heap] json.Writer {
+    var out = w;
+    if json.is_null(tape, i) {
+        return json.put_null(heap, out);
+    }
+    if json.is_bool(tape, i) {
+        return json.put_bool(heap, out, json.to_bool(tape, i));
+    }
+    if json.is_number(tape, i) {
+        return json.put_fragment(heap, out, src[tape[3 * i + 1]..tape[3 * i + 2]]);
+    }
+    if json.is_string(tape, i) {
+        return put_string_of(heap, out, src, tape, i);
+    }
+    if json.is_array(tape, i) {
+        out = json.begin_array(heap, out);
+        var j = i + 1;
+        var left = json.count(tape, i);
+        while left > 0 {
+            out = copy_value(heap, out, src, tape, j);
+            j = json.skip(tape, j);
+            left = left - 1;
+        }
+        return json.end_array(heap, out);
+    }
+    out = json.begin_object(heap, out);
+    var j = i + 1;
+    var left = json.count(tape, i);
+    while left > 0 {
+        out = put_key_of(heap, out, src, tape, j);
+        out = copy_value(heap, out, src, tape, j + 1);
+        j = json.skip(tape, j + 1);
+        left = left - 1;
+    }
+    return json.end_object(heap, out);
+}
+
+// The deepest nesting of arrays and objects in the document (the writer takes 60).
+fn tape_depth[&h, &t](heap: &!h Heap, tape: &t [int], nodes: int) -> [heap] int {
+    let sb = box_slice(heap, 200, 0);
+    var deepest = 0;
+    borrow mut sb as &!sw in {
+        let stack = contents(sw);
+        var sp = 0;
+        var i = 0;
+        while i < nodes {
+            while sp > 0 && stack[sp - 1] <= i {
+                sp = sp - 1;
+            }
+            if json.is_array(tape, i) || json.is_object(tape, i) {
+                if sp + 1 > deepest {
+                    deepest = sp + 1;
+                }
+                stack[sp] = tape[3 * i + 2];
+                sp = sp + 1;
+            }
+            i = i + 1;
+        }
+    }
+    unbox_slice(heap, sb);
+    return deepest;
+}
+
+// A text value of the plan as bytes: a JSON string (its UTF-8) or {"bytes": [0..255, ...]}. The bytes in a box of n + 1, the count n and a
+// status: 0, 1 not a text, 4 a "bytes" list that is not a list of integers 0 to 255.
+fn fetch_text[&h, &s, &t](heap: &!h Heap, src: &s [byte], tape: &t [int], node: int) -> [heap] (Box[[byte]], int, int) {
+    if json.is_string(tape, node) {
+        let n = json.string_length(src, tape, node);
+        let b = box_slice(heap, n + 1, byte_of(0));
+        borrow mut b as &!w in {
+            json.string_into(src, tape, node, contents(w));
+        }
+        return (b, n, 0);
+    }
+    if json.is_object(tape, node) && json.count(tape, node) == 1 && json.get(src, tape, node, "bytes") >= 0 {
+        let bn = json.get(src, tape, node, "bytes");
+        if !json.is_array(tape, bn) {
+            return (box_slice(heap, 1, byte_of(0)), 0, 4);
+        }
+        let cnt = json.count(tape, bn);
+        let b = box_slice(heap, cnt + 1, byte_of(0));
+        var st = 0;
+        borrow mut b as &!w in {
+            let text = contents(w);
+            var j = bn + 1;
+            var i = 0;
+            while i < cnt {
+                if json.is_int(tape, j) && json.fits_int(src, tape, j) && json.to_int(src, tape, j) >= 0 && json.to_int(src, tape, j) <= 255 {
+                    text[i] = byte_of(json.to_int(src, tape, j));
+                } else {
+                    st = 4;
+                }
+                j = json.skip(tape, j);
+                i = i + 1;
+            }
+        }
+        return (b, cnt, st);
+    }
+    return (box_slice(heap, 1, byte_of(0)), 0, 1);
+}
+
+// ---- reading ---------------------------------------------------------------------
+
+// A unit that is an object with a non-empty `cases` list.
+fn reviewable[&s, &t](src: &s [byte], tape: &t [int], un: int) -> [] bool {
+    if !json.is_object(tape, un) {
+        return false;
+    }
+    let cn = json.get(src, tape, un, "cases");
+    return json.is_array(tape, cn) && json.count(tape, cn) > 0;
+}
+
+// The id of the unit as bytes in a box of n + 1 ("-" when it has none).
+fn fetch_id[&h, &s, &t](heap: &!h Heap, src: &s [byte], tape: &t [int], idn: int) -> [heap] (Box[[byte]], int) {
+    if json.is_string(tape, idn) {
+        let n = json.string_length(src, tape, idn);
+        let b = box_slice(heap, n + 1, byte_of(0));
+        borrow mut b as &!w in {
+            json.string_into(src, tape, idn, contents(w));
+        }
+        return (b, n);
+    }
+    let b = box_slice(heap, 2, byte_of(45));
+    return (b, 1);
+}
+
+fn compact[&h, &s, &t](heap: &!h Heap, src: &s [byte], tape: &t [int], node: int) -> [heap] buffer.Buffer {
+    var w = json.writer(heap, 64);
+    w = copy_value(heap, w, src, tape, node);
+    return json.finish(w);
+}
+
+// ---- the questions ---------------------------------------------------------------------
+
+fn put_question[&h, &s, &t](heap: &!h Heap, w: json.Writer, src: &s [byte], tape: &t [int], un: int) -> [heap] json.Writer {
+    var out = json.begin_object(heap, w);
+    let idn = json.get(src, tape, un, "id");
+    if idn >= 0 {
+        out = json.put_key(heap, out, "id");
+        out = copy_value(heap, out, src, tape, idn);
+    }
+    let sn = json.get(src, tape, un, "signature");
+    if sn >= 0 {
+        out = json.put_key(heap, out, "signature");
+        out = copy_value(heap, out, src, tape, sn);
+    }
+    let dn = json.get(src, tape, un, "description");
+    if dn >= 0 {
+        out = json.put_key(heap, out, "description");
+        out = copy_value(heap, out, src, tape, dn);
+    }
+    out = json.put_key(heap, out, "cases");
+    out = json.begin_array(heap, out);
+    let cn = json.get(src, tape, un, "cases");
+    var c = cn + 1;
+    var left = json.count(tape, cn);
+    while left > 0 {
+        out = json.begin_object(heap, out);
+        let a = json.get(src, tape, c, "args");
+        if a >= 0 {
+            out = json.put_key(heap, out, "args");
+            out = copy_value(heap, out, src, tape, a);
+        }
+        out = json.end_object(heap, out);
+        c = json.skip(tape, c);
+        left = left - 1;
+    }
+    out = json.end_array(heap, out);
+    return json.end_object(heap, out);
+}
+
+// The questions for the reviewer: `{"units":[{"id","signature","description","cases":[{"args":[...]}]}]}`, for every unit with a
+// non-empty `cases`, in plan order. A plan that is not JSON, has no `units` list or is nested more than 55 levels gives `{"units":[]}`.
+pub fn blind[&h, &s](heap: &!h Heap, plan: &s [byte]) -> [heap] buffer.Buffer {
+    var w = json.writer(heap, len(plan) + 64);
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "units");
+    w = json.begin_array(heap, w);
+    let tb = box_slice(heap, json.tape_len(plan) + 3, 0);
+    borrow mut tb as &!tw in {
+        let tape = contents(tw);
+        let nodes = json.parse(plan, tape);
+        if nodes >= 0 {
+            let units = json.get(plan, tape, 0, "units");
+            if json.is_object(tape, 0) && json.is_array(tape, units) && tape_depth(heap, tape, nodes) <= 55 {
+                var u = units + 1;
+                var left = json.count(tape, units);
+                while left > 0 {
+                    if reviewable(plan, tape, u) {
+                        w = put_question(heap, w, plan, tape, u);
+                    }
+                    u = json.skip(tape, u);
+                    left = left - 1;
+                }
+            }
+        }
+    }
+    unbox_slice(heap, tb);
+    w = json.end_array(heap, w);
+    w = json.end_object(heap, w);
+    return json.finish(w);
+}
+
+// ---- equality --------------------------------------------------------------------------
+
+fn num_text[&s, &t](src: &s [byte], tape: &t [int], i: int) -> [] &s [byte] {
+    return src[tape[3 * i + 1]..tape[3 * i + 2]];
+}
+
+// Two numbers: an integer is never a float; integers by value (by their text when neither fits an int); floats by value.
+fn num_eq[&s, &t, &u, &v](asrc: &s [byte], ta: &t [int], an: int, bsrc: &u [byte], tb: &v [int], bn: int) -> [] bool {
+    let ai = json.is_int(ta, an);
+    if ai != json.is_int(tb, bn) {
+        return false;
+    }
+    if !ai {
+        return json.to_float(asrc, ta, an) == json.to_float(bsrc, tb, bn);
+    }
+    let fa = json.fits_int(asrc, ta, an);
+    let fb = json.fits_int(bsrc, tb, bn);
+    if fa && fb {
+        return json.to_int(asrc, ta, an) == json.to_int(bsrc, tb, bn);
+    }
+    if !fa && !fb {
+        return bytes.equal(num_text(asrc, ta, an), num_text(bsrc, tb, bn));
+    }
+    return false;
+}
+
+// Are the values at `an` (in `asrc`) and `bn` (in `bsrc`) one answer?
+fn veq[&h, &s, &t, &u, &v](heap: &!h Heap, asrc: &s [byte], ta: &t [int], an: int, bsrc: &u [byte], tb: &v [int], bn: int) -> [heap] bool {
+    let (xa, na, sa) = fetch_text(heap, asrc, ta, an);
+    let (xb, nb, sb) = fetch_text(heap, bsrc, tb, bn);
+    var result = false;
+    if sa == 0 || sb == 0 {
+        if sa == 0 && sb == 0 {
+            borrow xa as &ra in {
+                borrow xb as &rb in {
+                    result = bytes.equal(contents(ra)[0..na], contents(rb)[0..nb]);
+                }
+            }
+        }
+        unbox_slice(heap, xa);
+        unbox_slice(heap, xb);
+        return result;
+    }
+    unbox_slice(heap, xa);
+    unbox_slice(heap, xb);
+    if json.is_null(ta, an) || json.is_null(tb, bn) {
+        return json.is_null(ta, an) && json.is_null(tb, bn);
+    }
+    if json.is_bool(ta, an) || json.is_bool(tb, bn) {
+        return json.is_bool(ta, an) && json.is_bool(tb, bn) && json.to_bool(ta, an) == json.to_bool(tb, bn);
+    }
+    if json.is_number(ta, an) || json.is_number(tb, bn) {
+        return json.is_number(ta, an) && json.is_number(tb, bn) && num_eq(asrc, ta, an, bsrc, tb, bn);
+    }
+    if json.is_array(ta, an) || json.is_array(tb, bn) {
+        if !(json.is_array(ta, an) && json.is_array(tb, bn)) || json.count(ta, an) != json.count(tb, bn) {
+            return false;
+        }
+        var i = an + 1;
+        var j = bn + 1;
+        var left = json.count(ta, an);
+        var same = true;
+        while left > 0 && same {
+            same = veq(heap, asrc, ta, i, bsrc, tb, j);
+            i = json.skip(ta, i);
+            j = json.skip(tb, j);
+            left = left - 1;
+        }
+        return same;
+    }
+    // objects
+    if !(json.is_object(ta, an) && json.is_object(tb, bn)) || json.count(ta, an) != json.count(tb, bn) {
+        return false;
+    }
+    if json.count(ta, an) == 1 {
+        let ea = json.get(asrc, ta, an, "err");
+        let eb = json.get(bsrc, tb, bn, "err");
+        if ea >= 0 && eb >= 0 {
+            if json.is_int(ta, ea) || json.is_int(tb, eb) {
+                return json.is_int(ta, ea) && json.is_int(tb, eb) && num_eq(asrc, ta, ea, bsrc, tb, eb);
+            }
+            return true;
+        }
+    }
+    var k = an + 1;
+    var left = json.count(ta, an);
+    var same = true;
+    while left > 0 && same {
+        let (kb, kn, ks) = fetch_text(heap, asrc, ta, k);
+        var other = 0 - 1;
+        borrow kb as &kr in {
+            other = json.get(bsrc, tb, bn, contents(kr)[0..kn]);
+        }
+        unbox_slice(heap, kb);
+        if other < 0 {
+            same = false;
+        } else {
+            same = veq(heap, asrc, ta, k + 1, bsrc, tb, other);
+        }
+        k = json.skip(ta, k + 1);
+        left = left - 1;
+    }
+    return same;
+}
+
+// ---- applying the answers ----------------------------------------------------------------
+
+fn line_head[&h, &w](heap: &!h Heap, rep: buffer.Buffer, tag: &static [byte], who: &w [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, rep, tag);
+    b = buffer.append(heap, b, "\t");
+    return buffer.append(heap, b, who);
+}
+
+fn put_error[&h, &w, &m](heap: &!h Heap, rep: buffer.Buffer, who: &w [byte], msg: &m [byte]) -> [heap] buffer.Buffer {
+    var b = line_head(heap, rep, "[REVIEW_ERROR]", who);
+    b = buffer.append(heap, b, "\t-\t");
+    b = buffer.append(heap, b, msg);
+    return buffer.push(heap, b, byte_of(10));
+}
+
+// The answer unit with the id `who`, or -1.
+fn find_answers[&s, &t, &w](asrc: &s [byte], ta: &t [int], aunits: int, who: &w [byte]) -> [] int {
+    var u = aunits + 1;
+    var left = json.count(ta, aunits);
+    var found = 0 - 1;
+    while left > 0 && found < 0 {
+        if json.is_object(ta, u) {
+            let idn = json.get(asrc, ta, u, "id");
+            if json.is_string(ta, idn) && json.string_equals(asrc, ta, idn, who) {
+                found = u;
+            }
+        }
+        u = json.skip(ta, u);
+        left = left - 1;
+    }
+    return found;
+}
+
+// Is the answer at `a` {"expect": V} or {"skip": true}?
+fn answer_ok[&s, &t](asrc: &s [byte], ta: &t [int], a: int) -> [] bool {
+    if !json.is_object(ta, a) || json.count(ta, a) != 1 {
+        return false;
+    }
+    if json.get(asrc, ta, a, "expect") >= 0 {
+        return true;
+    }
+    let sk = json.get(asrc, ta, a, "skip");
+    return sk >= 0 && json.is_bool(ta, sk) && json.to_bool(ta, sk);
+}
+
+// Write the unit with only the cases whose flag is 1.
+fn write_kept[&h, &s, &t, &f](heap: &!h Heap, w: json.Writer, src: &s [byte], tape: &t [int], un: int, flags: &f [int]) -> [heap] json.Writer {
+    var out = json.begin_object(heap, w);
+    var j = un + 1;
+    var left = json.count(tape, un);
+    while left > 0 {
+        if json.string_equals(src, tape, j, "cases") && json.is_array(tape, j + 1) {
+            out = json.put_key(heap, out, "cases");
+            out = json.begin_array(heap, out);
+            var c = j + 2;
+            var k = 0;
+            while k < json.count(tape, j + 1) {
+                if flags[k] == 1 {
+                    out = copy_value(heap, out, src, tape, c);
+                }
+                c = json.skip(tape, c);
+                k = k + 1;
+            }
+            out = json.end_array(heap, out);
+        } else {
+            out = put_key_of(heap, out, src, tape, j);
+            out = copy_value(heap, out, src, tape, j + 1);
+        }
+        j = json.skip(tape, j + 1);
+        left = left - 1;
+    }
+    return json.end_object(heap, out);
+}
+
+// One unit: (writer, report, 1 when it has a problem, cases kept, cases reviewed).
+fn review_unit[&h, &s, &t, &a, &u](heap: &!h Heap, w: json.Writer, rep: buffer.Buffer, src: &s [byte], tp: &t [int], un: int, asrc: &a [byte], ta: &u [int], aunits: int) -> [heap] (json.Writer, buffer.Buffer, int, int, int) {
+    if !reviewable(src, tp, un) {
+        return (copy_value(heap, w, src, tp, un), rep, 0, 0, 0);
+    }
+    let idn = json.get(src, tp, un, "id");
+    let (whob, wl) = fetch_id(heap, src, tp, idn);
+    let cn = json.get(src, tp, un, "cases");
+    let nc = json.count(tp, cn);
+    let flags = box_slice(heap, nc + 1, 0);
+    var out = w;
+    var r = rep;
+    var problem = 0;
+    var kept = 0;
+    var total = 0;
+    borrow mut whob as &!ww in {
+        let who = contents(ww)[0..wl];
+        borrow mut flags as &!fw in {
+            let fl = contents(fw);
+            var au = 0 - 1;
+            if json.is_string(tp, idn) {
+                au = find_answers(asrc, ta, aunits, who);
+            }
+            var al = 0 - 1;
+            if au >= 0 {
+                al = json.get(asrc, ta, au, "answers");
+            }
+            if au < 0 {
+                r = put_error(heap, r, who, "the reviewer gave no answers for this unit");
+                problem = 1;
+            } else if !json.is_array(ta, al) || json.count(ta, al) != nc {
+                var m = buffer.append(heap, buffer.empty(heap, 64), "the reviewer gave ");
+                if json.is_array(ta, al) {
+                    m = buffer.push_nat(heap, m, json.count(ta, al));
+                } else {
+                    m = buffer.push_nat(heap, m, 0);
+                }
+                m = buffer.append(heap, m, " answers for ");
+                m = buffer.push_nat(heap, m, nc);
+                m = buffer.append(heap, m, " cases");
+                borrow m as &mr in {
+                    r = put_error(heap, r, who, buffer.bytes(mr));
+                }
+                buffer.drop(heap, m);
+                problem = 1;
+            } else {
+                var a = al + 1;
+                var k = 1;
+                while k <= nc {
+                    if !answer_ok(asrc, ta, a) {
+                        var m = buffer.append(heap, buffer.empty(heap, 64), "answer ");
+                        m = buffer.push_nat(heap, m, k);
+                        m = buffer.append(heap, m, " is neither {\"expect\": ...} nor {\"skip\": true}");
+                        borrow m as &mr in {
+                            r = put_error(heap, r, who, buffer.bytes(mr));
+                        }
+                        buffer.drop(heap, m);
+                        problem = 1;
+                    }
+                    a = json.skip(ta, a);
+                    k = k + 1;
+                }
+            }
+            if problem == 0 {
+                var c = cn + 1;
+                var a = al + 1;
+                var k = 1;
+                while k <= nc {
+                    let pe = json.get(src, tp, c, "expect");
+                    let re = json.get(asrc, ta, a, "expect");
+                    var keep = false;
+                    if re >= 0 {
+                        if pe >= 0 {
+                            keep = veq(heap, src, tp, pe, asrc, ta, re);
+                        } else {
+                            keep = json.is_null(ta, re);
+                        }
+                    }
+                    if keep {
+                        fl[k - 1] = 1;
+                        kept = kept + 1;
+                    } else {
+                        fl[k - 1] = 0;
+                        r = line_head(heap, r, "[REVIEW_DROPPED]", who);
+                        r = buffer.push(heap, r, byte_of(9));
+                        r = buffer.push_nat(heap, r, k);
+                        r = buffer.append(heap, r, "\tplanner ");
+                        if pe >= 0 {
+                            let pc = compact(heap, src, tp, pe);
+                            borrow pc as &pr in {
+                                r = buffer.append(heap, r, buffer.bytes(pr));
+                            }
+                            buffer.drop(heap, pc);
+                        } else {
+                            r = buffer.append(heap, r, "null");
+                        }
+                        r = buffer.append(heap, r, " reviewer ");
+                        if re >= 0 {
+                            let rc = compact(heap, asrc, ta, re);
+                            borrow rc as &rr in {
+                                r = buffer.append(heap, r, buffer.bytes(rr));
+                            }
+                            buffer.drop(heap, rc);
+                        } else {
+                            r = buffer.append(heap, r, "skip");
+                        }
+                        r = buffer.push(heap, r, byte_of(10));
+                    }
+                    c = json.skip(tp, c);
+                    a = json.skip(ta, a);
+                    k = k + 1;
+                }
+                total = nc;
+                let tn = json.get(src, tp, un, "tests");
+                if kept == 0 && !(json.is_array(tp, tn) && json.count(tp, tn) > 0) {
+                    var m = buffer.append(heap, buffer.empty(heap, 96), "the reviewer agreed with none of the ");
+                    m = buffer.push_nat(heap, m, nc);
+                    m = buffer.append(heap, m, " cases: the description may be unclear or the cases wrong");
+                    borrow m as &mr in {
+                        r = put_error(heap, r, who, buffer.bytes(mr));
+                    }
+                    buffer.drop(heap, m);
+                    problem = 1;
+                }
+                out = write_kept(heap, out, src, tp, un, fl);
+            } else {
+                out = copy_value(heap, out, src, tp, un);
+            }
+        }
+    }
+    unbox_slice(heap, flags);
+    unbox_slice(heap, whob);
+    return (out, r, problem, kept, total);
+}
+
+fn apply_units[&h, &s, &t, &a, &u](heap: &!h Heap, rep: buffer.Buffer, src: &s [byte], tp: &t [int], units: int, asrc: &a [byte], ta: &u [int], aunits: int) -> [heap] (buffer.Buffer, buffer.Buffer, int) {
+    var r = rep;
+    var w = json.writer(heap, len(src) + 64);
+    w = json.begin_object(heap, w);
+    var errors = 0;
+    var kept = 0;
+    var total = 0;
+    var j = 1;
+    var left = json.count(tp, 0);
+    while left > 0 {
+        w = put_key_of(heap, w, src, tp, j);
+        if j + 1 == units {
+            w = json.begin_array(heap, w);
+            var un = units + 1;
+            var m = json.count(tp, units);
+            while m > 0 {
+                let (nw, nr, bad, k, n) = review_unit(heap, w, r, src, tp, un, asrc, ta, aunits);
+                w = nw;
+                r = nr;
+                errors = errors + bad;
+                kept = kept + k;
+                total = total + n;
+                un = json.skip(tp, un);
+                m = m - 1;
+            }
+            w = json.end_array(heap, w);
+        } else {
+            w = copy_value(heap, w, src, tp, j + 1);
+        }
+        j = json.skip(tp, j + 1);
+        left = left - 1;
+    }
+    w = json.end_object(heap, w);
+    r = buffer.append(heap, r, "[REVIEW]\tkept ");
+    r = buffer.push_nat(heap, r, kept);
+    r = buffer.append(heap, r, " of ");
+    r = buffer.push_nat(heap, r, total);
+    r = buffer.append(heap, r, " cases\n");
+    return (json.finish(w), r, errors);
+}
+
+// Apply the reviewer's `answers` to `plan`: the plan without the cases the reviewer did not confirm, the report (a `[REVIEW_DROPPED]` line
+// for each dropped case, `[REVIEW_ERROR]` lines for each problem, `[REVIEW]<TAB>kept K of N cases` last) and the code: 0 when the plan is
+// usable, 1 when not, and then the plan is the input as it was.
+pub fn apply[&h, &s, &a](heap: &!h Heap, plan: &s [byte], answers: &a [byte]) -> [heap] (buffer.Buffer, buffer.Buffer, int) {
+    var rep = buffer.empty(heap, 256);
+    var out = buffer.empty(heap, 16);
+    var code = 0;
+    let tpb = box_slice(heap, json.tape_len(plan) + 3, 0);
+    let tab = box_slice(heap, json.tape_len(answers) + 3, 0);
+    borrow mut tpb as &!pw in {
+        borrow mut tab as &!aw in {
+            let tp = contents(pw);
+            let ta = contents(aw);
+            let np = json.parse(plan, tp);
+            let units = json.get(plan, tp, 0, "units");
+            let planok = np >= 0 && json.is_object(tp, 0) && json.is_array(tp, units) && tape_depth(heap, tp, np) <= 55;
+            if !planok {
+                rep = put_error(heap, rep, "-", "the plan is not a JSON object with a units list");
+                out = buffer.append(heap, out, plan);
+                code = 1;
+            } else {
+                let na = json.parse(answers, ta);
+                let aunits = json.get(answers, ta, 0, "units");
+                let ansok = na >= 0 && json.is_object(ta, 0) && json.is_array(ta, aunits) && tape_depth(heap, ta, na) <= 55;
+                if !ansok {
+                    rep = put_error(heap, rep, "-", "the answers are not a JSON object with a \"units\" list");
+                    out = buffer.append(heap, out, plan);
+                    code = 1;
+                } else {
+                    let (np2, r2, errors) = apply_units(heap, rep, plan, tp, units, answers, ta, aunits);
+                    rep = r2;
+                    if errors > 0 {
+                        buffer.drop(heap, np2);
+                        out = buffer.append(heap, out, plan);
+                        code = 1;
+                    } else {
+                        buffer.drop(heap, out);
+                        out = np2;
+                    }
+                }
+            }
+        }
+    }
+    unbox_slice(heap, tab);
+    unbox_slice(heap, tpb);
+    return (out, rep, code);
+}

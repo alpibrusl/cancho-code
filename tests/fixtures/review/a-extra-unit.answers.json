@@ -1,0 +1,48 @@
+{
+ "units": [
+  {
+   "id": "add",
+   "answers": [
+    {
+     "expect": 3
+    },
+    {
+     "expect": 10
+    },
+    {
+     "expect": 0
+    },
+    {
+     "expect": 0
+    }
+   ]
+  },
+  {
+   "id": "txt",
+   "answers": [
+    {
+     "expect": {
+      "ok": 2
+     }
+    },
+    {
+     "expect": {
+      "err": 1
+     }
+    }
+   ]
+  },
+  {
+   "id": "ghost",
+   "answers": [
+    {
+     "expect": 1
+    }
+   ]
+  },
+  {
+   "id": "noc",
+   "answers": []
+  }
+ ]
+}

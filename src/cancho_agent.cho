@@ -39,6 +39,8 @@ edition 7;
 //                   are required; --contract <file> (exact signatures) and --rounds N (3) are optional. The plan check
 //                   (src/plan.cho, in process) decides: a rejected plan is fed back with its report; {"status": "unclear" |
 //                   "too_big"} exits 3 and is saved as <out>.questions.json; nothing is written unless the check passes.
+//   --review        off | on (off): after a plan passes the check, a SECOND call re-derives every case's expected value blind (from the
+//                   description only) and a case survives only if the reviewer agrees (src/review.cho); needs --review-guide <file>
 //   --usage-log     a file that gets one JSON line per API call: tokens in, out,
 //                   cache write, cache read, stop reason, outcome, sizes, ms (none)
 //
@@ -53,6 +55,7 @@ import plan;
 import planprompt;
 import prompt;
 import provider;
+import review;
 import reply;
 import std.buffer;
 import std.bytes;
@@ -217,6 +220,154 @@ fn task_head[&t](task: &t [byte]) -> [] &t [byte] {
     return task[a..b];
 }
 
+// The blind review of a plan that has passed the check (docs/review-guide.md): the reviewer is shown the questions (signatures, descriptions, the
+// arguments of each case, never an expected value) and re-derives the results; `review.apply` keeps the cases it agrees with. Up to two tries to get a
+// usable answer. Answers (0, the plan as expanded again after the drops), (1, the report: the review refused the plan: a unit lost all its cases) or
+// (2, empty: no usable review, the plan stands unreviewed).
+fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, &r9, &r10, &r11, &r12, &r13](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, host: &r1 [byte], ip: &r2 [byte], port: int, secure: bool, path: &r3 [byte], headers: &r4 [byte], roots: &r5 [byte], entropy: &!e [byte], local: bool, model: &r7 [byte], num_ctx: int, max_tokens: int, thinking: &r8 [byte], effort: &r9 [byte], obj: &r10 [byte], rguide: &r11 [byte], usage_path: &r6 [byte], provider_label: &static [byte], task: &r12 [byte], attempt: int) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write] (int, buffer.Buffer) {
+    let questions = review.blind(heap, obj);
+    var verdict = 2;
+    var result = buffer.empty(heap, 16);
+    var has_cases = false;
+    borrow questions as &qr in {
+        has_cases = bytes.find(buffer.bytes(qr), "\"cases\"") >= 0;
+    }
+    if has_cases == false {
+        buffer.drop(heap, questions);
+        return (2, result);
+    }
+    var prompt_text = buffer.append(heap, buffer.empty(heap, 4096), rguide);
+    prompt_text = buffer.append(heap, prompt_text, "\n\n=== THE PLAN TO VERIFY ===\n");
+    borrow questions as &qr2 in {
+        prompt_text = buffer.append(heap, prompt_text, buffer.bytes(qr2));
+    }
+    prompt_text = buffer.append(heap, prompt_text, "\n\nReply with the JSON object only.\n");
+    buffer.drop(heap, questions);
+    var body = buffer.empty(heap, 16);
+    buffer.drop(heap, body);
+    borrow prompt_text as &pr in {
+        if local {
+            body = ollama.request_body(heap, model, num_ctx, max_tokens, "", buffer.bytes(pr));
+        } else {
+            body = anthropic.request_body(heap, model, max_tokens, "", buffer.bytes(pr), thinking, effort);
+        }
+    }
+    buffer.drop(heap, prompt_text);
+    var tries = 0;
+    var settled = false;
+    while tries < 2 && settled == false {
+        tries = tries + 1;
+        let t0 = clock_ms(clock);
+        var text = buffer.empty(heap, 16);
+        var cut = false;
+        var tin = 0;
+        var tout = 0;
+        var tcw = 0;
+        var tcr = 0;
+        var status = 0;
+        borrow body as &br in {
+            match provider.exchange(heap, net, clock, io, host, port, secure, path, headers, buffer.bytes(br), roots, ip, entropy, 33554432, 1800000) {
+                provider.Answered::Failed(tag) => {
+                    status = 0;
+                }
+                provider.Answered::Ok(st, out) => {
+                    status = st;
+                    borrow out as &or in {
+                        if st == 200 {
+                            buffer.drop(heap, text);
+                            if local {
+                                text = reply.generated_text(heap, buffer.bytes(or));
+                                cut = reply.done_reason_is(heap, buffer.bytes(or), "length");
+                                tin = reply.top_count(heap, buffer.bytes(or), "prompt_eval_count");
+                                tout = reply.top_count(heap, buffer.bytes(or), "eval_count");
+                            } else {
+                                text = reply.text(heap, buffer.bytes(or));
+                                cut = reply.stop_reason_is(heap, buffer.bytes(or), "max_tokens");
+                                tin = reply.usage_count(heap, buffer.bytes(or), "input_tokens");
+                                tout = reply.usage_count(heap, buffer.bytes(or), "output_tokens");
+                                tcw = reply.usage_count(heap, buffer.bytes(or), "cache_creation_input_tokens");
+                                tcr = reply.usage_count(heap, buffer.bytes(or), "cache_read_input_tokens");
+                            }
+                        }
+                    }
+                    buffer.drop(heap, out);
+                }
+            }
+        }
+        var outcome = "review_failed";
+        borrow text as &xr in {
+            let (ja, jz) = reply.json_span(heap, buffer.bytes(xr));
+            if status == 200 && cut == false && ja >= 0 {
+                let answers = buffer.bytes(xr)[ja..jz];
+                let (filtered, rrep, rcode) = review.apply(heap, obj, answers);
+                if rcode != 0 {
+                    // the reviewer agreed with none of a unit's cases, or answered malformed: the planner is told
+                    buffer.drop(heap, result);
+                    result = rrep;
+                    buffer.drop(heap, filtered);
+                    verdict = 1;
+                    outcome = "review_rejected";
+                    settled = true;
+                } else {
+                    borrow rrep as &rp in {
+                        if len(buffer.bytes(rp)) > 0 {
+                            io.error_all(io, "cancho-agent: review:\n");
+                            io.error_all(io, buffer.bytes(rp));
+                        }
+                    }
+                    buffer.drop(heap, rrep);
+                    borrow filtered as &fr in {
+                        let (expanded, creport, ccode) = cases.expand(heap, buffer.bytes(fr));
+                        if ccode == 0 {
+                            borrow expanded as &er in {
+                                let (prep, pcode) = plan.check(heap, buffer.bytes(er));
+                                if pcode == 0 {
+                                    buffer.drop(heap, result);
+                                    result = buffer.append(heap, buffer.empty(heap, len(buffer.bytes(er)) + 2), buffer.bytes(er));
+                                    verdict = 0;
+                                    outcome = "reviewed";
+                                    settled = true;
+                                } else {
+                                    buffer.drop(heap, result);
+                                    borrow prep as &pq in {
+                                        result = buffer.append(heap, buffer.empty(heap, 256), buffer.bytes(pq));
+                                    }
+                                    verdict = 1;
+                                    outcome = "review_rejected";
+                                    settled = true;
+                                }
+                                buffer.drop(heap, prep);
+                            }
+                        } else {
+                            buffer.drop(heap, result);
+                            borrow creport as &cq in {
+                                result = buffer.append(heap, buffer.empty(heap, 256), buffer.bytes(cq));
+                            }
+                            verdict = 1;
+                            outcome = "review_rejected";
+                            settled = true;
+                        }
+                        buffer.drop(heap, expanded);
+                        buffer.drop(heap, creport);
+                    }
+                    buffer.drop(heap, filtered);
+                }
+            }
+        }
+        var tlen = 0;
+        borrow text as &tq in {
+            tlen = len(buffer.bytes(tq));
+        }
+        log_call(heap, fs, usage_path, provider_label, model, task, attempt, tin, tout, tcw, tcr, "", outcome, status, tlen, 0, clock_ms(clock) - t0);
+        buffer.drop(heap, text);
+    }
+    buffer.drop(heap, body);
+    if settled == false {
+        io.error_all(io, "cancho-agent: the review gave no usable answer; the plan stands unreviewed\n");
+    }
+    return (verdict, result);
+}
+
 // ---- the work ------------------------------------------------------------
 
 fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, args: &g Args) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write, args] int {
@@ -371,6 +522,27 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
         buffer.drop(heap, task_path);
         buffer.drop(heap, feedback_path);
     }
+    let review_on = bytes.equal(opt(args, "--review"), "on");
+    var rguide = buffer.empty(heap, 16);
+    var rguide_ok = true;
+    if review_on {
+        if plan_mode == false || len(opt(args, "--review-guide")) == 0 {
+            say(io, "--review on needs --mode plan and --review-guide (how to verify cases)");
+            buffer.drop(heap, rguide);
+            buffer.drop(heap, guide);
+            buffer.drop(heap, key_raw);
+            buffer.drop(heap, roots);
+            buffer.drop(heap, primer);
+            buffer.drop(heap, source);
+            buffer.drop(heap, task);
+            buffer.drop(heap, feedback);
+            return 2;
+        }
+        buffer.drop(heap, rguide);
+        let (rg, rgok) = slurp(heap, fs, opt(args, "--review-guide"), 1048576);
+        rguide = rg;
+        rguide_ok = rgok;
+    }
     var rounds = 3;
     if len(opt(args, "--rounds")) > 0 {
         rounds = number(opt(args, "--rounds"));
@@ -383,9 +555,9 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
             key_present = len(trimmed_key(buffer.bytes(kq))) > 0;
         }
     }
-    if key_ok && key_present && roots_ok && primer_ok && source_ok && guide_ok {
+    if key_ok && key_present && roots_ok && primer_ok && source_ok && guide_ok && rguide_ok {
         // consumed: it drops all six
-        return ask_and_write(heap, fs, net, clock, io, args, project, model, host, ip, port, secure, local, num_ctx, max_tokens, thinking, effort, plan_mode, rounds, key_raw, roots, primer, guide, source, task, feedback);
+        return ask_and_write(heap, fs, net, clock, io, args, project, model, host, ip, port, secure, local, num_ctx, max_tokens, thinking, effort, plan_mode, rounds, review_on, key_raw, roots, primer, guide, rguide, source, task, feedback);
     }
     if key_ok == false {
         say(io, "cannot read --key-file");
@@ -403,6 +575,7 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
         say(io, "cannot read the project file");
     }
     buffer.drop(heap, guide);
+    buffer.drop(heap, rguide);
     buffer.drop(heap, key_raw);
     buffer.drop(heap, roots);
     buffer.drop(heap, primer);
@@ -436,7 +609,7 @@ fn make_body[&h, &m, &y, &s, &p, &g, &r, &k, &f](heap: &!h Heap, local: bool, pl
 
 // Up to `rounds` samples: a reply without a program, or cut off, is retried and
 // never written over the project.
-fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, args: &g Args, project: &p [byte], model: &m [byte], host: &o [byte], ip: &q [byte], port: int, secure: bool, local: bool, num_ctx: int, max_tokens: int, thinking: &y [byte], effort: &s [byte], plan_mode: bool, rounds: int, key_raw: buffer.Buffer, roots: buffer.Buffer, primer: buffer.Buffer, guide: buffer.Buffer, source: buffer.Buffer, task: buffer.Buffer, feedback0: buffer.Buffer) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write, args] int {
+fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, args: &g Args, project: &p [byte], model: &m [byte], host: &o [byte], ip: &q [byte], port: int, secure: bool, local: bool, num_ctx: int, max_tokens: int, thinking: &y [byte], effort: &s [byte], plan_mode: bool, rounds: int, review_on: bool, key_raw: buffer.Buffer, roots: buffer.Buffer, primer: buffer.Buffer, guide: buffer.Buffer, rguide: buffer.Buffer, source: buffer.Buffer, task: buffer.Buffer, feedback0: buffer.Buffer) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write, args] int {
     var feedback = feedback0;
     let workspace = opt(args, "--workspace");
     let raw_path = opt(args, "--save-raw");
@@ -627,6 +800,24 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                             borrow task as &lt in {
                                                 log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, tin, tout, tcw, tcr, pstop, po, status, len(buffer.bytes(xr)), jlen, clock_ms(clock) - t0);
                                             }
+                                            if accepted && review_on {
+                                                // the blind second pass: the cases the reviewer cannot re-derive are dropped
+                                                borrow rguide as &rgr in {
+                                                    borrow task as &lt2 in {
+                                                        let (rv, rres) = review_phase(heap, fs, net, clock, io, host, ip, port, secure, path, buffer.bytes(hr), buffer.bytes(rr), contents(ew), local, model, num_ctx, max_tokens, thinking, effort, buffer.bytes(xr)[ja..jz], buffer.bytes(rgr), usage_path, provider_label, task_head(buffer.bytes(lt2)), attempt);
+                                                        if rv == 0 {
+                                                            buffer.drop(heap, final_plan);
+                                                            final_plan = rres;
+                                                        } else if rv == 1 {
+                                                            accepted = false;
+                                                            buffer.drop(heap, report);
+                                                            report = rres;
+                                                        } else {
+                                                            buffer.drop(heap, rres);
+                                                        }
+                                                    }
+                                                }
+                                            }
                                             if cut {
                                                 io.error_all(io, "cancho-agent: a sample was cut off by the bound (--max-tokens / --num-predict)\n");
                                                 buffer.drop(heap, feedback);
@@ -767,6 +958,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
     buffer.drop(heap, roots);
     buffer.drop(heap, primer);
     buffer.drop(heap, guide);
+    buffer.drop(heap, rguide);
     buffer.drop(heap, source);
     buffer.drop(heap, task);
     buffer.drop(heap, feedback);

@@ -1,0 +1,40 @@
+# name<TAB>exit code of apply<TAB>text the report must contain (empty for none)
+a-all-agree	0	kept 6 of 6
+a-one-disagree	0	[REVIEW_DROPPED]	add	2	planner 10 reviewer 11
+a-skip	0	planner 10 reviewer skip
+a-int-vs-float	0	planner 1 reviewer 1.0
+a-string-vs-bytes	0	kept 3 of 6
+a-err-payload	0	kept 4 of 7
+a-null-bool	0	kept 3 of 5
+a-list	0	kept 3 of 5
+a-objects	0	kept 4 of 6
+a-big-int	0	kept 3 of 5
+a-all-dropped	1	the reviewer agreed with none of the 2 cases
+a-too-few	1	gave 1 answers for 4 cases
+a-too-many	1	gave 5 answers for 4 cases
+a-answers-not-list	1	gave 0 answers for 4 cases
+a-missing-unit	1	txt	-	the reviewer gave no answers for this unit
+a-extra-unit	0	kept 6 of 6
+a-dup-id	1	the reviewer agreed with none of the 1 cases
+a-malformed	1	answer 1 is neither
+a-answers-not-json	1	the answers are not a JSON object
+a-answers-no-units	1	the answers are not a JSON object
+a-answers-units-notlist	1	the answers are not a JSON object
+a-answers-array	1	the answers are not a JSON object
+a-plan-not-json	1	the plan is not a JSON object
+a-plan-no-units	1	the plan is not a JSON object
+a-tests-only-unit	0	kept 0 of 1
+a-no-cases	0	kept 0 of 0
+a-empty-cases	0	kept 0 of 0
+a-unit-no-id	1	-	-	the reviewer gave no answers
+a-faithful	0	kept 1 of 2
+a-key-order	0	kept 1 of 2
+a-deep-plan	1	the plan is not a JSON object
+a-deep-answer	1	the answers are not a JSON object
+a-deep-expect-ok	0	kept 1 of 2
+a-case-without-expect	0	kept 2 of 2
+a-unicode-key-escape	0	kept 1 of 1
+a-report-escapes	0	reviewer "b"
+a-leak	0	kept 1 of 4
+a-mixed-errors	1	kept
+a-big	0	[REVIEW_DROPPED]	u0	2

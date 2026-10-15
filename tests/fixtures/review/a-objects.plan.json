@@ -1,0 +1,52 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "u",
+   "signature": "fn f() -> [] int",
+   "cases": [
+    {
+     "args": [],
+     "expect": {
+      "ok": 1
+     }
+    },
+    {
+     "args": [],
+     "expect": {
+      "ok": 1
+     }
+    },
+    {
+     "args": [],
+     "expect": {
+      "ok": [
+       "a"
+      ]
+     }
+    },
+    {
+     "args": [],
+     "expect": {
+      "ok": null
+     }
+    },
+    {
+     "args": [],
+     "expect": {
+      "a": 1,
+      "b": 2
+     }
+    },
+    {
+     "args": [],
+     "expect": {
+      "a": 1,
+      "b": 2
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

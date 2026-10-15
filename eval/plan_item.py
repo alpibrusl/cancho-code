@@ -39,6 +39,7 @@ def main():
     ap.add_argument("--thinking")
     ap.add_argument("--effort")
     ap.add_argument("--rounds", default="3")
+    ap.add_argument("--review", action="store_true", help="the blind second pass over the cases (docs/review-guide.md)")
     ap.add_argument("--no-contract", action="store_true", help="give the brief only (the planner must also choose the public names and shapes)")
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--label", required=True)
@@ -58,6 +59,7 @@ def main():
                "--guide", os.path.abspath(a.guide), "--brief", brief, "--rounds", a.rounds, "--max-tokens", a.max_tokens,
                "--save-raw", os.path.join(wd, "plan-raw.txt"), "--usage-log", os.path.join(wd, "plan-usage.jsonl")]
         if not a.no_contract: cmd += ["--contract", cpath]
+        if a.review: cmd += ["--review", "on", "--review-guide", os.path.join(ROOT, "docs", "review-guide.md")]
         if a.key_file: cmd += ["--key-file", os.path.expanduser(a.key_file)]
         if a.workspace: cmd += ["--workspace", a.workspace]
         if a.primer: cmd += ["--primer", os.path.abspath(a.primer)]
@@ -78,7 +80,7 @@ def main():
         units = len(json.load(open(out))["units"]) if valid else 0
         res = {"item": a.item, "run": i, "exit": p.returncode, "valid": valid, "rounds": len(rows), "units": units, "seconds": secs,
                "outcomes": [r["outcome"] for r in rows], "out_tokens": sum(r["out"] for r in rows), "cost_usd": cost,
-               "model": a.model, "contract": not a.no_contract}
+               "model": a.model, "contract": not a.no_contract, "review": a.review}
         json.dump(res, open(os.path.join(wd, "plan-result.json"), "w"), indent=1)
         print("%s plan %d: exit %d valid %s rounds %d units %d out_tok %d cost $%s %ss %s" % (a.item, i, p.returncode, valid, len(rows), units,
               res["out_tokens"], cost, secs, res["outcomes"]), flush=True)
