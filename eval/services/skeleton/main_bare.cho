@@ -1,0 +1,166 @@
+edition 7;
+
+// The service skeleton: the part of a cancho HTTP service that is the same for every service. It is `main.cho` of a service project; the project's
+// own file (`project.cho`) holds the application, and the two are compiled together (files without a `module` header share one namespace, so this
+// file calls the application's functions unqualified).
+//
+// THE APPLICATION INTERFACE (project.cho must define exactly these, with these signatures):
+//
+//     struct App { ... }                                   the service's state, any fields (a Vec, a Map, buffers, ints)
+//     fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App
+//     fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer
+//     fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int
+//
+// `config` is every command-line argument after the program name, each followed by a newline (`--tokens\ntokA:acme\n`), minus `--port N`, which the
+// skeleton consumes: the application parses the flags its brief names. `app_handle` gets one whole parsed request: `request` and `table` are what
+// `std.http` parsed (use `http.method(request, table)`, `http.path(request, table)`, `http.query(request, table)`, `http.header(...)`), `body` the
+// request body, `now_ms` the time in Unix milliseconds (`clock_unix_ms`, so a timestamp in a request can be compared with it; it is wall-clock time, not monotonic), and `out` an empty buffer to append the response to. It answers the response with
+// `server.reply(heap, out, status, body, keep)` / `server.reply_with(.., extra_headers)` / `server.failure(heap, out, status, message, keep)`
+// (module `http.server`; `keep` is `http.keeps_alive(table)`). It must answer something for EVERY request and never trap.
+//
+// What the skeleton does: `--port N` (required), listens on that port (a cancho listener binds the port on all interfaces: `bind` takes a port,
+// not an address), accepts, parses (`std.http`; a malformed request is answered 400 by the server and never reaches the application, a body that
+// cannot fit the 16 KiB input buffer is answered 413 by the server), calls `app_handle`, sends the answer.
+
+// IMPORTS: files without a `module` header share one namespace AND their imports, and importing a module twice is an error. This file therefore
+// imports, once for the whole program, what a service needs; project.cho must NOT import any of these (it uses them qualified: `buffer.`, `bytes.`,
+// `http.`, `io.`, `json.`, `option.`, `result.`, `vec.`, `map.`, `route.`, `server.`). It may import other std modules (`std.hmac`, `std.crypto`, `std.utf8`...).
+
+fn skel_number[&t](text: &t [byte]) -> [] int {
+    if len(text) == 0 || len(text) > 6 {
+        return 0 - 1;
+    }
+    var n = 0;
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if c < 48 || c > 57 {
+            return 0 - 1;
+        }
+        n = n * 10 + (c - 48);
+        i = i + 1;
+    }
+    return n;
+}
+
+fn skel_run[&h, &a, &k, &l](heap: &!h Heap, app: &!a App, clock: &k Clock, listener: &!l Listener) -> [heap, conn_accept, conn_read, conn_write, poll, clock] int {
+    match poller_new() {
+        Polling::Ok(p) => {
+            var srv = server.open(heap, p, listener, 16384, 0, 9);
+            var out = buffer.empty(heap, 4096);
+            while true {
+                srv = server.wait(heap, srv, clock, listener, 1000);
+                var more = true;
+                while more {
+                    var slot = 0 - 1;
+                    borrow mut srv as &!sw in {
+                        slot = server.next(heap, sw);
+                    }
+                    if slot < 0 {
+                        more = false;
+                    } else {
+                        borrow mut out as &!ob in {
+                            buffer.clear(ob);
+                        }
+                        borrow srv as &sr in {
+                            out = app_handle(heap, app, server.head(sr), server.parsed(sr), server.body(sr), clock_unix_ms(clock), out);
+                        }
+                        borrow mut srv as &!sw in {
+                            borrow out as &ob in {
+                                server.respond(sw, buffer.bytes(ob));
+                            }
+                        }
+                    }
+                }
+            }
+            server.close(heap, srv);
+            buffer.drop(heap, out);
+            return 0;
+        }
+        Polling::Failed(e) => {
+            return 4;
+        }
+    }
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    // A server: no files, no foreign code, no signals, no processes.
+    release(fs);
+    release(ffi);
+    release(signals);
+    release(exec);
+
+    var hh = heap;
+    var status = 2;
+    borrow mut hh as &!h in {
+        var port = 0 - 1;
+        let config = box_slice(h, 4096, byte_of(0));
+        var config_len = 0;
+        var i = 1;
+        borrow mut config as &!cw in {
+            let cfg = contents(cw);
+            borrow args as &g in {
+                while i < arg_count(g) {
+                    if bytes.equal(arg(g, i), "--port") && i + 1 < arg_count(g) {
+                        port = skel_number(arg(g, i + 1));
+                        i = i + 2;
+                    } else {
+                        let a = arg(g, i);
+                        if config_len + len(a) + 1 <= 4096 {
+                            var k = 0;
+                            while k < len(a) {
+                                cfg[config_len + k] = a[k];
+                                k = k + 1;
+                            }
+                            cfg[config_len + len(a)] = byte_of(10);
+                            config_len = config_len + len(a) + 1;
+                        }
+                        i = i + 1;
+                    }
+                }
+            }
+        }
+        if port > 0 && port < 65536 {
+            status = 3;
+            borrow net as &nn in {
+                match tcp_listen(nn, port, 1024, 0) {
+                    Listening::Ok(l) => {
+                        var listener = l;
+                        borrow mut listener as &!lh in {
+                            listener_nonblocking(lh);
+                            borrow mut config as &!cw2 in {
+                                var app = app_new(h, contents(cw2)[0..config_len]);
+                                borrow mut io as &!ii in {
+                                    var line = buffer.append(h, buffer.empty(h, 64), "listening on ");
+                                    line = buffer.push_nat(h, line, port);
+                                    line = buffer.push(h, line, byte_of(10));
+                                    borrow line as &lb in {
+                                        io.error_all(ii, buffer.bytes(lb));
+                                    }
+                                    buffer.drop(h, line);
+                                }
+                                borrow mut app as &!ap in {
+                                    borrow clock as &c in {
+                                        status = skel_run(h, ap, c, lh);
+                                    }
+                                }
+                                app_drop(h, app);
+                            }
+                        }
+                        listener_close(listener);
+                    }
+                    Listening::Failed(e) => {
+                    }
+                }
+            }
+        }
+        unbox_slice(h, config);
+    }
+    release(net);
+    release(clock);
+    release(args);
+    release(io);
+    release(hh);
+    return status;
+}

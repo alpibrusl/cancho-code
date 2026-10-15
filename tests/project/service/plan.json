@@ -1,0 +1,4 @@
+{"name":"svc","integration":"app","units":[
+ {"id":"a","signature":"fn double(x: int) -> [] int","examples":["double(2) == 4","double(0) == 0"],"deps":[]},
+ {"id":"app","signature":"fn app_run(x: int) -> [] int","description":"The application: app_run(x) is double(x) + 1. SENTINEL-APP.","examples":[],"deps":["a"]}
+]}

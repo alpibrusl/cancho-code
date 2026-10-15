@@ -1,0 +1,9 @@
+flag_value: flag_value
+bearer_token: bearer_token
+tenant_index: same_token entry_end colon_at name_seen tenant_index
+path_id: path_id
+route_request: route_request
+customer_ok: customer_ok
+validate_create: currency_ok validate_create
+may_access: may_access
+app: *

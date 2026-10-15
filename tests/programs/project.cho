@@ -2,7 +2,7 @@ edition 7;
 
 // `project` -- build a plan (docs/plan.md) unit by unit (docs/project.md):
 //
-//     project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds]]
+//     project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds [acceptance-command [lib-files]]]]
 //
 // Exit codes: 0 done, 1 stuck or the final gate failed, 2 usage, 3 the plan is invalid, 4 the agent or the checker is away.
 
@@ -37,11 +37,13 @@ fn main(world: World) -> [] int {
     var agent = "";
     var attempts = 4;
     var seconds = 30;
+    var accept = "";
+    var libs = "";
     var given = false;
     borrow mut console as &!ci in {
         borrow args as &g in {
             if arg_count(g) < 5 {
-                io.error_all(ci, "usage: project <checker> <plan.json> <workdir> <agent-cmd> [attempts [agent-seconds]]\n");
+                io.error_all(ci, "usage: project <checker> <plan.json> <workdir> <agent-cmd> [attempts [agent-seconds [acceptance-cmd [lib-files]]]]\n");
             } else {
                 given = true;
                 checker = arg(g, 1);
@@ -67,6 +69,12 @@ fn main(world: World) -> [] int {
                 if arg_count(g) > 6 {
                     seconds = digits_of(arg(g, 6));
                 }
+                if arg_count(g) > 7 {
+                    accept = arg(g, 7);
+                }
+                if arg_count(g) > 8 {
+                    libs = arg(g, 8);
+                }
             }
         }
     }
@@ -84,7 +92,7 @@ fn main(world: World) -> [] int {
                                 if n >= 1048576 {
                                     io.error_all(i, "project: the plan is too large (1 MiB or more)\n");
                                 } else if n >= 0 {
-                                    status = project.run(hh, x, c, i, fz, text[0..n], checker, wd, agent, attempts, seconds * 1000);
+                                    status = project.run(hh, x, c, i, fz, text[0..n], checker, wd, agent, attempts, seconds * 1000, accept, libs);
                                 } else {
                                     io.error_all(i, "project: the plan cannot be read\n");
                                 }

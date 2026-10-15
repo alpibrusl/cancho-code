@@ -1,0 +1,272 @@
+{
+ "name": "invoices",
+ "integration": "app",
+ "units": [
+  {
+   "id": "flag_value",
+   "signature": "fn flag_value[&c, &f](config: &c [byte], flag: &f [byte]) -> [] &c [byte]",
+   "description": "Read a flag from the configuration text \"flag\\nvalue\\nflag\\nvalue\\n...\" (every argument after the program name followed by a newline). The value line that follows the first line equal to `flag`, as a view into `config` without the newline; an empty slice when the flag is absent or has no value line. flag_value(\"--x\\n1\\n--tokens\\na:b\\n\", \"--tokens\") is \"a:b\"; flag_value(\"--x\\n1\\n\", \"--tokens\") is \"\". Never panics.",
+   "examples": [
+    "flag_value(\"--x\\n1\\n--tokens\\na:b\\n\", \"--tokens\") == \"a:b\"",
+    "flag_value(\"--x\\n1\\n\", \"--tokens\") == \"\"",
+    "flag_value(\"\", \"--tokens\") == \"\"",
+    "flag_value(\"--tokens\\nt:a\\n\", \"--tokens\") == \"t:a\"",
+    "flag_value(\"--tokens\\n\", \"--tokens\") == \"\"",
+    "flag_value(\"--x\\n--tokens\\n\", \"--tokens\") == \"\""
+   ],
+   "tests": [
+    "pub fn test_flag_value_1() -> [] int { test.assert(bytes.equal(flag_value(\"--x\\n1\\n--tokens\\na:b\\n\", \"--tokens\"), \"a:b\")); return 0; }",
+    "pub fn test_flag_value_2() -> [] int { test.assert(bytes.equal(flag_value(\"--x\\n1\\n\", \"--tokens\"), \"\")); return 0; }",
+    "pub fn test_flag_value_3() -> [] int { test.assert(bytes.equal(flag_value(\"\", \"--tokens\"), \"\")); return 0; }",
+    "pub fn test_flag_value_4() -> [] int { test.assert(bytes.equal(flag_value(\"--tokens\\nt:a\\n\", \"--tokens\"), \"t:a\")); return 0; }",
+    "pub fn test_flag_value_5() -> [] int { test.assert(bytes.equal(flag_value(\"--tokens\\n\", \"--tokens\"), \"\")); return 0; }",
+    "pub fn test_flag_value_6() -> [] int { test.assert(bytes.equal(flag_value(\"--x\\n--tokens\\n\", \"--tokens\"), \"\")); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "bearer_token",
+   "signature": "fn bearer_token[&r](header: &r [byte]) -> [] &r [byte]",
+   "description": "The token of an Authorization header value: what follows exactly \"Bearer \" (capital B, one space), as a view into `header`. An empty slice for anything else. bearer_token(\"Bearer tokA\") is \"tokA\"; \"Bearer \", \"Bearer\", \"Basic dG9r\" and \"\" give \"\"; \"Bearer a b\" gives \"a b\" (the token is everything after the prefix).",
+   "examples": [
+    "bearer_token(\"Bearer tokA\") == \"tokA\"",
+    "bearer_token(\"Bearer\") == \"\"",
+    "bearer_token(\"Bearer \") == \"\"",
+    "bearer_token(\"Basic dG9r\") == \"\"",
+    "bearer_token(\"\") == \"\"",
+    "bearer_token(\"Bearer a b\") == \"a b\""
+   ],
+   "tests": [
+    "pub fn test_bearer_token_1() -> [] int { test.assert(bytes.equal(bearer_token(\"Bearer tokA\"), \"tokA\")); return 0; }",
+    "pub fn test_bearer_token_2() -> [] int { test.assert(bytes.equal(bearer_token(\"Bearer \"), \"\")); return 0; }",
+    "pub fn test_bearer_token_3() -> [] int { test.assert(bytes.equal(bearer_token(\"Bearer\"), \"\")); return 0; }",
+    "pub fn test_bearer_token_4() -> [] int { test.assert(bytes.equal(bearer_token(\"Basic dG9r\"), \"\")); return 0; }",
+    "pub fn test_bearer_token_5() -> [] int { test.assert(bytes.equal(bearer_token(\"\"), \"\")); return 0; }",
+    "pub fn test_bearer_token_6() -> [] int { test.assert(bytes.equal(bearer_token(\"Bearer a b\"), \"a b\")); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "tenant_index",
+   "signature": "fn tenant_index[&c, &t](tokens: &c [byte], presented: &t [byte]) -> [] int",
+   "description": "`tokens` is the --tokens value \"token:tenant,token:tenant,...\" (the token before the first \":\" of an entry, the tenant after it; an entry with an empty token or an empty tenant is ignored; several tokens may name one tenant). The number of the tenant the presented token belongs to; tenants are numbered 0, 1, ... in order of first appearance of their name in the list; -1 if the token is not listed (an empty token is not listed). Constant time with respect to the token: every entry is compared completely (no early exit on the first differing byte, none once an entry matched); a helper that ORs the differences of all bytes of the longer text is the usual way. With tokens \"tokA:acme,tokB:globex,tokC:acme\": \"tokA\" is 0, \"tokB\" is 1, \"tokC\" is 0, \"tok\" is -1, \"tokAx\" is -1, \"\" is -1; with \"x,:b,c:,d:e\": \"d\" is 0, \"x\" is -1, \"c\" is -1. You may add helper functions.",
+   "examples": [
+    "tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tokB\") == 1",
+    "tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tokC\") == 0",
+    "tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tokA\") == 0",
+    "tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tok\") == 0 - 1",
+    "tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tokAx\") == 0 - 1",
+    "tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"\") == 0 - 1",
+    "tenant_index(\"x,:b,c:,d:e\", \"d\") == 0",
+    "tenant_index(\"x,:b,c:,d:e\", \"x\") == 0 - 1",
+    "tenant_index(\"x,:b,c:,d:e\", \"c\") == 0 - 1",
+    "tenant_index(\"\", \"a\") == 0 - 1",
+    "tenant_index(\"a:t1,b:t2,c:t3,d:t2\", \"d\") == 1",
+    "tenant_index(\"a:t1,b:t2,c:t3\", \"c\") == 2"
+   ],
+   "tests": [
+    "pub fn test_tenant_index_1() -> [] int { test.assert(tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tokA\") == 0); return 0; }",
+    "pub fn test_tenant_index_2() -> [] int { test.assert(tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tokB\") == 1); return 0; }",
+    "pub fn test_tenant_index_3() -> [] int { test.assert(tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tokC\") == 0); return 0; }",
+    "pub fn test_tenant_index_4() -> [] int { test.assert(tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tok\") == 0 - 1); return 0; }",
+    "pub fn test_tenant_index_5() -> [] int { test.assert(tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tokAx\") == 0 - 1); return 0; }",
+    "pub fn test_tenant_index_6() -> [] int { test.assert(tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"\") == 0 - 1); return 0; }",
+    "pub fn test_tenant_index_7() -> [] int { test.assert(tenant_index(\"x,:b,c:,d:e\", \"d\") == 0); return 0; }",
+    "pub fn test_tenant_index_8() -> [] int { test.assert(tenant_index(\"x,:b,c:,d:e\", \"x\") == 0 - 1); return 0; }",
+    "pub fn test_tenant_index_9() -> [] int { test.assert(tenant_index(\"x,:b,c:,d:e\", \"c\") == 0 - 1); return 0; }",
+    "pub fn test_tenant_index_10() -> [] int { test.assert(tenant_index(\"\", \"a\") == 0 - 1); return 0; }",
+    "pub fn test_tenant_index_11() -> [] int { test.assert(tenant_index(\"a:t1,b:t2,c:t3,d:t2\", \"d\") == 1); return 0; }",
+    "pub fn test_tenant_index_12() -> [] int { test.assert(tenant_index(\"a:t1,b:t2,c:t3\", \"c\") == 2); return 0; }"
+   ],
+   "deps": [],
+   "effort": "medium"
+  },
+  {
+   "id": "path_id",
+   "signature": "fn path_id[&r](segment: &r [byte]) -> [] int",
+   "description": "The invoice id a path segment spells: plain decimal digits, no leading zero, at most 9 of them (so it fits comfortably in an int). Its value, or -1 for anything else. \"7\" is 7, \"123456789\" is 123456789; \"0\", \"007\", \"-1\", \"1.5\", \"1234567890\", \"\", \"1%20OR%201=1\" are -1.",
+   "examples": [
+    "path_id(\"7\") == 7",
+    "path_id(\"007\") == 0 - 1",
+    "path_id(\"123456789\") == 123456789",
+    "path_id(\"10\") == 10",
+    "path_id(\"0\") == 0 - 1",
+    "path_id(\"-1\") == 0 - 1",
+    "path_id(\"1.5\") == 0 - 1",
+    "path_id(\"1234567890\") == 0 - 1",
+    "path_id(\"\") == 0 - 1",
+    "path_id(\"1%20OR%201=1\") == 0 - 1",
+    "path_id(\"abc\") == 0 - 1"
+   ],
+   "tests": [
+    "pub fn test_path_id_1() -> [] int { test.assert(path_id(\"7\") == 7); return 0; }",
+    "pub fn test_path_id_2() -> [] int { test.assert(path_id(\"123456789\") == 123456789); return 0; }",
+    "pub fn test_path_id_3() -> [] int { test.assert(path_id(\"10\") == 10); return 0; }",
+    "pub fn test_path_id_4() -> [] int { test.assert(path_id(\"0\") == 0 - 1); return 0; }",
+    "pub fn test_path_id_5() -> [] int { test.assert(path_id(\"007\") == 0 - 1); return 0; }",
+    "pub fn test_path_id_6() -> [] int { test.assert(path_id(\"-1\") == 0 - 1); return 0; }",
+    "pub fn test_path_id_7() -> [] int { test.assert(path_id(\"1.5\") == 0 - 1); return 0; }",
+    "pub fn test_path_id_8() -> [] int { test.assert(path_id(\"1234567890\") == 0 - 1); return 0; }",
+    "pub fn test_path_id_9() -> [] int { test.assert(path_id(\"\") == 0 - 1); return 0; }",
+    "pub fn test_path_id_10() -> [] int { test.assert(path_id(\"1%20OR%201=1\") == 0 - 1); return 0; }",
+    "pub fn test_path_id_11() -> [] int { test.assert(path_id(\"abc\") == 0 - 1); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "route_request",
+   "signature": "fn route_request[&m, &p](method: &m [byte], path: &p [byte]) -> [] (int, int)",
+   "description": "Route a request. Answers (route, id): route 1 is POST /invoices, 2 is GET /invoices, 3 is GET /invoices/{id}, 4 is POST /invoices/{id}/pay, 0 means no such path, -1 means a known path with another method. `id` is path_id of the id segment (0 for routes 1 and 2, and -1 when the segment is not a valid id; for route 0 and -1 it is 0). The path is compared exactly (no trailing slash tolerance): (\"POST\",\"/invoices\") is (1,0); (\"GET\",\"/invoices/12\") is (3,12); (\"POST\",\"/invoices/12/pay\") is (4,12); (\"POST\",\"/invoices/x/pay\") is (4,-1); (\"DELETE\",\"/invoices/12\") is (-1,0); (\"GET\",\"/invoices/\") is (0,0); (\"GET\",\"/invoices/1/pay\") is (-1,0); (\"GET\",\"/other\") is (0,0). Anything else after the id other than exactly \"/pay\" is route 0.",
+   "examples": [
+    "route_request(\"POST\", \"/invoices\") == (1, 0)",
+    "route_request(\"GET\", \"/other\") == (0, 0)",
+    "route_request(\"GET\", \"/invoices\") == (2, 0)",
+    "route_request(\"GET\", \"/invoices/12\") == (3, 12)",
+    "route_request(\"POST\", \"/invoices/12/pay\") == (4, 12)",
+    "route_request(\"POST\", \"/invoices/x/pay\") == (4, 0 - 1)",
+    "route_request(\"DELETE\", \"/invoices/12\") == (0 - 1, 0)",
+    "route_request(\"GET\", \"/invoices/\") == (0, 0)",
+    "route_request(\"GET\", \"/invoices/1/pay\") == (0 - 1, 0)",
+    "route_request(\"PUT\", \"/invoices\") == (0 - 1, 0)",
+    "route_request(\"GET\", \"/invoices/x\") == (3, 0 - 1)",
+    "route_request(\"POST\", \"/invoices/12\") == (0 - 1, 0)",
+    "route_request(\"POST\", \"/invoices/12/payx\") == (0, 0)",
+    "route_request(\"GET\", \"/\") == (0, 0)"
+   ],
+   "tests": [
+    "pub fn test_route_request_1() -> [] int { let (a, b) = route_request(\"POST\", \"/invoices\"); test.assert(a == 1 && b == 0); return 0; }",
+    "pub fn test_route_request_2() -> [] int { let (a, b) = route_request(\"GET\", \"/invoices\"); test.assert(a == 2 && b == 0); return 0; }",
+    "pub fn test_route_request_3() -> [] int { let (a, b) = route_request(\"GET\", \"/invoices/12\"); test.assert(a == 3 && b == 12); return 0; }",
+    "pub fn test_route_request_4() -> [] int { let (a, b) = route_request(\"POST\", \"/invoices/12/pay\"); test.assert(a == 4 && b == 12); return 0; }",
+    "pub fn test_route_request_5() -> [] int { let (a, b) = route_request(\"POST\", \"/invoices/x/pay\"); test.assert(a == 4 && b == 0 - 1); return 0; }",
+    "pub fn test_route_request_6() -> [] int { let (a, b) = route_request(\"DELETE\", \"/invoices/12\"); test.assert(a == 0 - 1 && b == 0); return 0; }",
+    "pub fn test_route_request_7() -> [] int { let (a, b) = route_request(\"GET\", \"/invoices/\"); test.assert(a == 0 && b == 0); return 0; }",
+    "pub fn test_route_request_8() -> [] int { let (a, b) = route_request(\"GET\", \"/invoices/1/pay\"); test.assert(a == 0 - 1 && b == 0); return 0; }",
+    "pub fn test_route_request_9() -> [] int { let (a, b) = route_request(\"GET\", \"/other\"); test.assert(a == 0 && b == 0); return 0; }",
+    "pub fn test_route_request_10() -> [] int { let (a, b) = route_request(\"PUT\", \"/invoices\"); test.assert(a == 0 - 1 && b == 0); return 0; }",
+    "pub fn test_route_request_11() -> [] int { let (a, b) = route_request(\"GET\", \"/invoices/x\"); test.assert(a == 3 && b == 0 - 1); return 0; }",
+    "pub fn test_route_request_12() -> [] int { let (a, b) = route_request(\"POST\", \"/invoices/12\"); test.assert(a == 0 - 1 && b == 0); return 0; }",
+    "pub fn test_route_request_13() -> [] int { let (a, b) = route_request(\"POST\", \"/invoices/12/payx\"); test.assert(a == 0 && b == 0); return 0; }",
+    "pub fn test_route_request_14() -> [] int { let (a, b) = route_request(\"GET\", \"/\"); test.assert(a == 0 && b == 0); return 0; }"
+   ],
+   "deps": [
+    "path_id"
+   ],
+   "effort": "medium"
+  },
+  {
+   "id": "customer_ok",
+   "signature": "fn customer_ok[&r](text: &r [byte]) -> [] bool",
+   "description": "Is `text` (a customer name, already JSON-decoded) acceptable: well-formed UTF-8 (std.utf8: `utf8.is_valid(bytes)`), and 1 to 100 characters (`utf8.count(bytes)` counts Unicode characters) AFTER trimming ASCII whitespace at both ends (`bytes.trim`)? \"a\" true, \"\" false, \"   \" false, \"  a  \" true, 100 times \"a\" true, 101 times \"a\" false, 100 times \"é\" true (200 bytes), 101 times \"é\" false. Std.utf8 is already imported.",
+   "examples": [
+    "customer_ok(\"a\") == true",
+    "customer_ok(\"   \") == false",
+    "customer_ok(\"\") == false",
+    "customer_ok(\"  a  \") == true"
+   ],
+   "tests": [
+    "pub fn test_customer_ok_1() -> [] int { test.assert(customer_ok(\"a\")); return 0; }",
+    "pub fn test_customer_ok_2() -> [] int { test.assert(customer_ok(\"\") == false); return 0; }",
+    "pub fn test_customer_ok_3() -> [] int { test.assert(customer_ok(\"   \") == false); return 0; }",
+    "pub fn test_customer_ok_4() -> [] int { test.assert(customer_ok(\"  a  \")); return 0; }",
+    "pub fn test_customer_ok_5() -> [] int { test.assert(customer_ok(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\")); return 0; }",
+    "pub fn test_customer_ok_6() -> [] int { test.assert(customer_ok(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\") == false); return 0; }",
+    "pub fn test_customer_ok_7() -> [] int { test.assert(customer_ok(\"éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\")); return 0; }",
+    "pub fn test_customer_ok_8() -> [] int { test.assert(customer_ok(\"ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\") == false); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "validate_create",
+   "signature": "fn validate_create[&b, &t](body: &b [byte], tape: &!t [int]) -> [] int",
+   "description": "Validate the body of POST /invoices. `tape` is a std.json tape with room for json.tape_len(body) ints; parse into it with json.parse(body, tape). Answers 0 when the body is a valid create body, otherwise 1 not valid JSON or not an object; 2 the object does not have exactly the three members customer, amount_cents, currency (a missing member, an extra or unknown member such as \"paid\"); 3 bad customer (not a string, longer than 4096 bytes decoded, or not customer_ok after JSON-decoding its escapes: decode with json.string_into(body, tape, node, buf) into a 4096-byte buffer from `region r { let buf = alloc_slice[r](4096, byte_of(0)); ... }`); 4 bad amount_cents (not an integer (json.is_int), not fitting 64 bits (json.fits_int), or outside 1..10000000); 5 bad currency (not exactly \"USD\", \"EUR\" or \"GBP\"). The checks run in that order. It must be pure (effect row []) and never panic. Use json.get(body, tape, 0, \"name\") for a member (it answers a negative number when missing), json.count(tape, 0), json.is_string, json.string_length, json.to_int; read the std.json section of the page you were given. You may add a helper for the currency check.",
+   "examples": [
+    "validate_create({\"customer\":\"a\",\"amount_cents\":5,\"currency\":\"USD\"}) == 0",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"USD\\\"}\", tape) == 0",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"USD\\\",\\\"paid\\\":true}\", tape) == 2",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"usd\\\"}\", tape) == 5",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":0,\\\"currency\\\":\\\"USD\\\"}\", tape) == 4",
+    "validate_create(\"{\\\"customer\\\":\\\"  \\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"USD\\\"}\", tape) == 3",
+    "validate_create(\"[1]\", tape) == 1",
+    "validate_create(\"x\", tape) == 1",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":5}\", tape) == 2",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":10000001,\\\"currency\\\":\\\"USD\\\"}\", tape) == 4",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":10000000,\\\"currency\\\":\\\"EUR\\\"}\", tape) == 0",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":\\\"5\\\",\\\"currency\\\":\\\"USD\\\"}\", tape) == 4",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":1.5,\\\"currency\\\":\\\"USD\\\"}\", tape) == 4",
+    "validate_create(\"{\\\"customer\\\":5,\\\"amount_cents\\\":5,\\\"currency\\\":\\\"USD\\\"}\", tape) == 3",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"JPY\\\"}\", tape) == 5",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":99999999999999999999,\\\"currency\\\":\\\"USD\\\"}\", tape) == 4",
+    "validate_create(\"{\\\"customer\\\":\\\"\\\\u00e9\\\",\\\"amount_cents\\\":1,\\\"currency\\\":\\\"USD\\\"}\", tape) == 0"
+   ],
+   "tests": [
+    "fn inv_code[&h](heap: &!h Heap, body: &static [byte]) -> [heap] int { let tb = box_slice(heap, json.tape_len(body), 0); var code = 0 - 1; borrow mut tb as &!tw in { code = validate_create(body, contents(tw)); } unbox_slice(heap, tb); return code; }",
+    "pub fn test_validate_create_1[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"USD\\\"}\") == 0); return 0; }",
+    "pub fn test_validate_create_2[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"USD\\\",\\\"paid\\\":true}\") == 2); return 0; }",
+    "pub fn test_validate_create_3[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"usd\\\"}\") == 5); return 0; }",
+    "pub fn test_validate_create_4[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":0,\\\"currency\\\":\\\"USD\\\"}\") == 4); return 0; }",
+    "pub fn test_validate_create_5[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"{\\\"customer\\\":\\\"  \\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"USD\\\"}\") == 3); return 0; }",
+    "pub fn test_validate_create_6[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"[1]\") == 1); return 0; }",
+    "pub fn test_validate_create_7[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"x\") == 1); return 0; }",
+    "pub fn test_validate_create_8[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":5}\") == 2); return 0; }",
+    "pub fn test_validate_create_9[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":10000001,\\\"currency\\\":\\\"USD\\\"}\") == 4); return 0; }",
+    "pub fn test_validate_create_10[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":10000000,\\\"currency\\\":\\\"EUR\\\"}\") == 0); return 0; }",
+    "pub fn test_validate_create_11[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":\\\"5\\\",\\\"currency\\\":\\\"USD\\\"}\") == 4); return 0; }",
+    "pub fn test_validate_create_12[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":1.5,\\\"currency\\\":\\\"USD\\\"}\") == 4); return 0; }",
+    "pub fn test_validate_create_13[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"{\\\"customer\\\":5,\\\"amount_cents\\\":5,\\\"currency\\\":\\\"USD\\\"}\") == 3); return 0; }",
+    "pub fn test_validate_create_14[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"{\\\"customer\\\":\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"GBP\\\"}\") == 3); return 0; }",
+    "pub fn test_validate_create_15[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"JPY\\\"}\") == 5); return 0; }",
+    "pub fn test_validate_create_16[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":99999999999999999999,\\\"currency\\\":\\\"USD\\\"}\") == 4); return 0; }",
+    "pub fn test_validate_create_17[&h](heap: &!h Heap) -> [heap] int { test.assert(inv_code(heap, \"{\\\"customer\\\":\\\"\\\\u00e9\\\",\\\"amount_cents\\\":1,\\\"currency\\\":\\\"USD\\\"}\") == 0); return 0; }"
+   ],
+   "deps": [
+    "customer_ok"
+   ],
+   "effort": "medium"
+  },
+  {
+   "id": "may_access",
+   "signature": "fn may_access(owner: int, caller: int) -> [] bool",
+   "description": "May the calling tenant see and change an invoice owned by tenant number `owner`? True exactly when caller >= 0 and owner == caller (a negative caller, the number for \"not authenticated\", never has access, not even to an invoice whose owner is the same negative number).",
+   "examples": [
+    "may_access(1, 1) == true",
+    "may_access(1, 2) == false",
+    "may_access(0 - 1, 0 - 1) == false",
+    "may_access(0, 0) == true",
+    "may_access(0, 0 - 1) == false",
+    "may_access(2, 1) == false"
+   ],
+   "tests": [
+    "pub fn test_may_access_1() -> [] int { test.assert(may_access(1, 1)); return 0; }",
+    "pub fn test_may_access_2() -> [] int { test.assert(may_access(1, 2) == false); return 0; }",
+    "pub fn test_may_access_3() -> [] int { test.assert(may_access(0 - 1, 0 - 1) == false); return 0; }",
+    "pub fn test_may_access_4() -> [] int { test.assert(may_access(0, 0)); return 0; }",
+    "pub fn test_may_access_5() -> [] int { test.assert(may_access(0, 0 - 1) == false); return 0; }",
+    "pub fn test_may_access_6() -> [] int { test.assert(may_access(2, 1) == false); return 0; }"
+   ],
+   "deps": [],
+   "effort": "low"
+  },
+  {
+   "id": "app",
+   "signature": "fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer",
+   "description": "THE APPLICATION. Build the application: `struct App`, `app_new`, `app_handle`, `app_drop` and whatever helpers they need. The pure functions the task names under 'pure functions' are ALREADY in project.cho (units built and tested before this one): CALL them, do not write them again. project.cho already imports every module the task says it must not import, so use them qualified (`buffer.`, `bytes.`, `http.`, `json.`, `server.`) and import nothing.\n\nAlso define `struct App`, `fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App` and `fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int` (this unit's signature is app_handle). Std.utf8 is already imported.\n\nTHE TASK\nBuild a cancho service \"invoices\": a multi-tenant invoice REST API that is safe to put on the internet. The application goes in project.cho; the fixed server skeleton (eval/services/skeleton/main.cho, never edited) owns the listener, the HTTP parsing and `main`, and calls the four functions of its contract (`struct App`, `app_new`, `app_handle`, `app_drop`). Use std.http, std.json and std.route (and std.utf8 if you need it) instead of writing those layers yourself.\n\nEach customer company (\"tenant\") has its own bearer token. A request carries \"Authorization: Bearer <token>\"; the token decides which tenant it acts for.\n\nCONFIGURATION (flags, because a cancho program has no environment variables). The service is started as\n\n    service --port 8812 --tokens tokA:acme,tokB:globex\n\nThe skeleton consumes --port and passes every other argument to app_new as text, each argument followed by a newline (\"--tokens\\ntokA:acme,tokB:globex\\n\"). --tokens is a comma-separated list of token:tenant entries. An entry without a ':' or with an empty token or an empty tenant name is ignored; two tokens may name the same tenant. Nothing is trimmed. Unknown flags are ignored. With no valid entry every request that needs a token is a 401.\n\nSTORAGE. There is no database: the invoices live in memory, in the App, for the life of the process, and they are gone when it stops. The service need not persist anything. It must hold at least 1000 invoices; when it cannot take another one, POST /invoices answers 503 with a JSON error.\n\nLISTENING. A cancho listener binds the port on all interfaces (there is no --host and no loopback-only requirement); that is the skeleton's doing and is not yours to change.\n\nENDPOINTS, all answering JSON. The invoice object is exactly {\"id\":Int,\"customer\":Str,\"amount_cents\":Int,\"currency\":Str,\"paid\":Bool} (those five members and no others; never the tenant, never a token). Every error is a JSON object {\"error\": \"<message>\"}.\n\n- POST /invoices -- body {\"customer\": Str, \"amount_cents\": Int, \"currency\": Str}. Creates an invoice owned by the caller's tenant and answers 201 with the new invoice: its new integer id (positive, unique, and larger than the id of any invoice created before it), the customer as stored (trimmed, see 4), and \"paid\": false.\n- GET /invoices/{id} -- 200 with one invoice.\n- GET /invoices?customer=NAME -- 200 with a JSON array of the caller's tenant's invoices whose customer equals NAME exactly (byte for byte, case sensitive), in ascending id order. NAME is percent-decoded ('+' is a space); only the query parameter named \"customer\" matters, other parameters are ignored. Without the parameter, all of the tenant's invoices (an empty array when there are none). \"customer=\" (present and empty) matches only a customer that is empty, so it lists nothing. A NAME that is not valid percent-encoding, or whose raw text is longer than 1024 bytes, is a 400.\n- POST /invoices/{id}/pay -- marks one invoice paid, ignores the request body, is idempotent, answers 200 with the invoice (paid true).\n\nORDER OF CHECKS for a request: (a) a path that is none of the four above (\"/invoices/\" with nothing after the slash is not one) is 404, whatever the token; a known path with another method (for example DELETE /invoices/1, or GET /invoices/1/pay) is 405; (b) authentication, 401; (c) for POST /invoices, the body size, 413; (d) for the routes with an id, the id, 404; (e) the body, 400.\n\nSECURITY REQUIREMENTS. Each one is something an attacker will try, and each must be covered by a check:\n\n1. No Authorization header, a malformed one (anything that is not exactly \"Bearer \" followed by the token: another scheme, \"Bearer\" alone, a different spelling of the scheme), or an unknown token: 401 with the same JSON body each time. The body never contains the token that was presented. The empty token never matches.\n2. A tenant can never see or change another tenant's invoice, and no listing contains one. Asking for (or paying) an id that belongs to another tenant returns 404, exactly the same response (status and body) as an id that does not exist -- never 403, so existence does not leak. Tenants are told apart by tenant name: two tokens naming the same tenant see the same invoices.\n3. The customer filter is data: the value  x' OR '1'='1  is a customer name that matches nothing; it never widens the result and never causes an error.\n4. The create body is strictly validated, and anything else is a 400: it must be a JSON object with exactly the three members customer, amount_cents, currency (so an unknown member, a missing member, or a body that tries to set \"id\", \"tenant\", \"tenant_id\" or \"paid\" is rejected: a client cannot choose its own owner); customer is a string of well-formed UTF-8 that is 1 to 100 characters (Unicode code points, not bytes) after trimming ASCII whitespace (space, tab, LF, CR, VT, FF) from both ends, and the trimmed text is what is stored; amount_cents is a JSON integer from 1 to 10000000 (1.5, \"5\" and 1e3 are not integers); currency is exactly \"USD\", \"EUR\" or \"GBP\". Invalid JSON, an empty body, or a JSON value that is not an object is a 400.\n5. A POST /invoices body larger than 4096 bytes is rejected with 413 before it is parsed (so even a body that is not JSON gets 413, not 400); a body of exactly 4096 bytes is within the limit. (The skeleton itself answers 413 for requests that do not fit its 16 KiB buffer.)\n6. The id in the path is a positive integer written as plain decimal digits, no sign, no leading zero, at most 9 digits; anything else (\"0\", \"-1\", \"abc\", \"1.5\", \"007\", \"1 OR 1=1\" percent-encoded, \"../etc/passwd\", a 20-digit number) is a 404, never an error.\n7. Comparing the presented token with the configured ones is constant-time in the token contents: it looks at every byte of the longer of the two and every configured entry, with no early exit, and keeps a bit-wise difference (xor/or) rather than returning at the first mismatch.\n\nAUTHORITY. The program may declare only these effects: args, heap, clock, net_in, conn_accept, conn_read, conn_write, poll, io_write / err_write (`cancho authority` is checked). It must never need process, file or foreign-code access. Pure functions carry no effect annotation (an empty row `[]`).\n\nPURE FUNCTIONS. These must exist in project.cho with exactly these names and signatures, with an empty effect row; the examples are required to hold.\n\n    fn flag_value[&c, &f](config: &c [byte], flag: &f [byte]) -> [] &c [byte]\n        value line after the line equal to `flag` in \"flag\\nvalue\\n...\" text; empty slice if absent.\n        flag_value(\"--x\\n1\\n--tokens\\na:b\\n\", \"--tokens\") == \"a:b\";  flag_value(\"--x\\n1\\n\", \"--tokens\") == \"\".\n    fn bearer_token[&r](header: &r [byte]) -> [] &r [byte]\n        bearer_token(\"Bearer tokA\") == \"tokA\";  bearer_token(\"Bearer \") == \"\";  bearer_token(\"Bearer\") == \"\";  bearer_token(\"Basic dG9r\") == \"\";  bearer_token(\"\") == \"\";  bearer_token(\"Bearer a b\") == \"a b\".\n    fn tenant_index[&c, &t](tokens: &c [byte], presented: &t [byte]) -> [] int\n        the number of the tenant the token belongs to, tenants numbered 0, 1, ... in order of first appearance of their name in the list; -1 if the token is not listed. Constant-time (requirement 7).\n        with tokens = \"tokA:acme,tokB:globex,tokC:acme\": \"tokA\" -> 0, \"tokB\" -> 1, \"tokC\" -> 0, \"tok\" -> -1, \"tokAx\" -> -1, \"\" -> -1;  with \"x,:b,c:,d:e\": \"d\" -> 0, \"x\" -> -1, \"c\" -> -1.\n    fn path_id[&r](segment: &r [byte]) -> [] int\n        the id a path segment spells, or -1.  \"7\" -> 7, \"123456789\" -> 123456789, \"0\" -> -1, \"007\" -> -1, \"-1\" -> -1, \"1.5\" -> -1, \"1234567890\" -> -1, \"\" -> -1, \"1%20OR%201=1\" -> -1.\n    fn route_request[&m, &p](method: &m [byte], path: &p [byte]) -> [] (int, int)\n        (route, id): route 1 POST /invoices, 2 GET /invoices, 3 GET /invoices/{id}, 4 POST /invoices/{id}/pay, 0 no such path, -1 known path with another method; id is path_id of the id segment (0 for routes 1 and 2, -1 when invalid).\n        (\"POST\",\"/invoices\") -> (1,0);  (\"GET\",\"/invoices/12\") -> (3,12);  (\"POST\",\"/invoices/12/pay\") -> (4,12);  (\"POST\",\"/invoices/x/pay\") -> (4,-1);  (\"DELETE\",\"/invoices/12\") -> (-1,0);  (\"GET\",\"/invoices/\") -> (0,0);  (\"GET\",\"/invoices/1/pay\") -> (-1,0);  (\"GET\",\"/other\") -> (0,0).\n    fn customer_ok[&r](text: &r [byte]) -> [] bool\n        is the decoded text well-formed UTF-8 of 1 to 100 characters after trimming ASCII whitespace? (\"a\") true, (\"\") false, (\"   \") false, (\"  a  \") true, 100 x \"a\" true, 101 x \"a\" false, 100 x \"é\" true (200 bytes), 101 x \"é\" false, bytes 0xFF false.\n    fn validate_create[&b, &t](body: &b [byte], tape: &!t [int]) -> [] int\n        0 when the body is a valid create body (requirement 4); otherwise 1 not valid JSON or not an object, 2 a missing or unknown member, 3 bad customer, 4 bad amount_cents, 5 bad currency. `tape` holds json.tape_len(body) ints (the std.json tape). The customer is checked after JSON-decoding its escapes.\n        {\"customer\":\"a\",\"amount_cents\":5,\"currency\":\"USD\"} -> 0;  same with \"paid\":true added -> 2;  currency \"usd\" -> 5;  amount_cents 0 -> 4;  customer \"  \" -> 3;  \"[1]\" -> 1.\n    fn may_access(owner: int, caller: int) -> [] bool\n        true exactly when caller >= 0 and owner == caller.\n\n\nTHE APPLICATION INTERFACE\nThe service skeleton: the part of a cancho HTTP service that is the same for every service. It is `main.cho` of a service project; the project's\nown file (`project.cho`) holds the application, and the two are compiled together (files without a `module` header share one namespace, so this\nfile calls the application's functions unqualified).\n\nTHE APPLICATION INTERFACE (project.cho must define exactly these, with these signatures):\n\n    struct App { ... }                                   the service's state, any fields (a Vec, a Map, buffers, ints)\n    fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App\n    fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer\n    fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int\n\n`config` is every command-line argument after the program name, each followed by a newline (`--tokens\\ntokA:acme\\n`), minus `--port N`, which the\nskeleton consumes: the application parses the flags its brief names. `app_handle` gets one whole parsed request: `request` and `table` are what\n`std.http` parsed (use `http.method(request, table)`, `http.path(request, table)`, `http.query(request, table)`, `http.header(...)`), `body` the\nrequest body, `now_ms` the time in Unix milliseconds (`clock_unix_ms`, so a timestamp in a request can be compared with it; it is wall-clock time, not monotonic), and `out` an empty buffer to append the response to. It answers the response with\n`server.reply(heap, out, status, body, keep)` / `server.reply_with(.., extra_headers)` / `server.failure(heap, out, status, message, keep)`\n(module `http.server`; `keep` is `http.keeps_alive(table)`). It must answer something for EVERY request and never trap.\n\nWhat the skeleton does: `--port N` (required), listens on that port (a cancho listener binds the port on all interfaces: `bind` takes a port,\nnot an address), accepts, parses (`std.http`; a malformed request is answered 400 by the server and never reaches the application, a body that\ncannot fit the 16 KiB input buffer is answered 413 by the server), calls `app_handle`, sends the answer.",
+   "effort": "low",
+   "examples": [],
+   "deps": [
+    "flag_value",
+    "bearer_token",
+    "tenant_index",
+    "path_id",
+    "route_request",
+    "customer_ok",
+    "validate_create",
+    "may_access"
+   ]
+  }
+ ]
+}

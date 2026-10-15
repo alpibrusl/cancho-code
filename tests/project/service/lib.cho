@@ -1,0 +1,5 @@
+edition 7;
+
+fn lib_triple(x: int) -> [] int {
+    return x * 3;
+}

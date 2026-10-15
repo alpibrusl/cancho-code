@@ -308,7 +308,9 @@ fn call_len[&x](left: &x [byte]) -> [] int {
     return e;
 }
 
-fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], info: &!i [int], n: int, u: int) -> [heap] buffer.Buffer {
+// `integ` is the unit named by the plan's `integration` (-1: none): the application of a service, built against the service's acceptance
+// scenarios, so it needs no example and no test (docs/plan.md).
+fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], info: &!i [int], n: int, u: int, integ: int) -> [heap] buffer.Buffer {
     var b = out;
     let who = label(src, tape, info, u);
     if get_f(info, u, f_ok()) != 1 {
@@ -326,7 +328,9 @@ fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte
     let ex = get_f(info, u, f_ex());
     let m = json.count(tape, ex);
     if m == 0 {
-        b = emit(heap, b, "no-example", who, "the unit has no example; give at least one `CALL == EXPECTED`");
+        if u != integ {
+            b = emit(heap, b, "no-example", who, "the unit has no example; give at least one `CALL == EXPECTED`");
+        }
     } else if ns >= 0 {
         var own = false;
         var shaped = 0;
@@ -413,7 +417,7 @@ fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte
         let tn = json.get(src, tape, get_f(info, u, f_node()), "tests");
         let cn = json.get(src, tape, get_f(info, u, f_node()), "cases");
         let has_tests = (tn >= 0 && json.is_array(tape, tn) && json.count(tape, tn) > 0) || (cn >= 0 && json.is_array(tape, cn) && json.count(tape, cn) > 0);
-        if heavy && !has_tests {
+        if heavy && !has_tests && u != integ {
             b = emit(heap, b, "needs-tests", who, "this function takes a heap, or returns text, a buffer or a list (alone or inside a Result or Option): an example `CALL == EXPECTED` cannot run for it (`==` compares scalars, a test has no heap); give `cases` (inputs and expected values, the tests are made from them) or `tests`");
         }
     }
@@ -451,6 +455,66 @@ fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte
     return b;
 }
 
+// The unit the plan's `integration` names, or -1 (no field, not a string, or no such unit: `integration_rules` reports those).
+fn integration_unit[&s, &t, &i](src: &s [byte], tape: &t [int], info: &!i [int], n: int) -> [] int {
+    let node = json.get(src, tape, 0, "integration");
+    if node < 0 || !json.is_string(tape, node) {
+        return 0 - 1;
+    }
+    return find_id(src, tape, info, n, node_text(src, tape, node));
+}
+
+// The plan-level rules of `integration`: it names a unit, and that unit depends, directly or through others, on every other unit (it is
+// built last, with every function it wires together already verified).
+fn integration_rules[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], info: &!i [int], n: int) -> [heap] buffer.Buffer {
+    var b = out;
+    let node = json.get(src, tape, 0, "integration");
+    if node < 0 {
+        return b;
+    }
+    let integ = integration_unit(src, tape, info, n);
+    if integ < 0 {
+        return emit(heap, b, "bad-integration", "-", "`integration` must be the id of a unit of this plan");
+    }
+    let rb = box_slice(heap, n + 1, 0);
+    var missing = false;
+    borrow mut rb as &!rw in {
+        let reach = contents(rw);
+        reach[integ] = 1;
+        var round = 0;
+        while round <= n {
+            var u = 0;
+            while u < n {
+                if reach[u] == 1 && get_f(info, u, f_ok()) == 1 {
+                    let deps = get_f(info, u, f_dep());
+                    var q = 0;
+                    while q < json.count(tape, deps) {
+                        let v = find_id(src, tape, info, n, node_text(src, tape, json.at(tape, deps, q)));
+                        if v >= 0 {
+                            reach[v] = 1;
+                        }
+                        q = q + 1;
+                    }
+                }
+                u = u + 1;
+            }
+            round = round + 1;
+        }
+        var w = 0;
+        while w < n {
+            if reach[w] == 0 && get_f(info, w, f_ok()) == 1 {
+                missing = true;
+            }
+            w = w + 1;
+        }
+    }
+    unbox_slice(heap, rb);
+    if missing {
+        b = emit(heap, b, "integration-order", label(src, tape, info, integ), "the integration unit must depend, directly or through other units, on every other unit: it is built last");
+    }
+    return b;
+}
+
 fn check_units[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], units: int) -> [heap] buffer.Buffer {
     var b = out;
     let n = json.count(tape, units);
@@ -469,9 +533,11 @@ fn check_units[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], t
             }
             collect(src, tape, info, units, n);
             cycles(src, tape, info, stack, n);
+            b = integration_rules(heap, b, src, tape, info, n);
+            let integ = integration_unit(src, tape, info, n);
             u = 0;
             while u < n {
-                b = report_unit(heap, b, src, tape, info, n, u);
+                b = report_unit(heap, b, src, tape, info, n, u, integ);
                 u = u + 1;
             }
         }
