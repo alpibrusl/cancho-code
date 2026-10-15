@@ -21,6 +21,10 @@ Definitions (all stated here so a number can be argued with; none is a measureme
   efficiency       sum(kept output tokens x mandatory share) / all output tokens: the share of everything generated that was both kept and new.
                    It uses characters as the proxy for how a reply's tokens split, and counts hidden reasoning tokens (which the API folds into
                    `output_tokens`) as part of the reply, so it is an upper bound on how much of the generation was the answer
+  thinking         the tokens the model spent thinking before it answered, as the API reports them (usage.output_tokens_details.thinking_tokens, which are part of
+                   `output_tokens`); None for runs made before the agent recorded it (unknown, not zero). `visible_out` = out - thinking, `thinking_share` = thinking / out
+  efficiency_visible  like `efficiency` but over the visible tokens only: sum(kept visible x mandatory share) / all visible. It leaves hidden reasoning out, so it
+                   measures the answers themselves (the rewrite of the whole file each time, and the retries), not how much the model deliberated
   per unit         the same, for each unit; `cost_per_verified_unit`, and `cost_per_audit_point` when an audit result is present
 """
 import argparse, json, os, re, sys
@@ -88,6 +92,10 @@ def analyze(workdir, plan_path=None, prices_path=None):
     prev_chars = scaffold
     per_unit = {}
     tot = {"calls": 0, "in": 0, "out": 0, "cache_write": 0, "cache_read": 0, "ms": 0}
+    known = bool(rows) and all("thinking" in r for r in rows)     # every call recorded it
+    think_total = 0
+    kept_visible = 0
+    mandatory_visible = 0.0
     outcomes = {}
     cost = 0.0
     over_limit = 0
@@ -95,10 +103,11 @@ def analyze(workdir, plan_path=None, prices_path=None):
     mandatory_out = 0.0
     for u in unit_order:
         calls = units[u]
-        uc = {"calls": len(calls), "in": 0, "out": 0, "cache_write": 0, "cache_read": 0, "ms": 0, "cost": 0.0}
+        uc = {"calls": len(calls), "in": 0, "out": 0, "cache_write": 0, "cache_read": 0, "ms": 0, "cost": 0.0, "thinking": 0}
         for r in calls:
             for k in ("in", "out", "cache_write", "cache_read", "ms"):
                 uc[k] += r.get(k, 0)
+            uc["thinking"] += r.get("thinking", 0)
             if price:
                 usd, over = call_cost(price, r)
                 uc["cost"] += usd
@@ -117,12 +126,18 @@ def analyze(workdir, plan_path=None, prices_path=None):
             uc.update({"kept_out": kept.get("out", 0), "mandatory_share": round(share, 4), "mandatory_out": round(kept.get("out", 0) * share, 1)})
             kept_out += kept.get("out", 0)
             mandatory_out += kept.get("out", 0) * share
+            kv = kept.get("out", 0) - kept.get("thinking", 0)
+            kept_visible += kv
+            mandatory_visible += kv * share
             prev_chars = pc
         else:
             uc.update({"kept_out": 0, "mandatory_share": 0.0, "mandatory_out": 0.0})
         uc["efficiency"] = round(uc["mandatory_out"] / uc["out"], 4) if uc["out"] else None
         uc["cost"] = round(uc["cost"], 6)
         per_unit[u] = uc
+        think_total += uc["thinking"]
+        if not known:
+            uc["thinking"] = None
         for k in tot:
             tot[k] += uc[k]
         cost += uc["cost"]
@@ -131,7 +146,10 @@ def analyze(workdir, plan_path=None, prices_path=None):
     result = {
         "provider": provider, "model": model, "project_verdict": project_verdict,
         "units_total": len(order) or len(unit_order), "units_verified": verified,
-        "tokens": {k: tot[k] for k in ("in", "out", "cache_write", "cache_read")},
+        "tokens": {**{k: tot[k] for k in ("in", "out", "cache_write", "cache_read")}, "thinking": think_total if known else None},
+        "visible_out": (tot["out"] - think_total) if known else None,
+        "thinking_share": round(think_total / tot["out"], 4) if known and tot["out"] else None,
+        "efficiency_visible": round(mandatory_visible / (tot["out"] - think_total), 4) if known and tot["out"] - think_total > 0 else None,
         "calls": tot["calls"], "outcomes": outcomes, "agent_ms": tot["ms"], "seconds": meta.get("seconds"),
         "cost_usd": round(cost, 6) if price else None, "over_limit_calls": over_limit,
         "kept_out": kept_out,
@@ -166,6 +184,8 @@ def main():
         return
     print("verdict %s  units %d/%d  calls %d  outcomes %s" % (r["project_verdict"], r["units_verified"], r["units_total"], r["calls"], r["outcomes"]))
     print("tokens in %(in)d out %(out)d cache_write %(cache_write)d cache_read %(cache_read)d" % r["tokens"])
+    if r["tokens"]["thinking"] is not None:
+        print("thinking %d of %d output tokens (%.0f%%), visible %d; efficiency over visible tokens %s" % (r["tokens"]["thinking"], r["tokens"]["out"], 100 * r["thinking_share"], r["visible_out"], r["efficiency_visible"]))
     print("cost $%s  efficiency_calls %s  efficiency %s" % (r["cost_usd"], r["efficiency_calls"], r["efficiency"]))
     for u, x in r["per_unit"].items():
         print("  %-12s %-9s calls %d out %d cost $%.6f efficiency %s" % (u, x["verdict"], x["calls"], x["out"], x["cost"], x["efficiency"]))

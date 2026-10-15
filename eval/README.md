@@ -33,3 +33,6 @@ A reference port is not an audit of a build: the audit must be written before th
   (a working application), `accept.py` (the scenarios the builder is shown), `attack.py` (hidden), `launch.json`, `demo.json`, `facts.json`. A service is the
   fixed `services/skeleton/main.cho` (server loop and `main`, never edited) plus the application `project.cho`; `service_run.py accept|attack <service> <project.cho>`
   builds and judges it, `run_service.py` builds one with `fix` and the acceptance scenarios, `demo.py` runs the scripted session. Results: `results/2026-10-15-services.md`.
+- **Thinking tokens are measured, not estimated** (from 2026-10-17): the agent's usage log has a `thinking` field per call (the API's `usage.output_tokens_details.thinking_tokens`, part of `out`), and `metrics.py`
+  reports `thinking`, `visible_out`, `thinking_share` and `efficiency_visible`. Runs made earlier have no such field and report `None`, not 0. Four hand-planned items re-run with it: thinking was
+  48-64% of output tokens (56% overall), against an estimate of 61% from characters per token.

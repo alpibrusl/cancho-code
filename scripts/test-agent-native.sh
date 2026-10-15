@@ -6,7 +6,7 @@
 #             refusal; the primer a cached `system` block and not repeated in the message; no primer, no system block
 #   rewrite   the project file becomes the reply's program (fence cut)
 #   key       the key is in no output (stdout, stderr, the saved raw replies); a missing, empty or unnamed key file is an error, no request
-#   usage     the saved raw reply records the token usage the API reported; --usage-log writes one JSON line per API call (tokens in, out, cache write,
+#   usage     the saved raw reply records the token usage the API reported; --usage-log writes one JSON line per API call (tokens in, out, thinking (inside out), cache write,
 #             cache read, stop reason, outcome, sizes, milliseconds, the task's first line), for every outcome including an API error, never the key
 #   workspace the id is sent as anthropic-workspace-id only when named
 #   thinking  thinking and effort are sent only when named; a bad value is exit 2 and no request; an all-thinking reply says so
@@ -68,7 +68,7 @@ class H(http.server.BaseHTTPRequestHandler):
             try: stop = open(out + "/response.%d.stop" % n_requests).read().strip()
             except OSError: stop = "end_turn"
             data = json.dumps({"id": "msg_x", "type": "message", "role": "assistant", "model": "stub",
-                               "content": [{"type": "text", "text": reply}], "stop_reason": stop, "usage": {"input_tokens": 11, "output_tokens": 22, "cache_creation_input_tokens": 33, "cache_read_input_tokens": 44}}).encode()
+                               "content": [{"type": "text", "text": reply}], "stop_reason": stop, "usage": {"input_tokens": 11, "output_tokens": 22, "cache_creation_input_tokens": 33, "cache_read_input_tokens": 44, "output_tokens_details": {"thinking_tokens": 7}}}).encode()
             self.send_response(200)
         self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(data)))
         self.end_headers(); self.wfile.write(data)
@@ -206,6 +206,7 @@ if [r.get("sample") for r in rows] != [1, 2, 3]: bad.append("samples")
 for r in rows:
     for k, v in (("in", 11), ("out", 22), ("cache_write", 33), ("cache_read", 44)):
         if r.get(k) != v: bad.append("%s=%r" % (k, r.get(k)))
+    if r.get("thinking") != 7: bad.append("thinking=%r (the API reported 7 thinking tokens)" % r.get("thinking"))
     if r.get("provider") != "anthropic" or r.get("model") != "stub-model": bad.append("provider/model")
     if r.get("task") != "UNIT: refill": bad.append("task %r" % r.get("task"))
     if not isinstance(r.get("ms"), int) or r["ms"] < 0: bad.append("ms")
@@ -223,7 +224,7 @@ agent --usage-log "$d/ulog.jsonl" >/dev/null 2>&1
 rm -f "$d/force-error"
 expect "usage log: an API error is one line with its outcome and status" "$(python3 -c "
 import json; rows = [json.loads(l) for l in open('$d/ulog.jsonl')]
-print(len(rows), rows[0].get('outcome'), rows[0].get('status'))" 2>&1)" "1 api_error 529"
+print(len(rows), rows[0].get('outcome'), rows[0].get('status'), rows[0].get('thinking'))" 2>&1)" "1 api_error 529 0"
 broken; agent >/dev/null 2>&1
 [ ! -e "$d/nolog.jsonl" ] || { echo "FAIL: usage log: a file nobody named exists" >&2; fail=1; }
 

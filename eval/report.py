@@ -25,7 +25,9 @@ def main():
         of = sum(x.get("audit", {}).get("of", 0) for x in rs)
         cost = sum(x["cost_usd"] or 0 for x in rs)
         eff = [x["efficiency"] for x in rs if x["efficiency"] is not None]
-        return dict(n=n, done=sum(1 for x in rs if x["project_verdict"] == "done"), uv=s("units_verified"), ut=s("units_total"), pts=pts, of=of,
+        th = [x["tokens"].get("thinking") for x in rs]
+        thinking = sum(t for t in th if t is not None) if th and all(t is not None for t in th) else None
+        return dict(thinking=thinking, n=n, done=sum(1 for x in rs if x["project_verdict"] == "done"), uv=s("units_verified"), ut=s("units_total"), pts=pts, of=of,
                     calls=s("calls"), tin=tk("in"), tout=tk("out"), cw=tk("cache_write"), cr=tk("cache_read"), cost=cost,
                     eff=sum(eff) / len(eff) if eff else None, secs=sum((x["seconds"] or 0) for x in rs) / n)
     head = "%-14s %3s %5s %6s %9s %5s %8s %8s %8s %9s %6s %5s"
@@ -41,5 +43,7 @@ def main():
                       "%.4f" % a["cost"], "-" if a["eff"] is None else "%.3f" % a["eff"], "%.0f" % a["secs"]))
         if a["pts"]:
             print("cost per audit point $%.6f   output tokens per audit point %.1f" % (a["cost"] / a["pts"], a["tout"] / a["pts"]))
+        if a["thinking"] is not None and a["tout"]:
+            print("thinking tokens %d of %d output tokens (%.0f%%)" % (a["thinking"], a["tout"], 100.0 * a["thinking"] / a["tout"]))
 if __name__ == "__main__":
     main()
