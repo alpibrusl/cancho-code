@@ -1,0 +1,36 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "eq",
+   "signature": "fn count_a[&r](s: &r [byte]) -> [] int",
+   "cases": [
+    {
+     "args": [
+      "a == b"
+     ],
+     "expect": 1
+    },
+    {
+     "args": [
+      "a"
+     ],
+     "expect": 1
+    },
+    {
+     "args": [
+      "x or true"
+     ],
+     "expect": 0
+    },
+    {
+     "args": [
+      "aa"
+     ],
+     "expect": 2
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

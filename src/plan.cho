@@ -404,9 +404,10 @@ fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte
             }
         }
         let tn = json.get(src, tape, get_f(info, u, f_node()), "tests");
-        let has_tests = tn >= 0 && json.is_array(tape, tn) && json.count(tape, tn) > 0;
+        let cn = json.get(src, tape, get_f(info, u, f_node()), "cases");
+        let has_tests = (tn >= 0 && json.is_array(tape, tn) && json.count(tape, tn) > 0) || (cn >= 0 && json.is_array(tape, cn) && json.count(tape, cn) > 0);
         if heavy && !has_tests {
-            b = emit(heap, b, "needs-tests", who, "this function takes a heap, or returns text, a buffer or a list (alone or inside a Result or Option): an example `CALL == EXPECTED` cannot run for it (`==` compares scalars, a test has no heap); give `tests`, cancho test functions that call it through a helper");
+            b = emit(heap, b, "needs-tests", who, "this function takes a heap, or returns text, a buffer or a list (alone or inside a Result or Option): an example `CALL == EXPECTED` cannot run for it (`==` compares scalars, a test has no heap); give `cases` (inputs and expected values, the tests are made from them) or `tests`");
         }
     }
     // A test is `pub fn test_NAME[regions](caps) -> [row] int` whose parameters are unique `Heap` or `Io` references (docs/testing.md §3). The

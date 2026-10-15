@@ -1,0 +1,1326 @@
+edition 7;
+
+module cases;
+
+// The cases expander. A model that writes a plan also had to write each unit's tests, and the tests it wrote did not compile against the
+// unit's own signature (the wrong argument count, the wrong type, a test form that is not one). So the model writes test DATA instead:
+//
+//     "cases": [ {"args": [1, "ab"], "expect": {"ok": 5}}, ... ]
+//
+// and this module writes the test CODE from the signature, once, deterministically (docs/plan.md). The gate is scripts/test-cases.sh; the
+// Python oracle it holds this to is tests/reference/cases_ref.py, and the two are written against the same spec.
+//
+// `expand(heap, plan)` answers the plan with every unit's `cases` replaced by `tests` (and `examples` filled when it had none), a report
+// with one `[CASES_ERROR]<TAB>unit<TAB>case or -<TAB>message` line per problem, and 0 when there was none, else 1. A unit with a problem
+// is copied as it was, `cases` and all; every unit without `cases` is copied as it is. Pure: the effect row is [heap].
+//
+// `sg` is the signature of the unit being expanded, as ints (a layout, not a type):
+//     0 1   the function name (byte range in the signature)
+//     2 3   the return type (byte range, trimmed)
+//     4     how many parameters there are (all of them, heap included)
+//     5     how many of them are args (not the heap)
+//     6     return kind: 0 int, 1 bool, 2 buffer, 3 text, 4 option, 5 result
+//     7     the option / result payload: 0 int, 1 bool, 2 buffer, 3 text
+//     8     1 when a result's error type is a buffer
+//     9 10  the byte range of the type that cannot be expressed
+//     11    1 when the signature has a heap
+//     12..  parameter i: its type's byte range at 12 + 2i; its kind at 76 + i (0 int, 1 bool, 2 text, 3 heap)
+
+import std.buffer;
+import std.bytes;
+import std.json;
+
+fn max_params() -> [] int { return 32; }
+fn sg_len() -> [] int { return 112; }
+
+fn byte_at[&t](t: &t [byte], i: int) -> [] int {
+    if i < 0 || i >= len(t) {
+        return 0 - 1;
+    }
+    return int_of(t[i]);
+}
+
+fn is_start(c: int) -> [] bool {
+    return bytes.is_alpha(c) || c == 95;
+}
+
+fn is_part(c: int) -> [] bool {
+    return bytes.is_alpha(c) || bytes.is_digit(c) || c == 95;
+}
+
+fn is_ws(c: int) -> [] bool {
+    return c == 32 || c == 9 || c == 10 || c == 13;
+}
+
+fn skip_sp[&t](t: &t [byte], p: int) -> [] int {
+    var i = p;
+    while byte_at(t, i) == 32 {
+        i = i + 1;
+    }
+    return i;
+}
+
+fn ident_end[&t](t: &t [byte], p: int) -> [] int {
+    if !is_start(byte_at(t, p)) {
+        return p;
+    }
+    var i = p + 1;
+    while is_part(byte_at(t, i)) {
+        i = i + 1;
+    }
+    return i;
+}
+
+// The range a..b of `t` without leading and trailing whitespace.
+fn trim_range[&t](t: &t [byte], a: int, b: int) -> [] (int, int) {
+    var x = a;
+    var y = b;
+    while x < y && is_ws(byte_at(t, x)) {
+        x = x + 1;
+    }
+    while y > x && is_ws(byte_at(t, y - 1)) {
+        y = y - 1;
+    }
+    return (x, y);
+}
+
+// ---- the signature --------------------------------------------------------------
+
+// `&r X` (or `&!r X` when `bang`): where X starts, or -1.
+fn amp_rest[&t](t: &t [byte], bang: bool) -> [] int {
+    if byte_at(t, 0) != 38 {
+        return 0 - 1;
+    }
+    var p = 1;
+    if bang {
+        if byte_at(t, 1) != 33 {
+            return 0 - 1;
+        }
+        p = 2;
+    }
+    let e = ident_end(t, p);
+    if e == p {
+        return 0 - 1;
+    }
+    return skip_sp(t, e);
+}
+
+fn is_text_type[&t](t: &t [byte]) -> [] bool {
+    let r = amp_rest(t, false);
+    return r >= 0 && bytes.equal(t[r..len(t)], "[byte]");
+}
+
+// 0 int, 1 bool, 2 text, 3 heap, -1 anything else.
+fn classify_param[&t](t: &t [byte]) -> [] int {
+    if bytes.equal(t, "int") {
+        return 0;
+    }
+    if bytes.equal(t, "bool") {
+        return 1;
+    }
+    if is_text_type(t) {
+        return 2;
+    }
+    let r = amp_rest(t, true);
+    if r >= 0 && bytes.equal(t[r..len(t)], "Heap") {
+        return 3;
+    }
+    return 0 - 1;
+}
+
+// The return type `t` (trimmed; `base` is where it starts in the signature). 0 when it can be expressed, else 2 with the offending
+// type's range in sg[9], sg[10].
+fn classify_ret[&t, &g](t: &t [byte], base: int, sg: &!g [int]) -> [] int {
+    sg[9] = base;
+    sg[10] = base + len(t);
+    if bytes.equal(t, "int") {
+        sg[6] = 0;
+        return 0;
+    }
+    if bytes.equal(t, "bool") {
+        sg[6] = 1;
+        return 0;
+    }
+    if bytes.equal(t, "buffer.Buffer") {
+        sg[6] = 2;
+        return 0;
+    }
+    if is_text_type(t) {
+        sg[6] = 3;
+        return 0;
+    }
+    let last = len(t) - 1;
+    if len(t) >= 15 && bytes.starts_with(t, "option.Option[") && byte_at(t, last) == 93 {
+        let (a, b) = trim_range(t, 14, last);
+        if bytes.equal(t[a..b], "int") {
+            sg[6] = 4;
+            sg[7] = 0;
+            return 0;
+        }
+        if bytes.equal(t[a..b], "bool") {
+            sg[6] = 4;
+            sg[7] = 1;
+            return 0;
+        }
+        return 2;
+    }
+    if len(t) >= 15 && bytes.starts_with(t, "result.Result[") && byte_at(t, last) == 93 {
+        var depth = 0;
+        var comma = 0 - 1;
+        var i = 14;
+        while i < last && comma < 0 {
+            let ch = byte_at(t, i);
+            if ch == 40 || ch == 91 {
+                depth = depth + 1;
+            } else if ch == 41 || ch == 93 {
+                depth = depth - 1;
+            } else if ch == 44 && depth == 0 {
+                comma = i;
+            }
+            i = i + 1;
+        }
+        if comma < 0 {
+            return 2;
+        }
+        let (a, b) = trim_range(t, 14, comma);
+        let (c, d) = trim_range(t, comma + 1, last);
+        let tt = t[a..b];
+        var tk = 0 - 1;
+        if bytes.equal(tt, "int") {
+            tk = 0;
+        } else if bytes.equal(tt, "bool") {
+            tk = 1;
+        } else if bytes.equal(tt, "buffer.Buffer") {
+            tk = 2;
+        } else if is_text_type(tt) {
+            tk = 3;
+        }
+        if tk < 0 {
+            sg[9] = base + a;
+            sg[10] = base + b;
+            return 2;
+        }
+        sg[6] = 5;
+        sg[7] = tk;
+        sg[8] = 0;
+        if bytes.equal(t[c..d], "buffer.Buffer") {
+            sg[8] = 1;
+        }
+        return 0;
+    }
+    return 2;
+}
+
+// Read `fn NAME[regions](params) -> [row] TYPE` into `sg`. 0 ok; 1 the signature cannot be read; 2 a type cannot be expressed; 3 too many
+// parameters.
+fn parse_sig[&t, &g](t: &t [byte], sg: &!g [int]) -> [] int {
+    if !bytes.starts_with(t, "fn ") {
+        return 1;
+    }
+    let a = skip_sp(t, 3);
+    let b = ident_end(t, a);
+    if b == a {
+        return 1;
+    }
+    sg[0] = a;
+    sg[1] = b;
+    var c = skip_sp(t, b);
+    if byte_at(t, c) == 91 {
+        var q = c;
+        while q < len(t) && byte_at(t, q) != 93 {
+            q = q + 1;
+        }
+        if q >= len(t) {
+            return 1;
+        }
+        c = skip_sp(t, q + 1);
+    }
+    if byte_at(t, c) != 40 {
+        return 1;
+    }
+    var depth = 0;
+    var i = c;
+    var close = 0 - 1;
+    while i < len(t) && close < 0 {
+        let ch = byte_at(t, i);
+        if ch == 40 || ch == 91 {
+            depth = depth + 1;
+        } else if ch == 41 || ch == 93 {
+            depth = depth - 1;
+            if depth == 0 {
+                close = i;
+            }
+        }
+        i = i + 1;
+    }
+    if close < 0 || byte_at(t, close) != 41 {
+        return 1;
+    }
+    let d = skip_sp(t, close + 1);
+    if byte_at(t, d) != 45 || byte_at(t, d + 1) != 62 {
+        return 1;
+    }
+    let e = skip_sp(t, d + 2);
+    if byte_at(t, e) != 91 {
+        return 1;
+    }
+    var f = e;
+    while f < len(t) && byte_at(t, f) != 93 {
+        f = f + 1;
+    }
+    if f >= len(t) {
+        return 1;
+    }
+    let (rs, re) = trim_range(t, f + 1, len(t));
+    if rs == re {
+        return 1;
+    }
+    sg[2] = rs;
+    sg[3] = re;
+    // the parameters: c + 1 .. close, split at the commas that are not inside brackets
+    var n = 0;
+    let (ia, ib) = trim_range(t, c + 1, close);
+    if ia < ib {
+        var start = c + 1;
+        var level = 0;
+        var p = c + 1;
+        var fine = true;
+        while p <= close && fine {
+            var cut = false;
+            if p == close {
+                cut = true;
+            } else {
+                let ch = byte_at(t, p);
+                if ch == 40 || ch == 91 {
+                    level = level + 1;
+                } else if ch == 41 || ch == 93 {
+                    level = level - 1;
+                } else if ch == 44 && level == 0 {
+                    cut = true;
+                }
+            }
+            if cut {
+                let (pa, pb) = trim_range(t, start, p);
+                if pa == pb {
+                    fine = false;
+                } else {
+                    var colon = pa;
+                    while colon < pb && byte_at(t, colon) != 58 {
+                        colon = colon + 1;
+                    }
+                    if colon >= pb {
+                        fine = false;
+                    } else {
+                        let (na, nb) = trim_range(t, pa, colon);
+                        if na == nb || ident_end(t, na) != nb {
+                            fine = false;
+                        } else {
+                            let (ta, tb) = trim_range(t, colon + 1, pb);
+                            if n < max_params() {
+                                sg[12 + 2 * n] = ta;
+                                sg[13 + 2 * n] = tb;
+                            }
+                            n = n + 1;
+                        }
+                    }
+                }
+                start = p + 1;
+            }
+            p = p + 1;
+        }
+        if !fine {
+            return 1;
+        }
+    }
+    if n > max_params() {
+        return 3;
+    }
+    sg[4] = n;
+    var heaps = 0;
+    var args = 0;
+    var k = 0;
+    while k < n {
+        let ta = sg[12 + 2 * k];
+        let tb = sg[13 + 2 * k];
+        var kind = classify_param(t[ta..tb]);
+        if kind == 3 {
+            heaps = heaps + 1;
+            if heaps > 1 {
+                kind = 0 - 1;
+            }
+        }
+        if kind < 0 {
+            sg[9] = ta;
+            sg[10] = tb;
+            return 2;
+        }
+        if kind != 3 {
+            args = args + 1;
+        }
+        sg[76 + k] = kind;
+        k = k + 1;
+    }
+    sg[5] = args;
+    sg[11] = heaps;
+    return classify_ret(t[rs..re], rs, sg);
+}
+
+// ---- the report -----------------------------------------------------------------
+
+// `[CASES_ERROR]<TAB>who<TAB>case or -<TAB>`: the message follows, then `end_line`.
+fn line_head[&h, &w](heap: &!h Heap, rep: buffer.Buffer, who: &w [byte], k: int) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, rep, "[CASES_ERROR]\t");
+    b = buffer.append(heap, b, who);
+    b = buffer.append(heap, b, "\t");
+    if k > 0 {
+        b = buffer.push_nat(heap, b, k);
+    } else {
+        b = buffer.append(heap, b, "-");
+    }
+    return buffer.append(heap, b, "\t");
+}
+
+fn emit[&h, &w, &m](heap: &!h Heap, rep: buffer.Buffer, who: &w [byte], k: int, msg: &m [byte]) -> [heap] buffer.Buffer {
+    var b = line_head(heap, rep, who, k);
+    b = buffer.append(heap, b, msg);
+    return buffer.push(heap, b, byte_of(10));
+}
+
+fn kind_desc[&t](tape: &t [int], i: int) -> [] &static [byte] {
+    let k = json.kind(tape, i);
+    if k == 0 {
+        return "null";
+    }
+    if k == 1 || k == 2 {
+        return "a boolean";
+    }
+    if k == 3 {
+        return "an integer";
+    }
+    if k == 4 {
+        return "a number that is not an integer";
+    }
+    if k == 5 {
+        return "a string";
+    }
+    if k == 6 {
+        return "a list";
+    }
+    return "an object";
+}
+
+// A value problem: `st` 1 wrong kind, 2 out of range, 3 text that cannot be a literal. `vk` is what was wanted (0 int, 1 bool, 2 text);
+// `wk` names the value: 0 "argument N", 1 "expect", 2 `expect "ok"`.
+fn emit_value[&h, &w, &t](heap: &!h Heap, rep: buffer.Buffer, who: &w [byte], k: int, st: int, vk: int, wk: int, argno: int, tape: &t [int], node: int) -> [heap] buffer.Buffer {
+    var b = line_head(heap, rep, who, k);
+    if wk == 0 {
+        b = buffer.append(heap, b, "argument ");
+        b = buffer.push_nat(heap, b, argno);
+    } else if wk == 1 {
+        b = buffer.append(heap, b, "expect");
+    } else {
+        b = buffer.append(heap, b, "expect \"ok\"");
+    }
+    if st == 1 {
+        b = buffer.append(heap, b, " must be ");
+        if vk == 0 {
+            b = buffer.append(heap, b, "a JSON integer");
+        } else if vk == 1 {
+            b = buffer.append(heap, b, "true or false");
+        } else {
+            b = buffer.append(heap, b, "a JSON string");
+        }
+        b = buffer.append(heap, b, ", got ");
+        b = buffer.append(heap, b, kind_desc(tape, node));
+    } else if st == 2 {
+        b = buffer.append(heap, b, " is out of the range of int");
+    } else {
+        b = buffer.append(heap, b, " cannot be written in a cancho string literal; use another input");
+    }
+    return buffer.push(heap, b, byte_of(10));
+}
+
+// ---- literals -------------------------------------------------------------------
+
+fn put_int_lit[&h](heap: &!h Heap, out: buffer.Buffer, n: int) -> [heap] buffer.Buffer {
+    if n >= 0 {
+        return buffer.push_nat(heap, out, n);
+    }
+    if n == 0 - 9223372036854775807 - 1 {
+        // no literal for it: the language reads the magnitude first
+        return buffer.append(heap, out, "0 - 9223372036854775807 - 1");
+    }
+    let b = buffer.push(heap, out, byte_of(45));
+    return buffer.push_nat(heap, b, 0 - n);
+}
+
+// The text at node `node` as a cancho string literal appended to `out`; status 3 when a byte cannot be written in one (NUL and the other
+// control bytes except newline and tab, DEL). Non-ASCII text is written as it is: a source file is UTF-8.
+fn put_text_lit[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], node: int) -> [heap] (buffer.Buffer, int) {
+    let n = json.string_length(src, tape, node);
+    let sb = box_slice(heap, n + 1, byte_of(0));
+    var o = out;
+    var st = 0;
+    borrow mut sb as &!w in {
+        let text = contents(w);
+        json.string_into(src, tape, node, text);
+        var i = 0;
+        while i < n {
+            let c = int_of(text[i]);
+            if (c < 32 && c != 9 && c != 10) || c == 127 {
+                st = 3;
+            }
+            i = i + 1;
+        }
+        if st == 0 {
+            o = buffer.push(heap, o, byte_of(34));
+            i = 0;
+            while i < n {
+                let c = int_of(text[i]);
+                if c == 34 {
+                    o = buffer.append(heap, o, "\\\"");
+                } else if c == 92 {
+                    o = buffer.append(heap, o, "\\\\");
+                } else if c == 10 {
+                    o = buffer.append(heap, o, "\\n");
+                } else if c == 9 {
+                    o = buffer.append(heap, o, "\\t");
+                } else {
+                    o = buffer.push(heap, o, text[i]);
+                }
+                i = i + 1;
+            }
+            o = buffer.push(heap, o, byte_of(34));
+        }
+    }
+    unbox_slice(heap, sb);
+    return (o, st);
+}
+
+// The JSON value at `node` as a literal of kind `vk` (0 int, 1 bool, 2 text) appended to `out`; status 0, 1 wrong kind, 2 out of range,
+// 3 text that cannot be a literal.
+fn put_lit[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, vk: int, src: &s [byte], tape: &t [int], node: int) -> [heap] (buffer.Buffer, int) {
+    if vk == 0 {
+        if !json.is_int(tape, node) {
+            return (out, 1);
+        }
+        if !json.fits_int(src, tape, node) {
+            return (out, 2);
+        }
+        return (put_int_lit(heap, out, json.to_int(src, tape, node)), 0);
+    }
+    if vk == 1 {
+        if !json.is_bool(tape, node) {
+            return (out, 1);
+        }
+        if json.to_bool(tape, node) {
+            return (buffer.append(heap, out, "true"), 0);
+        }
+        return (buffer.append(heap, out, "false"), 0);
+    }
+    if !json.is_string(tape, node) {
+        return (out, 1);
+    }
+    return put_text_lit(heap, out, src, tape, node);
+}
+
+// ---- the generated code ---------------------------------------------------------
+
+// The accumulator of one unit.
+res struct Gen {
+    rep: buffer.Buffer,
+    // the test items (NUL after each)
+    items: buffer.Buffer,
+    // the example lines (NUL after each)
+    exs: buffer.Buffer,
+    nex: int,
+    // bit h: helper h is used (1 is, 2 some, 3 none, 4 ok, 5 err)
+    used: int,
+    errs: int,
+}
+
+// One case, in pieces.
+res struct Parts {
+    call: buffer.Buffer,
+    want: buffer.Buffer,
+    doc: buffer.Buffer,
+    rep: buffer.Buffer,
+    helper: int,
+}
+
+fn helper_name(h: int) -> [] &static [byte] {
+    if h == 1 {
+        return "is";
+    }
+    if h == 2 {
+        return "some";
+    }
+    if h == 3 {
+        return "none";
+    }
+    if h == 4 {
+        return "ok";
+    }
+    return "err";
+}
+
+// The value kind of a result's or option's payload as a literal kind: int 0, bool 1, text 2.
+fn payload_vk(tk: int) -> [] int {
+    if tk == 0 {
+        return 0;
+    }
+    if tk == 1 {
+        return 1;
+    }
+    return 2;
+}
+
+// Validate one case and write its pieces: the call's arguments (with `heap` where the signature has it), the `want` literal, the text
+// that goes after `==` in an example, and which helper compares (0 none: a direct comparison). `helper` is -1 when the case was reported.
+fn case_parts[&h, &s, &t, &w, &g](heap: &!h Heap, p: Parts, src: &s [byte], tape: &t [int], cn: int, k: int, who: &w [byte], sg: &!g [int]) -> [heap] Parts {
+    let Parts { call, want, doc, rep, helper } = p;
+    var call_b = call;
+    var want_b = want;
+    var doc_b = doc;
+    var rep_b = rep;
+    var hh = 0 - 1;
+    let a = json.get(src, tape, cn, "args");
+    let ex = json.get(src, tape, cn, "expect");
+    if !json.is_object(tape, cn) || !json.is_array(tape, a) || ex < 0 {
+        rep_b = emit(heap, rep_b, who, k, "a case must be an object with \"args\" (a list) and \"expect\"");
+    } else if json.count(tape, a) != sg[5] {
+        rep_b = line_head(heap, rep_b, who, k);
+        rep_b = buffer.append(heap, rep_b, "args has ");
+        rep_b = buffer.push_nat(heap, rep_b, json.count(tape, a));
+        rep_b = buffer.append(heap, rep_b, " value(s) but the function takes ");
+        rep_b = buffer.push_nat(heap, rep_b, sg[5]);
+        rep_b = buffer.append(heap, rep_b, " (the heap is not given in args)\n");
+    } else {
+        var i = 0;
+        var ai = 0;
+        var bad = false;
+        while i < sg[4] && !bad {
+            if i > 0 {
+                call_b = buffer.append(heap, call_b, ", ");
+            }
+            let pk = sg[76 + i];
+            if pk == 3 {
+                call_b = buffer.append(heap, call_b, "heap");
+            } else {
+                let node = json.at(tape, a, ai);
+                ai = ai + 1;
+                let (nb, st) = put_lit(heap, call_b, pk, src, tape, node);
+                call_b = nb;
+                if st != 0 {
+                    rep_b = emit_value(heap, rep_b, who, k, st, pk, 0, ai, tape, node);
+                    bad = true;
+                }
+            }
+            i = i + 1;
+        }
+        if !bad {
+            let kind = sg[6];
+            let tk = sg[7];
+            var st = 0;
+            var vk = 0;
+            var wk = 1;
+            var node = ex;
+            if kind == 0 || kind == 1 {
+                vk = kind;
+                hh = 0;
+            } else if kind == 2 || kind == 3 {
+                vk = 2;
+                hh = 1;
+            } else if kind == 4 {
+                if json.is_null(tape, ex) {
+                    doc_b = buffer.append(heap, doc_b, "option.Option::None");
+                    hh = 3;
+                } else {
+                    vk = payload_vk(tk);
+                    hh = 2;
+                }
+            } else {
+                if json.is_object(tape, ex) && json.count(tape, ex) == 1 && json.get(src, tape, ex, "err") >= 0 {
+                    doc_b = buffer.append(heap, doc_b, "result.Result::Err");
+                    hh = 5;
+                } else if json.is_object(tape, ex) && json.count(tape, ex) == 1 && json.get(src, tape, ex, "ok") >= 0 {
+                    vk = payload_vk(tk);
+                    wk = 2;
+                    node = json.get(src, tape, ex, "ok");
+                    hh = 4;
+                } else {
+                    rep_b = emit(heap, rep_b, who, k, "expect for a Result must be {\"ok\": value} or {\"err\": anything}");
+                }
+            }
+            if hh == 0 || hh == 1 || hh == 2 || hh == 4 {
+                let (nb, s2) = put_lit(heap, want_b, vk, src, tape, node);
+                want_b = nb;
+                st = s2;
+                if st != 0 {
+                    rep_b = emit_value(heap, rep_b, who, k, st, vk, wk, 0, tape, node);
+                    hh = 0 - 1;
+                } else if hh == 2 {
+                    doc_b = buffer.append(heap, doc_b, "option.Option::Some(");
+                    borrow want_b as &x in {
+                        doc_b = buffer.append(heap, doc_b, buffer.bytes(x));
+                    }
+                    doc_b = buffer.append(heap, doc_b, ")");
+                } else if hh == 4 {
+                    doc_b = buffer.append(heap, doc_b, "result.Result::Ok(");
+                    borrow want_b as &x in {
+                        doc_b = buffer.append(heap, doc_b, buffer.bytes(x));
+                    }
+                    doc_b = buffer.append(heap, doc_b, ")");
+                } else {
+                    borrow want_b as &x in {
+                        doc_b = buffer.append(heap, doc_b, buffer.bytes(x));
+                    }
+                }
+            }
+        }
+    }
+    return Parts { call: call_b, want: want_b, doc: doc_b, rep: rep_b, helper: hh };
+}
+
+fn do_case[&h, &s, &t, &w, &d, &n, &g](heap: &!h Heap, gen: Gen, src: &s [byte], tape: &t [int], cn: int, k: int, who: &w [byte], sid: &d [byte], name: &n [byte], sg: &!g [int]) -> [heap] Gen {
+    let Gen { rep, items, exs, nex, used, errs } = gen;
+    let p = Parts { call: buffer.empty(heap, 64), want: buffer.empty(heap, 64), doc: buffer.empty(heap, 64), rep: rep, helper: 0 - 1 };
+    let done = case_parts(heap, p, src, tape, cn, k, who, sg);
+    let Parts { call, want, doc, rep, helper } = done;
+    var items_b = items;
+    var exs_b = exs;
+    var nex_n = nex;
+    var used_n = used;
+    var errs_n = errs;
+    if helper < 0 {
+        errs_n = errs_n + 1;
+    } else {
+        items_b = buffer.append(heap, items_b, "pub fn test_");
+        items_b = buffer.append(heap, items_b, sid);
+        items_b = buffer.append(heap, items_b, "_");
+        items_b = buffer.push_nat(heap, items_b, k);
+        if sg[11] == 1 {
+            items_b = buffer.append(heap, items_b, "[&h](heap: &!h Heap) -> [heap] int { ");
+        } else {
+            items_b = buffer.append(heap, items_b, "() -> [] int { ");
+        }
+        var callsize = 0;
+        borrow call as &c in {
+            callsize = buffer.size(c);
+        }
+        if helper == 0 {
+            items_b = buffer.append(heap, items_b, "test.assert(");
+            items_b = buffer.append(heap, items_b, name);
+            items_b = buffer.append(heap, items_b, "(");
+            borrow call as &c in {
+                items_b = buffer.append(heap, items_b, buffer.bytes(c));
+            }
+            items_b = buffer.append(heap, items_b, ") == ");
+            borrow want as &x in {
+                items_b = buffer.append(heap, items_b, buffer.bytes(x));
+            }
+            items_b = buffer.append(heap, items_b, "); return 0; }");
+        } else {
+            used_n = used_n | (1 << helper);
+            items_b = buffer.append(heap, items_b, "test.assert_eq(cases_");
+            items_b = buffer.append(heap, items_b, sid);
+            items_b = buffer.append(heap, items_b, "_");
+            items_b = buffer.append(heap, items_b, helper_name(helper));
+            items_b = buffer.append(heap, items_b, "(");
+            borrow call as &c in {
+                items_b = buffer.append(heap, items_b, buffer.bytes(c));
+            }
+            var wantsize = 0;
+            borrow want as &x in {
+                wantsize = buffer.size(x);
+            }
+            if wantsize > 0 {
+                if callsize > 0 {
+                    items_b = buffer.append(heap, items_b, ", ");
+                }
+                borrow want as &x in {
+                    items_b = buffer.append(heap, items_b, buffer.bytes(x));
+                }
+            }
+            items_b = buffer.append(heap, items_b, "), 0); return 0; }");
+        }
+        items_b = buffer.push(heap, items_b, byte_of(0));
+        // the example: NAME(CALL) == EXPECTED
+        var ln = buffer.empty(heap, 96);
+        ln = buffer.append(heap, ln, name);
+        ln = buffer.append(heap, ln, "(");
+        borrow call as &c in {
+            ln = buffer.append(heap, ln, buffer.bytes(c));
+        }
+        ln = buffer.append(heap, ln, ") == ");
+        borrow doc as &x in {
+            ln = buffer.append(heap, ln, buffer.bytes(x));
+        }
+        var usable = true;
+        borrow call as &c in {
+            if bytes.find(buffer.bytes(c), " == ") >= 0 {
+                usable = false;
+            }
+        }
+        borrow ln as &l in {
+            if bytes.find(buffer.bytes(l), "|| true") >= 0 || bytes.find(buffer.bytes(l), "or true") >= 0 {
+                usable = false;
+            }
+        }
+        if usable && nex_n < 3 {
+            borrow ln as &l in {
+                exs_b = buffer.append(heap, exs_b, buffer.bytes(l));
+            }
+            exs_b = buffer.push(heap, exs_b, byte_of(0));
+            nex_n = nex_n + 1;
+        }
+        buffer.drop(heap, ln);
+    }
+    buffer.drop(heap, call);
+    buffer.drop(heap, want);
+    buffer.drop(heap, doc);
+    return Gen { rep: rep, items: items_b, exs: exs_b, nex: nex_n, used: used_n, errs: errs_n };
+}
+
+// The comma-separated parameter list of a helper: `heap: &!h Heap, a1: int, a2: &static [byte]`.
+fn put_plist[&h, &g](heap: &!h Heap, out: buffer.Buffer, sg: &!g [int]) -> [heap] buffer.Buffer {
+    var b = out;
+    var i = 0;
+    var n = 0;
+    while i < sg[4] {
+        if i > 0 {
+            b = buffer.append(heap, b, ", ");
+        }
+        let pk = sg[76 + i];
+        if pk == 3 {
+            b = buffer.append(heap, b, "heap: &!h Heap");
+        } else {
+            n = n + 1;
+            b = buffer.append(heap, b, "a");
+            b = buffer.push_nat(heap, b, n);
+            if pk == 0 {
+                b = buffer.append(heap, b, ": int");
+            } else if pk == 1 {
+                b = buffer.append(heap, b, ": bool");
+            } else {
+                b = buffer.append(heap, b, ": &static [byte]");
+            }
+        }
+        i = i + 1;
+    }
+    return b;
+}
+
+// `NAME(heap, a1, a2)`.
+fn put_call[&h, &n, &g](heap: &!h Heap, out: buffer.Buffer, name: &n [byte], sg: &!g [int]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, out, name);
+    b = buffer.append(heap, b, "(");
+    var i = 0;
+    var n = 0;
+    while i < sg[4] {
+        if i > 0 {
+            b = buffer.append(heap, b, ", ");
+        }
+        if sg[76 + i] == 3 {
+            b = buffer.append(heap, b, "heap");
+        } else {
+            n = n + 1;
+            b = buffer.append(heap, b, "a");
+            b = buffer.push_nat(heap, b, n);
+        }
+        i = i + 1;
+    }
+    return buffer.append(heap, b, ")");
+}
+
+// `fn cases_SID_NAME[&h](PARAMS, want: W) -> [row] int`; `want` is empty for a helper that takes none.
+fn put_head[&h, &d, &w, &g](heap: &!h Heap, out: buffer.Buffer, sid: &d [byte], hname: &static [byte], want: &w [byte], sg: &!g [int]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, out, "fn cases_");
+    b = buffer.append(heap, b, sid);
+    b = buffer.append(heap, b, "_");
+    b = buffer.append(heap, b, hname);
+    if sg[11] == 1 {
+        b = buffer.append(heap, b, "[&h]");
+    }
+    b = buffer.append(heap, b, "(");
+    b = put_plist(heap, b, sg);
+    if len(want) > 0 {
+        if sg[4] > 0 {
+            b = buffer.append(heap, b, ", ");
+        }
+        b = buffer.append(heap, b, "want: ");
+        b = buffer.append(heap, b, want);
+    }
+    if sg[11] == 1 {
+        return buffer.append(heap, b, ") -> [heap] int");
+    }
+    return buffer.append(heap, b, ") -> [] int");
+}
+
+// `var same = false; borrow VAR as &x in { ... } buffer.drop(heap, VAR); if same { return 0; } return 1;`
+fn put_cmp_buf[&h, &d](heap: &!h Heap, out: buffer.Buffer, sid: &d [byte], var_name: &static [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, out, "var same = false; borrow ");
+    b = buffer.append(heap, b, var_name);
+    b = buffer.append(heap, b, " as &x in { same = cases_");
+    b = buffer.append(heap, b, sid);
+    b = buffer.append(heap, b, "_same(buffer.bytes(x), want); } buffer.drop(heap, ");
+    b = buffer.append(heap, b, var_name);
+    return buffer.append(heap, b, "); if same { return 0; } return 1;");
+}
+
+fn want_type(tk: int) -> [] &static [byte] {
+    if tk == 0 {
+        return "int";
+    }
+    if tk == 1 {
+        return "bool";
+    }
+    return "&static [byte]";
+}
+
+// One helper, ended with a NUL.
+fn put_helper[&h, &d, &n, &g](heap: &!h Heap, out: buffer.Buffer, sid: &d [byte], name: &n [byte], sg: &!g [int], which: int) -> [heap] buffer.Buffer {
+    var b = out;
+    let kind = sg[6];
+    let tk = sg[7];
+    if which == 1 {
+        b = put_head(heap, b, sid, "is", "&static [byte]", sg);
+        b = buffer.append(heap, b, " { let got = ");
+        b = put_call(heap, b, name, sg);
+        b = buffer.append(heap, b, "; ");
+        if kind == 2 {
+            b = put_cmp_buf(heap, b, sid, "got");
+        } else {
+            b = buffer.append(heap, b, "if cases_");
+            b = buffer.append(heap, b, sid);
+            b = buffer.append(heap, b, "_same(got, want) { return 0; } return 1;");
+        }
+        b = buffer.append(heap, b, " }");
+    } else if which == 2 {
+        b = put_head(heap, b, sid, "some", want_type(tk), sg);
+        b = buffer.append(heap, b, " { match ");
+        b = put_call(heap, b, name, sg);
+        b = buffer.append(heap, b, " { option.Option::Some(v) => { if v == want { return 0; } return 1; } option.Option::None => { return 2; } } }");
+    } else if which == 3 {
+        b = put_head(heap, b, sid, "none", "", sg);
+        b = buffer.append(heap, b, " { match ");
+        b = put_call(heap, b, name, sg);
+        b = buffer.append(heap, b, " { option.Option::Some(_) => { return 2; } option.Option::None => { return 0; } } }");
+    } else if which == 4 {
+        b = put_head(heap, b, sid, "ok", want_type(tk), sg);
+        b = buffer.append(heap, b, " { match ");
+        b = put_call(heap, b, name, sg);
+        b = buffer.append(heap, b, " { ");
+        if tk == 0 || tk == 1 {
+            b = buffer.append(heap, b, "result.Result::Ok(v) => { if v == want { return 0; } return 1; }");
+        } else if tk == 3 {
+            b = buffer.append(heap, b, "result.Result::Ok(v) => { if cases_");
+            b = buffer.append(heap, b, sid);
+            b = buffer.append(heap, b, "_same(v, want) { return 0; } return 1; }");
+        } else {
+            b = buffer.append(heap, b, "result.Result::Ok(b) => { ");
+            b = put_cmp_buf(heap, b, sid, "b");
+            b = buffer.append(heap, b, " }");
+        }
+        if sg[8] == 1 {
+            b = buffer.append(heap, b, " result.Result::Err(e) => { buffer.drop(heap, e); return 2; }");
+        } else {
+            b = buffer.append(heap, b, " result.Result::Err(_) => { return 2; }");
+        }
+        b = buffer.append(heap, b, " } }");
+    } else {
+        b = put_head(heap, b, sid, "err", "", sg);
+        b = buffer.append(heap, b, " { match ");
+        b = put_call(heap, b, name, sg);
+        b = buffer.append(heap, b, " { ");
+        if tk == 2 {
+            b = buffer.append(heap, b, "result.Result::Ok(b) => { buffer.drop(heap, b); return 2; }");
+        } else {
+            b = buffer.append(heap, b, "result.Result::Ok(_) => { return 2; }");
+        }
+        if sg[8] == 1 {
+            b = buffer.append(heap, b, " result.Result::Err(e) => { buffer.drop(heap, e); return 0; }");
+        } else {
+            b = buffer.append(heap, b, " result.Result::Err(_) => { return 0; }");
+        }
+        b = buffer.append(heap, b, " } }");
+    }
+    return buffer.push(heap, b, byte_of(0));
+}
+
+// The helpers the cases need, then the cases' tests: all of the unit's `tests`, each item ended with a NUL.
+fn put_helpers[&h, &d, &n, &g](heap: &!h Heap, out: buffer.Buffer, sid: &d [byte], name: &n [byte], sg: &!g [int], used: int) -> [heap] buffer.Buffer {
+    var b = out;
+    let kind = sg[6];
+    let tk = sg[7];
+    if kind == 2 || kind == 3 || (kind == 5 && (tk == 2 || tk == 3)) {
+        b = buffer.append(heap, b, "fn cases_");
+        b = buffer.append(heap, b, sid);
+        b = buffer.append(heap, b, "_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var i = 0; while i < len(x) { if int_of(x[i]) != int_of(y[i]) { return false; } i = i + 1; } return true; }");
+        b = buffer.push(heap, b, byte_of(0));
+    }
+    var which = 1;
+    while which <= 5 {
+        if (used >> which) & 1 == 1 {
+            b = put_helper(heap, b, sid, name, sg, which);
+        }
+        which = which + 1;
+    }
+    return b;
+}
+
+// ---- one unit -------------------------------------------------------------------
+
+// The cases of the unit at `un`, with the signature `sig` read. Fills `gen`; `errs` says whether the unit was fine.
+fn unit_cases[&h, &s, &t, &w, &d, &x, &g](heap: &!h Heap, gen: Gen, src: &s [byte], tape: &t [int], un: int, who: &w [byte], sid: &d [byte], sig: &x [byte], sg: &!g [int]) -> [heap] Gen {
+    var g2 = gen;
+    let status = parse_sig(sig, sg);
+    if status == 1 {
+        let Gen { rep, items, exs, nex, used, errs } = g2;
+        g2 = Gen { rep: emit(heap, rep, who, 0, "cannot read the signature; it must be `fn NAME(params) -> [row] TYPE`"), items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
+        return g2;
+    }
+    if status == 3 {
+        let Gen { rep, items, exs, nex, used, errs } = g2;
+        g2 = Gen { rep: emit(heap, rep, who, 0, "the signature has more than 32 parameters; give tests instead"), items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
+        return g2;
+    }
+    if status == 2 {
+        let Gen { rep, items, exs, nex, used, errs } = g2;
+        var r = line_head(heap, rep, who, 0);
+        r = buffer.append(heap, r, "signature uses a type that cases cannot express (");
+        r = buffer.append(heap, r, sig[sg[9]..sg[10]]);
+        r = buffer.append(heap, r, "); give tests instead\n");
+        g2 = Gen { rep: r, items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
+        return g2;
+    }
+    let kind = sg[6];
+    if (kind == 2 || (kind == 5 && (sg[7] == 2 || sg[8] == 1))) && sg[11] == 0 {
+        let Gen { rep, items, exs, nex, used, errs } = g2;
+        g2 = Gen { rep: emit(heap, rep, who, 0, "the function returns a buffer.Buffer but takes no heap parameter; give tests instead"), items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
+        return g2;
+    }
+    let name = sig[sg[0]..sg[1]];
+    let cases = json.get(src, tape, un, "cases");
+    var c = cases + 1;
+    var k = 1;
+    let total = json.count(tape, cases);
+    while k <= total {
+        g2 = do_case(heap, g2, src, tape, c, k, who, sid, name, sg);
+        c = json.skip(tape, c);
+        k = k + 1;
+    }
+    let Gen { rep, items, exs, nex, used, errs } = g2;
+    var items_b = items;
+    if errs == 0 {
+        var hb = buffer.empty(heap, 256);
+        hb = put_helpers(heap, hb, sid, name, sg, used);
+        borrow items_b as &i in {
+            hb = buffer.append(heap, hb, buffer.bytes(i));
+        }
+        buffer.drop(heap, items_b);
+        items_b = hb;
+    }
+    return Gen { rep: rep, items: items_b, exs: exs, nex: nex, used: used, errs: errs };
+}
+
+// ---- writing JSON -----------------------------------------------------------------
+
+fn put_key_of[&h, &s, &t](heap: &!h Heap, w: json.Writer, src: &s [byte], tape: &t [int], i: int) -> [heap] json.Writer {
+    let n = json.string_length(src, tape, i);
+    let sb = box_slice(heap, n + 1, byte_of(0));
+    var out = w;
+    borrow mut sb as &!kw in {
+        let text = contents(kw);
+        json.string_into(src, tape, i, text);
+        out = json.put_key(heap, out, text[0..n]);
+    }
+    unbox_slice(heap, sb);
+    return out;
+}
+
+fn put_string_of[&h, &s, &t](heap: &!h Heap, w: json.Writer, src: &s [byte], tape: &t [int], i: int) -> [heap] json.Writer {
+    let n = json.string_length(src, tape, i);
+    let sb = box_slice(heap, n + 1, byte_of(0));
+    var out = w;
+    borrow mut sb as &!kw in {
+        let text = contents(kw);
+        json.string_into(src, tape, i, text);
+        out = json.put_string(heap, out, text[0..n]);
+    }
+    unbox_slice(heap, sb);
+    return out;
+}
+
+// The value at node `i`, as it was.
+fn copy_value[&h, &s, &t](heap: &!h Heap, w: json.Writer, src: &s [byte], tape: &t [int], i: int) -> [heap] json.Writer {
+    var out = w;
+    if json.is_null(tape, i) {
+        return json.put_null(heap, out);
+    }
+    if json.is_bool(tape, i) {
+        return json.put_bool(heap, out, json.to_bool(tape, i));
+    }
+    if json.is_number(tape, i) {
+        return json.put_fragment(heap, out, src[tape[3 * i + 1]..tape[3 * i + 2]]);
+    }
+    if json.is_string(tape, i) {
+        return put_string_of(heap, out, src, tape, i);
+    }
+    if json.is_array(tape, i) {
+        out = json.begin_array(heap, out);
+        var j = i + 1;
+        var left = json.count(tape, i);
+        while left > 0 {
+            out = copy_value(heap, out, src, tape, j);
+            j = json.skip(tape, j);
+            left = left - 1;
+        }
+        return json.end_array(heap, out);
+    }
+    out = json.begin_object(heap, out);
+    var j = i + 1;
+    var left = json.count(tape, i);
+    while left > 0 {
+        out = put_key_of(heap, out, src, tape, j);
+        out = copy_value(heap, out, src, tape, j + 1);
+        j = json.skip(tape, j + 1);
+        left = left - 1;
+    }
+    return json.end_object(heap, out);
+}
+
+// An array of strings from NUL-ended items.
+fn put_items[&h, &b](heap: &!h Heap, w: json.Writer, items: &b [byte]) -> [heap] json.Writer {
+    var out = json.begin_array(heap, w);
+    var from = 0;
+    var i = 0;
+    while i < len(items) {
+        if int_of(items[i]) == 0 {
+            out = json.put_string(heap, out, items[from..i]);
+            from = i + 1;
+        }
+        i = i + 1;
+    }
+    return json.end_array(heap, out);
+}
+
+// Write the unit at `un` with its cases turned into tests (and examples).
+fn write_unit[&h, &s, &t, &i, &e](heap: &!h Heap, w: json.Writer, src: &s [byte], tape: &t [int], un: int, items: &i [byte], exs: &e [byte], fill: bool) -> [heap] json.Writer {
+    var out = json.begin_object(heap, w);
+    let has_examples = json.get(src, tape, un, "examples") >= 0;
+    let has_tests = json.get(src, tape, un, "tests") >= 0;
+    var j = un + 1;
+    var left = json.count(tape, un);
+    while left > 0 {
+        if json.string_equals(src, tape, j, "cases") {
+            if !has_examples {
+                out = json.put_key(heap, out, "examples");
+                out = put_items(heap, out, exs);
+            }
+            if !has_tests {
+                out = json.put_key(heap, out, "tests");
+                out = put_items(heap, out, items);
+            }
+        } else if json.string_equals(src, tape, j, "examples") && fill {
+            out = json.put_key(heap, out, "examples");
+            out = put_items(heap, out, exs);
+        } else if json.string_equals(src, tape, j, "tests") {
+            out = json.put_key(heap, out, "tests");
+            out = put_items(heap, out, items);
+        } else {
+            out = put_key_of(heap, out, src, tape, j);
+            out = copy_value(heap, out, src, tape, j + 1);
+        }
+        j = json.skip(tape, j + 1);
+        left = left - 1;
+    }
+    return json.end_object(heap, out);
+}
+
+// The unit at `un`: expanded when it has cases and no problem, else as it was.
+fn unit_expand[&h, &s, &t](heap: &!h Heap, w: json.Writer, rep: buffer.Buffer, src: &s [byte], tape: &t [int], un: int) -> [heap] (json.Writer, buffer.Buffer) {
+    if !json.is_object(tape, un) || json.get(src, tape, un, "cases") < 0 {
+        return (copy_value(heap, w, src, tape, un), rep);
+    }
+    let idn = json.get(src, tape, un, "id");
+    var n = 1;
+    if json.is_string(tape, idn) {
+        n = json.string_length(src, tape, idn);
+    }
+    let whob = box_slice(heap, n + 2, byte_of(0));
+    let sidb = box_slice(heap, n + 2, byte_of(0));
+    let sgb = box_slice(heap, sg_len(), 0);
+    var gen = Gen { rep: rep, items: buffer.empty(heap, 256), exs: buffer.empty(heap, 64), nex: 0, used: 0, errs: 0 };
+    var fill = false;
+    borrow mut whob as &!ww in {
+        borrow mut sidb as &!sw in {
+            borrow mut sgb as &!gw in {
+                let who = contents(ww);
+                let sidt = contents(sw);
+                let sgs = contents(gw);
+                var wl = 1;
+                if json.is_string(tape, idn) {
+                    wl = json.string_into(src, tape, idn, who);
+                } else {
+                    who[0] = byte_of(45);
+                }
+                var q = 0;
+                while q < wl {
+                    let c = int_of(who[q]);
+                    if bytes.is_alpha(c) || bytes.is_digit(c) || c == 95 {
+                        sidt[q] = who[q];
+                    } else {
+                        sidt[q] = byte_of(95);
+                    }
+                    q = q + 1;
+                }
+                let whot = who[0..wl];
+                let sidv = sidt[0..wl];
+                let cases = json.get(src, tape, un, "cases");
+                let tn = json.get(src, tape, un, "tests");
+                let sn = json.get(src, tape, un, "signature");
+                let en = json.get(src, tape, un, "examples");
+                fill = en < 0 || (json.is_array(tape, en) && json.count(tape, en) == 0);
+                if !json.is_array(tape, cases) || json.count(tape, cases) == 0 {
+                    let Gen { rep, items, exs, nex, used, errs } = gen;
+                    gen = Gen { rep: emit(heap, rep, whot, 0, "cases must be a non-empty list of {\"args\": [...], \"expect\": value} objects"), items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
+                } else if tn >= 0 && !(json.is_array(tape, tn) && json.count(tape, tn) == 0) {
+                    let Gen { rep, items, exs, nex, used, errs } = gen;
+                    gen = Gen { rep: emit(heap, rep, whot, 0, "this unit has both cases and tests; give cases OR tests, not both"), items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
+                } else if !json.is_string(tape, sn) {
+                    let Gen { rep, items, exs, nex, used, errs } = gen;
+                    gen = Gen { rep: emit(heap, rep, whot, 0, "a unit with cases needs a string signature"), items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
+                } else {
+                    let sl = json.string_length(src, tape, sn);
+                    let sigb = box_slice(heap, sl + 1, byte_of(0));
+                    borrow mut sigb as &!xw in {
+                        let sigt = contents(xw);
+                        json.string_into(src, tape, sn, sigt);
+                        gen = unit_cases(heap, gen, src, tape, un, whot, sidv, sigt[0..sl], sgs);
+                    }
+                    unbox_slice(heap, sigb);
+                    let Gen { rep, items, exs, nex, used, errs } = gen;
+                    if errs == 0 && fill && nex == 0 {
+                        gen = Gen { rep: emit(heap, rep, whot, 0, "no case can be shown as an example (its call text contains \" == \"); add a case without it, or give examples"), items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
+                    } else {
+                        gen = Gen { rep: rep, items: items, exs: exs, nex: nex, used: used, errs: errs };
+                    }
+                }
+            }
+        }
+    }
+    unbox_slice(heap, sgb);
+    unbox_slice(heap, sidb);
+    unbox_slice(heap, whob);
+    let Gen { rep, items, exs, nex, used, errs } = gen;
+    var out = w;
+    if errs == 0 {
+        borrow items as &ib in {
+            borrow exs as &eb in {
+                out = write_unit(heap, out, src, tape, un, buffer.bytes(ib), buffer.bytes(eb), fill);
+            }
+        }
+    } else {
+        out = copy_value(heap, out, src, tape, un);
+    }
+    buffer.drop(heap, items);
+    buffer.drop(heap, exs);
+    return (out, rep);
+}
+
+// ---- the plan ---------------------------------------------------------------------
+
+// The deepest nesting of arrays and objects in the document (the writer takes 60).
+fn tape_depth[&h, &t](heap: &!h Heap, tape: &t [int], nodes: int) -> [heap] int {
+    let sb = box_slice(heap, 200, 0);
+    var deepest = 0;
+    borrow mut sb as &!sw in {
+        let stack = contents(sw);
+        var sp = 0;
+        var i = 0;
+        while i < nodes {
+            while sp > 0 && stack[sp - 1] <= i {
+                sp = sp - 1;
+            }
+            if json.is_array(tape, i) || json.is_object(tape, i) {
+                if sp + 1 > deepest {
+                    deepest = sp + 1;
+                }
+                stack[sp] = tape[3 * i + 2];
+                sp = sp + 1;
+            }
+            i = i + 1;
+        }
+    }
+    unbox_slice(heap, sb);
+    return deepest;
+}
+
+fn plan_out[&h, &s, &t](heap: &!h Heap, rep: buffer.Buffer, src: &s [byte], tape: &t [int], units: int) -> [heap] (buffer.Buffer, buffer.Buffer) {
+    var r = rep;
+    var w = json.writer(heap, len(src) + 256);
+    w = json.begin_object(heap, w);
+    var j = 1;
+    var left = json.count(tape, 0);
+    while left > 0 {
+        w = put_key_of(heap, w, src, tape, j);
+        if j + 1 == units {
+            w = json.begin_array(heap, w);
+            var u = units + 1;
+            var m = json.count(tape, units);
+            while m > 0 {
+                let (nw, nr) = unit_expand(heap, w, r, src, tape, u);
+                w = nw;
+                r = nr;
+                u = json.skip(tape, u);
+                m = m - 1;
+            }
+            w = json.end_array(heap, w);
+        } else {
+            w = copy_value(heap, w, src, tape, j + 1);
+        }
+        j = json.skip(tape, j + 1);
+        left = left - 1;
+    }
+    w = json.end_object(heap, w);
+    return (json.finish(w), r);
+}
+
+// Expand the cases of the plan in `plan`: the new plan, the report (one `[CASES_ERROR]` line per problem), and 0 when there was no
+// problem, else 1. A plan that is not JSON, or has no `units` list, comes back as it was.
+pub fn expand[&h, &s](heap: &!h Heap, plan: &s [byte]) -> [heap] (buffer.Buffer, buffer.Buffer, int) {
+    var rep = buffer.empty(heap, 256);
+    var out = buffer.empty(heap, 16);
+    let tb = box_slice(heap, json.tape_len(plan) + 3, 0);
+    borrow mut tb as &!tw in {
+        let tape = contents(tw);
+        let nodes = json.parse(plan, tape);
+        if nodes < 0 {
+            rep = emit(heap, rep, "-", 0, "the plan is not valid JSON");
+            out = buffer.append(heap, out, plan);
+        } else {
+            let units = json.get(plan, tape, 0, "units");
+            if !json.is_object(tape, 0) || !json.is_array(tape, units) {
+                rep = emit(heap, rep, "-", 0, "the plan must be a JSON object with a \"units\" array");
+                out = buffer.append(heap, out, plan);
+            } else if tape_depth(heap, tape, nodes) > 55 {
+                rep = emit(heap, rep, "-", 0, "the plan is nested more than 55 levels deep");
+                out = buffer.append(heap, out, plan);
+            } else {
+                let (fin, r2) = plan_out(heap, rep, plan, tape, units);
+                rep = r2;
+                buffer.drop(heap, out);
+                out = fin;
+            }
+        }
+    }
+    unbox_slice(heap, tb);
+    var code = 0;
+    borrow rep as &rr in {
+        if buffer.size(rr) > 0 {
+            code = 1;
+        }
+    }
+    return (out, rep, code);
+}

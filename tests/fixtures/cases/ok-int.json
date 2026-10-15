@@ -1,0 +1,48 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "add",
+   "signature": "fn add(a: int, b: int) -> [] int",
+   "description": "adds two ints; h\u00e9llo \u65e5\u672c",
+   "cases": [
+    {
+     "args": [
+      1,
+      2
+     ],
+     "expect": 3
+    },
+    {
+     "args": [
+      -5,
+      3
+     ],
+     "expect": -2
+    },
+    {
+     "args": [
+      9223372036854775807,
+      0
+     ],
+     "expect": 9223372036854775807
+    },
+    {
+     "args": [
+      -9223372036854775808,
+      0
+     ],
+     "expect": -9223372036854775808
+    },
+    {
+     "args": [
+      0,
+      0
+     ],
+     "expect": 0
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

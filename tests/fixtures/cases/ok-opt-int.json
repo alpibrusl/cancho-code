@@ -1,0 +1,33 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "fp",
+   "signature": "fn first_pos(a: int, b: int) -> [] option.Option[int]",
+   "cases": [
+    {
+     "args": [
+      1,
+      2
+     ],
+     "expect": 1
+    },
+    {
+     "args": [
+      -1,
+      -2
+     ],
+     "expect": null
+    },
+    {
+     "args": [
+      -1,
+      7
+     ],
+     "expect": 7
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

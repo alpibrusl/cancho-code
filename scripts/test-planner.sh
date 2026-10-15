@@ -2,9 +2,10 @@
 # The planner gate: `cancho-agent --mode plan` (src/cancho_agent.cho) asks a model for a PLAN (docs/plan.md) instead of a program, and the plan
 # check (src/plan.cho, in process, no model) decides. Against a plain-HTTP stub that speaks Ollama's /api/generate, so no key, no GPU, no spend:
 #
-#   plan      a valid plan inside prose and a fence is written exactly as the model wrote the object, one newline after; one request; the prompt
+#   plan      a valid plan inside prose and a fence is written (the same plan as JSON, one newline after, units without `cases` untouched); one request; the prompt
 #             holds the guide, the task and the required signatures
 #   feedback  a rejected plan is not written; the NEXT request carries the plan check's own report and the rejected plan; a good second plan is written
+#   cases     a unit's `cases` (data) are expanded into its `tests` by src/cases.cho before the plan check; an expansion error is fed back like a plan-check error; the plan written has tests and no cases
 #   ceiling   every round rejected: exit 1, nothing written, the file that was there is untouched, the last report is on stderr
 #   questions {"status":"unclear"} / {"status":"too_big"}: exit 3, the model's object is saved beside the output, no plan is written, one request
 #   no json   prose without an object, and a reply cut off by the bound, are rounds that fail and are retried; neither is ever written
@@ -22,7 +23,7 @@ fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }
 d=$(mktemp -d -t cc-planner-XXXXXX)
 exe="$d/agent"
-"$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" "$root/src/prompt.cho" "$root/src/planprompt.cho" "$root/src/plan.cho" "$root/src/provider.cho" "$root/src/reply.cho" \
+"$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" "$root/src/prompt.cho" "$root/src/planprompt.cho" "$root/src/plan.cho" "$root/src/cases.cho" "$root/src/provider.cho" "$root/src/reply.cho" \
     "$root/vendor/fetch_io.cho" "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho --std --backend cranelift -o "$exe" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }
 "$CANCHO" build "$root/tests/programs/plancheck.cho" "$root/src/plan.cho" --std --backend cranelift -o "$d/plancheck" >/dev/null 2>&1 || { echo "plancheck did not build" >&2; exit 2; }
@@ -71,7 +72,8 @@ start; printf 'Here is the plan:\n```json\n%s\n```\nGood luck.\n' "$GOOD" > "$d/
 plan $G --contract "$d/contract.txt" >"$d/o" 2>"$d/e"; rc=$?
 expect "plan: exit code ($(head -c 200 "$d/e"))" "$rc" 0
 printf '%s\n' "$GOOD" > "$d/want.json"
-cmp -s "$d/out/plan.json" "$d/want.json" || { echo "FAIL: plan: the file is not the model's object and one newline" >&2; fail=1; }
+same() { python3 -c "import json,sys; sys.exit(0 if json.load(open('$1')) == json.load(open('$2')) and open('$1').read().endswith('}\n') else 1)"; }
+same "$d/out/plan.json" "$d/want.json" || { echo "FAIL: plan: the file is not the model's plan (as JSON) and one newline" >&2; fail=1; }
 expect "plan: one request" "$(count)" 1
 "$d/plancheck" "$d/out/plan.json" >/dev/null 2>&1 || { echo "FAIL: plan: the written plan does not pass plancheck" >&2; fail=1; }
 P=$(prompt_of 1)
@@ -86,12 +88,34 @@ start; printf '%s' "$BAD" > "$d/response.1.txt"; printf 'Corrected:\n%s\n' "$GOO
 plan $G --usage-log "$d/ulog" >/dev/null 2>"$d/e"; rc=$?
 expect "feedback: exit code" "$rc" 0
 expect "feedback: two requests" "$(count)" 2
-cmp -s "$d/out/plan.json" "$d/want.json" || { echo "FAIL: feedback: the file is not the second, good plan" >&2; fail=1; }
+same "$d/out/plan.json" "$d/want.json" || { echo "FAIL: feedback: the file is not the second, good plan" >&2; fail=1; }
 P2=$(prompt_of 2)
 for want in "REJECTED" "no-example" "$BAD" "Reply again with the corrected JSON object only"; do
     case "$P2" in *"$want"*) ;; *) echo "FAIL: feedback: the second prompt lacks '$want'" >&2; fail=1 ;; esac
 done
 expect "feedback: usage outcomes" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog')])")" "['rejected', 'written']"
+stop
+
+# cases: the model writes DATA; the agent turns it into the unit's tests before the plan check, and writes the expanded plan
+CASES_OK='{"name": "clampy", "units": [{"id": "clamp", "signature": "fn clampy(x: int, lo: int, hi: int) -> [] int", "description": "x limited to [lo, hi].", "examples": ["clampy(5, 1, 3) == 3"], "cases": [{"args": [5, 1, 3], "expect": 3}, {"args": [-5, 1, 3], "expect": 1}], "deps": []}]}'
+CASES_BAD='{"name": "clampy", "units": [{"id": "clamp", "signature": "fn clampy(x: int, lo: int, hi: int) -> [] int", "description": "x limited to [lo, hi].", "examples": ["clampy(5, 1, 3) == 3"], "cases": [{"args": [5, 1], "expect": 3}], "deps": []}]}'
+start; printf '%s' "$CASES_BAD" > "$d/response.1.txt"; printf '%s' "$CASES_OK" > "$d/response.2.txt"; rm -f "$d/out/plan.json" "$d/ulog"
+plan $G --usage-log "$d/ulog" >/dev/null 2>"$d/e"; rc=$?
+expect "cases: exit code ($(head -c 200 "$d/e"))" "$rc" 0
+expect "cases: two requests" "$(count)" 2
+case "$(prompt_of 2)" in *"[CASES_ERROR]"*"clamp"*) ;; *) echo "FAIL: cases: the second prompt does not carry the expander's report" >&2; fail=1 ;; esac
+python3 - "$d/out/plan.json" <<'PY' || fail=1
+import json, sys
+p = json.load(open(sys.argv[1]))
+u = p["units"][0]
+bad = []
+if "cases" in u: bad.append("the written plan still holds cases")
+if not u.get("tests") or not all("pub fn test_" in t or t.lstrip().startswith("fn ") for t in u["tests"]): bad.append("no generated tests: %r" % u.get("tests"))
+if u["examples"] != ["clampy(5, 1, 3) == 3"]: bad.append("examples changed")
+if bad: print("FAIL: cases: " + "; ".join(bad), file=sys.stderr); sys.exit(1)
+PY
+"$d/plancheck" "$d/out/plan.json" >/dev/null 2>&1 || { echo "FAIL: cases: the expanded plan does not pass plancheck" >&2; fail=1; }
+expect "cases: usage outcomes" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog')])")" "['rejected', 'written']"
 stop
 
 # ceiling: every round rejected; an existing file is untouched

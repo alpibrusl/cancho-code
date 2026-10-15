@@ -1,0 +1,36 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "okq",
+   "signature": "fn okq[&r](s: &r [byte]) -> [] result.Result[bool, int]",
+   "cases": [
+    {
+     "args": [
+      "a"
+     ],
+     "expect": {
+      "ok": true
+     }
+    },
+    {
+     "args": [
+      "b"
+     ],
+     "expect": {
+      "ok": false
+     }
+    },
+    {
+     "args": [
+      ""
+     ],
+     "expect": {
+      "err": 1
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

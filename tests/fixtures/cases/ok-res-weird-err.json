@@ -1,0 +1,28 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "f",
+   "signature": "fn f[&r](s: &r [byte]) -> [] result.Result[int, list.List[Box[Box[[byte]]]]]",
+   "cases": [
+    {
+     "args": [
+      "a"
+     ],
+     "expect": {
+      "ok": 1
+     }
+    },
+    {
+     "args": [
+      ""
+     ],
+     "expect": {
+      "err": 0
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

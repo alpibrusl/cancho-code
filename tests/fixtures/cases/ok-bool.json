@@ -1,0 +1,30 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "even",
+   "signature": "fn is_even(n: int) -> [] bool",
+   "cases": [
+    {
+     "args": [
+      2
+     ],
+     "expect": true
+    },
+    {
+     "args": [
+      3
+     ],
+     "expect": false
+    },
+    {
+     "args": [
+      -4
+     ],
+     "expect": true
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

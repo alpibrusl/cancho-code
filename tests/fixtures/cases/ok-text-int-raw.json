@@ -1,0 +1,19 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "count",
+   "signature": "fn count_a[&r](s: &r [byte]) -> [] int",
+   "description": "é😀",
+   "cases": [
+    {
+     "args": [
+      "héllo 日本 😀 a"
+     ],
+     "expect": 1
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

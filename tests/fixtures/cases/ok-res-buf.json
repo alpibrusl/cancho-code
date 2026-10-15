@@ -1,0 +1,44 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "fmt",
+   "signature": "fn fmt[&h](heap: &!h Heap, n: int) -> [heap] result.Result[buffer.Buffer, &static [byte]]",
+   "cases": [
+    {
+     "args": [
+      1
+     ],
+     "expect": {
+      "ok": "1s"
+     }
+    },
+    {
+     "args": [
+      0
+     ],
+     "expect": {
+      "ok": ""
+     }
+    },
+    {
+     "args": [
+      -1
+     ],
+     "expect": {
+      "err": "negative"
+     }
+    },
+    {
+     "args": [
+      2
+     ],
+     "expect": {
+      "ok": "a\"\n"
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

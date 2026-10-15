@@ -1,0 +1,24 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "unq",
+   "signature": "fn unq[&r](v: &r [byte]) -> [] &r [byte]",
+   "cases": [
+    {
+     "args": [
+      "\"a\""
+     ],
+     "expect": "a"
+    },
+    {
+     "args": [
+      ""
+     ],
+     "expect": ""
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

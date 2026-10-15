@@ -1,0 +1,39 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "good",
+   "signature": "fn g(x: int) -> [] int",
+   "cases": [
+    {
+     "args": [
+      1
+     ],
+     "expect": 1
+    }
+   ],
+   "deps": []
+  },
+  {
+   "id": "bad",
+   "signature": "fn b(x: int) -> [] int",
+   "cases": [
+    {
+     "args": [
+      "x"
+     ],
+     "expect": 1
+    }
+   ],
+   "deps": []
+  },
+  {
+   "id": "none",
+   "signature": "fn n() -> [] int",
+   "examples": [
+    "n() == 1"
+   ],
+   "deps": []
+  }
+ ]
+}

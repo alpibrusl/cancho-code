@@ -1,0 +1,15 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "a",
+   "cases": [
+    {
+     "args": [],
+     "expect": 1
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

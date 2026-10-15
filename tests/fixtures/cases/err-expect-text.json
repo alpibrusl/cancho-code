@@ -1,0 +1,18 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "up",
+   "signature": "fn up[&h, &r](heap: &!h Heap, s: &r [byte]) -> [heap] buffer.Buffer",
+   "cases": [
+    {
+     "args": [
+      "a"
+     ],
+     "expect": 5
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

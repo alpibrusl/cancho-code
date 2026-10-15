@@ -30,3 +30,5 @@ valid-needs-tests-met  0
 valid-scalar-option  0
 bad-test-world  1     bad-test:a
 valid-heap-test  0
+valid-cases  0
+needs-tests-empty-cases  1     needs-tests:a

@@ -1,0 +1,90 @@
+# name<TAB>exit code<TAB>text the report must contain (empty for none)
+ok-int	0	
+ok-bool	0	
+ok-bool-param	0	
+ok-text-int	0	
+ok-text-int-raw	0	
+ok-text-static	0	
+ok-buf	0	
+ok-text-ret	0	
+ok-opt-int	0	
+ok-opt-bool	0	
+ok-res-int	0	
+ok-res-bool	0	
+ok-res-buf	0	
+ok-res-buf-err-buf	0	
+ok-res-text	0	
+ok-res-weird-err	0	
+ok-heap-int	0	
+ok-heap-mid	0	
+ok-noargs	0	
+ok-spaces	0	
+ok-examples-kept	0	
+ok-examples-empty	0	
+ok-five-cases	0	
+ok-sid	0	
+ok-eq-in-arg	0	
+ok-eq-examples-given	0	
+ok-key-order	0	
+ok-no-cases	0	
+ok-mixed	0	
+ok-tests-empty	0	
+ok-deep-40	0	
+ok-empty-units	0	
+ok-units-first-then-cases-id-missing-nocases	0	
+err-argcount	1	args has 1 value(s) but the function takes 2
+err-arg-string	1	argument 1 must be a JSON integer, got a string
+err-arg-float	1	argument 2 must be a JSON integer, got a number that is not an integer
+err-arg-range	1	non-empty
+err-arg-range2	1	argument 1 is out of the range of int
+err-bool-int	1	argument 1 must be true or false, got an integer
+err-text-int	1	argument 1 must be a JSON string, got an integer
+err-expect-int	1	expect must be a JSON integer, got a string
+err-expect-bool	1	expect must be true or false, got an integer
+err-expect-text	1	expect must be a JSON string, got an integer
+err-res-shape-list	1	expect for a Result must be {"ok": value}
+err-res-shape-two	1	expect for a Result must be
+err-res-shape-empty	1	expect for a Result must be
+err-res-shape-other	1	expect for a Result must be
+err-res-ok-type	1	expect "ok" must be a JSON integer, got a string
+err-opt-expect	1	expect must be a JSON integer, got a string
+err-unsup-param-float	1	signature uses a type that cases cannot express (float); give tests instead
+err-unsup-param-mutslice	1	(&!a [byte])
+err-unsup-param-list	1	(&a list.List[int])
+err-unsup-ret-float	1	(float)
+err-unsup-ret-list	1	(list.List[Box[Box[[byte]]]])
+err-unsup-res-T	1	(list.List[int])
+err-unsup-res-nocomma	1	(result.Result[int])
+err-unsup-opt-text	1	(option.Option[&r [byte]])
+err-unsup-two-heaps	1	(&!g Heap)
+err-unsup-tuple	1	((int, int))
+err-both	1	both cases and tests
+err-tests-notarray	1	both cases and tests
+err-empty-cases	1	non-empty
+err-cases-notarray	1	non-empty
+err-case-notobject	1	a case must be an object
+err-case-no-expect	1	a case must be an object
+err-case-args-notarray	1	a case must be an object
+err-nul	1	argument 1 cannot be written in a cancho string literal; use another input
+err-ctrl	1	expect cannot be written in a cancho string literal
+err-sig-missing	1	needs a string signature
+err-sig-notstring	1	needs a string signature
+err-sig-notfn	1	cannot read the signature
+err-sig-norow	1	cannot read the signature
+err-sig-noparen	1	cannot read the signature
+err-sig-noret	1	cannot read the signature
+err-sig-nocolon	1	cannot read the signature
+err-sig-trailing-comma	1	cannot read the signature
+err-not-json	1	the plan is not valid JSON
+err-truncated	1	the plan is not valid JSON
+err-trailing	1	the plan is not valid JSON
+err-root-array	1	the plan must be a JSON object with a "units" array
+err-no-units	1	the plan must be a JSON object with a "units" array
+err-units-notarray	1	the plan must be a JSON object with a "units" array
+err-mixed	1	bad	1	argument 1
+err-multi	1	a	3	
+err-eq-only	1	no case can be shown as an example
+err-nobuf-heap	1	takes no heap parameter
+err-id-missing	1		-	1	argument 1
+err-deep-60	1	nested more than 55
+err-tab-in-id	1	argument 1

@@ -48,10 +48,21 @@ Exit 0 valid, 1 invalid, 2 usage (no argument, or the file cannot be read). **Ev
 | `example-shape` | an example is not `CALL == EXPECTED` (the call first, once, a `==`, something after it) |
 | `tautology` | an example's two sides are the same text, or it contains `|| true` or `or true`: it checks nothing |
 | `unknown-dep` | a `deps` entry is not the `id` of any unit |
-| `needs-tests` | the function takes a heap, or its result holds text, a buffer or a list (alone or inside a `Result`/`Option`), and the unit has no `tests`: an example `CALL == EXPECTED` cannot run for it (`==` compares scalars; a test has no heap). A `Result` or `Option` of scalars is not flagged |
+| `needs-tests` | the function takes a heap, or its result holds text, a buffer or a list (alone or inside a `Result`/`Option`), and the unit has neither `tests` nor `cases`: an example `CALL == EXPECTED` cannot run for it (`==` compares scalars; a test has no heap). A `Result` or `Option` of scalars is not flagged |
 | `bad-test` | one of the unit's `tests` is a `pub fn test_...` that takes a `World` or calls `split`: that is not a test form (tests take `Heap`/`Io` references directly), so the unit's test file could never build |
 | `cycle` | the dependencies form a cycle (reported once, on the first unit of it in the file) |
 
 ## What this does not check
 
 That the examples are *right*, or that they can all be satisfied together (lex-code's plan check runs the examples against a reference; there is none here). That a signature's types exist. Those need the model or the compiler and belong to later features (P4b unit verification, P6 hardening).
+
+
+## `cases`: test data instead of test code
+
+A unit may carry `cases`: `[{"args": [...], "expect": ...}, ...]`. `src/cases.cho` (`cases.expand`) turns them into the unit's `tests` from the unit's own signature, so the generated test code compiles and calls the function correctly. This exists because a model that writes test code against its own signatures got it wrong in most failed builds (`eval/results/2026-10-15-plan-generator.md`). The planner (`cancho-agent --mode plan`) expands the cases before the plan check and writes the expanded plan, so the project driver never sees `cases`.
+
+- `args`: the arguments in order, without the heap. Types: `int`, `bool`, text (`&[byte]`).
+- `expect`: an integer, `true`/`false`, or a string (a text or buffer result); `null` is `None` and the bare value is `Some` for `option.Option[int|bool]`; `{"ok": v}` / `{"err": true}` for a `result.Result` (the error payload is never compared). Returns: `int`, `bool`, `buffer.Buffer`, a text slice, `option.Option[int|bool]`, `result.Result[int|bool|buffer.Buffer|text, E]`.
+- A signature with another type (a list, a vec, a record, a slice of ints) is reported (`give tests instead`); a unit with both `cases` and `tests` is refused; a byte a cancho string literal cannot hold is refused for that case.
+- `examples` are filled (up to three documentation lines) when the unit has none. A unit with `cases` satisfies the `needs-tests` rule.
+- Gate: `scripts/test-cases.sh`: a differential against `tests/reference/cases_ref.py` on 90 plans, and 35 real units whose generated tests pass against the hand-checked references and fail when one expected value is flipped.
