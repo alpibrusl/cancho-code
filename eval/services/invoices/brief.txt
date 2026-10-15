@@ -12,9 +12,9 @@ STORAGE. There is no database: the invoices live in memory, in the App, for the 
 
 LISTENING. A cancho listener binds the port on all interfaces (there is no --host and no loopback-only requirement); that is the skeleton's doing and is not yours to change.
 
-ENDPOINTS, all answering JSON. The invoice object is exactly {"id":Int,"customer":Str,"amount_cents":Int,"currency":Str,"paid":Bool} (those five members and no others; never the tenant, never a token). Every error is a JSON object {"error": "<message>"}.
+ENDPOINTS, all answering JSON. The invoice object is exactly {"id": <integer>, "customer": <text>, "amount_cents": <integer>, "currency": <text>, "paid": <true or false>} (those five members and no others; never the tenant, never a token). Every error is a JSON object {"error": "<message>"}.
 
-- POST /invoices -- body {"customer": Str, "amount_cents": Int, "currency": Str}. Creates an invoice owned by the caller's tenant and answers 201 with the new invoice: its new integer id (positive, unique, and larger than the id of any invoice created before it), the customer as stored (trimmed, see 4), and "paid": false.
+- POST /invoices -- body {"customer": <text>, "amount_cents": <integer>, "currency": <text>}. Creates an invoice owned by the caller's tenant and answers 201 with the new invoice: its new integer id (positive, unique, and larger than the id of any invoice created before it), the customer as stored (trimmed, see 4), and "paid": false.
 - GET /invoices/{id} -- 200 with one invoice.
 - GET /invoices?customer=NAME -- 200 with a JSON array of the caller's tenant's invoices whose customer equals NAME exactly (byte for byte, case sensitive), in ascending id order. NAME is percent-decoded ('+' is a space); only the query parameter named "customer" matters, other parameters are ignored. Without the parameter, all of the tenant's invoices (an empty array when there are none). "customer=" (present and empty) matches only a customer that is empty, so it lists nothing. A NAME that is not valid percent-encoding, or whose raw text is longer than 1024 bytes, is a 400.
 - POST /invoices/{id}/pay -- marks one invoice paid, ignores the request body, is idempotent, answers 200 with the invoice (paid true).

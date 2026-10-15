@@ -1,9 +1,9 @@
-Build a small Lex library package named "glob": match file-path glob patterns against text. It is a pure library: no network, no database, no files, no environment. Use only the Lex standard library (std.str, std.list, std.int and the like); do not depend on any other package. Every function is pure (no effect annotation) and every function has examples.
+Build a small library package named "glob": match file-path glob patterns against text. It is a pure library: no network, no database, no files, no environment. Use only the standard library; do not depend on any other package. Every function is pure and every function has examples.
 
 The package exposes exactly two functions, taking and returning only plain values:
 
-- glob_valid(pattern :: Str) -> Bool : whether the pattern is well formed (rules below).
-- glob_match(pattern :: Str, text :: Str) -> Bool : whether the WHOLE text matches the pattern. An invalid pattern matches nothing (false).
+- glob_valid(pattern) : whether the pattern is well formed (rules below). Inputs: pattern is text. Result: true or false.
+- glob_match(pattern, text) : whether the WHOLE text matches the pattern. An invalid pattern matches nothing (false). Inputs: pattern is text; text is text. Result: true or false.
 
 Pattern language. "Character" means one Unicode character (code point), never one byte: "?" matches the single character "é" and "??" does not.
 - "*" matches zero or more characters, none of them "/".
