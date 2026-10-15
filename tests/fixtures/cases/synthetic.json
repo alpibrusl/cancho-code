@@ -36,7 +36,7 @@
       ""
      ],
      "expect": {
-      "err": 0
+      "err": 7
      }
     },
     {
@@ -201,6 +201,254 @@
       -1
      ],
      "expect": 0
+    }
+   ]
+  },
+  {
+   "id": "rint",
+   "signature": "fn syn_rint(n: int) -> [] result.Result[option.Option[int], int]",
+   "deps": [],
+   "cases": [
+    {
+     "args": [
+      -4
+     ],
+     "expect": {
+      "err": -4
+     }
+    },
+    {
+     "args": [
+      0
+     ],
+     "expect": {
+      "ok": null
+     }
+    },
+    {
+     "args": [
+      5
+     ],
+     "expect": {
+      "ok": 5
+     }
+    },
+    {
+     "args": [
+      -1
+     ],
+     "expect": {
+      "err": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "obuf",
+   "signature": "fn syn_obuf[&h](heap: &!h Heap, n: int) -> [heap] option.Option[buffer.Buffer]",
+   "deps": [],
+   "cases": [
+    {
+     "args": [
+      0
+     ],
+     "expect": null
+    },
+    {
+     "args": [
+      42
+     ],
+     "expect": "42"
+    }
+   ]
+  },
+  {
+   "id": "rbox",
+   "signature": "fn syn_rbox[&h](heap: &!h Heap, n: int) -> [heap] result.Result[Box[[byte]], int]",
+   "deps": [],
+   "cases": [
+    {
+     "args": [
+      -3
+     ],
+     "expect": {
+      "err": -6
+     }
+    },
+    {
+     "args": [
+      2
+     ],
+     "expect": {
+      "ok": {
+       "bytes": [
+        2,
+        2
+       ]
+      }
+     }
+    },
+    {
+     "args": [
+      0
+     ],
+     "expect": {
+      "ok": ""
+     }
+    }
+   ]
+  },
+  {
+   "id": "first",
+   "signature": "fn syn_first[&r](s: &r [byte]) -> [] int",
+   "deps": [],
+   "cases": [
+    {
+     "args": [
+      {
+       "bytes": [
+        255,
+        1
+       ]
+      }
+     ],
+     "expect": 255
+    },
+    {
+     "args": [
+      "\u0001"
+     ],
+     "expect": 1
+    },
+    {
+     "args": [
+      {
+       "bytes": [
+        0
+       ]
+      }
+     ],
+     "expect": 0
+    },
+    {
+     "args": [
+      {
+       "bytes": [
+        128
+       ]
+      }
+     ],
+     "expect": 128
+    },
+    {
+     "args": [
+      "\r"
+     ],
+     "expect": 13
+    },
+    {
+     "args": [
+      "\u007f"
+     ],
+     "expect": 127
+    },
+    {
+     "args": [
+      ""
+     ],
+     "expect": -1
+    }
+   ]
+  },
+  {
+   "id": "echo",
+   "signature": "fn syn_echo[&h, &r](heap: &!h Heap, s: &r [byte]) -> [heap] buffer.Buffer",
+   "deps": [],
+   "cases": [
+    {
+     "args": [
+      {
+       "bytes": [
+        1,
+        2,
+        255,
+        0,
+        13,
+        10,
+        200
+       ]
+      }
+     ],
+     "expect": {
+      "bytes": [
+       1,
+       2,
+       255,
+       0,
+       13,
+       10,
+       200
+      ]
+     }
+    },
+    {
+     "args": [
+      "\u0085\u2028x\u00e9"
+     ],
+     "expect": "\u0085\u2028x\u00e9"
+    },
+    {
+     "args": [
+      "plain text"
+     ],
+     "expect": "plain text"
+    }
+   ]
+  },
+  {
+   "id": "ropt",
+   "signature": "fn syn_ropt[&r](s: &r [byte]) -> [] result.Result[option.Option[&r [byte]], int]",
+   "deps": [],
+   "cases": [
+    {
+     "args": [
+      ""
+     ],
+     "expect": {
+      "ok": null
+     }
+    },
+    {
+     "args": [
+      "ab"
+     ],
+     "expect": {
+      "ok": "ab"
+     }
+    },
+    {
+     "args": [
+      "abcd"
+     ],
+     "expect": {
+      "err": 4
+     }
+    },
+    {
+     "args": [
+      {
+       "bytes": [
+        255
+       ]
+      }
+     ],
+     "expect": {
+      "ok": {
+       "bytes": [
+        255
+       ]
+      }
+     }
     }
    ]
   }

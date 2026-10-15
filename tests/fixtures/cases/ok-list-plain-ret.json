@@ -1,0 +1,27 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "pl",
+   "signature": "fn pl[&h, &r](heap: &!h Heap, s: &r [byte]) -> [heap] list.List[Box[Box[[byte]]]]",
+   "cases": [
+    {
+     "args": [
+      "a b"
+     ],
+     "expect": [
+      "a",
+      "b"
+     ]
+    },
+    {
+     "args": [
+      ""
+     ],
+     "expect": []
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

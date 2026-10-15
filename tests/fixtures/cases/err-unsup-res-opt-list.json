@@ -1,0 +1,16 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "f",
+   "signature": "fn f[&h](heap: &!h Heap) -> [heap] result.Result[option.Option[list.List[Box[Box[[byte]]]]], int]",
+   "cases": [
+    {
+     "args": [],
+     "expect": null
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

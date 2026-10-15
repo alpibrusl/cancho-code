@@ -148,36 +148,75 @@ def after_amp(t, bang):
     return t[p:e], t[skip_sp(t, e):]
 
 
-def classify_param(t):
-    if t == "int":
-        return "int"
-    if t == "bool":
-        return "bool"
+def is_text_type(t):
     r = after_amp(t, False)
-    if r is not None and r[1] == "[byte]":
-        return "text"
+    return r is not None and r[1] == "[byte]"
+
+
+LIST_T = "list.List[Box[Box[[byte]]]]"
+# parameter kinds
+P_INT, P_BOOL, P_TEXT, P_HEAP, P_LIST, P_VEC = "int", "bool", "text", "heap", "list", "vec"
+# value kinds of a result: 0 int, 1 bool, 2 buffer, 3 text slice, 4 list, 5 owned box
+V_INT, V_BOOL, V_BUF, V_TEXT, V_LIST, V_BOX = range(6)
+
+
+def classify_param(t):
+    """(kind, is_static) or None."""
+    if t == "int":
+        return P_INT, False
+    if t == "bool":
+        return P_BOOL, False
+    r = after_amp(t, False)
+    if r is not None:
+        if r[1] == "[byte]":
+            return P_TEXT, r[0] == "static"
+        if r[1] == LIST_T:
+            return P_LIST, False
+        if r[1].startswith("vec.Vec[") and r[1].endswith("]") and is_text_type(trim(r[1][len("vec.Vec["):-1])):
+            return P_VEC, False
     r = after_amp(t, True)
     if r is not None and r[1] == "Heap":
-        return "heap"
+        return P_HEAP, False
+    return None
+
+
+def plain_v(t):
+    if t == "int":
+        return V_INT
+    if t == "bool":
+        return V_BOOL
+    if t == "buffer.Buffer":
+        return V_BUF
+    if is_text_type(t):
+        return V_TEXT
+    if t == LIST_T:
+        return V_LIST
+    if t == "Box[[byte]]":
+        return V_BOX
+    return None
+
+
+def opt_inner(t):
+    """The value kind inside `option.Option[X]` (X int, bool, buffer, text slice), None when t is not a supported option;
+    the string 'bad' when it is an option of something else."""
+    if t.startswith("option.Option[") and t.endswith("]"):
+        v = plain_v(trim(t[len("option.Option["):-1]))
+        if v is None or v >= V_LIST:
+            return "bad"
+        return v
     return None
 
 
 def classify_ret(t):
-    """(kind, tkind, err_is_buffer) or (None, unsupported text, False)."""
-    if t == "int":
-        return "int", None, False
-    if t == "bool":
-        return "bool", None, False
-    if t == "buffer.Buffer":
-        return "buf", None, False
-    r = after_amp(t, False)
-    if r is not None and r[1] == "[byte]":
-        return "text", None, False
-    if t.startswith("option.Option[") and t.endswith("]"):
-        inner = trim(t[len("option.Option["):-1])
-        if inner in ("int", "bool"):
-            return "opt", inner, False
-        return None, t, False
+    """(outer, v, e, topt) where outer 0 plain / 1 option / 2 result, e 0 other / 1 int / 2 buffer, or (None, unsupported text, 0, 0)."""
+    v = plain_v(t)
+    if v is not None:
+        return 0, v, 0, False
+    o = opt_inner(t)
+    if o == "bad":
+        return None, t, 0, False
+    if o is not None:
+        return 1, o, 0, False
     if t.startswith("result.Result[") and t.endswith("]"):
         inner = t[len("result.Result["):-1]
         depth = 0
@@ -191,42 +230,68 @@ def classify_ret(t):
                 comma = i
                 break
         if comma < 0:
-            return None, t, False
+            return None, t, 0, False
         tt = trim(inner[:comma])
         ee = trim(inner[comma + 1:])
-        if tt in ("int", "bool"):
-            tk = tt
-        elif tt == "buffer.Buffer":
-            tk = "buf"
-        else:
-            r = after_amp(tt, False)
-            if r is not None and r[1] == "[byte]":
-                tk = "text"
-            else:
-                return None, tt, False
-        return "res", tk, ee == "buffer.Buffer"
-    return None, t, False
+        e = 1 if ee == "int" else 2 if ee == "buffer.Buffer" else 0
+        o = opt_inner(tt)
+        if o == "bad":
+            return None, tt, 0, False
+        if o is not None:
+            return 2, o, e, True
+        v = plain_v(tt)
+        if v is None:
+            return None, tt, 0, False
+        return 2, v, e, False
+    return None, t, 0, False
 
 
-# ---- literals -----------------------------------------------------------------
+# ---- bytes and literals -------------------------------------------------------------
 
-def text_lit(s):
-    """The cancho string literal for s, or None when it cannot be written."""
+def utf8_seq(b, i):
+    """The length of the valid UTF-8 sequence at b[i] and its code point, or (0, 0)."""
+    c = b[i]
+    n = len(b)
+
+    def cont(k, lo=0x80, hi=0xBF):
+        return i + k < n and lo <= b[i + k] <= hi
+
+    if 0xC2 <= c <= 0xDF and cont(1):
+        return 2, ((c & 0x1F) << 6) | (b[i + 1] & 0x3F)
+    if 0xE0 <= c <= 0xEF:
+        lo, hi = (0xA0, 0xBF) if c == 0xE0 else (0x80, 0x9F) if c == 0xED else (0x80, 0xBF)
+        if cont(1, lo, hi) and cont(2):
+            return 3, ((c & 0x0F) << 12) | ((b[i + 1] & 0x3F) << 6) | (b[i + 2] & 0x3F)
+    if 0xF0 <= c <= 0xF4:
+        lo, hi = (0x90, 0xBF) if c == 0xF0 else (0x80, 0x8F) if c == 0xF4 else (0x80, 0xBF)
+        if cont(1, lo, hi) and cont(2) and cont(3):
+            return 4, ((c & 0x07) << 18) | ((b[i + 1] & 0x3F) << 12) | ((b[i + 2] & 0x3F) << 6) | (b[i + 3] & 0x3F)
+    return 0, 0
+
+
+ESC = {34: '\\"', 92: "\\\\", 10: "\\n", 9: "\\t", 13: "\\r", 0: "\\0"}
+
+
+def text_lit(b):
+    """The cancho string literal for the bytes b, or None when some byte cannot be written in one: the lexer takes printable
+    ASCII, the escapes \\" \\\\ \\n \\t \\r \\0, and UTF-8 text; the other control bytes, DEL, the C1 controls, U+2028, U+2029,
+    U+FEFF and bytes that are not UTF-8 are built from their hex instead."""
     out = ['"']
-    for ch in s:
-        o = ord(ch)
-        if ch == '"':
-            out.append('\\"')
-        elif ch == "\\":
-            out.append("\\\\")
-        elif ch == "\n":
-            out.append("\\n")
-        elif ch == "\t":
-            out.append("\\t")
-        elif o < 0x20 or o == 0x7F:
-            return None
+    i = 0
+    while i < len(b):
+        c = b[i]
+        if c in ESC:
+            out.append(ESC[c])
+            i += 1
+        elif 32 <= c <= 126:
+            out.append(chr(c))
+            i += 1
         else:
-            out.append(ch)
+            n, cp = utf8_seq(b, i)
+            if n == 0 or cp < 0xA0 or cp in (0x2028, 0x2029, 0xFEFF):
+                return None
+            out.append(b[i:i + n].decode("utf-8"))
+            i += n
     out.append('"')
     return "".join(out)
 
@@ -258,96 +323,295 @@ def kind_of(v):
     return "an object"
 
 
-def value_lit(kind, v, who):
-    """(literal, None) or (None, message); who names the value for the message."""
+def scalar_lit(kind, v, who):
+    """(literal, None) or (None, message) for an int or a bool."""
     if kind == "int":
         if not is_int(v):
             return None, "%s must be a JSON integer, got %s" % (who, kind_of(v))
         if v < INT_MIN or v > INT_MAX:
             return None, "%s is out of the range of int" % who
         return int_lit(v), None
-    if kind == "bool":
-        if not isinstance(v, bool):
-            return None, "%s must be true or false, got %s" % (who, kind_of(v))
-        return ("true" if v else "false"), None
-    # text (a text parameter, a buffer or a text result)
-    if not isinstance(v, str):
-        return None, "%s must be a JSON string, got %s" % (who, kind_of(v))
-    lit = text_lit(v)
-    if lit is None:
-        return None, "%s cannot be written in a cancho string literal; use another input" % who
-    return lit, None
+    if not isinstance(v, bool):
+        return None, "%s must be true or false, got %s" % (who, kind_of(v))
+    return ("true" if v else "false"), None
 
 
-# ---- helper and test generation -------------------------------------------------
+def text_bytes(v, who):
+    """(bytes, None) or (None, message). A text is a JSON string (its UTF-8) or {"bytes": [0..255, ...]}."""
+    if isinstance(v, str):
+        return v.encode("utf-8"), None
+    if isinstance(v, dict) and len(v) == 1 and "bytes" in v:
+        lst = v["bytes"]
+        if isinstance(lst, list) and all(is_int(x) and 0 <= x <= 255 for x in lst):
+            return bytes(lst), None
+        return None, '%s has a "bytes" list that is not a list of integers 0 to 255' % who
+    return None, "%s must be a JSON string, got %s" % (who, kind_of(v))
 
-SAME = ("fn cases_{s}_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var i = 0; "
-        "while i < len(x) { if int_of(x[i]) != int_of(y[i]) { return false; } i = i + 1; } return true; }")
+
+class Val:
+    """A text-like value as the generated code uses it: the expression, how it is documented, and what it needs."""
+
+    def __init__(self, expr, doc, local=None, drop=None, borrow=None):
+        self.expr, self.doc, self.local, self.drop, self.borrow = expr, doc, local, drop, borrow
 
 
-def cmp_buf(var):
-    return ("var same = false; borrow %s as &x in { same = cases_{s}_same(buffer.bytes(x), want); } buffer.drop(heap, %s); "
-            "if same { return 0; } return 1;" % (var, var))
+def hexs(b):
+    return "".join("%02x" % x for x in b)
 
 
-def build_helpers(sid, name, ptypes, kind, tkind, err_buf, used):
-    """The helper items (strings) for the kinds in `used`, in a fixed order."""
-    has_heap = "heap" in ptypes
+def text_val(v, who, name, feats, static=False):
+    """A text for an argument or a want: (Val, None) or (None, message). `name` is the local's name if one is needed."""
+    b, m = text_bytes(v, who)
+    if m is not None:
+        return None, m
+    lit = text_lit(b)
+    if lit is not None:
+        return Val(lit, lit), None
+    if static:
+        return None, "%s cannot be written in a cancho string literal and the parameter is &static; use another input" % who
+    feats.add("unhex")
+    return Val("contents(r%s)" % name, None, "let %s = cases_{s}_unhex(heap, \"%s\");" % (name, hexs(b)),
+               "unbox_slice(heap, %s);" % name, name), None
+
+
+def list_val(v, who, name, feats, vec=False):
+    if not isinstance(v, list):
+        return None, "%s must be a JSON list of strings, got %s" % (who, kind_of(v))
+    items = []
+    for i, x in enumerate(v, 1):
+        b, m = text_bytes(x, "%s item %d" % (who, i))
+        if m is not None:
+            return None, m
+        lit = text_lit(b)
+        if vec and lit is None:
+            return None, "%s item %d cannot be written in a cancho string literal (a vec holds literals); use another input" % (who, i)
+        items.append((b, lit))
+    docs = None if any(lit is None for _, lit in items) else "[" + ", ".join(lit for _, lit in items) + "]"
+    if vec:
+        local = "var %s = vec.empty(heap, %d, \"\");" % (name, len(items) + 1)
+        for _, lit in items:
+            local += " %s = vec.push(heap, %s, %s);" % (name, name, lit)
+        return Val("r" + name, docs, local, "vec.drop(heap, %s);" % name, name), None
+    feats.add("ldrop")
+    local = "var %s: list.List[Box[Box[[byte]]]] = list.List::Empty;" % name
+    for b, lit in reversed(items):
+        if lit is not None:
+            feats.add("mk")
+            elem = "cases_{s}_mk(heap, %s)" % lit
+        else:
+            feats.add("unhex")
+            elem = "cases_{s}_unhex(heap, \"%s\")" % hexs(b)
+        local += " %s = list.push(heap, %s, box(heap, %s));" % (name, name, elem)
+    return Val("r" + name, docs, local, "cases_{s}_ldrop(heap, %s);" % name, name), None
+
+
+# ---- helper generation ----------------------------------------------------------------
+
+SUP_SAME = ("fn cases_{s}_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var i = 0; "
+            "while i < len(x) { if int_of(x[i]) != int_of(y[i]) { return false; } i = i + 1; } return true; }")
+SUP_MK = ("fn cases_{s}_mk[&h, &r](heap: &!h Heap, s: &r [byte]) -> [heap] Box[[byte]] { let b = box_slice(heap, len(s), byte_of(0)); "
+          "borrow mut b as &!w in { copy_into(contents(w), s); } return b; }")
+SUP_HEXV = "fn cases_{s}_hexv(c: int) -> [] int { if c >= 97 { return c - 87; } return c - 48; }"
+SUP_UNHEX = ("fn cases_{s}_unhex[&h, &r](heap: &!h Heap, hex: &r [byte]) -> [heap] Box[[byte]] { let n = len(hex) / 2; "
+             "let b = box_slice(heap, n, byte_of(0)); borrow mut b as &!w in { let s = contents(w); var i = 0; while i < n { "
+             "s[i] = byte_of(cases_{s}_hexv(int_of(hex[2 * i])) * 16 + cases_{s}_hexv(int_of(hex[2 * i + 1]))); i = i + 1; } } return b; }")
+SUP_LDROP = ("fn cases_{s}_ldrop[&h](heap: &!h Heap, l: list.List[Box[Box[[byte]]]]) -> [heap] int { match l { list.List::Empty => { return 0; } "
+             "list.List::Cons(f, rest) => { unbox_slice(heap, unbox(heap, f)); let tail = unbox(heap, rest); return 1 + cases_{s}_ldrop(heap, tail); } } }")
+SUP_NTH = ("fn cases_{s}_nth[&l](l: &l list.List[Box[Box[[byte]]]], i: int) -> [] &l [byte] { match l { list.List::Empty => { return \"\"; } "
+           "list.List::Cons(f, rest) => { if i == 0 { return contents(contents(f)); } return cases_{s}_nth(contents(rest), i - 1); } } }")
+SUP_LEQ = ("fn cases_{s}_leq[&a, &b](x: &a list.List[Box[Box[[byte]]]], y: &b list.List[Box[Box[[byte]]]]) -> [] bool { "
+           "if list.length(x) != list.length(y) { return false; } var i = 0; while i < list.length(x) { "
+           "if !cases_{s}_same(cases_{s}_nth(x, i), cases_{s}_nth(y, i)) { return false; } i = i + 1; } return true; }")
+
+
+def cmp_stmt(var, v):
+    if v in (V_INT, V_BOOL):
+        return "if %s == want { return 0; } return 1;" % var
+    if v == V_TEXT:
+        return "if cases_{s}_same(%s, want) { return 0; } return 1;" % var
+    if v == V_BUF:
+        body, drop = "cases_{s}_same(buffer.bytes(x), want)", "buffer.drop(heap, %s);" % var
+    elif v == V_BOX:
+        body, drop = "cases_{s}_same(contents(x), want)", "unbox_slice(heap, %s);" % var
+    else:
+        body, drop = "cases_{s}_leq(x, want)", "cases_{s}_ldrop(heap, %s);" % var
+    return "var same = false; borrow %s as &x in { same = %s; } %s if same { return 0; } return 1;" % (var, body, drop)
+
+
+def drop_stmt(var, v):
+    if v == V_BUF:
+        return "buffer.drop(heap, %s);" % var
+    if v == V_BOX:
+        return "unbox_slice(heap, %s);" % var
+    if v == V_LIST:
+        return "cases_{s}_ldrop(heap, %s);" % var
+    return ""
+
+
+def some_arm(v, code):
+    d = drop_stmt("v", v)
+    if d:
+        return "option.Option::Some(v) => { %s return %d; }" % (d, code)
+    return "option.Option::Some(_) => { return %d; }" % code
+
+
+def err_arm(e, code):
+    if e == 2:
+        return "result.Result::Err(e) => { buffer.drop(heap, e); return %d; }" % code
+    return "result.Result::Err(_) => { return %d; }" % code
+
+
+def ok_drop_arm(v, topt, code):
+    if topt:
+        return "result.Result::Ok(o) => { match o { %s option.Option::None => { return %d; } } }" % (some_arm(v, code), code)
+    d = drop_stmt("v", v)
+    if d:
+        return "result.Result::Ok(v) => { %s return %d; }" % (d, code)
+    return "result.Result::Ok(_) => { return %d; }" % code
+
+
+HELPERS = ["is", "some", "none", "ok", "err", "errn", "oksome", "oknone"]
+
+
+def build_helper(which, sid, name, params, hasheap, ret, wantinfo):
+    """One helper item. params: list of (kind, is_static); wantinfo: the type of `want` (a string) or None."""
+    outer, v, e, topt = ret
+    regions = ["&h"] if hasheap else []
     plist = []
     clist = []
     n = 0
-    for t in ptypes:
-        if t == "heap":
+    for kind, static in params:
+        if kind == P_HEAP:
             plist.append("heap: &!h Heap")
             clist.append("heap")
+            continue
+        n += 1
+        clist.append("a%d" % n)
+        if kind == P_INT:
+            plist.append("a%d: int" % n)
+        elif kind == P_BOOL:
+            plist.append("a%d: bool" % n)
+        elif kind == P_TEXT:
+            if static:
+                plist.append("a%d: &static [byte]" % n)
+            else:
+                regions.append("&t%d" % n)
+                plist.append("a%d: &t%d [byte]" % (n, n))
+        elif kind == P_LIST:
+            regions.append("&l%d" % n)
+            plist.append("a%d: &l%d list.List[Box[Box[[byte]]]]" % (n, n))
         else:
-            n += 1
-            plist.append("a%d: %s" % (n, {"int": "int", "bool": "bool", "text": "&static [byte]"}[t]))
-            clist.append("a%d" % n)
+            regions.append("&v%d" % n)
+            regions.append("&e%d" % n)
+            plist.append("a%d: &v%d vec.Vec[&e%d [byte]]" % (n, n, n))
+    if wantinfo is not None:
+        if wantinfo == "text":
+            regions.append("&w")
+            plist.append("want: &w [byte]")
+        elif wantinfo == "list":
+            regions.append("&w")
+            plist.append("want: &w list.List[Box[Box[[byte]]]]")
+        else:
+            plist.append("want: %s" % wantinfo)
+    head = "fn cases_%s_%s%s(%s) -> %s int" % (sid, which, "[%s]" % ", ".join(regions) if regions else "", ", ".join(plist),
+                                              "[heap]" if hasheap else "[]")
     call = "%s(%s)" % (name, ", ".join(clist))
-    gen = "[&h]" if has_heap else ""
-    row = "[heap]" if has_heap else "[]"
+    if which == "is":
+        body = "let got = %s; %s" % (call, cmp_stmt("got", v))
+    elif which == "some":
+        body = "match %s { option.Option::Some(v) => { %s } option.Option::None => { return 2; } }" % (call, cmp_stmt("v", v))
+    elif which == "none":
+        body = "match %s { %s option.Option::None => { return 0; } }" % (call, some_arm(v, 2))
+    elif which == "ok":
+        body = "match %s { result.Result::Ok(v) => { %s } %s }" % (call, cmp_stmt("v", v), err_arm(e, 2))
+    elif which == "err":
+        body = "match %s { %s %s }" % (call, ok_drop_arm(v, topt, 2), err_arm(e, 0))
+    elif which == "errn":
+        body = "match %s { %s result.Result::Err(n) => { if n == want { return 0; } return 3; } }" % (call, ok_drop_arm(v, topt, 2))
+    elif which == "oksome":
+        body = ("match %s { result.Result::Ok(o) => { match o { option.Option::Some(v) => { %s } option.Option::None => { return 3; } } } %s }"
+                % (call, cmp_stmt("v", v), err_arm(e, 2)))
+    else:
+        body = ("match %s { result.Result::Ok(o) => { match o { %s option.Option::None => { return 0; } } } %s }"
+                % (call, some_arm(v, 1), err_arm(e, 2)))
+    return ("%s { %s }" % (head, body)).replace("{s}", sid)
 
-    def head(h, want):
-        ps = list(plist)
-        if want:
-            ps.append("want: %s" % want)
-        return "fn cases_%s_%s%s(%s) -> %s int" % (sid, h, gen, ", ".join(ps), row)
 
-    def buf_drop_err(arm_ret):
-        return "result.Result::Err(e) => { buffer.drop(heap, e); return %d; }" % arm_ret
+def want_type(ret, which):
+    outer, v, e, topt = ret
+    if which in ("none", "err", "oknone"):
+        return None
+    if which == "errn":
+        return "int"
+    return {V_INT: "int", V_BOOL: "bool", V_BUF: "text", V_TEXT: "text", V_BOX: "text", V_LIST: "list"}[v]
 
+
+def build_support(sid, ret, feats):
+    outer, v, e, topt = ret
     items = []
-    if kind in ("buf", "text") or (kind == "res" and tkind in ("buf", "text")):
-        items.append(SAME.replace("{s}", sid))
-    wt = {"int": "int", "bool": "bool", "buf": "&static [byte]", "text": "&static [byte]"}
-    if "is" in used:
-        if kind == "buf":
-            body = "let got = %s; %s" % (call, cmp_buf("got").replace("{s}", sid))
-        else:
-            body = "let got = %s; if cases_%s_same(got, want) { return 0; } return 1;" % (call, sid)
-        items.append("%s { %s }" % (head("is", "&static [byte]"), body))
-    if "some" in used:
-        items.append("%s { match %s { option.Option::Some(v) => { if v == want { return 0; } return 1; } "
-                     "option.Option::None => { return 2; } } }" % (head("some", wt[tkind]), call))
-    if "none" in used:
-        items.append("%s { match %s { option.Option::Some(_) => { return 2; } option.Option::None => { return 0; } } }"
-                     % (head("none", None), call))
-    if "ok" in used:
-        if tkind in ("int", "bool"):
-            okarm = "result.Result::Ok(v) => { if v == want { return 0; } return 1; }"
-        elif tkind == "text":
-            okarm = "result.Result::Ok(v) => { if cases_%s_same(v, want) { return 0; } return 1; }" % sid
-        else:
-            okarm = "result.Result::Ok(b) => { %s }" % cmp_buf("b").replace("{s}", sid)
-        errarm = buf_drop_err(2) if err_buf else "result.Result::Err(_) => { return 2; }"
-        items.append("%s { match %s { %s %s } }" % (head("ok", wt[tkind]), call, okarm, errarm))
-    if "err" in used:
-        okarm = ("result.Result::Ok(b) => { buffer.drop(heap, b); return 2; }" if tkind == "buf"
-                 else "result.Result::Ok(_) => { return 2; }")
-        errarm = buf_drop_err(0) if err_buf else "result.Result::Err(_) => { return 0; }"
-        items.append("%s { match %s { %s %s } }" % (head("err", None), call, okarm, errarm))
-    return items
+    if v in (V_BUF, V_TEXT, V_LIST, V_BOX):
+        items.append(SUP_SAME)
+    if "mk" in feats:
+        items.append(SUP_MK)
+    if "unhex" in feats:
+        items.append(SUP_HEXV)
+        items.append(SUP_UNHEX)
+    if "ldrop" in feats or v == V_LIST:
+        items.append(SUP_LDROP)
+    if v == V_LIST:
+        items.append(SUP_NTH)
+        items.append(SUP_LEQ)
+    return [s.replace("{s}", sid) for s in items]
+
+
+# ---- one unit -------------------------------------------------------------------------
+
+def expect_shape(ret, expect, feats):
+    """(helper or None, want Val/literal or None, want type, doc) or (None, message)."""
+    outer, v, e, topt = ret
+
+    def want_of(vk, val, who):
+        if vk in (V_INT, V_BOOL):
+            lc, m = scalar_lit("int" if vk == V_INT else "bool", val, who)
+            return (Val(lc, lc), None) if m is None else (None, m)
+        if vk == V_LIST:
+            return list_val(val, who, "w", feats)
+        return text_val(val, who, "w", feats)
+
+    if outer == 0:
+        r, m = want_of(v, expect, "expect")
+        if r is None:
+            return None, m
+        return (None if v in (V_INT, V_BOOL) else "is"), r, r.doc
+    if outer == 1:
+        if expect is None:
+            return "none", None, "option.Option::None"
+        r, m = want_of(v, expect, "expect")
+        if r is None:
+            return None, m
+        return "some", r, None if r.doc is None else "option.Option::Some(%s)" % r.doc
+    if not (isinstance(expect, dict) and len(expect) == 1 and ("ok" in expect or "err" in expect)):
+        return None, 'expect for a Result must be {"ok": value} or {"err": anything}'
+    if "err" in expect:
+        x = expect["err"]
+        if e == 1 and is_int(x):
+            lc, m = scalar_lit("int", x, 'expect "err"')
+            if m is not None:
+                return None, m
+            return "errn", Val(lc, lc), "result.Result::Err(%s)" % lc
+        return "err", None, "result.Result::Err"
+    x = expect["ok"]
+    if topt:
+        if x is None:
+            return "oknone", None, "result.Result::Ok(option.Option::None)"
+        r, m = want_of(v, x, 'expect "ok"')
+        if r is None:
+            return None, m
+        return "oksome", r, None if r.doc is None else "result.Result::Ok(option.Option::Some(%s))" % r.doc
+    r, m = want_of(v, x, 'expect "ok"')
+    if r is None:
+        return None, m
+    return "ok", r, None if r.doc is None else "result.Result::Ok(%s)" % r.doc
 
 
 def expand_unit(unit, report):
@@ -377,117 +641,121 @@ def expand_unit(unit, report):
     if len(ptexts) > MAX_PARAMS:
         err("-", "the signature has more than %d parameters; give tests instead" % MAX_PARAMS)
         return None
-    ptypes = []
+    params = []
     heaps = 0
     for t in ptexts:
         c = classify_param(t)
-        if c == "heap":
+        if c is not None and c[0] == P_HEAP:
             heaps += 1
             if heaps > 1:
                 c = None
         if c is None:
             err("-", "signature uses a type that cases cannot express (%s); give tests instead" % t)
             return None
-        ptypes.append(c)
-    kind, tkind, err_buf = classify_ret(rtext)
-    if kind is None:
-        err("-", "signature uses a type that cases cannot express (%s); give tests instead" % tkind)
+        params.append(c)
+    ret = classify_ret(rtext)
+    if ret[0] is None:
+        err("-", "signature uses a type that cases cannot express (%s); give tests instead" % ret[1])
         return None
-    has_heap = "heap" in ptypes
-    if (kind == "buf" or (kind == "res" and (tkind == "buf" or err_buf))) and not has_heap:
+    outer, rv, re_, topt = ret
+    has_heap = any(k == P_HEAP for k, _ in params)
+    if (rv in (V_BUF, V_LIST, V_BOX) or re_ == 2) and not has_heap:
         err("-", "the function returns a buffer.Buffer but takes no heap parameter; give tests instead")
         return None
-    sid = sid_of(who) if isinstance(uid, str) else sid_of("-")
-    argtypes = [t for t in ptypes if t != "heap"]
+    sid = sid_of(who)
+    argparams = [p for p in params if p[0] != P_HEAP]
 
     problems = len(report)
-    tests = []
+    items = []
     examples = []
     used = []
+    feats = set()
     for k, case in enumerate(cases, 1):
         if not (isinstance(case, dict) and isinstance(case.get("args"), list) and "expect" in case):
             err(k, 'a case must be an object with "args" (a list) and "expect"')
             continue
         args, expect = case["args"], case["expect"]
-        if len(args) != len(argtypes):
-            err(k, "args has %d value(s) but the function takes %d (the heap is not given in args)" % (len(args), len(argtypes)))
+        if len(args) != len(argparams):
+            err(k, "args has %d value(s) but the function takes %d (the heap is not given in args)" % (len(args), len(argparams)))
             continue
-        lits = []
+        vals = []
         bad = False
-        for i, (a, t) in enumerate(zip(args, argtypes), 1):
-            lc, m = value_lit(t, a, "argument %d" % i)
+        for i, (a, (kind, static)) in enumerate(zip(args, argparams), 1):
+            wh = "argument %d" % i
+            if kind in (P_INT, P_BOOL):
+                lc, m = scalar_lit(kind, a, wh)
+                val = Val(lc, lc) if m is None else None
+            elif kind == P_TEXT:
+                val, m = text_val(a, wh, "a%d" % i, feats, static)
+            else:
+                val, m = list_val(a, wh, "a%d" % i, feats, vec=(kind == P_VEC))
             if m is not None:
                 err(k, m)
                 bad = True
                 break
-            lits.append(lc)
+            vals.append(val)
         if bad:
             continue
-        # the call, with the heap where the signature has it
         ci = 0
         call_args = []
-        for t in ptypes:
-            if t == "heap":
+        call_docs = []
+        for kind, _ in params:
+            if kind == P_HEAP:
                 call_args.append("heap")
+                call_docs.append("heap")
             else:
-                call_args.append(lits[ci])
+                call_args.append(vals[ci].expr)
+                call_docs.append(vals[ci].doc)
                 ci += 1
-        # the expectation
-        shape = None   # (helper or None, want literal or None, expected doc text)
-        m = None
-        if kind in ("int", "bool"):
-            lc, m = value_lit(kind, expect, "expect")
-            if m is None:
-                shape = (None, lc, lc)
-        elif kind in ("buf", "text"):
-            lc, m = value_lit("text", expect, "expect")
-            if m is None:
-                shape = ("is", lc, lc)
-        elif kind == "opt":
-            if expect is None:
-                shape = ("none", None, "option.Option::None")
-            else:
-                lc, m = value_lit(tkind, expect, "expect")
-                if m is None:
-                    shape = ("some", lc, "option.Option::Some(%s)" % lc)
-        else:
-            if not (isinstance(expect, dict) and len(expect) == 1 and ("ok" in expect or "err" in expect)):
-                m = 'expect for a Result must be {"ok": value} or {"err": anything}'
-            elif "err" in expect:
-                shape = ("err", None, "result.Result::Err")
-            else:
-                vk = {"int": "int", "bool": "bool", "buf": "text", "text": "text"}[tkind]
-                lc, m = value_lit(vk, expect["ok"], 'expect "ok"')
-                if m is None:
-                    shape = ("ok", lc, "result.Result::Ok(%s)" % lc)
-        if shape is None:
-            err(k, m)
+        shape = expect_shape(ret, expect, feats)
+        if shape[0] is None and (len(shape) == 2):
+            err(k, shape[1])
             continue
         helper, want, doc = shape
-        hdr = ("pub fn test_%s_%d[&h](heap: &!h Heap) -> [heap] int" if has_heap else "pub fn test_%s_%d() -> [] int") % (sid, k)
+        # the pieces that need locals
+        locals_ = [x for x in vals + ([want] if want is not None else []) if x.local]
+        hdr = "pub fn test_%s_%d" % (sid, k)
+        if want is not None:
+            wexpr = want.expr
+        else:
+            wexpr = None
         if helper is None:
-            body = "test.assert(%s(%s) == %s); return 0;" % (name, ", ".join(call_args), want)
+            stmt = "if %s(%s) == %s { code = 0; }" % (name, ", ".join(call_args), wexpr)
         else:
             hargs = list(call_args)
-            if want is not None:
-                hargs.append(want)
-            body = "test.assert_eq(cases_%s_%s(%s), 0); return 0;" % (sid, helper, ", ".join(hargs))
+            if wexpr is not None:
+                hargs.append(wexpr)
+            stmt = "code = cases_%s_%s(%s);" % (sid, helper, ", ".join(hargs))
             if helper not in used:
                 used.append(helper)
-        tests.append("%s { %s }" % (hdr, body))
-        line = "%s(%s) == %s" % (name, ", ".join(call_args), doc)
-        ctext = "%s(%s)" % (name, ", ".join(call_args))
-        if " == " not in ctext and "|| true" not in line and "or true" not in line:
-            examples.append(line)
+        if locals_:
+            body = ("".join(x.local + " " for x in locals_) + "var code = 1; " +
+                    "".join("borrow %s as &r%s in { " % (x.borrow, x.borrow) for x in locals_) + stmt + " " +
+                    "".join("} " for _ in locals_) + "".join(x.drop + " " for x in locals_) + "return code;")
+            items.append("fn cases_%s_c%d[&h](heap: &!h Heap) -> [heap] int { %s }".replace("{s}", sid) % (sid, k, body.replace("{s}", sid)))
+            items.append("%s[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(cases_%s_c%d(heap), 0); return 0; }" % (hdr, sid, k))
+        else:
+            h2 = "%s[&h](heap: &!h Heap) -> [heap] int" % hdr if has_heap else "%s() -> [] int" % hdr
+            if helper is None:
+                inner = "test.assert(%s(%s) == %s); return 0;" % (name, ", ".join(call_args), wexpr)
+            else:
+                inner = "test.assert_eq(%s, 0); return 0;" % stmt[len("code = "):-1]
+            items.append("%s { %s }" % (h2, inner))
+        if doc is not None and all(d is not None for d in call_docs):
+            ctext = "%s(%s)" % (name, ", ".join(call_docs))
+            line = "%s == %s" % (ctext, doc)
+            if " == " not in ctext and "|| true" not in line and "or true" not in line:
+                examples.append(line)
     if len(report) > problems:
         return None
-    order = ["is", "some", "none", "ok", "err"]
-    helpers = build_helpers(sid, name, ptypes, kind, tkind, err_buf, [h for h in order if h in used])
-    new_tests = helpers + tests
+    sup = build_support(sid, ret, feats)
+    helpers = [build_helper(h, sid, name, params, has_heap, ret,
+                            want_type(ret, h)) for h in HELPERS if h in used]
+    new_tests = sup + helpers + items
     ex = unit.get("examples")
     fill = "examples" not in unit or (isinstance(ex, list) and len(ex) == 0)
     if fill and not examples:
-        err("-", 'no case can be shown as an example (its call text contains " == "); add a case without it, or give examples')
+        err("-", 'no case can be shown as an example (its call text contains " == " or a byte string); add a case without it, or give examples')
         return None
     out = {}
     for key, val in unit.items():

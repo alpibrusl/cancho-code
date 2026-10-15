@@ -1,0 +1,26 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "cnt",
+   "signature": "fn cnt[&r](s: &r [byte], n: int) -> [] bool",
+   "cases": [
+    {
+     "args": [
+      "\u0001",
+      1
+     ],
+     "expect": true
+    },
+    {
+     "args": [
+      "a",
+      2
+     ],
+     "expect": false
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

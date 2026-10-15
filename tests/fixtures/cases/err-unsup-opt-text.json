@@ -3,7 +3,7 @@
  "units": [
   {
    "id": "f",
-   "signature": "fn f[&r](s: &r [byte]) -> [] option.Option[&r [byte]]",
+   "signature": "fn f[&r](s: &r [byte]) -> [] option.Option[vec.Vec[int]]",
    "cases": [
     {
      "args": [

@@ -58,3 +58,39 @@ fn syn_heapint[&h](heap: &!h Heap, a: int) -> [heap] int {
     let n = buffer.drop(heap, b);
     return a + n;
 }
+
+fn syn_rint(n: int) -> [] result.Result[option.Option[int], int] {
+    if n < 0 { return result.Result::Err(n); }
+    if n == 0 { return result.Result::Ok(option.Option::None); }
+    return result.Result::Ok(option.Option::Some(n));
+}
+
+fn syn_obuf[&h](heap: &!h Heap, n: int) -> [heap] option.Option[buffer.Buffer] {
+    if n <= 0 { return option.Option::None; }
+    var b = buffer.empty(heap, 8);
+    b = buffer.push_nat(heap, b, n);
+    return option.Option::Some(b);
+}
+
+fn syn_rbox[&h](heap: &!h Heap, n: int) -> [heap] result.Result[Box[[byte]], int] {
+    if n < 0 { return result.Result::Err(n * 2); }
+    let b = box_slice(heap, n, byte_of(n));
+    return result.Result::Ok(b);
+}
+
+// the first byte of a text, whatever it is, or -1
+fn syn_first[&r](s: &r [byte]) -> [] int {
+    if len(s) == 0 { return 0 - 1; }
+    return int_of(s[0]);
+}
+
+// a copy of the text, byte for byte
+fn syn_echo[&h, &r](heap: &!h Heap, s: &r [byte]) -> [heap] buffer.Buffer {
+    return buffer.append(heap, buffer.empty(heap, 8), s);
+}
+
+fn syn_ropt[&r](s: &r [byte]) -> [] result.Result[option.Option[&r [byte]], int] {
+    if len(s) == 0 { return result.Result::Ok(option.Option::None); }
+    if len(s) > 3 { return result.Result::Err(len(s)); }
+    return result.Result::Ok(option.Option::Some(s));
+}

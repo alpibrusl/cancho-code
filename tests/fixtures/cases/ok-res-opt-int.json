@@ -1,0 +1,36 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "ri",
+   "signature": "fn ri(n: int) -> [] result.Result[option.Option[int], int]",
+   "cases": [
+    {
+     "args": [
+      1
+     ],
+     "expect": {
+      "ok": 1
+     }
+    },
+    {
+     "args": [
+      0
+     ],
+     "expect": {
+      "ok": null
+     }
+    },
+    {
+     "args": [
+      -1
+     ],
+     "expect": {
+      "err": 9
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

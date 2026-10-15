@@ -1,0 +1,30 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "ob",
+   "signature": "fn ob[&h](heap: &!h Heap, n: int) -> [heap] option.Option[buffer.Buffer]",
+   "cases": [
+    {
+     "args": [
+      1
+     ],
+     "expect": "one"
+    },
+    {
+     "args": [
+      0
+     ],
+     "expect": null
+    },
+    {
+     "args": [
+      2
+     ],
+     "expect": "\u0001"
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

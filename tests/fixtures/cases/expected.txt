@@ -52,10 +52,10 @@ err-unsup-param-float	1	signature uses a type that cases cannot express (float);
 err-unsup-param-mutslice	1	(&!a [byte])
 err-unsup-param-list	1	(&a list.List[int])
 err-unsup-ret-float	1	(float)
-err-unsup-ret-list	1	(list.List[Box[Box[[byte]]]])
+err-unsup-ret-list	1	(list.List[int])
 err-unsup-res-T	1	(list.List[int])
 err-unsup-res-nocomma	1	(result.Result[int])
-err-unsup-opt-text	1	(option.Option[&r [byte]])
+err-unsup-opt-text	1	(option.Option[vec.Vec[int]])
 err-unsup-two-heaps	1	(&!g Heap)
 err-unsup-tuple	1	((int, int))
 err-both	1	both cases and tests
@@ -65,8 +65,6 @@ err-cases-notarray	1	non-empty
 err-case-notobject	1	a case must be an object
 err-case-no-expect	1	a case must be an object
 err-case-args-notarray	1	a case must be an object
-err-nul	1	argument 1 cannot be written in a cancho string literal; use another input
-err-ctrl	1	expect cannot be written in a cancho string literal
 err-sig-missing	1	needs a string signature
 err-sig-notstring	1	needs a string signature
 err-sig-notfn	1	cannot read the signature
@@ -88,3 +86,35 @@ err-nobuf-heap	1	takes no heap parameter
 err-id-missing	1		-	1	argument 1
 err-deep-60	1	nested more than 55
 err-tab-in-id	1	argument 1
+ok-bytes-text-arg	0	
+ok-bytes-want-buf	0	
+ok-bytes-result-text	0	
+ok-complex-noheap	0	
+ok-list-box-ret	0	
+ok-list-ret	0	
+ok-list-ret-static-err	0	
+ok-list-plain-ret	0	
+ok-list-two-params	0	
+ok-vec-option-text	0	
+ok-option-buf	0	
+ok-option-text	0	
+ok-res-opt-buf	0	
+ok-res-opt-int	0	
+ok-res-opt-bool	0	
+ok-res-opt-text	0	
+ok-res-box	0	
+ok-res-int-errint	0	
+ok-res-buf-errint-buf	0	
+ok-list-example-doc	0	
+err-static-odd	1	the parameter is &static
+err-list-notarray	1	argument 1 must be a JSON list of strings, got a string
+err-list-item	1	argument 1 item 2 must be a JSON string, got an integer
+err-bytes-bad	1	a "bytes" list that is not a list of integers 0 to 255
+err-vec-odd	1	argument 2 item 2 cannot be written in a cancho string literal (a vec holds literals)
+err-list-expect	1	expect "ok" must be a JSON list of strings, got a string
+err-unsup-opt-list	1	(option.Option[list.List[Box[Box[[byte]]]]])
+err-unsup-res-opt-list	1	(option.Option[list.List[Box[Box[[byte]]]]])
+err-unsup-vec-int	1	(&v vec.Vec[int])
+err-unsup-list-owned	1	(list.List[Box[Box[[byte]]]])
+err-list-noheap	1	takes no heap parameter
+err-errint-range	1	expect "err" is out of the range of int

@@ -1,0 +1,36 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "rt",
+   "signature": "fn rt[&r](s: &r [byte]) -> [] result.Result[option.Option[&r [byte]], int]",
+   "cases": [
+    {
+     "args": [
+      "a"
+     ],
+     "expect": {
+      "ok": "a"
+     }
+    },
+    {
+     "args": [
+      ""
+     ],
+     "expect": {
+      "ok": null
+     }
+    },
+    {
+     "args": [
+      "!"
+     ],
+     "expect": {
+      "err": 2
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}
