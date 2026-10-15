@@ -1,0 +1,12 @@
+{
+ "brief": "tokens: count, parse and evaluate",
+ "stage": "building",
+ "plan_valid": true,
+ "units_total": 3,
+ "units_verified": 1,
+ "verdict": null,
+ "started_unix": 1760000000,
+ "seconds": 12.5,
+ "provider": "anthropic",
+ "model": "claude-sonnet-5-5"
+}

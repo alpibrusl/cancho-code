@@ -1,0 +1,27 @@
+{
+ "name": "nolog",
+ "units": [
+  {
+   "id": "p",
+   "signature": "fn nl_p(n: int) -> [] int",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "q",
+   "signature": "fn nl_q(n: int) -> [] int",
+   "examples": [],
+   "deps": [
+    "p"
+   ]
+  },
+  {
+   "id": "r",
+   "signature": "fn nl_r(n: int) -> [] int",
+   "examples": [],
+   "deps": [
+    "q"
+   ]
+  }
+ ]
+}

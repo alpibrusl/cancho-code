@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cancho-code board</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1c2330; --muted: #5f6b7d; --line: #dde2ea; --soft: #eef1f5;
+    --waiting: #7b8798; --building: #2f6fed; --verified: #17884f; --stuck: #c8372d; --regressed: #b46a00; --unknown: #8a6bb8;
+    --ok: #17884f; --bad: #c8372d; --warn: #b46a00;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161d; --panel: #1b212b; --ink: #e6eaf1; --muted: #98a3b5; --line: #2c3442; --soft: #232b37;
+      --waiting: #8e9bb0; --building: #6a9cff; --verified: #4cc38a; --stuck: #ff7a70; --regressed: #f0b050; --unknown: #b79ae6;
+      --ok: #4cc38a; --bad: #ff7a70; --warn: #f0b050;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 var(--sans); }
+  main { max-width: 1500px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.25rem; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 0.95rem; margin: 0; }
+  .muted { color: var(--muted); }
+  .mono { font-family: var(--mono); }
+
+  header.top { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .title { min-width: 0; }
+  .title p { margin: 2px 0 0; color: var(--muted); overflow-wrap: anywhere; }
+  .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button, .filebtn {
+    font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 6px 12px; cursor: pointer; min-height: 36px;
+  }
+  button:hover, .filebtn:hover { border-color: var(--muted); }
+  button:focus-visible, .filebtn:focus-within, .sig:focus-visible, summary:focus-visible, .dep:focus-visible { outline: 2px solid var(--building); outline-offset: 2px; }
+  .filebtn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  label.auto { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 0.9rem; }
+
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 600; font-size: 0.85rem; border: 1px solid currentColor; }
+  .pill.done { color: var(--ok); } .pill.stuck, .pill.gate_failed, .pill.provider_error, .pill.no_plan { color: var(--bad); }
+  .pill.running, .pill.none { color: var(--muted); }
+
+  #notice { margin: 0 0 12px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; background: var(--panel); }
+  #notice.error { border-color: var(--bad); }
+  #notice[hidden] { display: none; }
+
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .metric { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+  .metric .k { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .metric .v { font-size: 1.35rem; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .metric .s { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+  .metric.wide { grid-column: span 2; }
+  .bar { height: 8px; border-radius: 4px; background: var(--soft); overflow: hidden; display: flex; margin-top: 6px; }
+  .bar i { display: block; height: 100%; }
+  .unknown-v { color: var(--muted); font-weight: 400; }
+
+  .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; align-items: start; }
+  .col { background: var(--soft); border-radius: 12px; padding: 10px; min-width: 0; border-top: 3px solid var(--c); }
+  .col h2 { display: flex; justify-content: space-between; align-items: baseline; padding: 2px 4px 8px; }
+  .col h2 .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .col.waiting { --c: var(--waiting); } .col.building { --c: var(--building); } .col.verified { --c: var(--verified); }
+  .col.stuck { --c: var(--stuck); } .col.regressed { --c: var(--regressed); } .col.unknown { --c: var(--unknown); }
+  .col .empty { color: var(--muted); padding: 4px; font-size: 0.9rem; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; min-width: 0; }
+  .card.flash { animation: flash 1.2s ease-out; }
+  @keyframes flash { from { box-shadow: 0 0 0 3px var(--building); } to { box-shadow: 0 0 0 0 transparent; } }
+  .card .head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+  .card .id { font-weight: 650; overflow-wrap: anywhere; }
+  .card .fn { font-family: var(--mono); font-size: 0.82rem; color: var(--muted); overflow-wrap: anywhere; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chip { font-size: 0.78rem; padding: 1px 8px; border-radius: 999px; background: var(--soft); border: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  .chip.warn { color: var(--warn); border-color: var(--warn); }
+  .dep { font: inherit; font-size: 0.78rem; padding: 1px 8px; min-height: 0; border-radius: 999px; display: inline-flex; gap: 5px; align-items: center; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--waiting); display: inline-block; }
+  .dot.waiting { background: var(--waiting); } .dot.building { background: var(--building); } .dot.verified { background: var(--verified); }
+  .dot.stuck { background: var(--stuck); } .dot.regressed { background: var(--regressed); } .dot.unknown, .dot.missing { background: var(--unknown); }
+  .nums { margin-top: 6px; font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  details.trail { margin-top: 8px; }
+  details.trail summary { cursor: pointer; font-size: 0.82rem; color: var(--muted); }
+  ol.attempts { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+  ol.attempts li { border-left: 3px solid var(--line); padding: 2px 0 2px 8px; font-size: 0.82rem; min-width: 0; }
+  ol.attempts li.verified { border-color: var(--verified); } ol.attempts li.refused, ol.attempts li.defect { border-color: var(--stuck); }
+  ol.attempts li.outage { border-color: var(--regressed); }
+  .a-line { display: flex; flex-wrap: wrap; gap: 2px 10px; font-variant-numeric: tabular-nums; }
+  .a-out { font-weight: 600; }
+  .sig { margin-top: 2px; font-family: var(--mono); font-size: 0.76rem; color: var(--muted); overflow-wrap: anywhere;
+         display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+  .sig.open { display: block; }
+
+  footer { margin-top: 18px; color: var(--muted); font-size: 0.85rem; }
+  footer .files { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0; }
+  footer .have::before { content: "\2713"; margin-right: 4px; color: var(--ok); }
+  footer .lack::before { content: "\2014"; margin-right: 4px; color: var(--warn); }
+  footer details { margin-top: 8px; }
+  footer dt { font-weight: 600; margin-top: 6px; color: var(--ink); }
+  footer dd { margin: 0; }
+
+  #drop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: color-mix(in srgb, var(--bg) 85%, transparent);
+          border: 3px dashed var(--building); font-size: 1.3rem; z-index: 10; pointer-events: none; }
+  #drop.on { display: flex; }
+
+  @media (max-width: 640px) {
+    main { padding: 12px; }
+    .metric.wide { grid-column: span 1; }
+    .metric .v { font-size: 1.15rem; }
+    .board { grid-template-columns: 1fr; }
+    /* on a phone the columns stack: what needs a look first, and the empty ones as a single line */
+    .col.building { order: 1; } .col.stuck { order: 2; } .col.regressed { order: 3; } .col.unknown { order: 4; }
+    .col.waiting { order: 5; } .col.verified { order: 6; }
+    .col.none { padding-bottom: 2px; }
+    .col.none h2 { padding-bottom: 4px; }
+    .col.none .empty { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="top">
+    <div class="title">
+      <h1 id="title">cancho-code board</h1>
+      <p id="subtitle" class="muted">read-only view of a run</p>
+    </div>
+    <div class="tools">
+      <span id="verdict"></span>
+      <label class="filebtn">Open board.json<input id="pick" type="file" accept=".json,application/json"></label>
+      <button id="reload" type="button" title="Read board.json again">Reload</button>
+      <label class="auto"><input id="auto" type="checkbox"> refresh every 5 s</label>
+    </div>
+  </header>
+
+  <p id="notice" hidden></p>
+  <section id="metrics" class="metrics" aria-label="Metrics"></section>
+  <section id="board" class="board" aria-label="Units"></section>
+  <footer id="foot"></footer>
+</main>
+<div id="drop">Drop board.json here</div>
+
+<script>
+"use strict";
+var COLS = [
+  ["waiting", "Waiting", "Dependencies not verified yet."],
+  ["building", "Building", "The unit being built now."],
+  ["verified", "Verified", "Its examples pass, and still did at the last sweep."],
+  ["stuck", "Stuck", "Failed: the attempts ran out or the same refusal came twice."],
+  ["regressed", "Regressed", "Verified once, broken by a later unit, back on the board."],
+  ["unknown", "Unknown", "The files that would say are missing."]
+];
+var state = { data: null, from: "", timer: null };
+
+function $(id) { return document.getElementById(id); }
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null) e.textContent = text;
+  return e;
+}
+function isNum(v) { return typeof v === "number" && isFinite(v); }
+
+function fmtInt(v) { return isNum(v) ? Math.round(v).toLocaleString("en-US") : null; }
+function fmtPct(v) { return isNum(v) ? (v * 100).toFixed(1) + "%" : null; }
+function fmtUsd(v) {
+  if (!isNum(v)) return null;
+  if (v === 0) return "$0";
+  return "$" + (v < 0.01 ? v.toFixed(6) : v.toFixed(4));
+}
+function fmtSecs(v) {
+  if (!isNum(v)) return null;
+  if (v < 90) return (Math.round(v * 10) / 10) + " s";
+  var m = Math.floor(v / 60), s = Math.round(v - m * 60);
+  return m + " min " + s + " s";
+}
+function fmtMs(v) { return isNum(v) ? (Math.round(v / 100) / 10) + " s" : null; }
+
+// ---- loading -------------------------------------------------------------------------------------------------------------
+
+function notice(text, isError) {
+  var n = $("notice");
+  if (!text) { n.hidden = true; return; }
+  n.hidden = false;
+  n.className = isError ? "error" : "";
+  n.textContent = text;
+}
+
+function accept(text, from) {
+  var d;
+  try { d = JSON.parse(text); } catch (e) { notice("That file is not JSON: " + e.message, true); return; }
+  if (!d || d.schema !== 1 || !Array.isArray(d.units) || !d.metrics) {
+    notice("That is not a board.json made by the board tool (no schema 1, units and metrics).", true);
+    return;
+  }
+  state.data = d;
+  state.from = from;
+  notice("");
+  render(d);
+}
+
+function load() {
+  fetch("board.json", { cache: "no-store" })
+    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+    .then(function (t) { accept(t, "board.json"); })
+    .catch(function () {
+      if (!state.data) notice("No board.json next to this page could be read (opened from a file, or none there yet). Use “Open board.json” or drop the file on this page.", false);
+      else notice("board.json could not be read again; showing what was loaded.", false);
+    });
+}
+
+function readFile(f) {
+  if (!f) return;
+  f.text().then(function (t) { accept(t, f.name); });
+}
+
+$("pick").addEventListener("change", function (e) { readFile(e.target.files[0]); });
+$("reload").addEventListener("click", load);
+$("auto").addEventListener("change", function (e) {
+  if (state.timer) { clearInterval(state.timer); state.timer = null; }
+  if (e.target.checked) state.timer = setInterval(load, 5000);
+});
+var depth = 0;
+window.addEventListener("dragenter", function (e) { e.preventDefault(); depth++; $("drop").className = "on"; });
+window.addEventListener("dragleave", function () { depth = Math.max(0, depth - 1); if (!depth) $("drop").className = ""; });
+window.addEventListener("dragover", function (e) { e.preventDefault(); });
+window.addEventListener("drop", function (e) {
+  e.preventDefault(); depth = 0; $("drop").className = "";
+  if (e.dataTransfer && e.dataTransfer.files.length) readFile(e.dataTransfer.files[0]);
+});
+
+// ---- rendering -----------------------------------------------------------------------------------------------------------
+
+function metric(parent, key, value, sub, tip, wide) {
+  var m = el("div", "metric" + (wide ? " wide" : ""));
+  if (tip) m.title = tip;
+  m.appendChild(el("div", "k", key));
+  var v = el("div", "v" + (value === null ? " unknown-v" : ""), value === null ? "unknown" : value);
+  m.appendChild(v);
+  if (sub) m.appendChild(el("div", "s", sub));
+  parent.appendChild(m);
+  return m;
+}
+
+function renderMetrics(d) {
+  var box = $("metrics");
+  box.textContent = "";
+  var m = d.metrics, r = d.run || {};
+  var total = isNum(m.units_total) ? m.units_total : 0;
+  var ver = isNum(m.units_verified) ? m.units_verified : 0;
+  var u = metric(box, "Units verified", ver + " / " + total, null, "Units in the Verified column over all units of the run.", true);
+  var bar = el("div", "bar");
+  COLS.forEach(function (c) {
+    var n = m.columns ? m.columns[c[0]] : 0;
+    if (n && total) {
+      var seg = el("i");
+      seg.style.width = (100 * n / total) + "%";
+      seg.style.background = "var(--" + c[0] + ")";
+      seg.title = c[1] + ": " + n;
+      bar.appendChild(seg);
+    }
+  });
+  u.appendChild(bar);
+
+  metric(box, "Cost", fmtUsd(m.cost_usd),
+    m.cost_per_verified_unit !== null && m.cost_per_verified_unit !== undefined ? fmtUsd(m.cost_per_verified_unit) + " per verified unit" : (d.files && d.files.usage && !d.files.prices ? "no price for this model" : null),
+    "Sum over the calls of tokens times the price per million tokens (the prices file given to the tool).");
+  var t = m.tokens;
+  metric(box, "Tokens out", t ? fmtInt(t.out) : null,
+    t ? "in " + fmtInt(t.in) + " · cache read " + fmtInt(t.cache_read) + " · cache write " + fmtInt(t.cache_write) : null,
+    "Output tokens, as the API reported them (they include the thinking tokens).");
+  metric(box, "Token efficiency", fmtPct(m.efficiency),
+    m.efficiency_calls !== null && m.efficiency_calls !== undefined ? "kept calls " + fmtPct(m.efficiency_calls) : null,
+    "Of all output tokens, the share that was kept (the last written reply of a verified unit) and new (not the file repeated). eval/metrics.py efficiency.");
+  metric(box, "Thinking share", fmtPct(m.thinking_share),
+    t && t.thinking !== null && t.thinking !== undefined ? fmtInt(t.thinking) + " thinking tokens" : "not recorded by this run",
+    "Thinking tokens over output tokens.");
+  metric(box, "Cache read share", fmtPct(m.cache_read_share), null,
+    "Cache-read tokens over all input tokens (input + cache write + cache read).");
+  metric(box, "Time", fmtSecs(r.seconds), m.calls !== null && m.calls !== undefined ? fmtInt(m.calls) + " model calls" : null, "Seconds of the whole run (run.json or build.json).");
+  metric(box, "Audit", m.audit ? m.audit.passed + " / " + m.audit.of : null,
+    m.audit && m.audit.of ? fmtPct(m.audit.passed / m.audit.of) : null, "The hidden audit's TOTAL, when audit.txt exists.");
+}
+
+function stateOf(d) {
+  var by = {};
+  d.units.forEach(function (u) { by[u.id] = u.column; });
+  return by;
+}
+
+function trailItem(a) {
+  var li = el("li", a.outcome || "");
+  var line = el("div", "a-line");
+  line.appendChild(el("span", "", "#" + (a.attempt === null || a.attempt === undefined ? "?" : a.attempt)));
+  line.appendChild(el("span", "a-out", a.outcome || "?"));
+  line.appendChild(el("span", "muted", a.decision ? "→ " + a.decision : ""));
+  var t = fmtMs(a.agent_ms);
+  if (t) line.appendChild(el("span", "muted", t));
+  li.appendChild(line);
+  if (a.sig) {
+    var s = el("div", "sig", a.sig);
+    s.tabIndex = 0;
+    s.title = "Click to show all";
+    s.addEventListener("click", function () { s.classList.toggle("open"); });
+    li.appendChild(s);
+  }
+  return li;
+}
+
+function card(u, states, usageKnown) {
+  var c = el("article", "card");
+  c.id = "u-" + u.id;
+  var head = el("div", "head");
+  head.appendChild(el("span", "id", u.id));
+  if (u.function) head.appendChild(el("span", "fn", u.function));
+  c.appendChild(head);
+
+  var chips = el("div", "chips");
+  chips.appendChild(el("span", "chip", u.attempts === null ? "attempts: unknown" : u.attempts + (u.attempts === 1 ? " attempt" : " attempts")));
+  if (u.regressions) chips.appendChild(el("span", "chip warn", "regressed " + u.regressions + "×"));
+  c.appendChild(chips);
+
+  if (Array.isArray(u.deps) && u.deps.length) {
+    var deps = el("div", "chips");
+    deps.appendChild(el("span", "muted", "needs"));
+    u.deps.forEach(function (id) {
+      var b = el("button", "dep");
+      b.type = "button";
+      var st = states[id] || "missing";
+      b.appendChild(el("span", "dot " + st));
+      b.appendChild(el("span", "", id));
+      b.title = id + ": " + (states[id] || "not in this run");
+      b.addEventListener("click", function () {
+        var t = document.getElementById("u-" + id);
+        if (!t) return;
+        t.scrollIntoView({ block: "center", behavior: "smooth" });
+        t.classList.remove("flash"); void t.offsetWidth; t.classList.add("flash");
+      });
+      deps.appendChild(b);
+    });
+    c.appendChild(deps);
+  }
+
+  var nums = [];
+  if (u.calls === 0) {
+    nums.push("no model calls yet");
+  } else {
+    if (u.tokens) {
+      nums.push("out " + fmtInt(u.tokens.out) + (u.tokens.thinking !== null && u.tokens.thinking !== undefined ? " (" + fmtInt(u.tokens.thinking) + " thinking)" : ""));
+      nums.push("in " + fmtInt(u.tokens.in));
+      if (u.tokens.cache_read) nums.push("cache read " + fmtInt(u.tokens.cache_read));
+    }
+    var cost = fmtUsd(u.cost_usd);
+    if (cost) nums.push(cost);
+    if (u.calls !== null && u.calls !== undefined) nums.push(u.calls + (u.calls === 1 ? " call" : " calls"));
+  }
+  c.appendChild(el("div", "nums", nums.length ? nums.join(" · ") : (usageKnown ? "" : "tokens and cost: unknown")));
+
+  if (Array.isArray(u.trail) && u.trail.length) {
+    var d = el("details", "trail");
+    d.open = u.column === "stuck" || u.column === "regressed" || u.column === "building" || u.trail.length > 1;
+    d.appendChild(el("summary", "", "Attempts (" + u.trail.length + ")"));
+    var ol = el("ol", "attempts");
+    u.trail.forEach(function (a) { ol.appendChild(trailItem(a)); });
+    d.appendChild(ol);
+    c.appendChild(d);
+  } else if (u.trail === null) {
+    c.appendChild(el("div", "nums", "trail: unknown (no trail file)"));
+  }
+  return c;
+}
+
+function renderBoard(d) {
+  var board = $("board");
+  board.textContent = "";
+  var states = stateOf(d);
+  var usageKnown = !!(d.files && d.files.usage);
+  COLS.forEach(function (cdef) {
+    var units = d.units.filter(function (u) { return u.column === cdef[0]; });
+    if (cdef[0] === "unknown" && !units.length) return;
+    var col = el("section", "col " + cdef[0] + (units.length ? "" : " none"));
+    var h = el("h2");
+    h.title = cdef[2];
+    h.appendChild(el("span", "", cdef[1]));
+    h.appendChild(el("span", "n", String(units.length)));
+    col.appendChild(h);
+    if (!units.length) col.appendChild(el("div", "empty", "none"));
+    units.forEach(function (u) { col.appendChild(card(u, states, usageKnown)); });
+    board.appendChild(col);
+  });
+}
+
+function renderHead(d) {
+  var r = d.run || {};
+  $("title").textContent = r.name ? "Run: " + r.name : "cancho-code run";
+  var bits = [];
+  if (r.brief) bits.push(r.brief);
+  if (r.stage) bits.push("stage: " + r.stage);
+  if (r.provider || r.model) bits.push([r.provider, r.model].filter(Boolean).join(" / "));
+  if (isNum(r.started_unix)) bits.push("started " + new Date(r.started_unix * 1000).toLocaleString());
+  $("subtitle").textContent = bits.length ? bits.join(" · ") : "read-only view of a run";
+  var v = $("verdict");
+  v.textContent = "";
+  var building = d.units.some(function (u) { return u.column === "building"; });
+  var word = r.verdict || (building ? "running" : "no verdict yet");
+  v.appendChild(el("span", "pill " + (r.verdict || (building ? "running" : "none")), word));
+}
+
+function renderFoot(d) {
+  var f = $("foot");
+  f.textContent = "";
+  var names = [["plan", "plan.json"], ["run_log", "run.log"], ["state", "state.txt"], ["usage", "usage.jsonl"],
+               ["run_json", "run.json"], ["build_json", "build.json"], ["audit", "audit.txt"], ["prices", "prices"]];
+  var files = el("div", "files");
+  names.forEach(function (n) {
+    var have = d.files && d.files[n[0]];
+    files.appendChild(el("span", have ? "have" : "lack", n[1] + (have ? "" : " (not available)")));
+  });
+  f.appendChild(el("div", "", "Read from the run directory by the board tool; this page only reads " + state.from + ". A missing file is shown as unknown, never as zero."));
+  f.appendChild(files);
+  if (d.truncated) f.appendChild(el("div", "", "More units than the tool keeps (256): the rest are not shown."));
+  var det = el("details");
+  det.appendChild(el("summary", "", "What the columns and numbers mean"));
+  var dl = el("dl");
+  COLS.forEach(function (c) { dl.appendChild(el("dt", "", c[1])); dl.appendChild(el("dd", "", c[2])); });
+  [["Cost", "tokens times the price per million tokens, summed over every model call, retries included."],
+   ["Token efficiency", "output tokens of the kept replies that were new work, over all output tokens (eval/metrics.py)."],
+   ["Thinking share", "thinking tokens over output tokens; unknown for runs that did not record thinking."],
+   ["Cache read share", "cache-read tokens over all input tokens."]].forEach(function (p) { dl.appendChild(el("dt", "", p[0])); dl.appendChild(el("dd", "", p[1])); });
+  det.appendChild(dl);
+  f.appendChild(det);
+}
+
+function render(d) {
+  renderHead(d);
+  renderMetrics(d);
+  renderBoard(d);
+  renderFoot(d);
+}
+
+load();
+</script>
+</body>
+</html>

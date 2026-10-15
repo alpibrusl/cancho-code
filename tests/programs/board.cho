@@ -1,0 +1,51 @@
+edition 7;
+
+// board <run dir> <board.json> [prices.json]: the data half of the dashboard (docs/dashboard.md). Reads the run directory, writes the one
+// output file. Exit 0 done, 1 the output cannot be written, 2 usage (paths absolute, no `..`, the output not inside the run directory).
+
+import board;
+import std.io;
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(net);
+    release(clock);
+    release(signals);
+    release(exec);
+    var console = io;
+    var h = heap;
+    var wd = "";
+    var out = "";
+    var prices = "";
+    var given = false;
+    borrow mut console as &!ci in {
+        borrow args as &g in {
+            if arg_count(g) < 3 {
+                io.error_all(ci, "usage: board <run dir> <board.json> [prices.json]\n");
+            } else {
+                given = true;
+                wd = arg(g, 1);
+                out = arg(g, 2);
+                if arg_count(g) > 3 {
+                    prices = arg(g, 3);
+                }
+            }
+        }
+    }
+    var status = 2;
+    if given {
+        borrow fs as &fz in {
+            borrow mut console as &!i in {
+                borrow mut h as &!hh in {
+                    status = board.run(hh, fz, i, wd, out, prices);
+                }
+            }
+        }
+    }
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return status;
+}

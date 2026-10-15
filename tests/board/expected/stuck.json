@@ -1,0 +1,305 @@
+{
+ "schema": 1,
+ "run": {
+  "name": "ini",
+  "brief": null,
+  "stage": null,
+  "plan_valid": null,
+  "provider": "anthropic",
+  "model": "claude-haiku-5-5",
+  "started_unix": null,
+  "seconds": 160.0,
+  "verdict": "stuck"
+ },
+ "files": {
+  "plan": true,
+  "run_log": true,
+  "state": true,
+  "usage": true,
+  "run_json": true,
+  "build_json": false,
+  "audit": true,
+  "prices": true
+ },
+ "metrics": {
+  "units_total": 9,
+  "units_verified": 7,
+  "columns": {
+   "waiting": 1,
+   "building": 0,
+   "verified": 7,
+   "stuck": 1,
+   "regressed": 0,
+   "unknown": 0
+  },
+  "calls": 9,
+  "tokens": {
+   "in": 21155,
+   "out": 41213,
+   "cache_write": 0,
+   "cache_read": 120366,
+   "thinking": null
+  },
+  "visible_out": null,
+  "thinking_share": null,
+  "cache_read_share": 0.8505,
+  "efficiency": 0.2207,
+  "efficiency_calls": 0.6389,
+  "efficiency_visible": null,
+  "cost_usd": 0.023927,
+  "cost_per_verified_unit": 0.003418,
+  "over_limit_calls": 0,
+  "audit": {
+   "passed": 0,
+   "of": 76
+  }
+ },
+ "truncated": false,
+ "units": [
+  {
+   "id": "key",
+   "function": "ini_key_ok",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 421,
+    "out": 889,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13374
+   },
+   "cost_usd": 0.00062,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 4190,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "section",
+   "function": "ini_section_name_ok",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 599,
+    "out": 388,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13374
+   },
+   "cost_usd": 0.000388,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1970,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "unquote",
+   "function": "ini_unquote",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 765,
+    "out": 927,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13374
+   },
+   "cost_usd": 0.000674,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 3893,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "kind",
+   "function": "ini_line_kind",
+   "column": "verified",
+   "deps": [
+    "key",
+    "section"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 1132,
+    "out": 3306,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13374
+   },
+   "cost_usd": 0.0019,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 12085,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "raw",
+   "function": "ini_raw",
+   "column": "verified",
+   "deps": [
+    "unquote",
+    "kind"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 2330,
+    "out": 7859,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13374
+   },
+   "cost_usd": 0.004296,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 31126,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "dedupe",
+   "function": "ini_dedupe",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 3038,
+    "out": 7986,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13374
+   },
+   "cost_usd": 0.004431,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 29266,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "parse",
+   "function": "ini_parse",
+   "column": "stuck",
+   "deps": [
+    "raw",
+    "dedupe"
+   ],
+   "attempts": 2,
+   "regressions": 0,
+   "calls": 2,
+   "tokens": {
+    "in": 8846,
+    "out": 14881,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 26748
+   },
+   "cost_usd": 0.008593,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 34545,
+     "outcome": "refused",
+     "sig": "type-mismatch:expected `[byte]`, found `Buffer`",
+     "decision": "retry"
+    },
+    {
+     "attempt": 1,
+     "agent_ms": 19729,
+     "outcome": "refused",
+     "sig": "type-mismatch:expected `[byte]`, found `Buffer`",
+     "decision": "signature"
+    }
+   ]
+  },
+  {
+   "id": "find",
+   "function": "ini_find",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 4024,
+    "out": 4977,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13374
+   },
+   "cost_usd": 0.003025,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 15451,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "get",
+   "function": "ini_get",
+   "column": "waiting",
+   "deps": [
+    "parse",
+    "find"
+   ],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  }
+ ]
+}

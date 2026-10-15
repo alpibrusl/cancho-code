@@ -1,0 +1,10 @@
+[PLAN]	valid
+[UNIT]	encode	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	encode	verified
+[UNIT]	decode	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	decode	verified
+[PROJECT_VERDICT]	done

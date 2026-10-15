@@ -1,0 +1,1580 @@
+edition 7;
+
+module board;
+
+// `board` -- the data half of the dashboard (docs/dashboard.md, docs/parity.md P12): a run directory, as the project driver and
+// the harness leave it, becomes ONE json file, `board.json`, that docs/board.html draws. The directory is only read.
+//
+// Everything lives in two flat arrays the phases share:
+//   `st`     ints: the globals (counts, flags, the price table, the totals, the text slots) and then, from `ubase()`, 32 ints per unit;
+//   `names`  bytes: every text the board keeps (unit ids, function names, dependency lists, the strings of run.json and build.json),
+//            as it will be written to the JSON (already escaped), so that nothing is escaped twice and nothing is decoded.
+// A missing or unreadable file leaves its part of the board unknown (a null in the JSON), never an error.
+
+import plan;
+import std.buffer;
+import std.bytes;
+import std.io;
+import std.json;
+
+// ---- the layout of `st` ------------------------------------------------------------------------------------------------
+
+fn g_units() -> [] int { return 0; }
+fn g_names() -> [] int { return 1; }
+fn g_ord() -> [] int { return 2; }
+fn g_has_plan() -> [] int { return 3; }
+fn g_has_log() -> [] int { return 4; }
+fn g_has_state() -> [] int { return 5; }
+fn g_has_usage() -> [] int { return 6; }
+fn g_has_run() -> [] int { return 7; }
+fn g_has_build() -> [] int { return 8; }
+fn g_has_audit() -> [] int { return 9; }
+fn g_audit_pass() -> [] int { return 10; }
+fn g_audit_of() -> [] int { return 11; }
+fn g_patch() -> [] int { return 12; }
+fn g_scaffold() -> [] int { return 13; }
+fn g_rows() -> [] int { return 14; }
+fn g_no_thinking() -> [] int { return 15; }
+fn g_full() -> [] int { return 16; }
+fn g_cols() -> [] int { return 20; }      // 6 counters, one per column
+// the price table: 32 ok, 33 prompt limit, 34..37 in / cache_write / cache_read / out, 38 has an over-limit tier, 39..42 its prices
+fn p_ok() -> [] int { return 32; }
+fn p_limit() -> [] int { return 33; }
+fn p_base() -> [] int { return 34; }
+fn p_has_over() -> [] int { return 38; }
+fn p_over() -> [] int { return 39; }
+// the totals, all units: 48 calls, in, out, cache_write, cache_read, thinking, over-limit calls, micro-dollars, kept out, mandatory, mandatory visible
+fn t_calls() -> [] int { return 48; }
+fn t_in() -> [] int { return 49; }
+fn t_out() -> [] int { return 50; }
+fn t_cw() -> [] int { return 51; }
+fn t_cr() -> [] int { return 52; }
+fn t_think() -> [] int { return 53; }
+fn t_over() -> [] int { return 54; }
+fn t_micro() -> [] int { return 55; }
+fn t_kept() -> [] int { return 56; }
+fn t_mand() -> [] int { return 57; }
+fn t_mandv() -> [] int { return 58; }
+// text slots: slot k is (offset in names, length, kind) at 64 + 3k; offset -1 = not there; kind 1 a string, 2 a number or a bool
+fn slot_base() -> [] int { return 64; }
+fn s_provider() -> [] int { return 0; }
+fn s_model() -> [] int { return 1; }
+fn s_seconds() -> [] int { return 2; }
+fn s_brief() -> [] int { return 3; }
+fn s_stage() -> [] int { return 4; }
+fn s_plan_valid() -> [] int { return 5; }
+fn s_started() -> [] int { return 6; }
+fn s_plan_path() -> [] int { return 7; }
+fn s_name() -> [] int { return 8; }
+fn s_verdict() -> [] int { return 9; }
+fn s_build_verdict() -> [] int { return 10; }
+fn s_item() -> [] int { return 11; }
+fn slots() -> [] int { return 12; }
+
+fn ubase() -> [] int { return 128; }
+fn stride() -> [] int { return 32; }
+fn max_units() -> [] int { return 256; }
+fn st_size() -> [] int { return 128 + 256 * 32; }
+fn names_size() -> [] int { return 65536; }
+
+fn u_id() -> [] int { return 0; }       // offset in names; the length is next
+fn u_fn() -> [] int { return 2; }       // function name, offset -1 when unknown
+fn u_deps() -> [] int { return 4; }     // the plan's deps, joined by byte 31; offset -1 when there is no plan
+fn u_ev() -> [] int { return 6; }       // the last event of run.log (see ev_code)
+fn u_mv() -> [] int { return 7; }       // the last verdict eval/metrics.py would use
+fn u_reg() -> [] int { return 8; }      // times it regressed
+fn u_ord() -> [] int { return 9; }      // position in the metrics order, -1 when not in it
+fn u_sver() -> [] int { return 10; }    // state.txt says verified
+fn u_sbld() -> [] int { return 11; }    // state.txt says building
+fn u_calls() -> [] int { return 12; }
+fn u_in() -> [] int { return 13; }
+fn u_out() -> [] int { return 14; }
+fn u_cw() -> [] int { return 15; }
+fn u_cr() -> [] int { return 16; }
+fn u_think() -> [] int { return 17; }
+fn u_pico() -> [] int { return 18; }    // cost in 1e-12 dollars
+fn u_over() -> [] int { return 19; }
+fn u_kept_out() -> [] int { return 20; }
+fn u_kept_think() -> [] int { return 21; }
+fn u_kept_chars() -> [] int { return 22; }
+fn u_has_kept() -> [] int { return 23; }
+
+fn col_waiting() -> [] int { return 0; }
+fn col_building() -> [] int { return 1; }
+fn col_verified() -> [] int { return 2; }
+fn col_stuck() -> [] int { return 3; }
+fn col_regressed() -> [] int { return 4; }
+fn col_unknown() -> [] int { return 5; }
+
+// ---- small things ----------------------------------------------------------------------------------------------------------
+
+fn uget[&s](st: &!s [int], u: int, f: int) -> [] int {
+    return st[ubase() + u * stride() + f];
+}
+
+fn uset[&s](st: &!s [int], u: int, f: int, v: int) -> [] int {
+    st[ubase() + u * stride() + f] = v;
+    return 0;
+}
+
+fn uadd[&s](st: &!s [int], u: int, f: int, v: int) -> [] int {
+    st[ubase() + u * stride() + f] = st[ubase() + u * stride() + f] + v;
+    return 0;
+}
+
+fn init[&s](st: &!s [int]) -> [] int {
+    var i = 0;
+    while i < len(st) {
+        st[i] = 0;
+        i = i + 1;
+    }
+    st[g_audit_pass()] = 0 - 1;
+    st[g_audit_of()] = 0 - 1;
+    var k = 0;
+    while k < slots() {
+        st[slot_base() + 3 * k] = 0 - 1;
+        k = k + 1;
+    }
+    return 0;
+}
+
+// Append `text` to `names`: its offset, or -1 when `names` is full.
+fn put_name[&s, &n, &x](st: &!s [int], names: &!n [byte], text: &x [byte]) -> [] int {
+    let at = st[g_names()];
+    if at + len(text) > len(names) {
+        return 0 - 1;
+    }
+    var i = 0;
+    while i < len(text) {
+        names[at + i] = text[i];
+        i = i + 1;
+    }
+    st[g_names()] = at + len(text);
+    return at;
+}
+
+fn put_byte[&s, &n](st: &!s [int], names: &!n [byte], c: int) -> [] int {
+    let at = st[g_names()];
+    if at >= len(names) {
+        return 0 - 1;
+    }
+    names[at] = byte_of(c);
+    st[g_names()] = at + 1;
+    return at;
+}
+
+fn hex_digit(v: int) -> [] byte {
+    let digits = "0123456789abcdef";
+    return digits[v];
+}
+
+// Append `text` as the inside of a JSON string: `"` and `\` escaped, controls and bytes of 128 and more as \u00XX. The offset, or -1 when
+// there is no room (then nothing is kept).
+fn put_escaped[&s, &n, &x](st: &!s [int], names: &!n [byte], text: &x [byte]) -> [] int {
+    let at = st[g_names()];
+    if at + 6 * len(text) + 1 > len(names) {
+        return 0 - 1;
+    }
+    var p = at;
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if c == 34 || c == 92 {
+            names[p] = byte_of(92);
+            names[p + 1] = text[i];
+            p = p + 2;
+        } else if c < 32 || c >= 128 {
+            names[p] = byte_of(92);
+            names[p + 1] = byte_of(117);
+            names[p + 2] = byte_of(48);
+            names[p + 3] = byte_of(48);
+            names[p + 4] = hex_digit(c / 16);
+            names[p + 5] = hex_digit(c % 16);
+            p = p + 6;
+        } else {
+            names[p] = text[i];
+            p = p + 1;
+        }
+        i = i + 1;
+    }
+    st[g_names()] = p;
+    return at;
+}
+
+// Is names[a .. a+l] the same bytes as names[b .. b+l]?
+fn same_range[&n](names: &!n [byte], a: int, b: int, l: int) -> [] bool {
+    var i = 0;
+    while i < l {
+        if int_of(names[a + i]) != int_of(names[b + i]) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+// The unit whose id is names[off .. off+l], or -1.
+fn find_unit[&s, &n](st: &!s [int], names: &!n [byte], off: int, l: int) -> [] int {
+    var u = 0;
+    while u < st[g_units()] {
+        if uget(st, u, u_id() + 1) == l && same_range(names, uget(st, u, u_id()), off, l) {
+            return u;
+        }
+        u = u + 1;
+    }
+    return 0 - 1;
+}
+
+// Register the unit with this id (`raw`: already the inside of a JSON string, else escaped now). The existing one when there is one.
+// -1 when the id is empty or too long, or there are too many units.
+fn register[&s, &n, &x](st: &!s [int], names: &!n [byte], text: &x [byte], raw: bool) -> [] int {
+    if len(text) == 0 || len(text) > 200 {
+        return 0 - 1;
+    }
+    var off = 0 - 1;
+    if raw {
+        off = put_name(st, names, text);
+    } else {
+        off = put_escaped(st, names, text);
+    }
+    if off < 0 {
+        return 0 - 1;
+    }
+    let l = st[g_names()] - off;
+    let found = find_unit(st, names, off, l);
+    if found >= 0 {
+        st[g_names()] = off;
+        return found;
+    }
+    let u = st[g_units()];
+    if u >= max_units() {
+        st[g_names()] = off;
+        st[g_full()] = 1;
+        return 0 - 1;
+    }
+    st[g_units()] = u + 1;
+    uset(st, u, u_id(), off);
+    uset(st, u, u_id() + 1, l);
+    uset(st, u, u_fn(), 0 - 1);
+    uset(st, u, u_deps(), 0 - 1);
+    uset(st, u, u_ord(), 0 - 1);
+    return u;
+}
+
+// `<wd>/<name>`.
+fn in_wd[&h, &w, &a](heap: &!h Heap, wd: &w [byte], name: &a [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, buffer.empty(heap, 128), wd);
+    b = buffer.append(heap, b, "/");
+    b = buffer.append(heap, b, name);
+    return b;
+}
+
+// Read `<wd>/<name>` into `dst`: the bytes read, or -1. A file as long as `dst` may be longer: the callers say so.
+fn read_in[&h, &z, &w, &a, &o](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], name: &a [byte], dst: &!o [byte]) -> [heap, fs_read("")] int {
+    let p = in_wd(heap, wd, name);
+    var n = 0 - 1;
+    borrow p as &pb in {
+        n = fs_read(fs, buffer.bytes(pb), dst);
+    }
+    buffer.drop(heap, p);
+    return n;
+}
+
+// ---- text slots -----------------------------------------------------------------------------------------------------------
+
+fn slot_set[&s, &n, &x](st: &!s [int], names: &!n [byte], k: int, text: &x [byte], kind: int, force: bool) -> [] int {
+    if !force && st[slot_base() + 3 * k] >= 0 {
+        return 0;
+    }
+    let off = put_name(st, names, text);
+    if off >= 0 {
+        st[slot_base() + 3 * k] = off;
+        st[slot_base() + 3 * k + 1] = len(text);
+        st[slot_base() + 3 * k + 2] = kind;
+    }
+    return 0;
+}
+
+// Keep node `node` of the document in slot `k` when the slot is still empty. `want`: 1 a string, 2 a number, 3 a boolean.
+fn take[&s, &n, &x, &t](st: &!s [int], names: &!n [byte], k: int, src: &x [byte], tape: &t [int], node: int, want: int) -> [] int {
+    if node < 0 {
+        return 0;
+    }
+    let kind = json.kind(tape, node);
+    if want == 1 && kind == 5 {
+        slot_set(st, names, k, src[tape[3 * node + 1]..tape[3 * node + 2]], 1, false);
+    } else if want == 2 && (kind == 3 || kind == 4) {
+        slot_set(st, names, k, src[tape[3 * node + 1]..tape[3 * node + 2]], 2, false);
+    } else if want == 3 && kind == 2 {
+        slot_set(st, names, k, "true", 2, false);
+    } else if want == 3 && kind == 1 {
+        slot_set(st, names, k, "false", 2, false);
+    }
+    return 0;
+}
+
+// ---- run.json and build.json -------------------------------------------------------------------------------------------------
+
+fn load_meta[&h, &z, &w, &s, &n](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], st: &!s [int], names: &!n [byte]) -> [heap, fs_read("")] int {
+    let bx = box_slice(heap, 65536, byte_of(0));
+    let tb = box_slice(heap, 3 * 65537, 0);
+    borrow mut bx as &!bw in {
+        borrow mut tb as &!tw in {
+            let text = contents(bw);
+            let tape = contents(tw);
+            var n = read_in(heap, fs, wd, "run.json", text);
+            if n >= 0 && n < len(text) {
+                let src = text[0..n];
+                if json.parse(src, tape) > 0 && json.is_object(tape, 0) {
+                    st[g_has_run()] = 1;
+                    take(st, names, s_provider(), src, tape, json.get(src, tape, 0, "provider"), 1);
+                    take(st, names, s_model(), src, tape, json.get(src, tape, 0, "model"), 1);
+                    take(st, names, s_seconds(), src, tape, json.get(src, tape, 0, "seconds"), 2);
+                    take(st, names, s_plan_path(), src, tape, json.get(src, tape, 0, "plan"), 1);
+                    take(st, names, s_item(), src, tape, json.get(src, tape, 0, "item"), 1);
+                    let sc = json.get(src, tape, 0, "scaffold_chars");
+                    if sc >= 0 && json.is_int(tape, sc) {
+                        st[g_scaffold()] = json.to_int(src, tape, sc);
+                    }
+                    let pa = json.get(src, tape, 0, "patch");
+                    if pa >= 0 && json.to_bool(tape, pa) {
+                        st[g_patch()] = 1;
+                    }
+                }
+            }
+            n = read_in(heap, fs, wd, "build.json", text);
+            if n >= 0 && n < len(text) {
+                let src = text[0..n];
+                if json.parse(src, tape) > 0 && json.is_object(tape, 0) {
+                    st[g_has_build()] = 1;
+                    take(st, names, s_provider(), src, tape, json.get(src, tape, 0, "provider"), 1);
+                    take(st, names, s_model(), src, tape, json.get(src, tape, 0, "model"), 1);
+                    take(st, names, s_seconds(), src, tape, json.get(src, tape, 0, "seconds"), 2);
+                    take(st, names, s_brief(), src, tape, json.get(src, tape, 0, "brief"), 1);
+                    take(st, names, s_stage(), src, tape, json.get(src, tape, 0, "stage"), 1);
+                    take(st, names, s_plan_valid(), src, tape, json.get(src, tape, 0, "plan_valid"), 3);
+                    take(st, names, s_started(), src, tape, json.get(src, tape, 0, "started_unix"), 2);
+                    take(st, names, s_build_verdict(), src, tape, json.get(src, tape, 0, "verdict"), 1);
+                }
+            }
+        }
+    }
+    unbox_slice(heap, tb);
+    unbox_slice(heap, bx);
+    return 0;
+}
+
+// ---- the plan ------------------------------------------------------------------------------------------------------------------
+
+fn read_plan_text[&h, &z, &w, &s, &n, &o](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], st: &!s [int], names: &!n [byte], dst: &!o [byte]) -> [heap, fs_read("")] int {
+    var got = read_in(heap, fs, wd, "plan.json", dst);
+    let off = st[slot_base() + 3 * s_plan_path()];
+    if got < 0 && off >= 0 {
+        // the plan run.json names: an absolute path without `..` (that capability refuses traversal by trapping)
+        let l = st[slot_base() + 3 * s_plan_path() + 1];
+        let p = buffer.append(heap, buffer.empty(heap, 128), names[off..off + l]);
+        borrow p as &pb in {
+            let path = buffer.bytes(pb);
+            if l > 0 && int_of(path[0]) == 47 && bytes.find(path, "..") < 0 && bytes.find(path, "\\") < 0 {
+                got = fs_read(fs, path, dst);
+            }
+        }
+        buffer.drop(heap, p);
+    }
+    return got;
+}
+
+fn load_plan[&h, &z, &w, &s, &n](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], st: &!s [int], names: &!n [byte]) -> [heap, fs_read("")] int {
+    let bx = box_slice(heap, 1048576, byte_of(0));
+    borrow mut bx as &!bw in {
+        let text = contents(bw);
+        let got = read_plan_text(heap, fs, wd, st, names, text);
+        if got > 0 && got < len(text) {
+            let src = text[0..got];
+            let tb = box_slice(heap, json.tape_len(src), 0);
+            borrow mut tb as &!tw in {
+                let tape = contents(tw);
+                if json.parse(src, tape) > 0 && json.is_object(tape, 0) {
+                    let units = json.get(src, tape, 0, "units");
+                    if units >= 0 && json.is_array(tape, units) {
+                        st[g_has_plan()] = 1;
+                        take(st, names, s_name(), src, tape, json.get(src, tape, 0, "name"), 1);
+                        var j = units + 1;
+                        var left = json.count(tape, units);
+                        while left > 0 {
+                            let idn = json.get(src, tape, j, "id");
+                            if idn >= 0 && json.is_string(tape, idn) {
+                                let u = register(st, names, json.string_view(src, tape, idn), true);
+                                if u >= 0 {
+                                    plan_unit(st, names, src, tape, j, u);
+                                }
+                            }
+                            j = json.skip(tape, j);
+                            left = left - 1;
+                        }
+                    }
+                }
+            }
+            unbox_slice(heap, tb);
+        }
+    }
+    unbox_slice(heap, bx);
+    return 0;
+}
+
+// The function name and the dependencies of the plan's unit at node `j`, kept for unit `u`.
+fn plan_unit[&s, &n, &x, &t](st: &!s [int], names: &!n [byte], src: &x [byte], tape: &t [int], j: int, u: int) -> [] int {
+    let sg = json.get(src, tape, j, "signature");
+    if sg >= 0 && json.string_plain(tape, sg) {
+        let sig = json.string_view(src, tape, sg);
+        let (a, e) = plan.name_range(sig);
+        if a >= 0 {
+            let off = put_name(st, names, sig[a..e]);
+            if off >= 0 {
+                uset(st, u, u_fn(), off);
+                uset(st, u, u_fn() + 1, e - a);
+            }
+        }
+    }
+    let dp = json.get(src, tape, j, "deps");
+    if dp >= 0 && json.is_array(tape, dp) {
+        let start = st[g_names()];
+        uset(st, u, u_deps(), start);
+        var k = json.count(tape, dp);
+        var d = dp + 1;
+        var first = true;
+        while k > 0 {
+            if json.is_string(tape, d) {
+                if !first {
+                    put_byte(st, names, 31);
+                }
+                put_name(st, names, json.string_view(src, tape, d));
+                first = false;
+            }
+            d = json.skip(tape, d);
+            k = k - 1;
+        }
+        uset(st, u, u_deps() + 1, st[g_names()] - start);
+    }
+    return 0;
+}
+
+// ---- run.log -----------------------------------------------------------------------------------------------------------------
+
+// What a `[UNIT]` line says: 1 building, 2 verified (or kept), 3 failed (or unavailable), 4 skipped, 5 regressed; 0 for any other word.
+fn ev_code[&x](verb: &x [byte]) -> [] int {
+    if bytes.equal(verb, "building") {
+        return 1;
+    }
+    if bytes.equal(verb, "verified") || bytes.equal(verb, "kept") {
+        return 2;
+    }
+    if bytes.equal(verb, "failed") || bytes.equal(verb, "unavailable") {
+        return 3;
+    }
+    if bytes.equal(verb, "skipped") {
+        return 4;
+    }
+    if bytes.equal(verb, "regressed") {
+        return 5;
+    }
+    return 0;
+}
+
+// The verdicts eval/metrics.py counts (it does not count `kept`, `building` or `skipped`): the same code as ev_code, or 0.
+fn mv_code[&x](verb: &x [byte]) -> [] int {
+    if bytes.equal(verb, "verified") {
+        return 2;
+    }
+    if bytes.equal(verb, "failed") {
+        return 3;
+    }
+    if bytes.equal(verb, "regressed") {
+        return 5;
+    }
+    if bytes.equal(verb, "unavailable") {
+        return 6;
+    }
+    return 0;
+}
+
+fn line_end[&x](text: &x [byte], p: int, n: int) -> [] int {
+    var e = p;
+    while e < n && int_of(text[e]) != 10 {
+        e = e + 1;
+    }
+    return e;
+}
+
+// The line without a trailing carriage return.
+fn chomp[&x](line: &x [byte]) -> [] &x [byte] {
+    if len(line) > 0 && int_of(line[len(line) - 1]) == 13 {
+        return line[0..len(line) - 1];
+    }
+    return line;
+}
+
+fn log_line[&s, &n, &x](st: &!s [int], names: &!n [byte], line: &x [byte]) -> [] int {
+    let head = bytes.field(line, 9, 1);
+    if bytes.equal(head, "[UNIT]") {
+        let id = bytes.field(line, 9, 2);
+        let verb = bytes.field(line, 9, 3);
+        let code = ev_code(verb);
+        if code > 0 {
+            let u = register(st, names, id, false);
+            if u >= 0 {
+                if code == 5 {
+                    uadd(st, u, u_reg(), 1);
+                }
+                if !(code == 4 && uget(st, u, u_ev()) == 5) {
+                    uset(st, u, u_ev(), code);
+                }
+                let mv = mv_code(verb);
+                if mv > 0 {
+                    uset(st, u, u_mv(), mv);
+                    if uget(st, u, u_ord()) < 0 {
+                        uset(st, u, u_ord(), st[g_ord()]);
+                        st[g_ord()] = st[g_ord()] + 1;
+                    }
+                }
+            }
+        }
+    } else if bytes.equal(head, "[PROJECT_VERDICT]") {
+        let v = bytes.field(line, 9, 2);
+        if len(v) > 0 && len(v) <= 100 {
+            let off = put_escaped(st, names, v);
+            if off >= 0 {
+                st[slot_base() + 3 * s_verdict()] = off;
+                st[slot_base() + 3 * s_verdict() + 1] = st[g_names()] - off;
+                st[slot_base() + 3 * s_verdict() + 2] = 1;
+            }
+        }
+    }
+    return 0;
+}
+
+fn load_log[&h, &z, &w, &s, &n](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], st: &!s [int], names: &!n [byte]) -> [heap, fs_read("")] int {
+    let bx = box_slice(heap, 1048576, byte_of(0));
+    borrow mut bx as &!bw in {
+        let text = contents(bw);
+        let got = read_in(heap, fs, wd, "run.log", text);
+        if got >= 0 {
+            st[g_has_log()] = 1;
+            var p = 0;
+            while p < got {
+                let e = line_end(text, p, got);
+                log_line(st, names, chomp(text[p..e]));
+                p = e + 1;
+            }
+        }
+    }
+    unbox_slice(heap, bx);
+    return 0;
+}
+
+// ---- state.txt ------------------------------------------------------------------------------------------------------------------
+
+fn load_state[&h, &z, &w, &s, &n](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], st: &!s [int], names: &!n [byte]) -> [heap, fs_read("")] int {
+    let bx = box_slice(heap, 65536, byte_of(0));
+    borrow mut bx as &!bw in {
+        let text = contents(bw);
+        let got = read_in(heap, fs, wd, "state.txt", text);
+        if got >= 0 {
+            st[g_has_state()] = 1;
+            var p = 0;
+            while p < got {
+                let e = line_end(text, p, got);
+                let line = bytes.trim(text[p..e]);
+                if bytes.starts_with(line, "verified ") {
+                    let u = register(st, names, bytes.trim(line[9..len(line)]), false);
+                    if u >= 0 {
+                        uset(st, u, u_sver(), 1);
+                    }
+                } else if bytes.starts_with(line, "building ") {
+                    let u = register(st, names, bytes.trim(line[9..len(line)]), false);
+                    if u >= 0 {
+                        uset(st, u, u_sbld(), 1);
+                    }
+                }
+                p = e + 1;
+            }
+        }
+    }
+    unbox_slice(heap, bx);
+    return 0;
+}
+
+// ---- audit.txt --------------------------------------------------------------------------------------------------------------------
+
+fn is_space(c: int) -> [] bool {
+    return bytes.is_blank(c);
+}
+
+// The digits at `p`: (the value, the position after them), or (-1, p) when there are none or too many to be a count.
+fn digits_at[&x](text: &x [byte], p: int) -> [] (int, int) {
+    var i = p;
+    var v = 0;
+    while i < len(text) && bytes.is_digit(int_of(text[i])) {
+        v = v * 10 + int_of(text[i]) - 48;
+        i = i + 1;
+        if i - p > 12 {
+            return (0 - 1, p);
+        }
+    }
+    if i == p {
+        return (0 - 1, p);
+    }
+    return (v, i);
+}
+
+// The last `TOTAL n/m` (or `total n/m`) in the text: what the hidden audit prints at the end.
+fn audit_scan[&s, &x](st: &!s [int], text: &x [byte]) -> [] int {
+    var i = 0;
+    while i + 5 < len(text) {
+        if bytes.starts_with(text[i..len(text)], "TOTAL") || bytes.starts_with(text[i..len(text)], "total") {
+            var q = i + 5;
+            while q < len(text) && is_space(int_of(text[q])) {
+                q = q + 1;
+            }
+            if q > i + 5 {
+                let (a, e1) = digits_at(text, q);
+                if a >= 0 && e1 < len(text) && int_of(text[e1]) == 47 {
+                    let (b, e2) = digits_at(text, e1 + 1);
+                    if b >= 0 {
+                        st[g_audit_pass()] = a;
+                        st[g_audit_of()] = b;
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn load_audit[&h, &z, &w, &s](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], st: &!s [int]) -> [heap, fs_read("")] int {
+    let bx = box_slice(heap, 65536, byte_of(0));
+    borrow mut bx as &!bw in {
+        let text = contents(bw);
+        let got = read_in(heap, fs, wd, "audit.txt", text);
+        if got >= 0 {
+            st[g_has_audit()] = 1;
+            audit_scan(st, text[0..got]);
+        }
+    }
+    unbox_slice(heap, bx);
+    return 0;
+}
+
+// ---- prices ---------------------------------------------------------------------------------------------------------------------
+
+// A price as written (`0.125`, `2`, `10.0`) in millionths of a dollar per million tokens: 125000. More than six decimals are cut;
+// anything else (an exponent, a sign) is 0.
+fn micro_of[&x](text: &x [byte]) -> [] int {
+    var i = 0;
+    var whole = 0;
+    while i < len(text) && bytes.is_digit(int_of(text[i])) {
+        whole = whole * 10 + int_of(text[i]) - 48;
+        i = i + 1;
+        if i > 12 {
+            return 0;
+        }
+    }
+    if i == 0 {
+        return 0;
+    }
+    var frac = 0;
+    var places = 0;
+    if i < len(text) {
+        if int_of(text[i]) != 46 || i + 1 >= len(text) {
+            return 0;
+        }
+        i = i + 1;
+        while i < len(text) {
+            if !bytes.is_digit(int_of(text[i])) {
+                return 0;
+            }
+            if places < 6 {
+                frac = frac * 10 + int_of(text[i]) - 48;
+                places = places + 1;
+            }
+            i = i + 1;
+        }
+    }
+    while places < 6 {
+        frac = frac * 10;
+        places = places + 1;
+    }
+    return whole * 1000000 + frac;
+}
+
+fn price_of[&s, &x, &t](st: &!s [int], at: int, src: &x [byte], tape: &t [int], tier: int) -> [] int {
+    var i = 0;
+    let keys = 4;
+    while i < keys {
+        var key = "in";
+        if i == 1 {
+            key = "cache_write";
+        } else if i == 2 {
+            key = "cache_read";
+        } else if i == 3 {
+            key = "out";
+        }
+        let nd = json.get(src, tape, tier, key);
+        var v = 0;
+        if nd >= 0 && (json.kind(tape, nd) == 3 || json.kind(tape, nd) == 4) {
+            v = micro_of(src[tape[3 * nd + 1]..tape[3 * nd + 2]]);
+        }
+        st[at + i] = v;
+        i = i + 1;
+    }
+    return 0;
+}
+
+// The price of the run's provider and model out of the prices file (eval/prices.json's shape): the model's own entry, else the
+// provider's `_any`. Nothing is set when the file, the provider or the model is not there.
+fn load_prices[&h, &z, &p, &s, &n](heap: &!h Heap, fs: &z Fs(""), prices: &p [byte], st: &!s [int], names: &!n [byte]) -> [heap, fs_read("")] int {
+    let po = st[slot_base() + 3 * s_provider()];
+    let mo = st[slot_base() + 3 * s_model()];
+    if po < 0 || mo < 0 || len(prices) == 0 {
+        return 0;
+    }
+    let bx = box_slice(heap, 262144, byte_of(0));
+    let tb = box_slice(heap, 3 * 262145, 0);
+    borrow mut bx as &!bw in {
+        borrow mut tb as &!tw in {
+            let text = contents(bw);
+            let tape = contents(tw);
+            let got = fs_read(fs, prices, text);
+            if got > 0 && got < len(text) {
+                let src = text[0..got];
+                if json.parse(src, tape) > 0 && json.is_object(tape, 0) {
+                    let prov = json.get(src, tape, 0, names[po..po + st[slot_base() + 3 * s_provider() + 1]]);
+                    var entry = 0 - 1;
+                    if prov >= 0 {
+                        entry = json.get(src, tape, prov, names[mo..mo + st[slot_base() + 3 * s_model() + 1]]);
+                        if entry < 0 || !json.is_object(tape, entry) {
+                            entry = json.get(src, tape, prov, "_any");
+                        }
+                    }
+                    if entry >= 0 && json.is_object(tape, entry) {
+                        st[p_ok()] = 1;
+                        price_of(st, p_base(), src, tape, entry);
+                        let lim = json.get(src, tape, entry, "prompt_limit");
+                        if lim >= 0 && json.is_int(tape, lim) {
+                            st[p_limit()] = json.to_int(src, tape, lim);
+                        }
+                        let over = json.get(src, tape, entry, "over_limit_prices");
+                        if over >= 0 && json.is_object(tape, over) {
+                            st[p_has_over()] = 1;
+                            price_of(st, p_over(), src, tape, over);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    unbox_slice(heap, tb);
+    unbox_slice(heap, bx);
+    return 0;
+}
+
+// ---- usage.jsonl ------------------------------------------------------------------------------------------------------------------
+
+// The integer under `key` of the row at node 0, or -1 when it is not there or not an integer.
+fn row_int[&x, &t](src: &x [byte], tape: &t [int], key: &static [byte]) -> [] int {
+    let nd = json.get(src, tape, 0, key);
+    if nd >= 0 && json.is_int(tape, nd) {
+        return json.to_int(src, tape, nd);
+    }
+    return 0 - 1;
+}
+
+fn nonneg(v: int) -> [] int {
+    if v < 0 {
+        return 0;
+    }
+    return v;
+}
+
+// The unit a row belongs to: its task is `UNIT: <id>...`. -1 for a row with no unit (shown in the totals, on no card).
+fn row_unit[&s, &n, &x, &t](st: &!s [int], names: &!n [byte], src: &x [byte], tape: &t [int]) -> [] int {
+    var id = src[0..0];
+    let tk = json.get(src, tape, 0, "task");
+    if tk >= 0 && json.kind(tape, tk) == 5 {
+        let raw = json.string_view(src, tape, tk);
+        if bytes.starts_with(raw, "UNIT:") {
+            var a = 5;
+            while a < len(raw) && int_of(raw[a]) == 32 {
+                a = a + 1;
+            }
+            var e = a;
+            while e < len(raw) && int_of(raw[e]) != 32 && int_of(raw[e]) != 92 {
+                e = e + 1;
+            }
+            id = raw[a..e];
+        }
+    }
+    if len(id) == 0 {
+        id = "-";
+    }
+    return register(st, names, id, false);
+}
+
+fn usage_row[&s, &n, &x, &t](st: &!s [int], names: &!n [byte], src: &x [byte], tape: &t [int]) -> [] int {
+    let u = row_unit(st, names, src, tape);
+    if u < 0 {
+        return 0;
+    }
+    if uget(st, u, u_ord()) < 0 {
+        uset(st, u, u_ord(), st[g_ord()]);
+        st[g_ord()] = st[g_ord()] + 1;
+    }
+    let n_in = nonneg(row_int(src, tape, "in"));
+    let n_out = nonneg(row_int(src, tape, "out"));
+    let n_cw = nonneg(row_int(src, tape, "cache_write"));
+    let n_cr = nonneg(row_int(src, tape, "cache_read"));
+    let think = row_int(src, tape, "thinking");
+    st[g_rows()] = st[g_rows()] + 1;
+    if think < 0 {
+        st[g_no_thinking()] = 1;
+    }
+    uadd(st, u, u_calls(), 1);
+    uadd(st, u, u_in(), n_in);
+    uadd(st, u, u_out(), n_out);
+    uadd(st, u, u_cw(), n_cw);
+    uadd(st, u, u_cr(), n_cr);
+    uadd(st, u, u_think(), nonneg(think));
+    if st[p_ok()] == 1 {
+        var tier = p_base();
+        if st[p_limit()] > 0 && n_in + n_cw + n_cr > st[p_limit()] && st[p_has_over()] == 1 {
+            tier = p_over();
+            uadd(st, u, u_over(), 1);
+        }
+        let tier_in = st[tier];
+        let tier_cw = st[tier + 1];
+        let tier_cr = st[tier + 2];
+        let tier_out = st[tier + 3];
+        let pico = n_in * tier_in + n_cw * tier_cw + n_cr * tier_cr + n_out * tier_out; // MUTANT:cost
+        uadd(st, u, u_pico(), pico);
+    }
+    let oc = json.get(src, tape, 0, "outcome");
+    if oc >= 0 && json.string_equals(src, tape, oc, "written") {
+        uset(st, u, u_has_kept(), 1);
+        uset(st, u, u_kept_out(), n_out);
+        uset(st, u, u_kept_think(), nonneg(think));
+        uset(st, u, u_kept_chars(), nonneg(row_int(src, tape, "program_chars")));
+    }
+    return 0;
+}
+
+// Every row: `first` is the pass that only looks for the provider and the model, the second one counts.
+fn usage_pass[&s, &n, &x, &t, &y](st: &!s [int], names: &!n [byte], text: &x [byte], got: int, tape: &!t [int], first: bool) -> [] int {
+    var p = 0;
+    var done = false;
+    while p < got && !done {
+        let e = line_end(text, p, got);
+        let line = chomp(text[p..e]);
+        if len(line) > 0 && len(line) < 65536 {
+            if json.parse(line, tape) > 0 && json.is_object(tape, 0) {
+                if first {
+                    take(st, names, s_provider(), line, tape, json.get(line, tape, 0, "provider"), 1);
+                    take(st, names, s_model(), line, tape, json.get(line, tape, 0, "model"), 1);
+                    done = true;
+                } else {
+                    usage_row(st, names, line, tape);
+                }
+            }
+        }
+        p = e + 1;
+    }
+    return 0;
+}
+
+fn load_usage[&h, &z, &w, &p, &s, &n](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], prices: &p [byte], st: &!s [int], names: &!n [byte]) -> [heap, fs_read("")] int {
+    let bx = box_slice(heap, 8388608, byte_of(0));
+    let tb = box_slice(heap, 3 * 65537, 0);
+    borrow mut bx as &!bw in {
+        borrow mut tb as &!tw in {
+            let text = contents(bw);
+            let tape = contents(tw);
+            let got = read_in(heap, fs, wd, "usage.jsonl", text);
+            if got >= 0 {
+                st[g_has_usage()] = 1;
+                // the provider and the model of the first row, when run.json and build.json did not say
+                usage_pass(st, names, text, got, tape, true);
+                load_prices(heap, fs, prices, st, names);
+                usage_pass(st, names, text, got, tape, false);
+            }
+        }
+    }
+    unbox_slice(heap, tb);
+    unbox_slice(heap, bx);
+    return 0;
+}
+
+// ---- writing the json ------------------------------------------------------------------------------------------------------------
+//
+// Values are appended as they come; `comma` puts the separator in when the last byte says one is due (after `{`, `[`, `:` or `,`
+// there is none).
+
+fn comma[&h](heap: &!h Heap, out: buffer.Buffer) -> [heap] buffer.Buffer {
+    var b = out;
+    var last = 0;
+    borrow b as &bb in {
+        let s = buffer.bytes(bb);
+        if len(s) > 0 {
+            last = int_of(s[len(s) - 1]);
+        }
+    }
+    if last != 0 && last != 123 && last != 91 && last != 58 && last != 44 {
+        b = buffer.push(heap, b, byte_of(44));
+    }
+    return b;
+}
+
+fn lit[&h, &x](heap: &!h Heap, out: buffer.Buffer, text: &x [byte]) -> [heap] buffer.Buffer {
+    return buffer.append(heap, comma(heap, out), text);
+}
+
+fn key[&h, &x](heap: &!h Heap, out: buffer.Buffer, name: &x [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.push(heap, comma(heap, out), byte_of(34));
+    b = buffer.append(heap, b, name);
+    return buffer.append(heap, b, "\":");
+}
+
+// A non-negative integer, or null for a negative one (the sign of "not known").
+fn num[&h](heap: &!h Heap, out: buffer.Buffer, v: int) -> [heap] buffer.Buffer {
+    if v < 0 {
+        return lit(heap, out, "null");
+    }
+    return buffer.push_nat(heap, comma(heap, out), v);
+}
+
+// `v` with `digits` decimals: 3418 with 6 is 0.003418.
+fn fixed[&h](heap: &!h Heap, out: buffer.Buffer, v: int, digits: int) -> [heap] buffer.Buffer {
+    if v < 0 {
+        return lit(heap, out, "null");
+    }
+    var scale = 1;
+    var k = 0;
+    while k < digits {
+        scale = scale * 10;
+        k = k + 1;
+    }
+    var b = buffer.push_nat(heap, comma(heap, out), v / scale);
+    b = buffer.push(heap, b, byte_of(46));
+    var pad = scale / 10;
+    let frac = v % scale;
+    while pad > 1 && frac < pad {
+        b = buffer.push(heap, b, byte_of(48));
+        pad = pad / 10;
+    }
+    return buffer.push_nat(heap, b, frac);
+}
+
+fn flag[&h](heap: &!h Heap, out: buffer.Buffer, yes: bool) -> [heap] buffer.Buffer {
+    if yes {
+        return lit(heap, out, "true");
+    }
+    return lit(heap, out, "false");
+}
+
+// A text that is already the inside of a JSON string.
+fn quoted[&h, &x](heap: &!h Heap, out: buffer.Buffer, raw: &x [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.push(heap, comma(heap, out), byte_of(34));
+    b = buffer.append(heap, b, raw);
+    return buffer.push(heap, b, byte_of(34));
+}
+
+fn slot_pick[&s](st: &!s [int], first: int, second: int) -> [] int {
+    if st[slot_base() + 3 * first] >= 0 {
+        return first;
+    }
+    return second;
+}
+
+// The text slot `k` as it was in its document: a string quoted, a number or a boolean as written, null when it is not there.
+fn put_slot[&h, &s, &n](heap: &!h Heap, out: buffer.Buffer, st: &!s [int], names: &!n [byte], k: int) -> [heap] buffer.Buffer {
+    let off = st[slot_base() + 3 * k];
+    if off < 0 {
+        return lit(heap, out, "null");
+    }
+    let l = st[slot_base() + 3 * k + 1];
+    if st[slot_base() + 3 * k + 2] == 1 {
+        return quoted(heap, out, names[off..off + l]);
+    }
+    return lit(heap, out, names[off..off + l]);
+}
+
+// ---- trails -----------------------------------------------------------------------------------------------------------------------
+
+fn trail_string[&h, &x, &t](heap: &!h Heap, out: buffer.Buffer, name: &static [byte], src: &x [byte], tape: &t [int]) -> [heap] buffer.Buffer {
+    let b = key(heap, out, name);
+    let nd = json.get(src, tape, 0, name);
+    if nd >= 0 && json.kind(tape, nd) == 5 {
+        return quoted(heap, b, json.string_view(src, tape, nd));
+    }
+    return lit(heap, b, "null");
+}
+
+// The unit's trail, `trail-<id>.jsonl` (docs/project.md): its entries as a JSON array, how many there were, and 1 when the last decision
+// ended the unit badly (`signature`, `ceiling`, `defect`, `provider`). Count -1, an empty buffer: the file is not there. A line that is not
+// a JSON object is not an entry.
+fn read_trail[&h, &z, &w, &a, &o, &t](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], name: &a [byte], text: &!o [byte], tape: &!t [int]) -> [heap, fs_read("")] (buffer.Buffer, int, int) {
+    var b = buffer.empty(heap, 256);
+    let got = read_in(heap, fs, wd, name, text);
+    if got < 0 {
+        return (b, 0 - 1, 0);
+    }
+    b = buffer.push(heap, b, byte_of(91));
+    var count = 0;
+    var bad = 0;
+    var p = 0;
+    while p < got {
+        let e = line_end(text, p, got);
+        let line = chomp(text[p..e]);
+        if len(line) > 0 && len(line) < 65536 {
+            if json.parse(line, tape) > 0 && json.is_object(tape, 0) {
+                b = lit(heap, b, "{");
+                b = key(heap, b, "attempt");
+                b = num(heap, b, row_int(line, tape, "attempt"));
+                b = key(heap, b, "agent_ms");
+                b = num(heap, b, row_int(line, tape, "agent_ms"));
+                b = trail_string(heap, b, "outcome", line, tape);
+                b = trail_string(heap, b, "sig", line, tape);
+                b = trail_string(heap, b, "decision", line, tape);
+                b = buffer.push(heap, b, byte_of(125));
+                count = count + 1;
+                let dn = json.get(line, tape, 0, "decision");
+                bad = 0;
+                if dn >= 0 && (json.string_equals(line, tape, dn, "signature") || json.string_equals(line, tape, dn, "ceiling") || json.string_equals(line, tape, dn, "defect") || json.string_equals(line, tape, dn, "provider")) {
+                    bad = 1;
+                }
+            }
+        }
+        p = e + 1;
+    }
+    b = buffer.push(heap, b, byte_of(93));
+    return (b, count, bad);
+}
+
+// ---- the cards ----------------------------------------------------------------------------------------------------------------------
+
+// Is the id usable in a file name? Not empty, and nothing that could leave the directory (the file capability traps on `..`).
+fn id_safe[&n](names: &!n [byte], off: int, l: int) -> [] bool {
+    if l == 0 {
+        return false;
+    }
+    var i = 0;
+    while i < l {
+        let c = int_of(names[off + i]);
+        if c == 47 || c == 92 {
+            return false;
+        }
+        if c == 46 && i + 1 < l && int_of(names[off + i + 1]) == 46 {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+// Which column the unit is in. The last thing run.log said wins (a `skipped` never hides a `regressed`); with nothing said, state.txt;
+// with no run.log at all, the trail's last decision, else unknown.
+fn column_of[&s](st: &!s [int], u: int, trail_bad: int) -> [] int {
+    let e = uget(st, u, u_ev());
+    if e == 1 {
+        return col_building();
+    }
+    if e == 2 {
+        return col_verified();
+    }
+    if e == 3 {
+        return col_stuck(); // MUTANT:column
+    }
+    if e == 5 {
+        return col_regressed();
+    }
+    if e == 4 {
+        return col_waiting();
+    }
+    if uget(st, u, u_sver()) == 1 {
+        return col_verified();
+    }
+    if uget(st, u, u_sbld()) == 1 {
+        return col_building();
+    }
+    if st[g_has_log()] == 1 {
+        return col_waiting();
+    }
+    if trail_bad == 1 {
+        return col_stuck();
+    }
+    return col_unknown();
+}
+
+fn col_name(c: int) -> [] &static [byte] {
+    if c == 0 {
+        return "waiting";
+    }
+    if c == 1 {
+        return "building";
+    }
+    if c == 2 {
+        return "verified";
+    }
+    if c == 3 {
+        return "stuck";
+    }
+    if c == 4 {
+        return "regressed";
+    }
+    return "unknown";
+}
+
+fn is_card[&n](names: &!n [byte], off: int, l: int) -> [] bool {
+    return !(l == 1 && int_of(names[off]) == 45);
+}
+
+fn known_thinking[&s](st: &!s [int]) -> [] bool {
+    return st[g_has_usage()] == 1 && st[g_rows()] > 0 && st[g_no_thinking()] == 0;
+}
+
+fn unit_micro[&s](st: &!s [int], u: int) -> [] int {
+    return (uget(st, u, u_pico()) + 500000) / 1000000;
+}
+
+fn put_deps[&h, &s, &n](heap: &!h Heap, out: buffer.Buffer, st: &!s [int], names: &!n [byte], u: int) -> [heap] buffer.Buffer {
+    let off = uget(st, u, u_deps());
+    if off < 0 {
+        return lit(heap, out, "null");
+    }
+    let l = uget(st, u, u_deps() + 1);
+    if l == 0 {
+        return lit(heap, out, "[]");
+    }
+    var b = lit(heap, out, "[");
+    var a = off;
+    var i = off;
+    while i <= off + l {
+        var cut = i == off + l;
+        if !cut {
+            cut = int_of(names[i]) == 31;
+        }
+        if cut {
+            b = quoted(heap, b, names[a..i]);
+            a = i + 1;
+        }
+        i = i + 1;
+    }
+    return buffer.push(heap, b, byte_of(93));
+}
+
+// One card, appended to `ub`: the unit's column, its trail, its tokens and its cost. The column is counted.
+fn emit_unit[&h, &z, &w, &s, &n, &o, &t](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], st: &!s [int], names: &!n [byte], text: &!o [byte], tape: &!t [int], u: int, ub: buffer.Buffer) -> [heap, fs_read("")] buffer.Buffer {
+    let off = uget(st, u, u_id());
+    let l = uget(st, u, u_id() + 1);
+    var tj = buffer.empty(heap, 8);
+    var tcount = 0 - 1;
+    var tbad = 0;
+    if id_safe(names, off, l) {
+        var fname = buffer.append(heap, buffer.empty(heap, 64), "trail-");
+        fname = buffer.append(heap, fname, names[off..off + l]);
+        fname = buffer.append(heap, fname, ".jsonl");
+        borrow fname as &fb in {
+            buffer.drop(heap, tj);
+            let (j, c, bd) = read_trail(heap, fs, wd, buffer.bytes(fb), text, tape);
+            tj = j;
+            tcount = c;
+            tbad = bd;
+        }
+        buffer.drop(heap, fname);
+    }
+    let col = column_of(st, u, tbad);
+    if col == col_building() {
+        // the unit being built: the loop writes its attempts so far to project.cho.trail.jsonl
+        let (j, c, bd) = read_trail(heap, fs, wd, "project.cho.trail.jsonl", text, tape);
+        if c >= 0 {
+            buffer.drop(heap, tj);
+            tj = j;
+            tcount = c;
+        } else {
+            buffer.drop(heap, j);
+        }
+    }
+    st[g_cols() + col] = st[g_cols() + col] + 1;
+    var b = lit(heap, ub, "{");
+    b = key(heap, b, "id");
+    b = quoted(heap, b, names[off..off + l]);
+    b = key(heap, b, "function");
+    if uget(st, u, u_fn()) >= 0 {
+        b = quoted(heap, b, names[uget(st, u, u_fn())..uget(st, u, u_fn()) + uget(st, u, u_fn() + 1)]);
+    } else {
+        b = lit(heap, b, "null");
+    }
+    b = key(heap, b, "column");
+    b = quoted(heap, b, col_name(col));
+    b = key(heap, b, "deps");
+    b = put_deps(heap, b, st, names, u);
+    b = key(heap, b, "attempts");
+    b = num(heap, b, tcount);
+    b = key(heap, b, "regressions");
+    b = num(heap, b, uget(st, u, u_reg()));
+    let usage = st[g_has_usage()] == 1;
+    b = key(heap, b, "calls");
+    if usage {
+        b = num(heap, b, uget(st, u, u_calls()));
+    } else {
+        b = lit(heap, b, "null");
+    }
+    b = key(heap, b, "tokens");
+    if usage {
+        b = lit(heap, b, "{");
+        b = key(heap, b, "in");
+        b = num(heap, b, uget(st, u, u_in()));
+        b = key(heap, b, "out");
+        b = num(heap, b, uget(st, u, u_out()));
+        b = key(heap, b, "thinking");
+        if known_thinking(st) {
+            b = num(heap, b, uget(st, u, u_think()));
+        } else {
+            b = lit(heap, b, "null");
+        }
+        b = key(heap, b, "cache_write");
+        b = num(heap, b, uget(st, u, u_cw()));
+        b = key(heap, b, "cache_read");
+        b = num(heap, b, uget(st, u, u_cr()));
+        b = buffer.push(heap, b, byte_of(125));
+    } else {
+        b = lit(heap, b, "null");
+    }
+    b = key(heap, b, "cost_usd");
+    if usage && st[p_ok()] == 1 {
+        b = fixed(heap, b, unit_micro(st, u), 6);
+    } else {
+        b = lit(heap, b, "null");
+    }
+    b = key(heap, b, "trail");
+    if tcount >= 0 {
+        borrow tj as &tb in {
+            b = lit(heap, b, buffer.bytes(tb));
+        }
+    } else {
+        b = lit(heap, b, "null");
+    }
+    buffer.drop(heap, tj);
+    return buffer.push(heap, b, byte_of(125));
+}
+
+// ---- the totals and the metrics -----------------------------------------------------------------------------------------------------------
+
+// The totals over every unit (the rows with no unit included), and eval/metrics.py's efficiency: of the last `written` reply of each
+// unit that ended verified, in the order the units appear, how much was new work (the reply grew the file by that share).
+// Shares are millionths, so the arithmetic is whole numbers.
+fn totals[&s](st: &!s [int]) -> [] int {
+    var u = 0;
+    while u < st[g_units()] {
+        st[t_calls()] = st[t_calls()] + uget(st, u, u_calls());
+        st[t_in()] = st[t_in()] + uget(st, u, u_in());
+        st[t_out()] = st[t_out()] + uget(st, u, u_out());
+        st[t_cw()] = st[t_cw()] + uget(st, u, u_cw());
+        st[t_cr()] = st[t_cr()] + uget(st, u, u_cr());
+        st[t_think()] = st[t_think()] + uget(st, u, u_think());
+        st[t_over()] = st[t_over()] + uget(st, u, u_over());
+        st[t_micro()] = st[t_micro()] + unit_micro(st, u);
+        u = u + 1;
+    }
+    var prev = st[g_scaffold()];
+    var k = 0;
+    while k < st[g_ord()] {
+        var v = 0 - 1;
+        var w = 0;
+        while w < st[g_units()] {
+            if uget(st, w, u_ord()) == k {
+                v = w;
+            }
+            w = w + 1;
+        }
+        if v >= 0 && uget(st, v, u_calls()) > 0 && uget(st, v, u_mv()) == 2 && uget(st, v, u_has_kept()) == 1 {
+            let out = uget(st, v, u_kept_out());
+            let think = uget(st, v, u_kept_think());
+            let pc = uget(st, v, u_kept_chars());
+            var share = 0;
+            if st[g_patch()] == 1 {
+                if pc > 0 {
+                    share = 1000000;
+                }
+            } else if pc > 0 {
+                var grown = pc - prev;
+                if grown < 0 {
+                    grown = 0;
+                }
+                share = grown * 1000000 / pc;
+            }
+            st[t_mand()] = st[t_mand()] + out * share;
+            st[t_mandv()] = st[t_mandv()] + (out - think) * share;
+            st[t_kept()] = st[t_kept()] + out;
+            prev = pc;
+        }
+        k = k + 1;
+    }
+    return 0;
+}
+
+// num / den as a number of ten-thousandths, rounded half up; -1 when den is not positive.
+fn ratio4(num_: int, den: int) -> [] int {
+    if den <= 0 {
+        return 0 - 1;
+    }
+    return (num_ * 20000 + den) / (2 * den);
+}
+
+fn put_metrics[&h, &s](heap: &!h Heap, out: buffer.Buffer, st: &!s [int]) -> [heap] buffer.Buffer {
+    let usage = st[g_has_usage()] == 1;
+    let known = known_thinking(st);
+    var cards = 0;
+    var c = 0;
+    while c < 6 {
+        cards = cards + st[g_cols() + c];
+        c = c + 1;
+    }
+    let verified = st[g_cols() + col_verified()];
+    var b = lit(heap, out, "{");
+    b = key(heap, b, "units_total");
+    b = num(heap, b, cards);
+    b = key(heap, b, "units_verified");
+    b = num(heap, b, verified);
+    b = key(heap, b, "columns");
+    b = lit(heap, b, "{");
+    c = 0;
+    while c < 6 {
+        b = key(heap, b, col_name(c));
+        b = num(heap, b, st[g_cols() + c]);
+        c = c + 1;
+    }
+    b = buffer.push(heap, b, byte_of(125));
+    var calls = 0 - 1;
+    if usage {
+        calls = st[t_calls()];
+    }
+    b = key(heap, b, "calls");
+    b = num(heap, b, calls);
+    b = key(heap, b, "tokens");
+    if usage {
+        b = lit(heap, b, "{");
+        b = key(heap, b, "in");
+        b = num(heap, b, st[t_in()]);
+        b = key(heap, b, "out");
+        b = num(heap, b, st[t_out()]);
+        b = key(heap, b, "cache_write");
+        b = num(heap, b, st[t_cw()]);
+        b = key(heap, b, "cache_read");
+        b = num(heap, b, st[t_cr()]);
+        b = key(heap, b, "thinking");
+        if known {
+            b = num(heap, b, st[t_think()]);
+        } else {
+            b = lit(heap, b, "null");
+        }
+        b = buffer.push(heap, b, byte_of(125));
+    } else {
+        b = lit(heap, b, "null");
+    }
+    var visible = 0 - 1;
+    var share = 0 - 1;
+    var vis_eff = 0 - 1;
+    var cache = 0 - 1;
+    var eff = 0 - 1;
+    var eff_calls = 0 - 1;
+    if usage {
+        cache = ratio4(st[t_cr()], st[t_in()] + st[t_cw()] + st[t_cr()]);
+        eff = ratio4(st[t_mand()], st[t_out()] * 1000000);
+        eff_calls = ratio4(st[t_kept()], st[t_out()]);
+    }
+    if known {
+        visible = st[t_out()] - st[t_think()];
+        share = ratio4(st[t_think()], st[t_out()]);
+        vis_eff = ratio4(st[t_mandv()], visible * 1000000);
+    }
+    b = key(heap, b, "visible_out");
+    b = num(heap, b, visible);
+    b = key(heap, b, "thinking_share");
+    b = fixed(heap, b, share, 4);
+    b = key(heap, b, "cache_read_share");
+    b = fixed(heap, b, cache, 4);
+    b = key(heap, b, "efficiency");
+    b = fixed(heap, b, eff, 4);
+    b = key(heap, b, "efficiency_calls");
+    b = fixed(heap, b, eff_calls, 4);
+    b = key(heap, b, "efficiency_visible");
+    b = fixed(heap, b, vis_eff, 4);
+    var cost = 0 - 1;
+    var per = 0 - 1;
+    var over = 0 - 1;
+    if usage && st[p_ok()] == 1 {
+        cost = st[t_micro()];
+        over = st[t_over()];
+        if verified > 0 {
+            per = (2 * cost + verified) / (2 * verified);
+        }
+    }
+    b = key(heap, b, "cost_usd");
+    b = fixed(heap, b, cost, 6);
+    b = key(heap, b, "cost_per_verified_unit");
+    b = fixed(heap, b, per, 6);
+    b = key(heap, b, "over_limit_calls");
+    b = num(heap, b, over);
+    b = key(heap, b, "audit");
+    if st[g_audit_pass()] >= 0 {
+        b = lit(heap, b, "{");
+        b = key(heap, b, "passed");
+        b = num(heap, b, st[g_audit_pass()]);
+        b = key(heap, b, "of");
+        b = num(heap, b, st[g_audit_of()]);
+        b = buffer.push(heap, b, byte_of(125));
+    } else {
+        b = lit(heap, b, "null");
+    }
+    return buffer.push(heap, b, byte_of(125));
+}
+
+// ---- the board ------------------------------------------------------------------------------------------------------------------------
+
+fn compose[&h, &z, &w, &s, &n](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], st: &!s [int], names: &!n [byte]) -> [heap, fs_read("")] buffer.Buffer {
+    totals(st);
+    var ub = lit(heap, buffer.empty(heap, 4096), "[");
+    let tx = box_slice(heap, 262144, byte_of(0));
+    let tp = box_slice(heap, 3 * 65537, 0);
+    borrow mut tx as &!xw in {
+        borrow mut tp as &!pw in {
+            let text = contents(xw);
+            let tape = contents(pw);
+            var u = 0;
+            while u < st[g_units()] {
+                if is_card(names, uget(st, u, u_id()), uget(st, u, u_id() + 1)) {
+                    ub = emit_unit(heap, fs, wd, st, names, text, tape, u, ub);
+                }
+                u = u + 1;
+            }
+        }
+    }
+    unbox_slice(heap, tp);
+    unbox_slice(heap, tx);
+    ub = buffer.push(heap, ub, byte_of(93));
+
+    var b = lit(heap, buffer.empty(heap, 8192), "{");
+    b = key(heap, b, "schema");
+    b = num(heap, b, 1);
+    b = key(heap, b, "run");
+    b = lit(heap, b, "{");
+    b = key(heap, b, "name");
+    b = put_slot(heap, b, st, names, slot_pick(st, s_name(), s_item()));
+    b = key(heap, b, "brief");
+    b = put_slot(heap, b, st, names, s_brief());
+    b = key(heap, b, "stage");
+    b = put_slot(heap, b, st, names, s_stage());
+    b = key(heap, b, "plan_valid");
+    b = put_slot(heap, b, st, names, s_plan_valid());
+    b = key(heap, b, "provider");
+    b = put_slot(heap, b, st, names, s_provider());
+    b = key(heap, b, "model");
+    b = put_slot(heap, b, st, names, s_model());
+    b = key(heap, b, "started_unix");
+    b = put_slot(heap, b, st, names, s_started());
+    b = key(heap, b, "seconds");
+    b = put_slot(heap, b, st, names, s_seconds());
+    b = key(heap, b, "verdict");
+    b = put_slot(heap, b, st, names, slot_pick(st, s_verdict(), s_build_verdict()));
+    b = buffer.push(heap, b, byte_of(125));
+    b = key(heap, b, "files");
+    b = lit(heap, b, "{");
+    b = key(heap, b, "plan");
+    b = flag(heap, b, st[g_has_plan()] == 1);
+    b = key(heap, b, "run_log");
+    b = flag(heap, b, st[g_has_log()] == 1);
+    b = key(heap, b, "state");
+    b = flag(heap, b, st[g_has_state()] == 1);
+    b = key(heap, b, "usage");
+    b = flag(heap, b, st[g_has_usage()] == 1);
+    b = key(heap, b, "run_json");
+    b = flag(heap, b, st[g_has_run()] == 1);
+    b = key(heap, b, "build_json");
+    b = flag(heap, b, st[g_has_build()] == 1);
+    b = key(heap, b, "audit");
+    b = flag(heap, b, st[g_has_audit()] == 1);
+    b = key(heap, b, "prices");
+    b = flag(heap, b, st[p_ok()] == 1);
+    b = buffer.push(heap, b, byte_of(125));
+    b = key(heap, b, "metrics");
+    b = put_metrics(heap, b, st);
+    b = key(heap, b, "truncated");
+    b = flag(heap, b, st[g_full()] == 1);
+    b = key(heap, b, "units");
+    borrow ub as &ubb in {
+        b = lit(heap, b, buffer.bytes(ubb));
+    }
+    buffer.drop(heap, ub);
+    return buffer.push(heap, b, byte_of(125));
+}
+
+// Does `out` lie inside the run directory `wd` (or is it the directory)? Both are absolute paths.
+fn inside[&x, &y](out: &x [byte], wd: &y [byte]) -> [] bool {
+    var end = len(wd);
+    while end > 0 && int_of(wd[end - 1]) == 47 {
+        end = end - 1;
+    }
+    if !bytes.starts_with(out, wd[0..end]) {
+        return false;
+    }
+    return len(out) == end || int_of(out[end]) == 47;
+}
+
+// Read the run directory `wd`, write the board to `out`. 0 done, 1 `out` could not be written, 2 a usage error (a path that is not
+// absolute or holds `..`, or an output inside the run directory).
+pub fn run[&h, &z, &i, &w, &o, &p](heap: &!h Heap, fs: &z Fs(""), io: &!i Io, wd: &w [byte], out: &o [byte], prices: &p [byte]) -> [heap, fs_read(""), fs_write(""), err_write] int {
+    if len(wd) == 0 || int_of(wd[0]) != 47 || len(out) == 0 || int_of(out[0]) != 47 || (len(prices) > 0 && int_of(prices[0]) != 47) {
+        io.error_all(io, "board: the paths must be absolute\n");
+        return 2;
+    }
+    if bytes.find(wd, "..") >= 0 || bytes.find(out, "..") >= 0 || bytes.find(prices, "..") >= 0 {
+        io.error_all(io, "board: a path may not contain '..' (resolve it first)\n");
+        return 2;
+    }
+    if inside(out, wd) { // MUTANT:refuse
+        io.error_all(io, "board: the output file may not be inside the run directory (it is only read)\n");
+        return 2;
+    }
+    let sb = box_slice(heap, st_size(), 0);
+    let nb = box_slice(heap, names_size(), byte_of(0));
+    var status = 1;
+    borrow mut sb as &!sw in {
+        borrow mut nb as &!nw in {
+            let st = contents(sw);
+            let names = contents(nw);
+            init(st);
+            load_meta(heap, fs, wd, st, names);
+            load_plan(heap, fs, wd, st, names);
+            load_log(heap, fs, wd, st, names);
+            load_state(heap, fs, wd, st, names);
+            load_usage(heap, fs, wd, prices, st, names);
+            load_audit(heap, fs, wd, st);
+            if st[g_has_plan()] + st[g_has_log()] + st[g_has_state()] + st[g_has_usage()] + st[g_has_run()] + st[g_has_build()] + st[g_has_audit()] == 0 {
+                io.error_all(io, "board: no run files found in the directory (is it a run directory?)\n");
+            }
+            let b = compose(heap, fs, wd, st, names);
+            borrow b as &bb in {
+                let all = buffer.bytes(bb);
+                if fs_write(fs, out, all) == len(all) {
+                    status = 0;
+                } else {
+                    io.error_all(io, "board: the output file cannot be written\n");
+                }
+            }
+            buffer.drop(heap, b);
+        }
+    }
+    unbox_slice(heap, nb);
+    unbox_slice(heap, sb);
+    return status;
+}

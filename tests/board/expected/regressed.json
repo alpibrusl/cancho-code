@@ -1,0 +1,146 @@
+{
+ "schema": 1,
+ "run": {
+  "name": "rings",
+  "brief": null,
+  "stage": null,
+  "plan_valid": null,
+  "provider": "ollama",
+  "model": "qwen3.8:27b",
+  "started_unix": null,
+  "seconds": 300,
+  "verdict": "stuck"
+ },
+ "files": {
+  "plan": true,
+  "run_log": true,
+  "state": true,
+  "usage": true,
+  "run_json": true,
+  "build_json": false,
+  "audit": false,
+  "prices": true
+ },
+ "metrics": {
+  "units_total": 3,
+  "units_verified": 2,
+  "columns": {
+   "waiting": 0,
+   "building": 0,
+   "verified": 2,
+   "stuck": 0,
+   "regressed": 1,
+   "unknown": 0
+  },
+  "calls": 4,
+  "tokens": {
+   "in": 500,
+   "out": 1150,
+   "cache_write": 0,
+   "cache_read": 0,
+   "thinking": null
+  },
+  "visible_out": null,
+  "thinking_share": null,
+  "cache_read_share": 0.0,
+  "efficiency": 0.5652,
+  "efficiency_calls": 0.5652,
+  "efficiency_visible": null,
+  "cost_usd": 0.0,
+  "cost_per_verified_unit": 0.0,
+  "over_limit_calls": 0,
+  "audit": null
+ },
+ "truncated": false,
+ "units": [
+  {
+   "id": "a",
+   "function": "ring_a",
+   "column": "verified",
+   "deps": [],
+   "attempts": 2,
+   "regressions": 1,
+   "calls": 2,
+   "tokens": {
+    "in": 250,
+    "out": 450,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1000,
+     "outcome": "refused",
+     "sig": "type-mismatch:expected `int`, found `bool`",
+     "decision": "retry"
+    },
+    {
+     "attempt": 1,
+     "agent_ms": 900,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "b",
+   "function": "ring_b",
+   "column": "regressed",
+   "deps": [
+    "a"
+   ],
+   "attempts": 1,
+   "regressions": 1,
+   "calls": 1,
+   "tokens": {
+    "in": 120,
+    "out": 300,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2000,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "c",
+   "function": "ring_c",
+   "column": "verified",
+   "deps": [
+    "b"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 130,
+    "out": 400,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2500,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  }
+ ]
+}

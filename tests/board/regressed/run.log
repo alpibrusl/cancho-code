@@ -1,0 +1,12 @@
+[PLAN]	valid
+[UNIT]	a	building
+[UNIT]	a	verified
+[UNIT]	b	building
+[UNIT]	b	verified
+[UNIT]	a	regressed
+[UNIT]	a	building
+[UNIT]	a	verified
+[UNIT]	b	regressed
+[UNIT]	c	building
+[UNIT]	c	verified
+[PROJECT_VERDICT]	stuck

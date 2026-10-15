@@ -1,0 +1,2 @@
+{broken
+{"attempt":0,"agent_ms":5,"outcome":"refused","sig":"a \"quoted\" \\ sig","decision":"retry"}

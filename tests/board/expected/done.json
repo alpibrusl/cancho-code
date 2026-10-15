@@ -1,0 +1,114 @@
+{
+ "schema": 1,
+ "run": {
+  "name": "base64",
+  "brief": null,
+  "stage": null,
+  "plan_valid": null,
+  "provider": "anthropic",
+  "model": "claude-haiku-5-5",
+  "started_unix": null,
+  "seconds": 42.9,
+  "verdict": "done"
+ },
+ "files": {
+  "plan": true,
+  "run_log": true,
+  "state": true,
+  "usage": true,
+  "run_json": true,
+  "build_json": false,
+  "audit": true,
+  "prices": true
+ },
+ "metrics": {
+  "units_total": 2,
+  "units_verified": 2,
+  "columns": {
+   "waiting": 0,
+   "building": 0,
+   "verified": 2,
+   "stuck": 0,
+   "regressed": 0,
+   "unknown": 0
+  },
+  "calls": 2,
+  "tokens": {
+   "in": 2336,
+   "out": 9618,
+   "cache_write": 13374,
+   "cache_read": 13374,
+   "thinking": 7974
+  },
+  "visible_out": 1644,
+  "thinking_share": 0.8291,
+  "cache_read_share": 0.4598,
+  "efficiency": 1.0,
+  "efficiency_calls": 1.0,
+  "efficiency_visible": 1.0,
+  "cost_usd": 0.006848,
+  "cost_per_verified_unit": 0.003424,
+  "over_limit_calls": 0,
+  "audit": {
+   "passed": 302,
+   "of": 329
+  }
+ },
+ "truncated": false,
+ "units": [
+  {
+   "id": "encode",
+   "function": "base64_encode",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 691,
+    "out": 2587,
+    "thinking": 1947,
+    "cache_write": 13374,
+    "cache_read": 0
+   },
+   "cost_usd": 0.003034,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 12049,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "decode",
+   "function": "base64_decode",
+   "column": "verified",
+   "deps": [
+    "encode"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 1645,
+    "out": 7031,
+    "thinking": 6027,
+    "cache_write": 0,
+    "cache_read": 13374
+   },
+   "cost_usd": 0.003814,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 29360,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  }
+ ]
+}

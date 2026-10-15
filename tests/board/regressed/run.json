@@ -1,0 +1,11 @@
+{
+ "item": "rings",
+ "label": "local",
+ "run": 1,
+ "provider": "ollama",
+ "model": "qwen3.8:27b",
+ "scaffold_chars": 10,
+ "seconds": 300,
+ "exit": 1,
+ "patch": true
+}

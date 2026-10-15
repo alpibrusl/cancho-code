@@ -1,0 +1,8 @@
+garbage line
+[UNIT]	../x	verified
+[UNIT]	a	building
+[UNIT]	a	frobnicated
+[UNIT]	onlyid
+[PROJECT_VERDICT]
+[PROJECT_VERDICT]	stuck
+
