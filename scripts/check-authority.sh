@@ -7,6 +7,7 @@
 #
 #   scripts/check-authority.sh             compare the `fix` front door to docs/authority.json
 #   scripts/check-authority.sh --project   compare the project driver (it spawns the checker and the agent, reads and writes the work directory; no network) to docs/authority-project.json
+#   scripts/check-authority.sh --build    compare the build command (src/build.cho over the project driver: it runs the plan agent, the checker and the unit agent, reads and writes the work directory; no network) to docs/authority-build.json
 #   scripts/check-authority.sh --plan      compare the plan checker (it reads one file and prints; no process, no network) to docs/authority-plan.json
 #   scripts/check-authority.sh --board     compare the dashboard's data tool (it reads a run directory and writes one file; no process, no network) to docs/authority-board.json
 #   scripts/check-authority.sh --provider  compare the provider (the one reachable host class) to docs/authority-provider.json
@@ -39,7 +40,8 @@ for arg in "$@"; do
     --plan) variant=plan ;;
     --board) variant=board ;;
     --project) variant=project ;;
-    *) echo "usage: $0 [--update | --prove] [--provider | --agent | --plan | --project | --board]" >&2; exit 2 ;;
+    --build) variant=build ;;
+    *) echo "usage: $0 [--update | --prove] [--provider | --agent | --plan | --project | --board | --build]" >&2; exit 2 ;;
   esac
 done
 
@@ -66,6 +68,10 @@ elif [ "$variant" = board ]; then
 elif [ "$variant" = project ]; then
   pinned=$here/docs/authority-project.json
   files=("$here/tests/programs/project.cho" "$here/src/project.cho" "$here/src/plan.cho" "$here/src/driver.cho" "$here/src/checker.cho"
+    "$here/src/signature.cho" "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho" "$here/src/acceptance.cho")
+elif [ "$variant" = build ]; then
+  pinned=$here/docs/authority-build.json
+  files=("$here/tests/programs/build.cho" "$here/src/build.cho" "$here/src/project.cho" "$here/src/plan.cho" "$here/src/driver.cho" "$here/src/checker.cho"
     "$here/src/signature.cho" "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho" "$here/src/acceptance.cho")
 else
   pinned=$here/docs/authority.json
@@ -117,6 +123,6 @@ if diff -u "$pinned" "$work/report.json" > "$work/diff"; then
 fi
 cat "$work/diff"
 echo >&2
-echo "check-authority: the authority report changed. If it is intended, read the diff, run $0 --update$([ "$variant" = provider ] && echo " --provider")$([ "$variant" = agent ] && echo " --agent")$([ "$variant" = plan ] && echo " --plan")$([ "$variant" = project ] && echo " --project")$([ "$variant" = board ] && echo " --board")" >&2
+echo "check-authority: the authority report changed. If it is intended, read the diff, run $0 --update$([ "$variant" = provider ] && echo " --provider")$([ "$variant" = agent ] && echo " --agent")$([ "$variant" = plan ] && echo " --plan")$([ "$variant" = project ] && echo " --project")$([ "$variant" = board ] && echo " --board")$([ "$variant" = build ] && echo " --build")" >&2
 echo "and commit ${pinned#"$here"/}: that commit is the approval." >&2
 exit 1

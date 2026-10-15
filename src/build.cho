@@ -1,0 +1,476 @@
+edition 7;
+
+module build;
+
+// `build` -- one command from a brief to a verified build (docs/build.md): the plan the agent writes (`--mode plan`, with its own
+// retry rounds and the optional blind review), the plan check, the project driver (src/project.cho) over that plan, a report.
+// It ends with one `[BUILD_VERDICT]` line and an exit code, and keeps `build.json` (the dashboard's file) current after each stage.
+//
+// Nothing here is new machinery: the plan agent is run the way the acceptance command is (`acceptance.run`: a shell command with
+// the file appended, a deadline, bounded output), the plan is checked by `plan.check`, the build is `project.run_logged`. A killed
+// run resumes because both steps leave their result in the work directory: a valid `plan.json` is not asked for again, `state.txt`
+// keeps the units that verified.
+
+import acceptance;
+import plan;
+import project;
+import std.buffer;
+import std.bytes;
+import std.io;
+import std.json;
+
+// ---- small helpers --------------------------------------------------------
+
+// The file `path` read whole (at most `cap` bytes), and whether it could be read.
+fn slurp[&h, &f, &p](heap: &!h Heap, fs: &f Fs(""), path: &p [byte], cap: int) -> [heap, fs_read("")] (buffer.Buffer, bool) {
+    let store = box_slice(heap, cap, byte_of(0));
+    var out = buffer.empty(heap, 16);
+    var ok = false;
+    borrow mut store as &!sw in {
+        let n = fs_read(fs, path, contents(sw));
+        if n >= 0 && n < cap {
+            ok = true;
+            out = buffer.append(heap, out, contents(sw)[0..n]);
+        }
+    }
+    unbox_slice(heap, store);
+    return (out, ok);
+}
+
+// The function names the brief requires: a bullet `- name(...) : what it does` (or `... ) -> Type : ...`) names a public function, and the
+// plan must declare it as `fn name`. Answers "\nname\nname2\n" for the ones no unit declares (empty: none). A brief with no such bullet
+// requires nothing.
+fn is_name_byte(c: int) -> [] bool {
+    return (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95;
+}
+
+fn brief_gaps[&h, &b, &s](heap: &!h Heap, brief: &b [byte], plan: &s [byte]) -> [heap] buffer.Buffer {
+    var gaps = buffer.append(heap, buffer.empty(heap, 16), "\n");
+    var pos = 0;
+    while pos < len(brief) {
+        var e = pos;
+        while e < len(brief) && int_of(brief[e]) != 10 {
+            e = e + 1;
+        }
+        let line = brief[pos..e];
+        if len(line) > 3 && int_of(line[0]) == 45 && int_of(line[1]) == 32 && int_of(line[2]) >= 97 && int_of(line[2]) <= 122 {
+            var j = 2;
+            while j < len(line) && is_name_byte(int_of(line[j])) {
+                j = j + 1;
+            }
+            if j < len(line) && int_of(line[j]) == 40 && (bytes.find(line, ") :") >= 0 || bytes.find(line, ") ->") >= 0) {
+                let name = line[2..j];
+                // `fn name` must end at the name: the next byte is `(` or `[`.
+                var exact = false;
+                var rest = plan;
+                var look = true;
+                while look {
+                    let k = bytes.find(rest, "fn ");
+                    if k < 0 {
+                        look = false;
+                    } else {
+                        let from = k + 3;
+                        if from + len(name) < len(rest) && bytes.equal(rest[from..from + len(name)], name) && (int_of(rest[from + len(name)]) == 40 || int_of(rest[from + len(name)]) == 91) {
+                            exact = true;
+                            look = false;
+                        } else {
+                            rest = rest[from..len(rest)];
+                        }
+                    }
+                }
+                if !exact {
+                    var seen = false;
+                    borrow gaps as &gb in {
+                        var probe = buffer.append(heap, buffer.empty(heap, 32), "\n");
+                        probe = buffer.append(heap, probe, name);
+                        probe = buffer.append(heap, probe, "\n");
+                        borrow probe as &pb in {
+                            seen = bytes.find(buffer.bytes(gb), buffer.bytes(pb)) >= 0;
+                        }
+                        buffer.drop(heap, probe);
+                    }
+                    if !seen {
+                        gaps = buffer.append(heap, gaps, name);
+                        gaps = buffer.append(heap, gaps, "\n");
+                    }
+                }
+            }
+        }
+        pos = e + 1;
+    }
+    return gaps;
+}
+
+// How the plan in `src` stands: -1 when the plan check refuses it, else the number of units. With `show`, the check's report
+// (its `[PLAN_ERROR]` lines and `[PLAN]` line) goes to the console and the log.
+fn judge[&h, &i, &z, &l, &s, &b](heap: &!h Heap, io: &!i Io, fs: &z Fs(""), log: &l [byte], src: &s [byte], brief: &b [byte], show: bool) -> [heap, io_write, fs_read(""), fs_write("")] int {
+    let (out, code) = plan.check(heap, src);
+    if show {
+        borrow out as &o in {
+            project.tell(heap, io, fs, log, buffer.bytes(o));
+        }
+    }
+    buffer.drop(heap, out);
+    if code != 0 {
+        return 0 - 1;
+    }
+    // The names the brief states must be the plan's: a plan that renames them builds a different API than the one asked for.
+    let gaps = brief_gaps(heap, brief, src);
+    var missing = false;
+    borrow gaps as &gb in {
+        let g = buffer.bytes(gb);
+        missing = len(g) > 1;
+        if missing && show {
+            var at = 1;
+            while at < len(g) {
+                var e = at;
+                while int_of(g[e]) != 10 {
+                    e = e + 1;
+                }
+                var line = buffer.append(heap, buffer.empty(heap, 96), "[PLAN_ERROR]\tbrief-name\t");
+                line = buffer.append(heap, line, g[at..e]);
+                line = buffer.append(heap, line, "\tthe brief names this function and no unit declares it\n");
+                borrow line as &lb in {
+                    project.tell(heap, io, fs, log, buffer.bytes(lb));
+                }
+                buffer.drop(heap, line);
+                at = e + 1;
+            }
+            project.tell(heap, io, fs, log, "[PLAN]\tinvalid\n");
+        }
+    }
+    buffer.drop(heap, gaps);
+    if missing {
+        return 0 - 1;
+    }
+    var units = 0;
+    let tb = box_slice(heap, json.tape_len(src), 0);
+    borrow mut tb as &!tw in {
+        let tape = contents(tw);
+        json.parse(src, tape);
+        units = json.count(tape, json.get(src, tape, 0, "units"));
+    }
+    unbox_slice(heap, tb);
+    return units;
+}
+
+// The scaffold of project.cho: `edition 7;` and the standard modules the plan's signatures name (the same rule as eval/run_item.py).
+fn scaffold[&h, &s](heap: &!h Heap, src: &s [byte]) -> [heap] buffer.Buffer {
+    var has_result = false;
+    var has_buffer = false;
+    var has_option = false;
+    let tb = box_slice(heap, json.tape_len(src), 0);
+    borrow mut tb as &!tw in {
+        let tape = contents(tw);
+        json.parse(src, tape);
+        let units = json.get(src, tape, 0, "units");
+        var j = units + 1;
+        var left = json.count(tape, units);
+        while left > 0 {
+            let sig = json.string_view(src, tape, json.get(src, tape, j, "signature"));
+            if bytes.find(sig, "result.") >= 0 {
+                has_result = true;
+            }
+            if bytes.find(sig, "buffer.") >= 0 {
+                has_buffer = true;
+            }
+            if bytes.find(sig, "option.") >= 0 {
+                has_option = true;
+            }
+            j = json.skip(tape, j);
+            left = left - 1;
+        }
+    }
+    unbox_slice(heap, tb);
+    var b = buffer.append(heap, buffer.empty(heap, 128), "edition 7;\n");
+    if has_result {
+        b = buffer.append(heap, b, "import std.result;\n");
+    }
+    if has_buffer {
+        b = buffer.append(heap, b, "import std.buffer;\n");
+    }
+    if has_option {
+        b = buffer.append(heap, b, "import std.option;\n");
+    }
+    return b;
+}
+
+// Create project.cho from the scaffold when there is none (a resumed run keeps the one it has).
+fn make_project[&h, &z, &w, &s](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], src: &s [byte]) -> [heap, fs_read(""), fs_write("")] int {
+    let path = project.in_wd(heap, wd, "project.cho", "", "");
+    var r = 0;
+    borrow path as &pb in {
+        let (old, ok) = slurp(heap, fs, buffer.bytes(pb), 16777216);
+        buffer.drop(heap, old);
+        if ok == false {
+            r = project.put(heap, fs, buffer.bytes(pb), scaffold(heap, src));
+        }
+    }
+    buffer.drop(heap, path);
+    return r;
+}
+
+// The units `state.txt` says verified: its `verified <id>` lines.
+fn count_verified[&h, &z, &w](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte]) -> [heap, fs_read("")] int {
+    let path = project.in_wd(heap, wd, "state.txt", "", "");
+    var n = 0;
+    borrow path as &pb in {
+        let (text, ok) = slurp(heap, fs, buffer.bytes(pb), 1048576);
+        borrow text as &tb in {
+            let all = buffer.bytes(tb);
+            var i = 0;
+            while i < len(all) {
+                if bytes.starts_with(all[i..len(all)], "verified ") {
+                    n = n + 1;
+                }
+                while i < len(all) && int_of(all[i]) != 10 {
+                    i = i + 1;
+                }
+                i = i + 1;
+            }
+        }
+        buffer.drop(heap, text);
+    }
+    buffer.drop(heap, path);
+    return n;
+}
+
+// `build.json`: the one file the dashboard reads for the run as a whole. Written whole, after each stage.
+fn write_state[&h, &z, &w, &b, &p, &m, &v](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], brief: &b [byte], stage: &static [byte], valid: bool, total: int, verified: int, verdict: &v [byte], started_ms: int, now_ms: int, provider: &p [byte], model: &m [byte]) -> [heap, fs_write("")] int {
+    var j = json.writer(heap, 512);
+    j = json.begin_object(heap, j);
+    j = json.put_key(heap, j, "brief");
+    j = json.put_string(heap, j, brief);
+    j = json.put_key(heap, j, "stage");
+    j = json.put_string(heap, j, stage);
+    j = json.put_key(heap, j, "plan_valid");
+    j = json.put_bool(heap, j, valid);
+    j = json.put_key(heap, j, "units_total");
+    j = json.put_int(heap, j, total);
+    j = json.put_key(heap, j, "units_verified");
+    j = json.put_int(heap, j, verified);
+    j = json.put_key(heap, j, "verdict");
+    j = json.put_string(heap, j, verdict);
+    j = json.put_key(heap, j, "started_unix");
+    j = json.put_int(heap, j, started_ms / 1000);
+    j = json.put_key(heap, j, "seconds");
+    j = json.put_int(heap, j, (now_ms - started_ms) / 1000);
+    j = json.put_key(heap, j, "provider");
+    j = json.put_string(heap, j, provider);
+    j = json.put_key(heap, j, "model");
+    j = json.put_string(heap, j, model);
+    j = json.end_object(heap, j);
+    var text = json.finish(j);
+    text = buffer.push(heap, text, byte_of(10));
+    let path = project.in_wd(heap, wd, "build.json", "", "");
+    var r = -1;
+    borrow path as &pb in {
+        r = project.put(heap, fs, buffer.bytes(pb), text);
+    }
+    buffer.drop(heap, path);
+    return r;
+}
+
+// The plan agent's command: the caller's agent command, the provider and model (the agent has no default for either), then
+// `--mode plan` with the guide and the brief; the file appended by `acceptance.run` is the plan's path.
+fn plan_command[&h, &a, &p, &m, &g, &r, &c, &w, &k](heap: &!h Heap, agent: &a [byte], provider: &p [byte], model: &m [byte], guide: &g [byte], brief: &k [byte], review_guide: &r [byte], contract: &c [byte], rounds: int, review: bool, wd: &w [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, buffer.empty(heap, 512), agent);
+    b = buffer.append(heap, b, " --provider ");
+    b = buffer.append(heap, b, provider);
+    b = buffer.append(heap, b, " --model ");
+    b = buffer.append(heap, b, model);
+    b = buffer.append(heap, b, " --mode plan --guide ");
+    b = buffer.append(heap, b, guide);
+    b = buffer.append(heap, b, " --brief ");
+    b = buffer.append(heap, b, brief);
+    if len(contract) > 0 {
+        b = buffer.append(heap, b, " --contract ");
+        b = buffer.append(heap, b, contract);
+    }
+    b = buffer.append(heap, b, " --rounds ");
+    b = buffer.push_nat(heap, b, rounds);
+    if review {
+        b = buffer.append(heap, b, " --review on --review-guide ");
+        b = buffer.append(heap, b, review_guide);
+    }
+    b = buffer.append(heap, b, " --usage-log ");
+    b = buffer.append(heap, b, wd);
+    b = buffer.append(heap, b, "/usage.jsonl");
+    return b;
+}
+
+// The agent for the units: the caller's agent command, the provider, the model and the usage log (the project driver appends the file).
+fn unit_command[&h, &a, &p, &m, &w](heap: &!h Heap, agent: &a [byte], provider: &p [byte], model: &m [byte], wd: &w [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, buffer.empty(heap, 512), agent);
+    b = buffer.append(heap, b, " --provider ");
+    b = buffer.append(heap, b, provider);
+    b = buffer.append(heap, b, " --model ");
+    b = buffer.append(heap, b, model);
+    b = buffer.append(heap, b, " --usage-log ");
+    b = buffer.append(heap, b, wd);
+    b = buffer.append(heap, b, "/usage.jsonl");
+    return b;
+}
+
+// ---- the plan stage -------------------------------------------------------
+
+// Ask the agent for a plan: 0 a plan was written (the caller judges it), 1 the agent gave up on the plan (rounds used up, or the
+// model needs a decision), 2 the agent could not be reached (or did not answer in time). The agent's output is kept in plan.log.
+fn ask_plan[&h, &x, &c, &z, &w, &k, &y](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &z Fs(""), wd: &w [byte], command: &k [byte], plan_path: &y [byte], plan_ms: int) -> [heap, exec(""), clock, poll, fs_write("")] int {
+    let r = acceptance.run(heap, exec, clock, command, plan_path, 1048576, plan_ms);
+    let acceptance.Result { held, why, said } = r;
+    var status = 0;
+    if held == 2 {
+        status = 2;
+    } else if held == 1 {
+        status = 1;
+        borrow said as &sb in {
+            if bytes.find(buffer.bytes(sb), "cannot reach the API") >= 0 || bytes.find(buffer.bytes(sb), "HTTP error from the API") >= 0 {
+                status = 2;
+            }
+        }
+    }
+    let lp = project.in_wd(heap, wd, "plan.log", "", "");
+    borrow lp as &lb in {
+        borrow said as &sb in {
+            fs_write(fs, buffer.bytes(lb), buffer.bytes(sb));
+        }
+    }
+    buffer.drop(heap, lp);
+    buffer.drop(heap, why);
+    buffer.drop(heap, said);
+    return status;
+}
+
+// ---- the run --------------------------------------------------------------
+
+// What a verdict word is as an exit code.
+fn code_of(word: &static [byte]) -> [] int {
+    if bytes.equal(word, "done") {
+        return 0;
+    }
+    if bytes.equal(word, "plan_failed") {
+        return 3;
+    }
+    if bytes.equal(word, "provider_error") {
+        return 4;
+    }
+    return 1;
+}
+
+// End the run: `build.json` with the verdict (stage `done`), then the `[BUILD_VERDICT]` line.
+fn finish[&h, &i, &z, &l, &w, &b, &p, &m](heap: &!h Heap, io: &!i Io, fs: &z Fs(""), log: &l [byte], wd: &w [byte], brief: &b [byte], valid: bool, total: int, verdict: &static [byte], started_ms: int, now_ms: int, provider: &p [byte], model: &m [byte]) -> [heap, io_write, fs_read(""), fs_write("")] int {
+    write_state(heap, fs, wd, brief, "done", valid, total, count_verified(heap, fs, wd), verdict, started_ms, now_ms, provider, model);
+    var line = buffer.append(heap, buffer.empty(heap, 64), "[BUILD_VERDICT]\t");
+    line = buffer.append(heap, line, verdict);
+    line = buffer.append(heap, line, "\n");
+    borrow line as &lb in {
+        project.tell(heap, io, fs, log, buffer.bytes(lb));
+    }
+    buffer.drop(heap, line);
+    return code_of(verdict);
+}
+
+// Build `brief` in `wd`: 0 done, 1 stuck or the final gate failed, 2 usage, 3 plan_failed, 4 provider_error. `guide` and `review_guide`
+// are the plan agent's (empty: none); an empty `contract` is none. With a valid plan.json already in `wd` the plan agent is not asked.
+pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), checker: &k [byte], brief: &b [byte], wd: &w [byte], agent: &a [byte], provider: &p [byte], model: &m [byte], guide: &g [byte], review_guide: &r [byte], contract: &q [byte], review: bool, rounds: int, attempts: int, agent_ms: int, plan_ms: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write, err_write] int {
+    let started = clock_unix_ms(clock);
+    let logp = project.in_wd(heap, wd, "run.log", "", "");
+    let planp = project.in_wd(heap, wd, "plan.json", "", "");
+    var status = 2;
+    borrow logp as &lgb in {
+        borrow planp as &ppb in {
+            let lg = buffer.bytes(lgb);
+            let pp = buffer.bytes(ppb);
+            // The brief's text: the names it requires are checked against every plan (judge).
+            let (brief_text, brief_read) = slurp(heap, fs, brief, 1048576);
+            borrow brief_text as &btb in {
+            let bt = buffer.bytes(btb);
+            // The work directory must exist: the log is the first thing written.
+            if project.append_file(heap, fs, lg, "") < 0 {
+                io.error_all(io, "build: the work directory cannot be written\n");
+            } else {
+                // A plan.json from an earlier run that the check accepts is kept.
+                let (old, readable) = slurp(heap, fs, pp, 1048576);
+                var units = 0 - 1;
+                if readable {
+                    borrow old as &ob in {
+                        units = judge(heap, io, fs, lg, buffer.bytes(ob), bt, false);
+                    }
+                }
+                buffer.drop(heap, old);
+                var provider_away = false;
+                var asked = false;
+                if units >= 0 {
+                    project.tell(heap, io, fs, lg, "[BUILD_STAGE]\tplan\treused\n");
+                } else if len(guide) == 0 {
+                    io.error_all(io, "build: there is no valid plan.json in the work directory, and no --guide to ask for one\n");
+                    status = 2;
+                } else {
+                    asked = true;
+                    write_state(heap, fs, wd, brief, "plan", false, 0, count_verified(heap, fs, wd), "", started, clock_unix_ms(clock), provider, model);
+                    project.tell(heap, io, fs, lg, "[BUILD_STAGE]\tplan\n");
+                    // A plan.json that is not valid is emptied first, so that what is there afterwards is what this agent wrote.
+                    fs_write(fs, pp, "");
+                    let command = plan_command(heap, agent, provider, model, guide, brief, review_guide, contract, rounds, review, wd);
+                    var asked_status = 1;
+                    borrow command as &cb in {
+                        asked_status = ask_plan(heap, exec, clock, fs, wd, buffer.bytes(cb), pp, plan_ms);
+                    }
+                    buffer.drop(heap, command);
+                    if asked_status == 2 {
+                        provider_away = true;
+                    } else {
+                        let (fresh, readable2) = slurp(heap, fs, pp, 1048576);
+                        if readable2 && asked_status == 0 {
+                            borrow fresh as &fb in {
+                                units = judge(heap, io, fs, lg, buffer.bytes(fb), bt, true);
+                            }
+                        }
+                        buffer.drop(heap, fresh);
+                    }
+                }
+                if provider_away {
+                    status = finish(heap, io, fs, lg, wd, brief, false, 0, "provider_error", started, clock_unix_ms(clock), provider, model);
+                } else if units < 0 && asked {
+                    status = finish(heap, io, fs, lg, wd, brief, false, 0, "plan_failed", started, clock_unix_ms(clock), provider, model);
+                } else if units >= 0 {
+                    // The plan is valid: the build stage.
+                    let (text, readable3) = slurp(heap, fs, pp, 1048576);
+                    borrow text as &tb in {
+                        let src = buffer.bytes(tb);
+                        if make_project(heap, fs, wd, src) < 0 {
+                            io.error_all(io, "build: the work directory cannot be written\n");
+                        } else {
+                            write_state(heap, fs, wd, brief, "build", true, units, count_verified(heap, fs, wd), "", started, clock_unix_ms(clock), provider, model);
+                            project.tell(heap, io, fs, lg, "[BUILD_STAGE]\tbuild\n");
+                            let unit_agent = unit_command(heap, agent, provider, model, wd);
+                            var code = 2;
+                            borrow unit_agent as &ua in {
+                                code = project.run_logged(heap, exec, clock, io, fs, src, checker, wd, buffer.bytes(ua), attempts, agent_ms, lg);
+                            }
+                            buffer.drop(heap, unit_agent);
+                            if code == 0 {
+                                status = finish(heap, io, fs, lg, wd, brief, true, units, "done", started, clock_unix_ms(clock), provider, model);
+                            } else if code == 4 {
+                                status = finish(heap, io, fs, lg, wd, brief, true, units, "provider_error", started, clock_unix_ms(clock), provider, model);
+                            } else if code == 5 {
+                                status = finish(heap, io, fs, lg, wd, brief, true, units, "gate_failed", started, clock_unix_ms(clock), provider, model);
+                            } else if code == 1 {
+                                status = finish(heap, io, fs, lg, wd, brief, true, units, "stuck", started, clock_unix_ms(clock), provider, model);
+                            } else if code == 3 {
+                                status = finish(heap, io, fs, lg, wd, brief, false, 0, "plan_failed", started, clock_unix_ms(clock), provider, model);
+                            }
+                        }
+                    }
+                    buffer.drop(heap, text);
+                }
+            }
+            }
+            buffer.drop(heap, brief_text);
+        }
+    }
+    buffer.drop(heap, logp);
+    buffer.drop(heap, planp);
+    return status;
+}

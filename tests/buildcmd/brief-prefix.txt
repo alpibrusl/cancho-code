@@ -1,0 +1,3 @@
+Build a tiny library.
+
+- doub(x) : twice x.
