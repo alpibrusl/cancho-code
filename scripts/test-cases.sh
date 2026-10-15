@@ -170,24 +170,24 @@ def oracle_cases(item):
             out.setdefault(o["fn"], []).append(o)
     return out
 
-def conv_expect(o):
-    if "expect_err" in o:
-        return {"err": 0}
-    e = o["expect"]
+def conv_value(e):
     if isinstance(e, dict) and "$variant" in e:
         v = e["$variant"]
         if v == "Ok":
-            return {"ok": e["args"][0]}
+            return {"ok": conv_value(e["args"][0])}
         if v == "Some":
-            return e["args"][0]
-        if v == "None":
-            return None
+            return conv_value(e["args"][0])
         return None
     return e
 
+def conv_expect(o):
+    if "expect_err" in o:
+        return {"err": True}
+    return conv_value(o["expect"])
+
 def expressible(v):
     if isinstance(v, str):
-        return cases_ref.text_lit(v) is not None
+        return True          # any text: what a literal cannot hold is built from its bytes
     if isinstance(v, dict):
         return all(expressible(x) for x in v.values())
     if isinstance(v, list):
@@ -202,8 +202,6 @@ def pick_cases(fn_lines, n_ok=4, n_err=2, err_first=False):
         c = {"args": o["args"], "expect": conv_expect(o)}
         if not expressible(c["args"]) or not expressible(c["expect"]):
             continue
-        if c["args"] and any(isinstance(a, list) or isinstance(a, dict) for a in c["args"]):
-            continue
         (errs if isinstance(c["expect"], dict) and "err" in c["expect"] else oks).append(c)
     # a spread, not the first few: every k-th
     def spread(xs, n):
@@ -215,11 +213,7 @@ def pick_cases(fn_lines, n_ok=4, n_err=2, err_first=False):
     return (er + ok) if err_first else (ok + er)
 
 def hex_text(h):
-    b = bytes.fromhex(h)
-    s = b.decode("ascii")
-    if cases_ref.text_lit(s) is None:
-        raise ValueError
-    return s
+    return bytes.fromhex(h).decode("ascii")
 
 def base64_cases():
     p = subprocess.run([sys.executable, "-I", os.path.join(root, "eval", "base64", "oracle.py")], capture_output=True)
@@ -234,7 +228,7 @@ def base64_cases():
                 enc.append({"args": [hex_text(o["data"])], "expect": o["expect_text"]})
             elif o.get("fn") == "base64_decode":
                 if "expect_err" in o:
-                    dec.append({"args": [bytes.fromhex(o["text"]).decode("ascii")], "expect": {"err": 0}})
+                    dec.append({"args": [bytes.fromhex(o["text"]).decode("ascii")], "expect": {"err": True}})
                 elif "expect" in o:
                     dec.append({"args": [bytes.fromhex(o["text"]).decode("ascii")], "expect": {"ok": hex_text(o["expect"])}})
         except (ValueError, UnicodeDecodeError):
@@ -242,24 +236,39 @@ def base64_cases():
     dec = [c for c in dec if expressible(c["args"]) and expressible(c["expect"])]
     return enc, dec
 
-def flip(case, hint):
-    """The same case with its expected value made wrong."""
-    e = case["expect"]
-    if isinstance(e, dict) and "err" in e:
-        return {"args": case["args"], "expect": {"ok": {"int": 0, "bool": True, "text": ""}[hint]}}
-    if isinstance(e, dict) and "ok" in e:
-        v = e["ok"]
-        return {"args": case["args"], "expect": {"ok": mutate(v)}}
-    if e is None:
-        return {"args": case["args"], "expect": {"int": 1, "bool": True}[hint]}
-    return {"args": case["args"], "expect": mutate(e) if not isinstance(e, bool) or True else e}
-
 def mutate(v):
     if isinstance(v, bool):
         return not v
     if isinstance(v, int):
         return v - 1 if v >= (1 << 63) - 1 else v + 1
+    if isinstance(v, list):
+        return v + ["x"]
+    if isinstance(v, dict):
+        return {"bytes": v["bytes"] + [120]}
     return v + "x"
+
+def flip(case, hint):
+    """The same case with its expected value made wrong."""
+    e = case["expect"]
+    if isinstance(e, dict) and "err" in e:
+        x = e["err"]
+        if isinstance(x, int) and not isinstance(x, bool):
+            return {"args": case["args"], "expect": {"err": x + 1}}
+        return {"args": case["args"], "expect": {"ok": {"int": 0, "bool": True, "text": "", "list": []}[hint]}}
+    if isinstance(e, dict) and "ok" in e:
+        v = e["ok"]
+        return {"args": case["args"], "expect": {"ok": "x" if v is None else mutate(v)}}
+    if e is None:
+        return {"args": case["args"], "expect": {"int": 1, "bool": True, "text": "x"}[hint]}
+    return {"args": case["args"], "expect": mutate(e)}
+
+def flip_index(cs, hint):
+    """Which case to flip: for a unit that answers a list, the first with a list (so the list comparison is what must notice)."""
+    if hint == "list":
+        for i, c in enumerate(cs):
+            if isinstance(c["expect"], dict) and isinstance(c["expect"].get("ok"), list):
+                return i
+    return 0
 
 def ret_of(sig):
     return re.sub(r"^\[[^\]]*\]\s*", "", sig.split("->")[1].strip())
@@ -269,6 +278,8 @@ def has_heap(sig):
 
 def sid(u):
     return re.sub(r"[^A-Za-z0-9_]", "_", u)
+
+stat = {"byte-built": 0, "list/vec cases": 0}
 
 def assemble(name, ref, plan_obj, expect_pass=None, expect_fail=None):
     """Expand `plan_obj`, assemble reference + generated tests, run them; returns the expanded plan."""
@@ -302,6 +313,10 @@ def assemble(name, ref, plan_obj, expect_pass=None, expect_fail=None):
     if expect_fail is not None and failed != sorted(expect_fail):
         fail("%s: after flipping one value per unit the failing tests are %s, wanted exactly %s" % (name, failed, sorted(expect_fail)))
     new["_ntests"] = len(names)
+    if name.endswith("-right"):
+        joined = "\n".join(tests)
+        stat["byte-built"] += len(re.findall(r"= cases_\w+_unhex\(heap, \"", joined)) + len(re.findall(r"box\(heap, cases_\w+_unhex", joined))
+        stat["list/vec cases"] += len(re.findall(r"list\.push\(|vec\.push\(|: list\.List", joined)) and len(re.findall(r"^fn cases_\w+_c\d+", "\n".join(tests), re.M))
     return new
 
 def plancheck_ok(name, new):
@@ -321,7 +336,37 @@ ITEMS = {
     "glob": [("match", "bool", {}), ("valid", "bool", {})],
     "expr": [("eval", "int", {})],
     "tokenbucket": [("refill", "int", {}), ("take", "int", {}), ("retry", "int", {})],
+    # lists of text, a vec of text, any byte, integer error payloads, a Result of an Option
+    "csv": [("parse", "list", {"err_first": True}), ("format", "text", {})],
+    "jsonptr": [("parse", "list", {"err_first": True}), ("format", "text", {}), ("append", "text", {}), ("parent", "text", {})],
+    "editdistance": [("edit_distance", "int", {}), ("similarity_pct", "int", {}), ("closest", "text", {})],
+    "ini": [("parse", "text", {}), ("get", "text", {"err_first": True}), ("raw", "text", {}), ("dedupe", "text", {})],
 }
+
+def tests_cases(item, uid, plan_unit):
+    """Cases written by hand in the plan's own tests (the oracle has no integer error payloads, nor raw/dedupe): the checks
+    `pa_err(heap, TEXT, N)` (ini_parse fails at line N), `raw_err`, `raw_is`/`dd_is` (TEXT gives WANT)."""
+    out = []
+    jtext = r'("(?:[^"\\]|\\.)*")'
+    for t in plan_unit.get("tests", []):
+        for pat in (r"pa_err\(heap, " + jtext + r", (\d+)\)", r"raw_err\(heap, " + jtext + r", (\d+)\)"):
+            for m in re.finditer(pat, t):
+                try:
+                    out.append({"args": [json.loads(m.group(1))], "expect": {"err": int(m.group(2))}})
+                except ValueError:
+                    pass
+        for m in re.finditer(r"(?:raw_is|dd_is)\(heap, " + jtext + ", " + jtext + r"\)", t):
+            try:
+                out.append({"args": [json.loads(m.group(1))], "expect": json.loads(m.group(2)) if uid == "dedupe" else {"ok": json.loads(m.group(2))}})
+            except ValueError:
+                pass
+    return out
+
+def post_cases(item, uid, cs):
+    """The oracle writes ini_parse's entries as a list; the unit answers the buffer of 'name=value\\n' lines."""
+    if (item, uid) == ("ini", "parse"):
+        return [dict(c, expect=({"ok": "".join(e + "\n" for e in c["expect"]["ok"])} if "ok" in c["expect"] else c["expect"])) for c in cs]
+    return cs
 shapes = set()
 nsem = 0
 for item, picks in ITEMS.items():
@@ -332,7 +377,10 @@ for item, picks in ITEMS.items():
     for uid, hint, opts in picks:
         u = byid[uid]
         fn = re.match(r"fn (\w+)", u["signature"]).group(1)
-        cs = pick_cases(orc.get(fn, []), **opts)
+        cs = post_cases(item, uid, pick_cases(orc.get(fn, []), **opts))
+        if item == "ini":
+            extra = tests_cases(item, uid, u)
+            cs = extra[:3] + cs if uid == "parse" else cs + extra[:3]
         if len(cs) < 2:
             fail("%s: %s: fewer than 2 usable oracle cases" % (item, uid))
             continue
@@ -348,15 +396,16 @@ for item, picks in ITEMS.items():
     wrong_units = []
     for u in units:
         cs = list(u["cases"])
-        cs[0] = flip(cs[0], flips[u["id"]])
+        fi = flip_index(cs, flips[u["id"]])
+        cs[fi] = flip(cs[fi], flips[u["id"]])
         wrong_units.append(dict(u, cases=cs))
-        expect_fail.append("test_%s_1" % sid(u["id"]))
+        expect_fail.append("test_%s_%d" % (sid(u["id"]), fi + 1))
     assemble(item + "-flipped", ref, {"name": item, "units": wrong_units}, expect_fail=expect_fail)
     nsem += len(units)
     print("semantic %-12s %2d units, %3d tests pass; flipping one value per unit fails exactly %d" % (item, len(units), good["_ntests"], len(expect_fail)))
 
 # ini and jsonptr: no oracle with these functions, so the cases are the hand-written examples of the plan
-for item, uids in (("ini", ["key", "section", "kind", "unquote"]), ("jsonptr", ["parent"])):
+for item, uids in (("ini", ["key", "section", "kind", "unquote"]),):
     plan = json.load(open(os.path.join(root, "eval", item, "plan.json")))
     byid = {u["id"]: u for u in plan["units"]}
     units, flips, expect_fail = [], {}, []
@@ -383,7 +432,7 @@ for item, uids in (("ini", ["key", "section", "kind", "unquote"]), ("jsonptr", [
         expect_fail.append("test_%s_1" % sid(u["id"]))
     assemble(item + "-flipped", ref, {"name": item, "units": wrong}, expect_fail=expect_fail)
     nsem += len(units)
-    print("semantic %-12s %2d units, %3d tests pass; flipping one value per unit fails exactly %d" % (item, len(units), good["_ntests"], len(expect_fail)))
+    print("semantic %-12s %2d units, %3d tests pass; flipping one value per unit fails exactly %d" % (item + " (ex.)", len(units), good["_ntests"], len(expect_fail)))
 
 # base64: the oracle gives bytes in hex; the printable ones become text cases
 enc, dec = base64_cases()
@@ -419,7 +468,7 @@ ref = os.path.join(fx, "synthetic_ref.cho")
 good = assemble("synthetic-right", ref, syn, expect_pass=True)
 if good is not None:
     plancheck_ok("synthetic", good)
-    hints = {"optb": "bool", "resb": "bool", "bufe": "text", "mid": "text", "two": "int", "noargs": "int", "neg": "int", "uni": "text", "heapint": "int"}
+    hints = {"optb": "bool", "resb": "bool", "bufe": "text", "mid": "text", "two": "int", "noargs": "int", "neg": "int", "uni": "text", "heapint": "int", "rint": "int", "obuf": "text", "rbox": "text", "first": "int", "echo": "text", "ropt": "text"}
     wrong = [dict(u, cases=[flip(u["cases"][0], hints[u["id"]])] + u["cases"][1:]) for u in syn["units"]]
     assemble("synthetic-flipped", ref, {"name": "synthetic", "units": wrong}, expect_fail=["test_%s_1" % u["id"] for u in syn["units"]])
     nsem += len(syn["units"])
@@ -435,6 +484,7 @@ for ret, heap in shapes:
         k += ":" + ("buffer" if "Result[buffer" in ret else "bool" if "Result[bool" in ret else "text" if "Result[&" in ret else "int")
     kinds.add(k)
 print("semantic: %d units, return shapes: %s; %d heap and %d heap-less shape variants" % (nsem, sorted(kinds), sum(1 for r, h in shapes if h), sum(1 for r, h in shapes if not h)))
+print("semantic: %d text values built from their bytes (not literals), %d cases built with locals (lists, vecs, bytes)" % (stat["byte-built"], stat["list/vec cases"]))
 if len(kinds) < 6:
     fail("fewer than 6 return shapes covered: %s" % sorted(kinds))
 if not any(h for r, h in shapes) or not any(not h for r, h in shapes):

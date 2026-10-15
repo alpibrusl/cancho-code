@@ -1,0 +1,87 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "parse",
+   "signature": "fn csv_parse_line[&h, &r](heap: &!h Heap, line: &r [byte]) -> [heap] result.Result[list.List[Box[Box[[byte]]]], int]",
+   "cases": [
+    {
+     "args": [
+      "a,b"
+     ],
+     "expect": {
+      "ok": [
+       "a",
+       "b"
+      ]
+     }
+    },
+    {
+     "args": [
+      ""
+     ],
+     "expect": {
+      "ok": [
+       ""
+      ]
+     }
+    },
+    {
+     "args": [
+      "a,\"b"
+     ],
+     "expect": {
+      "err": 1
+     }
+    },
+    {
+     "args": [
+      "a\"b"
+     ],
+     "expect": {
+      "err": true
+     }
+    },
+    {
+     "args": [
+      "a\"b"
+     ],
+     "expect": {
+      "err": "x"
+     }
+    },
+    {
+     "args": [
+      "\"a\"b"
+     ],
+     "expect": {
+      "err": 3
+     }
+    },
+    {
+     "args": [
+      "a,\u0001"
+     ],
+     "expect": {
+      "ok": [
+       "a",
+       "\u0001"
+      ]
+     }
+    },
+    {
+     "args": [
+      "\u00e9,\u2028"
+     ],
+     "expect": {
+      "ok": [
+       "\u00e9",
+       "\u2028"
+      ]
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

@@ -1,0 +1,32 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "fmt",
+   "signature": "fn f[&h, &l](heap: &!h Heap, fields: &l list.List[Box[Box[[byte]]]]) -> [heap] Box[[byte]]",
+   "cases": [
+    {
+     "args": [
+      [
+       "a",
+       5
+      ]
+     ],
+     "expect": "a"
+    },
+    {
+     "args": [
+      [
+       "a",
+       [
+        1
+       ]
+      ]
+     ],
+     "expect": "a"
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

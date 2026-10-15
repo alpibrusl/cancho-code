@@ -1,0 +1,20 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "pi",
+   "signature": "fn pi[&r](s: &r [byte]) -> [] result.Result[int, int]",
+   "cases": [
+    {
+     "args": [
+      "1"
+     ],
+     "expect": {
+      "err": 9223372036854775808
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

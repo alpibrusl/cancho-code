@@ -2,12 +2,12 @@
  "name": "t",
  "units": [
   {
-   "id": "count",
-   "signature": "fn count_a[&r](s: &r [byte]) -> [] int",
+   "id": "f",
+   "signature": "fn f[&h](heap: &!h Heap, x: list.List[Box[Box[[byte]]]]) -> [heap] int",
    "cases": [
     {
      "args": [
-      "a\u0000b"
+      []
      ],
      "expect": 1
     }

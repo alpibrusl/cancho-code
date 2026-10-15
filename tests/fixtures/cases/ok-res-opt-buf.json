@@ -1,0 +1,62 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "get",
+   "signature": "fn ini_get[&h, &t, &s, &k](heap: &!h Heap, text: &t [byte], section: &s [byte], key: &k [byte]) -> [heap] result.Result[option.Option[buffer.Buffer], int]",
+   "cases": [
+    {
+     "args": [
+      "a=1",
+      "",
+      "a"
+     ],
+     "expect": {
+      "ok": "1"
+     }
+    },
+    {
+     "args": [
+      "a=1",
+      "",
+      "b"
+     ],
+     "expect": {
+      "ok": null
+     }
+    },
+    {
+     "args": [
+      "[bad",
+      "",
+      "a"
+     ],
+     "expect": {
+      "err": 1
+     }
+    },
+    {
+     "args": [
+      "[bad",
+      "",
+      "a"
+     ],
+     "expect": {
+      "err": true
+     }
+    },
+    {
+     "args": [
+      "a=\u0001",
+      "",
+      "a"
+     ],
+     "expect": {
+      "ok": "\u0001"
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

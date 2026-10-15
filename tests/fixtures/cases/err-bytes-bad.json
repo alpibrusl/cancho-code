@@ -1,0 +1,67 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "cnt",
+   "signature": "fn cnt[&r](s: &r [byte]) -> [] int",
+   "cases": [
+    {
+     "args": [
+      {
+       "bytes": [
+        256
+       ]
+      }
+     ],
+     "expect": 1
+    },
+    {
+     "args": [
+      {
+       "bytes": "x"
+      }
+     ],
+     "expect": 1
+    },
+    {
+     "args": [
+      {
+       "bytes": [
+        1.5
+       ]
+      }
+     ],
+     "expect": 1
+    },
+    {
+     "args": [
+      {
+       "bytes": [
+        true
+       ]
+      }
+     ],
+     "expect": 1
+    },
+    {
+     "args": [
+      {
+       "b": []
+      }
+     ],
+     "expect": 1
+    },
+    {
+     "args": [
+      {
+       "bytes": [],
+       "x": 1
+      }
+     ],
+     "expect": 1
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

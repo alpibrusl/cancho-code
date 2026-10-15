@@ -1,0 +1,36 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "rb",
+   "signature": "fn rb(n: int) -> [] result.Result[option.Option[bool], &static [byte]]",
+   "cases": [
+    {
+     "args": [
+      1
+     ],
+     "expect": {
+      "ok": true
+     }
+    },
+    {
+     "args": [
+      0
+     ],
+     "expect": {
+      "ok": null
+     }
+    },
+    {
+     "args": [
+      -1
+     ],
+     "expect": {
+      "err": "x"
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

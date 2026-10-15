@@ -1,0 +1,20 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "f",
+   "signature": "fn f[&v](x: &v vec.Vec[int]) -> [] int",
+   "cases": [
+    {
+     "args": [
+      [
+       1
+      ]
+     ],
+     "expect": 1
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

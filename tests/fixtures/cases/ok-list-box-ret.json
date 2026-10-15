@@ -1,0 +1,66 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "fmt",
+   "signature": "fn csv_format_line[&h, &l](heap: &!h Heap, fields: &l list.List[Box[Box[[byte]]]]) -> [heap] Box[[byte]]",
+   "cases": [
+    {
+     "args": [
+      [
+       "a",
+       "b"
+      ]
+     ],
+     "expect": "a,b"
+    },
+    {
+     "args": [
+      []
+     ],
+     "expect": ""
+    },
+    {
+     "args": [
+      [
+       "",
+       ""
+      ]
+     ],
+     "expect": ","
+    },
+    {
+     "args": [
+      [
+       "x\ry",
+       {
+        "bytes": [
+         255
+        ]
+       }
+      ]
+     ],
+     "expect": {
+      "bytes": [
+       120,
+       13,
+       121,
+       44,
+       255
+      ]
+     }
+    },
+    {
+     "args": [
+      [
+       "q\"",
+       "caf\u00e9"
+      ]
+     ],
+     "expect": "\"q\"\"\",caf\u00e9"
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

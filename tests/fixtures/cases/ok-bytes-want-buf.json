@@ -7,33 +7,48 @@
    "cases": [
     {
      "args": [
-      "a\u0001"
+      "a\u0000"
      ],
-     "expect": ""
+     "expect": "A\u0000"
     },
     {
      "args": [
-      "a"
+      "\r\n"
      ],
-     "expect": "x\ry"
+     "expect": {
+      "bytes": [
+       13,
+       10
+      ]
+     }
     },
     {
      "args": [
-      "a"
+      {
+       "bytes": [
+        200,
+        201
+       ]
+      }
      ],
-     "expect": "x\u007f"
+     "expect": {
+      "bytes": [
+       200,
+       201
+      ]
+     }
     },
     {
      "args": [
-      "a\u001b"
+      ""
      ],
-     "expect": "z"
+     "expect": "\u0001"
     },
     {
      "args": [
-      "a"
+      "x"
      ],
-     "expect": "ok"
+     "expect": "\u007f\u0085"
     }
    ],
    "deps": []

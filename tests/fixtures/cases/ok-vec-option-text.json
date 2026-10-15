@@ -1,0 +1,48 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "closest",
+   "signature": "fn closest[&q, &v, &s](query: &q [byte], candidates: &v vec.Vec[&s [byte]]) -> [] option.Option[&s [byte]]",
+   "cases": [
+    {
+     "args": [
+      "kitten",
+      [
+       "sitting",
+       "mitten"
+      ]
+     ],
+     "expect": "mitten"
+    },
+    {
+     "args": [
+      "x",
+      []
+     ],
+     "expect": null
+    },
+    {
+     "args": [
+      "caf\u00e9",
+      [
+       "cafe",
+       "caf\u00e9s"
+      ]
+     ],
+     "expect": "cafe"
+    },
+    {
+     "args": [
+      "a\u0001",
+      [
+       "a"
+      ]
+     ],
+     "expect": "a"
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

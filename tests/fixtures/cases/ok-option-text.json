@@ -1,0 +1,34 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "ot",
+   "signature": "fn ot[&r](s: &r [byte]) -> [] option.Option[&r [byte]]",
+   "cases": [
+    {
+     "args": [
+      "a"
+     ],
+     "expect": "a"
+    },
+    {
+     "args": [
+      ""
+     ],
+     "expect": null
+    },
+    {
+     "args": [
+      "b"
+     ],
+     "expect": {
+      "bytes": [
+       255
+      ]
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

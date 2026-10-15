@@ -1,0 +1,39 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "parse",
+   "signature": "fn csv_parse_line[&h, &r](heap: &!h Heap, line: &r [byte]) -> [heap] result.Result[list.List[Box[Box[[byte]]]], int]",
+   "cases": [
+    {
+     "args": [
+      "a"
+     ],
+     "expect": {
+      "ok": "a"
+     }
+    },
+    {
+     "args": [
+      "a"
+     ],
+     "expect": {
+      "ok": [
+       "a",
+       1
+      ]
+     }
+    },
+    {
+     "args": [
+      "a"
+     ],
+     "expect": {
+      "err": 9223372036854775808
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

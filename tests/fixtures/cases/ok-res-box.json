@@ -1,0 +1,36 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "rx",
+   "signature": "fn rx[&h](heap: &!h Heap, n: int) -> [heap] result.Result[Box[[byte]], int]",
+   "cases": [
+    {
+     "args": [
+      1
+     ],
+     "expect": {
+      "ok": "a"
+     }
+    },
+    {
+     "args": [
+      -1
+     ],
+     "expect": {
+      "err": 4
+     }
+    },
+    {
+     "args": [
+      2
+     ],
+     "expect": {
+      "ok": "\u0000"
+     }
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

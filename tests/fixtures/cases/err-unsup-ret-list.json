@@ -3,7 +3,7 @@
  "units": [
   {
    "id": "f",
-   "signature": "fn f[&h](heap: &!h Heap) -> [heap] list.List[Box[Box[[byte]]]]",
+   "signature": "fn f[&h](heap: &!h Heap) -> [heap] list.List[int]",
    "cases": [
     {
      "args": [],

@@ -31,7 +31,7 @@ import std.bytes;
 import std.json;
 
 fn max_params() -> [] int { return 32; }
-fn sg_len() -> [] int { return 112; }
+fn sg_len() -> [] int { return 144; }
 
 fn byte_at[&t](t: &t [byte], i: int) -> [] int {
     if i < 0 || i >= len(t) {
@@ -110,7 +110,10 @@ fn is_text_type[&t](t: &t [byte]) -> [] bool {
     return r >= 0 && bytes.equal(t[r..len(t)], "[byte]");
 }
 
-// 0 int, 1 bool, 2 text, 3 heap, -1 anything else.
+// The list type the plan uses for a list of text (cancho#461: a Box of a Box).
+fn list_type() -> [] &static [byte] { return "list.List[Box[Box[[byte]]]]"; }
+
+// 0 int, 1 bool, 2 text, 3 heap, 4 list of text, 5 vec of text slices; plus 16 when the text parameter is `&static`. -1 for anything else.
 fn classify_param[&t](t: &t [byte]) -> [] int {
     if bytes.equal(t, "int") {
         return 0;
@@ -118,52 +121,93 @@ fn classify_param[&t](t: &t [byte]) -> [] int {
     if bytes.equal(t, "bool") {
         return 1;
     }
-    if is_text_type(t) {
-        return 2;
+    let r = amp_rest(t, false);
+    if r >= 0 {
+        let rest = t[r..len(t)];
+        if bytes.equal(rest, "[byte]") {
+            let e = ident_end(t, 1);
+            if bytes.equal(t[1..e], "static") {
+                return 18;
+            }
+            return 2;
+        }
+        if bytes.equal(rest, list_type()) {
+            return 4;
+        }
+        if len(rest) > 9 && bytes.starts_with(rest, "vec.Vec[") && byte_at(rest, len(rest) - 1) == 93 {
+            let (a, b) = trim_range(rest, 8, len(rest) - 1);
+            if is_text_type(rest[a..b]) {
+                return 5;
+            }
+        }
     }
-    let r = amp_rest(t, true);
-    if r >= 0 && bytes.equal(t[r..len(t)], "Heap") {
+    let h = amp_rest(t, true);
+    if h >= 0 && bytes.equal(t[h..len(t)], "Heap") {
         return 3;
     }
     return 0 - 1;
 }
 
-// The return type `t` (trimmed; `base` is where it starts in the signature). 0 when it can be expressed, else 2 with the offending
-// type's range in sg[9], sg[10].
-fn classify_ret[&t, &g](t: &t [byte], base: int, sg: &!g [int]) -> [] int {
-    sg[9] = base;
-    sg[10] = base + len(t);
+// The value kind of a plain type: 0 int, 1 bool, 2 buffer, 3 text slice, 4 list of text, 5 owned box; -1 for another.
+fn plain_v[&t](t: &t [byte]) -> [] int {
     if bytes.equal(t, "int") {
-        sg[6] = 0;
         return 0;
     }
     if bytes.equal(t, "bool") {
-        sg[6] = 1;
-        return 0;
+        return 1;
     }
     if bytes.equal(t, "buffer.Buffer") {
-        sg[6] = 2;
-        return 0;
+        return 2;
     }
     if is_text_type(t) {
-        sg[6] = 3;
-        return 0;
+        return 3;
     }
+    if bytes.equal(t, list_type()) {
+        return 4;
+    }
+    if bytes.equal(t, "Box[[byte]]") {
+        return 5;
+    }
+    return 0 - 1;
+}
+
+// `option.Option[X]` (X an int, a bool, a buffer or a text slice): the value kind of X; -2 when `t` is not an option, -1 when it is an
+// option of something else.
+fn opt_inner[&t](t: &t [byte]) -> [] int {
     let last = len(t) - 1;
     if len(t) >= 15 && bytes.starts_with(t, "option.Option[") && byte_at(t, last) == 93 {
         let (a, b) = trim_range(t, 14, last);
-        if bytes.equal(t[a..b], "int") {
-            sg[6] = 4;
-            sg[7] = 0;
-            return 0;
+        let v = plain_v(t[a..b]);
+        if v < 0 || v >= 4 {
+            return 0 - 1;
         }
-        if bytes.equal(t[a..b], "bool") {
-            sg[6] = 4;
-            sg[7] = 1;
-            return 0;
-        }
+        return v;
+    }
+    return 0 - 2;
+}
+
+// The return type `t` (trimmed; `base` is where it starts in the signature). 0 when it can be expressed, else 2 with the offending
+// type's range in sg[9], sg[10]. Writes sg[6] outer (0 plain, 1 option, 2 result), sg[7] the value kind, sg[8] the error type (0 other,
+// 1 int, 2 buffer), sg[140] 1 when a result holds an option.
+fn classify_ret[&t, &g](t: &t [byte], base: int, sg: &!g [int]) -> [] int {
+    sg[9] = base;
+    sg[10] = base + len(t);
+    let v = plain_v(t);
+    if v >= 0 {
+        sg[6] = 0;
+        sg[7] = v;
+        return 0;
+    }
+    let o = opt_inner(t);
+    if o == 0 - 1 {
         return 2;
     }
+    if o >= 0 {
+        sg[6] = 1;
+        sg[7] = o;
+        return 0;
+    }
+    let last = len(t) - 1;
     if len(t) >= 15 && bytes.starts_with(t, "result.Result[") && byte_at(t, last) == 93 {
         var depth = 0;
         var comma = 0 - 1;
@@ -185,27 +229,34 @@ fn classify_ret[&t, &g](t: &t [byte], base: int, sg: &!g [int]) -> [] int {
         let (a, b) = trim_range(t, 14, comma);
         let (c, d) = trim_range(t, comma + 1, last);
         let tt = t[a..b];
-        var tk = 0 - 1;
-        if bytes.equal(tt, "int") {
-            tk = 0;
-        } else if bytes.equal(tt, "bool") {
-            tk = 1;
-        } else if bytes.equal(tt, "buffer.Buffer") {
-            tk = 2;
-        } else if is_text_type(tt) {
-            tk = 3;
+        var e = 0;
+        if bytes.equal(t[c..d], "int") {
+            e = 1;
+        } else if bytes.equal(t[c..d], "buffer.Buffer") {
+            e = 2;
         }
-        if tk < 0 {
+        let o2 = opt_inner(tt);
+        if o2 == 0 - 1 {
             sg[9] = base + a;
             sg[10] = base + b;
             return 2;
         }
-        sg[6] = 5;
-        sg[7] = tk;
-        sg[8] = 0;
-        if bytes.equal(t[c..d], "buffer.Buffer") {
-            sg[8] = 1;
+        if o2 >= 0 {
+            sg[6] = 2;
+            sg[7] = o2;
+            sg[8] = e;
+            sg[140] = 1;
+            return 0;
         }
+        let v2 = plain_v(tt);
+        if v2 < 0 {
+            sg[9] = base + a;
+            sg[10] = base + b;
+            return 2;
+        }
+        sg[6] = 2;
+        sg[7] = v2;
+        sg[8] = e;
         return 0;
     }
     return 2;
@@ -342,7 +393,12 @@ fn parse_sig[&t, &g](t: &t [byte], sg: &!g [int]) -> [] int {
     while k < n {
         let ta = sg[12 + 2 * k];
         let tb = sg[13 + 2 * k];
-        var kind = classify_param(t[ta..tb]);
+        let code = classify_param(t[ta..tb]);
+        var kind = code;
+        if code >= 16 {
+            kind = code - 16;
+            sg[108 + k] = 1;
+        }
         if kind == 3 {
             heaps = heaps + 1;
             if heaps > 1 {
@@ -409,17 +465,24 @@ fn kind_desc[&t](tape: &t [int], i: int) -> [] &static [byte] {
     return "an object";
 }
 
-// A value problem: `st` 1 wrong kind, 2 out of range, 3 text that cannot be a literal. `vk` is what was wanted (0 int, 1 bool, 2 text);
-// `wk` names the value: 0 "argument N", 1 "expect", 2 `expect "ok"`.
-fn emit_value[&h, &w, &t](heap: &!h Heap, rep: buffer.Buffer, who: &w [byte], k: int, st: int, vk: int, wk: int, argno: int, tape: &t [int], node: int) -> [heap] buffer.Buffer {
+// A value problem: `st` 1 wrong kind, 2 out of range, 4 a "bytes" list that is not one, 5 text a &static parameter cannot take, 6 text a
+// vec cannot hold. `vk` is what was wanted (0 int, 1 bool, 2 text, 3 list of text); `wk` names the value: 0 "argument N", 1 "expect",
+// 2 `expect "ok"`, 3 `expect "err"`; `item` is the 1-based element of a list (0 for the value itself).
+fn emit_value[&h, &w, &t](heap: &!h Heap, rep: buffer.Buffer, who: &w [byte], k: int, st: int, vk: int, wk: int, argno: int, item: int, tape: &t [int], node: int) -> [heap] buffer.Buffer {
     var b = line_head(heap, rep, who, k);
     if wk == 0 {
         b = buffer.append(heap, b, "argument ");
         b = buffer.push_nat(heap, b, argno);
     } else if wk == 1 {
         b = buffer.append(heap, b, "expect");
-    } else {
+    } else if wk == 2 {
         b = buffer.append(heap, b, "expect \"ok\"");
+    } else {
+        b = buffer.append(heap, b, "expect \"err\"");
+    }
+    if item > 0 {
+        b = buffer.append(heap, b, " item ");
+        b = buffer.push_nat(heap, b, item);
     }
     if st == 1 {
         b = buffer.append(heap, b, " must be ");
@@ -427,15 +490,21 @@ fn emit_value[&h, &w, &t](heap: &!h Heap, rep: buffer.Buffer, who: &w [byte], k:
             b = buffer.append(heap, b, "a JSON integer");
         } else if vk == 1 {
             b = buffer.append(heap, b, "true or false");
-        } else {
+        } else if vk == 2 || item > 0 {
             b = buffer.append(heap, b, "a JSON string");
+        } else {
+            b = buffer.append(heap, b, "a JSON list of strings");
         }
         b = buffer.append(heap, b, ", got ");
         b = buffer.append(heap, b, kind_desc(tape, node));
     } else if st == 2 {
         b = buffer.append(heap, b, " is out of the range of int");
+    } else if st == 4 {
+        b = buffer.append(heap, b, " has a \"bytes\" list that is not a list of integers 0 to 255");
+    } else if st == 5 {
+        b = buffer.append(heap, b, " cannot be written in a cancho string literal and the parameter is &static; use another input");
     } else {
-        b = buffer.append(heap, b, " cannot be written in a cancho string literal; use another input");
+        b = buffer.append(heap, b, " cannot be written in a cancho string literal (a vec holds literals); use another input");
     }
     return buffer.push(heap, b, byte_of(10));
 }
@@ -454,52 +523,8 @@ fn put_int_lit[&h](heap: &!h Heap, out: buffer.Buffer, n: int) -> [heap] buffer.
     return buffer.push_nat(heap, b, 0 - n);
 }
 
-// The text at node `node` as a cancho string literal appended to `out`; status 3 when a byte cannot be written in one (NUL and the other
-// control bytes except newline and tab, DEL). Non-ASCII text is written as it is: a source file is UTF-8.
-fn put_text_lit[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], node: int) -> [heap] (buffer.Buffer, int) {
-    let n = json.string_length(src, tape, node);
-    let sb = box_slice(heap, n + 1, byte_of(0));
-    var o = out;
-    var st = 0;
-    borrow mut sb as &!w in {
-        let text = contents(w);
-        json.string_into(src, tape, node, text);
-        var i = 0;
-        while i < n {
-            let c = int_of(text[i]);
-            if (c < 32 && c != 9 && c != 10) || c == 127 {
-                st = 3;
-            }
-            i = i + 1;
-        }
-        if st == 0 {
-            o = buffer.push(heap, o, byte_of(34));
-            i = 0;
-            while i < n {
-                let c = int_of(text[i]);
-                if c == 34 {
-                    o = buffer.append(heap, o, "\\\"");
-                } else if c == 92 {
-                    o = buffer.append(heap, o, "\\\\");
-                } else if c == 10 {
-                    o = buffer.append(heap, o, "\\n");
-                } else if c == 9 {
-                    o = buffer.append(heap, o, "\\t");
-                } else {
-                    o = buffer.push(heap, o, text[i]);
-                }
-                i = i + 1;
-            }
-            o = buffer.push(heap, o, byte_of(34));
-        }
-    }
-    unbox_slice(heap, sb);
-    return (o, st);
-}
-
-// The JSON value at `node` as a literal of kind `vk` (0 int, 1 bool, 2 text) appended to `out`; status 0, 1 wrong kind, 2 out of range,
-// 3 text that cannot be a literal.
-fn put_lit[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, vk: int, src: &s [byte], tape: &t [int], node: int) -> [heap] (buffer.Buffer, int) {
+// An int (vk 0) or a bool (vk 1) as a literal appended to `out`; status 0, 1 wrong kind, 2 out of range.
+fn put_scalar[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, vk: int, src: &s [byte], tape: &t [int], node: int) -> [heap] (buffer.Buffer, int) {
     if vk == 0 {
         if !json.is_int(tape, node) {
             return (out, 1);
@@ -509,19 +534,169 @@ fn put_lit[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, vk: int, src: &s [byt
         }
         return (put_int_lit(heap, out, json.to_int(src, tape, node)), 0);
     }
-    if vk == 1 {
-        if !json.is_bool(tape, node) {
-            return (out, 1);
-        }
-        if json.to_bool(tape, node) {
-            return (buffer.append(heap, out, "true"), 0);
-        }
-        return (buffer.append(heap, out, "false"), 0);
-    }
-    if !json.is_string(tape, node) {
+    if !json.is_bool(tape, node) {
         return (out, 1);
     }
-    return put_text_lit(heap, out, src, tape, node);
+    if json.to_bool(tape, node) {
+        return (buffer.append(heap, out, "true"), 0);
+    }
+    return (buffer.append(heap, out, "false"), 0);
+}
+
+fn cont_ok[&t](t: &t [byte], i: int, k: int, lo: int, hi: int) -> [] bool {
+    let c = byte_at(t, i + k);
+    return c >= lo && c <= hi;
+}
+
+// The valid UTF-8 sequence at `i`: its length and code point, or (0, 0).
+fn utf8_seq[&t](t: &t [byte], i: int) -> [] (int, int) {
+    let c = byte_at(t, i);
+    if c >= 194 && c <= 223 && cont_ok(t, i, 1, 128, 191) {
+        return (2, ((c & 31) << 6) | (byte_at(t, i + 1) & 63));
+    }
+    if c >= 224 && c <= 239 {
+        var lo = 128;
+        var hi = 191;
+        if c == 224 {
+            lo = 160;
+        }
+        if c == 237 {
+            hi = 159;
+        }
+        if cont_ok(t, i, 1, lo, hi) && cont_ok(t, i, 2, 128, 191) {
+            return (3, ((c & 15) << 12) | ((byte_at(t, i + 1) & 63) << 6) | (byte_at(t, i + 2) & 63));
+        }
+    }
+    if c >= 240 && c <= 244 {
+        var lo = 128;
+        var hi = 191;
+        if c == 240 {
+            lo = 144;
+        }
+        if c == 244 {
+            hi = 143;
+        }
+        if cont_ok(t, i, 1, lo, hi) && cont_ok(t, i, 2, 128, 191) && cont_ok(t, i, 3, 128, 191) {
+            return (4, ((c & 7) << 18) | ((byte_at(t, i + 1) & 63) << 12) | ((byte_at(t, i + 2) & 63) << 6) | (byte_at(t, i + 3) & 63));
+        }
+    }
+    return (0, 0);
+}
+
+fn is_escaped(c: int) -> [] bool {
+    return c == 34 || c == 92 || c == 10 || c == 9 || c == 13 || c == 0;
+}
+
+// Can every byte of `t` be written in a cancho string literal? The lexer takes printable ASCII, the escapes \" \\ \n \t \r \0 and UTF-8
+// text; the other control bytes, DEL, the C1 controls, U+2028, U+2029, U+FEFF and bytes that are not UTF-8 are built from hex instead.
+fn lit_ok[&t](t: &t [byte]) -> [] bool {
+    var i = 0;
+    while i < len(t) {
+        let c = int_of(t[i]);
+        if is_escaped(c) || (c >= 32 && c <= 126) {
+            i = i + 1;
+        } else {
+            let (n, cp) = utf8_seq(t, i);
+            if n == 0 || cp < 160 || cp == 8232 || cp == 8233 || cp == 65279 {
+                return false;
+            }
+            i = i + n;
+        }
+    }
+    return true;
+}
+
+// `t` as a string literal (only when `lit_ok`).
+fn put_lit_text[&h, &t](heap: &!h Heap, out: buffer.Buffer, t: &t [byte]) -> [heap] buffer.Buffer {
+    var o = buffer.push(heap, out, byte_of(34));
+    var i = 0;
+    while i < len(t) {
+        let c = int_of(t[i]);
+        if c == 34 {
+            o = buffer.append(heap, o, "\\\"");
+            i = i + 1;
+        } else if c == 92 {
+            o = buffer.append(heap, o, "\\\\");
+            i = i + 1;
+        } else if c == 10 {
+            o = buffer.append(heap, o, "\\n");
+            i = i + 1;
+        } else if c == 9 {
+            o = buffer.append(heap, o, "\\t");
+            i = i + 1;
+        } else if c == 13 {
+            o = buffer.append(heap, o, "\\r");
+            i = i + 1;
+        } else if c == 0 {
+            o = buffer.append(heap, o, "\\0");
+            i = i + 1;
+        } else if c >= 32 && c <= 126 {
+            o = buffer.push(heap, o, t[i]);
+            i = i + 1;
+        } else {
+            let (n, cp) = utf8_seq(t, i);
+            o = buffer.append(heap, o, t[i..i + n]);
+            i = i + n;
+        }
+    }
+    return buffer.push(heap, o, byte_of(34));
+}
+
+fn hex_digit(n: int) -> [] byte {
+    if n < 10 {
+        return byte_of(48 + n);
+    }
+    return byte_of(87 + n);
+}
+
+fn put_hex[&h, &t](heap: &!h Heap, out: buffer.Buffer, t: &t [byte]) -> [heap] buffer.Buffer {
+    var o = out;
+    var i = 0;
+    while i < len(t) {
+        let c = int_of(t[i]);
+        o = buffer.push(heap, o, hex_digit(c / 16));
+        o = buffer.push(heap, o, hex_digit(c % 16));
+        i = i + 1;
+    }
+    return o;
+}
+
+// A text value of the plan as bytes: a JSON string (its UTF-8) or {"bytes": [0..255, ...]}. The bytes in a box of n + 1, the count n and a
+// status: 0, 1 not a text, 4 a "bytes" list that is not a list of integers 0 to 255.
+fn fetch_text[&h, &s, &t](heap: &!h Heap, src: &s [byte], tape: &t [int], node: int) -> [heap] (Box[[byte]], int, int) {
+    if json.is_string(tape, node) {
+        let n = json.string_length(src, tape, node);
+        let b = box_slice(heap, n + 1, byte_of(0));
+        borrow mut b as &!w in {
+            json.string_into(src, tape, node, contents(w));
+        }
+        return (b, n, 0);
+    }
+    if json.is_object(tape, node) && json.count(tape, node) == 1 && json.get(src, tape, node, "bytes") >= 0 {
+        let bn = json.get(src, tape, node, "bytes");
+        if !json.is_array(tape, bn) {
+            return (box_slice(heap, 1, byte_of(0)), 0, 4);
+        }
+        let cnt = json.count(tape, bn);
+        let b = box_slice(heap, cnt + 1, byte_of(0));
+        var st = 0;
+        borrow mut b as &!w in {
+            let text = contents(w);
+            var j = bn + 1;
+            var i = 0;
+            while i < cnt {
+                if json.is_int(tape, j) && json.fits_int(src, tape, j) && json.to_int(src, tape, j) >= 0 && json.to_int(src, tape, j) <= 255 {
+                    text[i] = byte_of(json.to_int(src, tape, j));
+                } else {
+                    st = 4;
+                }
+                j = json.skip(tape, j);
+                i = i + 1;
+            }
+        }
+        return (b, cnt, st);
+    }
+    return (box_slice(heap, 1, byte_of(0)), 0, 1);
 }
 
 // ---- the generated code ---------------------------------------------------------
@@ -534,18 +709,59 @@ res struct Gen {
     // the example lines (NUL after each)
     exs: buffer.Buffer,
     nex: int,
-    // bit h: helper h is used (1 is, 2 some, 3 none, 4 ok, 5 err)
+    // bit h: helper h is used (1 is, 2 some, 3 none, 4 ok, 5 err, 6 errn, 7 oksome, 8 oknone); bit 9 mk, 10 unhex, 11 ldrop
     used: int,
     errs: int,
+}
+
+// A text-like value as the generated code uses it: the expression, how it is documented, the statements that build it and free it, and
+// the name of the local (empty when the value is a literal).
+res struct Val {
+    vexpr: buffer.Buffer,
+    vdoc: buffer.Buffer,
+    vlocs: buffer.Buffer,
+    vdrops: buffer.Buffer,
+    vnm: buffer.Buffer,
+    vnodoc: int,
+    vfeats: int,
+    vst: int,
+    vitem: int,
+    venode: int,
 }
 
 // One case, in pieces.
 res struct Parts {
     call: buffer.Buffer,
+    calld: buffer.Buffer,
     want: buffer.Buffer,
-    doc: buffer.Buffer,
+    wantd: buffer.Buffer,
+    locs: buffer.Buffer,
+    opens: buffer.Buffer,
+    drops: buffer.Buffer,
     rep: buffer.Buffer,
-    helper: int,
+    nopen: int,
+    nodoc: int,
+    feats: int,
+}
+
+fn val_new[&h](heap: &!h Heap) -> [heap] Val {
+    return Val { vexpr: buffer.empty(heap, 32), vdoc: buffer.empty(heap, 32), vlocs: buffer.empty(heap, 16), vdrops: buffer.empty(heap, 16), vnm: buffer.empty(heap, 8), vnodoc: 0, vfeats: 0, vst: 0, vitem: 0, venode: 0 - 1 };
+}
+
+fn parts_new[&h](heap: &!h Heap, rep: buffer.Buffer) -> [heap] Parts {
+    return Parts { call: buffer.empty(heap, 64), calld: buffer.empty(heap, 64), want: buffer.empty(heap, 32), wantd: buffer.empty(heap, 32), locs: buffer.empty(heap, 16), opens: buffer.empty(heap, 16), drops: buffer.empty(heap, 16), rep: rep, nopen: 0, nodoc: 0, feats: 0 };
+}
+
+fn parts_drop[&h](heap: &!h Heap, p: Parts) -> [heap] buffer.Buffer {
+    let Parts { call, calld, want, wantd, locs, opens, drops, rep, nopen, nodoc, feats } = p;
+    buffer.drop(heap, call);
+    buffer.drop(heap, calld);
+    buffer.drop(heap, want);
+    buffer.drop(heap, wantd);
+    buffer.drop(heap, locs);
+    buffer.drop(heap, opens);
+    buffer.drop(heap, drops);
+    return rep;
 }
 
 fn helper_name(h: int) -> [] &static [byte] {
@@ -561,132 +777,468 @@ fn helper_name(h: int) -> [] &static [byte] {
     if h == 4 {
         return "ok";
     }
-    return "err";
+    if h == 5 {
+        return "err";
+    }
+    if h == 6 {
+        return "errn";
+    }
+    if h == 7 {
+        return "oksome";
+    }
+    return "oknone";
 }
 
-// The value kind of a result's or option's payload as a literal kind: int 0, bool 1, text 2.
-fn payload_vk(tk: int) -> [] int {
-    if tk == 0 {
-        return 0;
+fn put_name[&h](heap: &!h Heap, b: buffer.Buffer, isw: bool, argno: int) -> [heap] buffer.Buffer {
+    if isw {
+        return buffer.append(heap, b, "w");
     }
-    if tk == 1 {
-        return 1;
-    }
-    return 2;
+    return buffer.push_nat(heap, buffer.append(heap, b, "a"), argno);
 }
 
-// Validate one case and write its pieces: the call's arguments (with `heap` where the signature has it), the `want` literal, the text
-// that goes after `==` in an example, and which helper compares (0 none: a direct comparison). `helper` is -1 when the case was reported.
-fn case_parts[&h, &s, &t, &w, &g](heap: &!h Heap, p: Parts, src: &s [byte], tape: &t [int], cn: int, k: int, who: &w [byte], sg: &!g [int]) -> [heap] Parts {
-    let Parts { call, want, doc, rep, helper } = p;
-    var call_b = call;
-    var want_b = want;
-    var doc_b = doc;
-    var rep_b = rep;
+// A text for an argument or a want: a literal when it can be one, else a local built from its hex (`isw`: the want, else argument `argno`).
+fn text_val[&h, &s, &t, &d](heap: &!h Heap, v: Val, src: &s [byte], tape: &t [int], node: int, sid: &d [byte], isw: bool, argno: int, static: bool) -> [heap] Val {
+    let Val { vexpr, vdoc, vlocs, vdrops, vnm, vnodoc, vfeats, vst, vitem, venode } = v;
+    var e = vexpr;
+    var dc = vdoc;
+    var lc = vlocs;
+    var dr = vdrops;
+    var nmv = vnm;
+    var nd = vnodoc;
+    var ft = vfeats;
+    let (b, n, st0) = fetch_text(heap, src, tape, node);
+    var stn = st0;
+    borrow mut b as &!bw in {
+        let text = contents(bw)[0..n];
+        if st0 == 0 {
+            if lit_ok(text) {
+                e = put_lit_text(heap, e, text);
+                dc = put_lit_text(heap, dc, text);
+            } else if static {
+                stn = 5;
+            } else {
+                nd = 1;
+                ft = ft | 2;
+                nmv = put_name(heap, nmv, isw, argno);
+                borrow nmv as &nr in {
+                    let name = buffer.bytes(nr);
+                    lc = buffer.append(heap, lc, "let ");
+                    lc = buffer.append(heap, lc, name);
+                    lc = buffer.append(heap, lc, " = cases_");
+                    lc = buffer.append(heap, lc, sid);
+                    lc = buffer.append(heap, lc, "_unhex(heap, \"");
+                    lc = put_hex(heap, lc, text);
+                    lc = buffer.append(heap, lc, "\");");
+                    dr = buffer.append(heap, dr, "unbox_slice(heap, ");
+                    dr = buffer.append(heap, dr, name);
+                    dr = buffer.append(heap, dr, ");");
+                    e = buffer.append(heap, e, "contents(r");
+                    e = buffer.append(heap, e, name);
+                    e = buffer.append(heap, e, ")");
+                }
+            }
+        }
+    }
+    unbox_slice(heap, b);
+    return Val { vexpr: e, vdoc: dc, vlocs: lc, vdrops: dr, vnm: nmv, vnodoc: nd, vfeats: ft, vst: stn, vitem: 0, venode: node };
+}
+
+// A list of text (a vec of literals when `isvec`) for an argument or a want.
+fn list_val[&h, &s, &t, &d](heap: &!h Heap, v: Val, src: &s [byte], tape: &t [int], node: int, sid: &d [byte], isw: bool, argno: int, isvec: bool) -> [heap] Val {
+    let Val { vexpr, vdoc, vlocs, vdrops, vnm, vnodoc, vfeats, vst, vitem, venode } = v;
+    var e = vexpr;
+    var dc = vdoc;
+    var lc = vlocs;
+    var dr = vdrops;
+    var nmv = vnm;
+    var nd = vnodoc;
+    var ft = vfeats;
+    var stn = 0;
+    var it = 0;
+    var en = node;
+    if !json.is_array(tape, node) {
+        stn = 1;
+    } else {
+        let cnt = json.count(tape, node);
+        dc = buffer.append(heap, dc, "[");
+        var j = node + 1;
+        var i = 1;
+        while i <= cnt && stn == 0 {
+            let (b, n, st0) = fetch_text(heap, src, tape, j);
+            borrow mut b as &!bw in {
+                let text = contents(bw)[0..n];
+                if st0 != 0 {
+                    stn = st0;
+                    it = i;
+                    en = j;
+                } else if lit_ok(text) {
+                    if i > 1 {
+                        dc = buffer.append(heap, dc, ", ");
+                    }
+                    dc = put_lit_text(heap, dc, text);
+                } else if isvec {
+                    stn = 6;
+                    it = i;
+                    en = j;
+                } else {
+                    nd = 1;
+                }
+            }
+            unbox_slice(heap, b);
+            j = json.skip(tape, j);
+            i = i + 1;
+        }
+        dc = buffer.append(heap, dc, "]");
+        if stn == 0 {
+            nmv = put_name(heap, nmv, isw, argno);
+            borrow nmv as &nr in {
+                let name = buffer.bytes(nr);
+                if isvec {
+                    lc = buffer.append(heap, lc, "var ");
+                    lc = buffer.append(heap, lc, name);
+                    lc = buffer.append(heap, lc, " = vec.empty(heap, ");
+                    lc = buffer.push_nat(heap, lc, cnt + 1);
+                    lc = buffer.append(heap, lc, ", \"\");");
+                    var k = 0;
+                    while k < cnt {
+                        let (b, n, st0) = fetch_text(heap, src, tape, json.at(tape, node, k));
+                        borrow mut b as &!bw in {
+                            lc = buffer.append(heap, lc, " ");
+                            lc = buffer.append(heap, lc, name);
+                            lc = buffer.append(heap, lc, " = vec.push(heap, ");
+                            lc = buffer.append(heap, lc, name);
+                            lc = buffer.append(heap, lc, ", ");
+                            lc = put_lit_text(heap, lc, contents(bw)[0..n]);
+                            lc = buffer.append(heap, lc, ");");
+                        }
+                        unbox_slice(heap, b);
+                        k = k + 1;
+                    }
+                    dr = buffer.append(heap, dr, "vec.drop(heap, ");
+                    dr = buffer.append(heap, dr, name);
+                    dr = buffer.append(heap, dr, ");");
+                } else {
+                    ft = ft | 4;
+                    lc = buffer.append(heap, lc, "var ");
+                    lc = buffer.append(heap, lc, name);
+                    lc = buffer.append(heap, lc, ": list.List[Box[Box[[byte]]]] = list.List::Empty;");
+                    var k = cnt;
+                    while k > 0 {
+                        let (b, n, st0) = fetch_text(heap, src, tape, json.at(tape, node, k - 1));
+                        borrow mut b as &!bw in {
+                            let text = contents(bw)[0..n];
+                            lc = buffer.append(heap, lc, " ");
+                            lc = buffer.append(heap, lc, name);
+                            lc = buffer.append(heap, lc, " = list.push(heap, ");
+                            lc = buffer.append(heap, lc, name);
+                            lc = buffer.append(heap, lc, ", box(heap, cases_");
+                            lc = buffer.append(heap, lc, sid);
+                            if lit_ok(text) {
+                                ft = ft | 1;
+                                lc = buffer.append(heap, lc, "_mk(heap, ");
+                                lc = put_lit_text(heap, lc, text);
+                                lc = buffer.append(heap, lc, ")");
+                            } else {
+                                ft = ft | 2;
+                                lc = buffer.append(heap, lc, "_unhex(heap, \"");
+                                lc = put_hex(heap, lc, text);
+                                lc = buffer.append(heap, lc, "\")");
+                            }
+                            lc = buffer.append(heap, lc, "));");
+                        }
+                        unbox_slice(heap, b);
+                        k = k - 1;
+                    }
+                    dr = buffer.append(heap, dr, "cases_");
+                    dr = buffer.append(heap, dr, sid);
+                    dr = buffer.append(heap, dr, "_ldrop(heap, ");
+                    dr = buffer.append(heap, dr, name);
+                    dr = buffer.append(heap, dr, ");");
+                }
+                e = buffer.append(heap, e, "r");
+                e = buffer.append(heap, e, name);
+            }
+        }
+    }
+    return Val { vexpr: e, vdoc: dc, vlocs: lc, vdrops: dr, vnm: nmv, vnodoc: nd, vfeats: ft, vst: stn, vitem: it, venode: en };
+}
+
+// An int or a bool.
+fn scalar_val[&h, &s, &t](heap: &!h Heap, v: Val, vk: int, src: &s [byte], tape: &t [int], node: int) -> [heap] Val {
+    let Val { vexpr, vdoc, vlocs, vdrops, vnm, vnodoc, vfeats, vst, vitem, venode } = v;
+    let (e, s1) = put_scalar(heap, vexpr, vk, src, tape, node);
+    var dc = vdoc;
+    if s1 == 0 {
+        borrow e as &er in {
+            dc = buffer.append(heap, dc, buffer.bytes(er));
+        }
+    }
+    return Val { vexpr: e, vdoc: dc, vlocs: vlocs, vdrops: vdrops, vnm: vnm, vnodoc: vnodoc, vfeats: vfeats, vst: s1, vitem: 0, venode: node };
+}
+
+fn buf_text[&h, &b](heap: &!h Heap, out: buffer.Buffer, b: &b buffer.Buffer) -> [heap] buffer.Buffer {
+    return buffer.append(heap, out, buffer.bytes(b));
+}
+
+// Take a value into the case: `sep` puts ", " first; the want (`to_want`) or an argument; `pre` and `post` wrap the doc of a want.
+fn absorb[&h, &a, &b](heap: &!h Heap, p: Parts, v: Val, to_want: bool, sep: bool, pre: &a [byte], post: &b [byte]) -> [heap] Parts {
+    let Parts { call, calld, want, wantd, locs, opens, drops, rep, nopen, nodoc, feats } = p;
+    let Val { vexpr, vdoc, vlocs, vdrops, vnm, vnodoc, vfeats, vst, vitem, venode } = v;
+    var c = call;
+    var cd = calld;
+    var w = want;
+    var wd = wantd;
+    var lc = locs;
+    var op = opens;
+    var dr = drops;
+    var nn = nopen;
+    var vsize = 0;
+    borrow vlocs as &lr in {
+        vsize = buffer.size(lr);
+    }
+    if to_want {
+        borrow vexpr as &er in {
+            w = buffer.append(heap, w, buffer.bytes(er));
+        }
+        wd = buffer.append(heap, wd, pre);
+        borrow vdoc as &dr2 in {
+            wd = buffer.append(heap, wd, buffer.bytes(dr2));
+        }
+        wd = buffer.append(heap, wd, post);
+    } else {
+        if sep {
+            c = buffer.append(heap, c, ", ");
+            cd = buffer.append(heap, cd, ", ");
+        }
+        borrow vexpr as &er in {
+            c = buffer.append(heap, c, buffer.bytes(er));
+        }
+        borrow vdoc as &dr2 in {
+            cd = buffer.append(heap, cd, buffer.bytes(dr2));
+        }
+    }
+    if vsize > 0 {
+        borrow vlocs as &lr in {
+            lc = buffer.append(heap, lc, buffer.bytes(lr));
+        }
+        lc = buffer.append(heap, lc, " ");
+        borrow vnm as &nr in {
+            op = buffer.append(heap, op, "borrow ");
+            op = buffer.append(heap, op, buffer.bytes(nr));
+            op = buffer.append(heap, op, " as &r");
+            op = buffer.append(heap, op, buffer.bytes(nr));
+            op = buffer.append(heap, op, " in { ");
+        }
+        nn = nn + 1;
+        borrow vdrops as &xr in {
+            dr = buffer.append(heap, dr, buffer.bytes(xr));
+        }
+        dr = buffer.append(heap, dr, " ");
+    }
+    buffer.drop(heap, vexpr);
+    buffer.drop(heap, vdoc);
+    buffer.drop(heap, vlocs);
+    buffer.drop(heap, vdrops);
+    buffer.drop(heap, vnm);
+    return Parts { call: c, calld: cd, want: w, wantd: wd, locs: lc, opens: op, drops: dr, rep: rep, nopen: nn, nodoc: nodoc | vnodoc, feats: feats | vfeats };
+}
+
+fn parts_msg[&h, &w, &m](heap: &!h Heap, p: Parts, who: &w [byte], k: int, msg: &m [byte]) -> [heap] Parts {
+    let Parts { call, calld, want, wantd, locs, opens, drops, rep, nopen, nodoc, feats } = p;
+    return Parts { call: call, calld: calld, want: want, wantd: wantd, locs: locs, opens: opens, drops: drops, rep: emit(heap, rep, who, k, msg), nopen: nopen, nodoc: nodoc, feats: feats };
+}
+
+fn parts_wantdoc[&h, &m](heap: &!h Heap, p: Parts, text: &m [byte]) -> [heap] Parts {
+    let Parts { call, calld, want, wantd, locs, opens, drops, rep, nopen, nodoc, feats } = p;
+    return Parts { call: call, calld: calld, want: want, wantd: buffer.append(heap, wantd, text), locs: locs, opens: opens, drops: drops, rep: rep, nopen: nopen, nodoc: nodoc, feats: feats };
+}
+
+fn parts_raw[&h, &m, &n](heap: &!h Heap, p: Parts, sep: bool, expr: &m [byte], doc: &n [byte]) -> [heap] Parts {
+    let Parts { call, calld, want, wantd, locs, opens, drops, rep, nopen, nodoc, feats } = p;
+    var c = call;
+    var cd = calld;
+    if sep {
+        c = buffer.append(heap, c, ", ");
+        cd = buffer.append(heap, cd, ", ");
+    }
+    return Parts { call: buffer.append(heap, c, expr), calld: buffer.append(heap, cd, doc), want: want, wantd: wantd, locs: locs, opens: opens, drops: drops, rep: rep, nopen: nopen, nodoc: nodoc, feats: feats };
+}
+
+// The value's status, its list item and the node to describe, read before it is taken.
+fn val_status[&v](v: &v Val) -> [] (int, int, int) {
+    return (v.vst, v.vitem, v.venode);
+}
+
+// A value problem of the case, into the report.
+fn parts_vale[&h, &w, &t](heap: &!h Heap, p: Parts, who: &w [byte], k: int, st: int, vk: int, wk: int, argno: int, item: int, tape: &t [int], node: int) -> [heap] Parts {
+    let Parts { call, calld, want, wantd, locs, opens, drops, rep, nopen, nodoc, feats } = p;
+    return Parts { call: call, calld: calld, want: want, wantd: wantd, locs: locs, opens: opens, drops: drops, rep: emit_value(heap, rep, who, k, st, vk, wk, argno, item, tape, node), nopen: nopen, nodoc: nodoc, feats: feats };
+}
+
+// The want of the case (value kind `v`: 0 int, 1 bool, 2 buffer, 3 text, 4 list, 5 box) into the parts; `pre` and `post` wrap its doc. The
+// second answer is true when the value was fine.
+fn want_value[&h, &s, &t, &w, &d, &a, &b](heap: &!h Heap, p: Parts, src: &s [byte], tape: &t [int], node: int, v: int, wk: int, sid: &d [byte], who: &w [byte], k: int, pre: &a [byte], post: &b [byte]) -> [heap] (Parts, bool) {
+    var vv = val_new(heap);
+    var vk = 2;
+    if v == 0 || v == 1 {
+        vv = scalar_val(heap, vv, v, src, tape, node);
+        vk = v;
+    } else if v == 4 {
+        vv = list_val(heap, vv, src, tape, node, sid, true, 0, false);
+        vk = 3;
+    } else {
+        vv = text_val(heap, vv, src, tape, node, sid, true, 0, false);
+    }
+    var vs = 0;
+    var vit = 0;
+    var ven = 0;
+    borrow vv as &vr in {
+        let (x, y, z) = val_status(vr);
+        vs = x;
+        vit = y;
+        ven = z;
+    }
+    var pp = p;
+    if vs != 0 {
+        pp = parts_vale(heap, pp, who, k, vs, vk, wk, 0, vit, tape, ven);
+    }
+    pp = absorb(heap, pp, vv, true, false, pre, post);
+    return (pp, vs == 0);
+}
+
+// Validate one case and write its pieces. The second answer is the helper (0 a direct comparison, 1 is, 2 some, 3 none, 4 ok, 5 err,
+// 6 errn, 7 oksome, 8 oknone), or -1 when the case was reported.
+fn case_parts[&h, &s, &t, &w, &d, &g](heap: &!h Heap, p: Parts, src: &s [byte], tape: &t [int], cn: int, k: int, who: &w [byte], sid: &d [byte], sg: &!g [int]) -> [heap] (Parts, int) {
+    var pp = p;
     var hh = 0 - 1;
     let a = json.get(src, tape, cn, "args");
     let ex = json.get(src, tape, cn, "expect");
     if !json.is_object(tape, cn) || !json.is_array(tape, a) || ex < 0 {
-        rep_b = emit(heap, rep_b, who, k, "a case must be an object with \"args\" (a list) and \"expect\"");
-    } else if json.count(tape, a) != sg[5] {
-        rep_b = line_head(heap, rep_b, who, k);
-        rep_b = buffer.append(heap, rep_b, "args has ");
-        rep_b = buffer.push_nat(heap, rep_b, json.count(tape, a));
-        rep_b = buffer.append(heap, rep_b, " value(s) but the function takes ");
-        rep_b = buffer.push_nat(heap, rep_b, sg[5]);
-        rep_b = buffer.append(heap, rep_b, " (the heap is not given in args)\n");
-    } else {
-        var i = 0;
-        var ai = 0;
-        var bad = false;
-        while i < sg[4] && !bad {
-            if i > 0 {
-                call_b = buffer.append(heap, call_b, ", ");
-            }
-            let pk = sg[76 + i];
-            if pk == 3 {
-                call_b = buffer.append(heap, call_b, "heap");
-            } else {
-                let node = json.at(tape, a, ai);
-                ai = ai + 1;
-                let (nb, st) = put_lit(heap, call_b, pk, src, tape, node);
-                call_b = nb;
-                if st != 0 {
-                    rep_b = emit_value(heap, rep_b, who, k, st, pk, 0, ai, tape, node);
-                    bad = true;
-                }
-            }
-            i = i + 1;
+        pp = parts_msg(heap, pp, who, k, "a case must be an object with \"args\" (a list) and \"expect\"");
+        return (pp, 0 - 1);
+    }
+    if json.count(tape, a) != sg[5] {
+        var m = buffer.append(heap, buffer.empty(heap, 96), "args has ");
+        m = buffer.push_nat(heap, m, json.count(tape, a));
+        m = buffer.append(heap, m, " value(s) but the function takes ");
+        m = buffer.push_nat(heap, m, sg[5]);
+        m = buffer.append(heap, m, " (the heap is not given in args)");
+        borrow m as &mr in {
+            pp = parts_msg(heap, pp, who, k, buffer.bytes(mr));
         }
-        if !bad {
-            let kind = sg[6];
-            let tk = sg[7];
-            var st = 0;
-            var vk = 0;
-            var wk = 1;
-            var node = ex;
-            if kind == 0 || kind == 1 {
-                vk = kind;
-                hh = 0;
-            } else if kind == 2 || kind == 3 {
-                vk = 2;
-                hh = 1;
-            } else if kind == 4 {
-                if json.is_null(tape, ex) {
-                    doc_b = buffer.append(heap, doc_b, "option.Option::None");
-                    hh = 3;
-                } else {
-                    vk = payload_vk(tk);
-                    hh = 2;
-                }
+        buffer.drop(heap, m);
+        return (pp, 0 - 1);
+    }
+    var i = 0;
+    var ai = 0;
+    var bad = false;
+    while i < sg[4] && !bad {
+        let pk = sg[76 + i];
+        if pk == 3 {
+            pp = parts_raw(heap, pp, i > 0, "heap", "heap");
+        } else {
+            let node = json.at(tape, a, ai);
+            ai = ai + 1;
+            var vv = val_new(heap);
+            var vk = pk;
+            if pk == 0 || pk == 1 {
+                vv = scalar_val(heap, vv, pk, src, tape, node);
+            } else if pk == 2 {
+                vv = text_val(heap, vv, src, tape, node, sid, false, ai, sg[108 + i] == 1);
             } else {
-                if json.is_object(tape, ex) && json.count(tape, ex) == 1 && json.get(src, tape, ex, "err") >= 0 {
-                    doc_b = buffer.append(heap, doc_b, "result.Result::Err");
-                    hh = 5;
-                } else if json.is_object(tape, ex) && json.count(tape, ex) == 1 && json.get(src, tape, ex, "ok") >= 0 {
-                    vk = payload_vk(tk);
-                    wk = 2;
-                    node = json.get(src, tape, ex, "ok");
-                    hh = 4;
-                } else {
-                    rep_b = emit(heap, rep_b, who, k, "expect for a Result must be {\"ok\": value} or {\"err\": anything}");
+                vv = list_val(heap, vv, src, tape, node, sid, false, ai, pk == 5);
+                vk = 3;
+            }
+            if pk == 2 {
+                vk = 2;
+            }
+            var vs = 0;
+            var vit = 0;
+            var ven = 0;
+            borrow vv as &vr in {
+                let (x, y, z) = val_status(vr);
+                vs = x;
+                vit = y;
+                ven = z;
+            }
+            if vs != 0 {
+                pp = parts_vale(heap, pp, who, k, vs, vk, 0, ai, vit, tape, ven);
+                bad = true;
+            }
+            pp = absorb(heap, pp, vv, false, i > 0, "", "");
+        }
+        i = i + 1;
+    }
+    if bad {
+        return (pp, 0 - 1);
+    }
+    let outer = sg[6];
+    let v = sg[7];
+    let e = sg[8];
+    let topt = sg[140];
+    if outer == 0 {
+        let (p2, fine) = want_value(heap, pp, src, tape, ex, v, 1, sid, who, k, "", "");
+        pp = p2;
+        if fine {
+            hh = 1;
+            if v == 0 || v == 1 {
+                hh = 0;
+            }
+        }
+    } else if outer == 1 {
+        if json.is_null(tape, ex) {
+            pp = parts_wantdoc(heap, pp, "option.Option::None");
+            hh = 3;
+        } else {
+            let (p2, fine) = want_value(heap, pp, src, tape, ex, v, 1, sid, who, k, "option.Option::Some(", ")");
+            pp = p2;
+            if fine {
+                hh = 2;
+            }
+        }
+    } else if !(json.is_object(tape, ex) && json.count(tape, ex) == 1 && (json.get(src, tape, ex, "ok") >= 0 || json.get(src, tape, ex, "err") >= 0)) {
+        pp = parts_msg(heap, pp, who, k, "expect for a Result must be {\"ok\": value} or {\"err\": anything}");
+    } else if json.get(src, tape, ex, "err") >= 0 {
+        let x = json.get(src, tape, ex, "err");
+        if e == 1 && json.is_int(tape, x) {
+            let (p2, fine) = want_value(heap, pp, src, tape, x, 0, 3, sid, who, k, "result.Result::Err(", ")");
+            pp = p2;
+            if fine {
+                hh = 6;
+            }
+        } else {
+            pp = parts_wantdoc(heap, pp, "result.Result::Err");
+            hh = 5;
+        }
+    } else {
+        let x = json.get(src, tape, ex, "ok");
+        if topt == 1 {
+            if json.is_null(tape, x) {
+                pp = parts_wantdoc(heap, pp, "result.Result::Ok(option.Option::None)");
+                hh = 8;
+            } else {
+                let (p2, fine) = want_value(heap, pp, src, tape, x, v, 2, sid, who, k, "result.Result::Ok(option.Option::Some(", "))");
+                pp = p2;
+                if fine {
+                    hh = 7;
                 }
             }
-            if hh == 0 || hh == 1 || hh == 2 || hh == 4 {
-                let (nb, s2) = put_lit(heap, want_b, vk, src, tape, node);
-                want_b = nb;
-                st = s2;
-                if st != 0 {
-                    rep_b = emit_value(heap, rep_b, who, k, st, vk, wk, 0, tape, node);
-                    hh = 0 - 1;
-                } else if hh == 2 {
-                    doc_b = buffer.append(heap, doc_b, "option.Option::Some(");
-                    borrow want_b as &x in {
-                        doc_b = buffer.append(heap, doc_b, buffer.bytes(x));
-                    }
-                    doc_b = buffer.append(heap, doc_b, ")");
-                } else if hh == 4 {
-                    doc_b = buffer.append(heap, doc_b, "result.Result::Ok(");
-                    borrow want_b as &x in {
-                        doc_b = buffer.append(heap, doc_b, buffer.bytes(x));
-                    }
-                    doc_b = buffer.append(heap, doc_b, ")");
-                } else {
-                    borrow want_b as &x in {
-                        doc_b = buffer.append(heap, doc_b, buffer.bytes(x));
-                    }
-                }
+        } else {
+            let (p2, fine) = want_value(heap, pp, src, tape, x, v, 2, sid, who, k, "result.Result::Ok(", ")");
+            pp = p2;
+            if fine {
+                hh = 4;
             }
         }
     }
-    return Parts { call: call_b, want: want_b, doc: doc_b, rep: rep_b, helper: hh };
+    return (pp, hh);
 }
 
 fn do_case[&h, &s, &t, &w, &d, &n, &g](heap: &!h Heap, gen: Gen, src: &s [byte], tape: &t [int], cn: int, k: int, who: &w [byte], sid: &d [byte], name: &n [byte], sg: &!g [int]) -> [heap] Gen {
     let Gen { rep, items, exs, nex, used, errs } = gen;
-    let p = Parts { call: buffer.empty(heap, 64), want: buffer.empty(heap, 64), doc: buffer.empty(heap, 64), rep: rep, helper: 0 - 1 };
-    let done = case_parts(heap, p, src, tape, cn, k, who, sg);
-    let Parts { call, want, doc, rep, helper } = done;
+    let p = parts_new(heap, rep);
+    let (done, helper) = case_parts(heap, p, src, tape, cn, k, who, sid, sg);
+    let Parts { call, calld, want, wantd, locs, opens, drops, rep, nopen, nodoc, feats } = done;
     var items_b = items;
     var exs_b = exs;
     var nex_n = nex;
@@ -695,120 +1247,174 @@ fn do_case[&h, &s, &t, &w, &d, &n, &g](heap: &!h Heap, gen: Gen, src: &s [byte],
     if helper < 0 {
         errs_n = errs_n + 1;
     } else {
-        items_b = buffer.append(heap, items_b, "pub fn test_");
-        items_b = buffer.append(heap, items_b, sid);
-        items_b = buffer.append(heap, items_b, "_");
-        items_b = buffer.push_nat(heap, items_b, k);
-        if sg[11] == 1 {
-            items_b = buffer.append(heap, items_b, "[&h](heap: &!h Heap) -> [heap] int { ");
-        } else {
-            items_b = buffer.append(heap, items_b, "() -> [] int { ");
+        used_n = used_n | (feats << 9);
+        var wantsize = 0;
+        borrow want as &x in {
+            wantsize = buffer.size(x);
         }
         var callsize = 0;
-        borrow call as &c in {
-            callsize = buffer.size(c);
+        borrow call as &x in {
+            callsize = buffer.size(x);
         }
+        // what is compared or called: `NAME(CALL) == WANT`, or `cases_SID_HELPER(CALL, WANT)`
+        var core = buffer.empty(heap, 96);
         if helper == 0 {
-            items_b = buffer.append(heap, items_b, "test.assert(");
-            items_b = buffer.append(heap, items_b, name);
-            items_b = buffer.append(heap, items_b, "(");
-            borrow call as &c in {
-                items_b = buffer.append(heap, items_b, buffer.bytes(c));
+            core = buffer.append(heap, core, name);
+            core = buffer.append(heap, core, "(");
+            borrow call as &x in {
+                core = buffer.append(heap, core, buffer.bytes(x));
             }
-            items_b = buffer.append(heap, items_b, ") == ");
+            core = buffer.append(heap, core, ") == ");
             borrow want as &x in {
-                items_b = buffer.append(heap, items_b, buffer.bytes(x));
+                core = buffer.append(heap, core, buffer.bytes(x));
             }
-            items_b = buffer.append(heap, items_b, "); return 0; }");
         } else {
             used_n = used_n | (1 << helper);
-            items_b = buffer.append(heap, items_b, "test.assert_eq(cases_");
-            items_b = buffer.append(heap, items_b, sid);
-            items_b = buffer.append(heap, items_b, "_");
-            items_b = buffer.append(heap, items_b, helper_name(helper));
-            items_b = buffer.append(heap, items_b, "(");
-            borrow call as &c in {
-                items_b = buffer.append(heap, items_b, buffer.bytes(c));
-            }
-            var wantsize = 0;
-            borrow want as &x in {
-                wantsize = buffer.size(x);
+            core = buffer.append(heap, core, "cases_");
+            core = buffer.append(heap, core, sid);
+            core = buffer.append(heap, core, "_");
+            core = buffer.append(heap, core, helper_name(helper));
+            core = buffer.append(heap, core, "(");
+            borrow call as &x in {
+                core = buffer.append(heap, core, buffer.bytes(x));
             }
             if wantsize > 0 {
                 if callsize > 0 {
-                    items_b = buffer.append(heap, items_b, ", ");
+                    core = buffer.append(heap, core, ", ");
                 }
                 borrow want as &x in {
-                    items_b = buffer.append(heap, items_b, buffer.bytes(x));
+                    core = buffer.append(heap, core, buffer.bytes(x));
                 }
             }
-            items_b = buffer.append(heap, items_b, "), 0); return 0; }");
+            core = buffer.append(heap, core, ")");
+        }
+        if nopen > 0 {
+            items_b = buffer.append(heap, items_b, "fn cases_");
+            items_b = buffer.append(heap, items_b, sid);
+            items_b = buffer.append(heap, items_b, "_c");
+            items_b = buffer.push_nat(heap, items_b, k);
+            items_b = buffer.append(heap, items_b, "[&h](heap: &!h Heap) -> [heap] int { ");
+            borrow locs as &x in {
+                items_b = buffer.append(heap, items_b, buffer.bytes(x));
+            }
+            items_b = buffer.append(heap, items_b, "var code = 1; ");
+            borrow opens as &x in {
+                items_b = buffer.append(heap, items_b, buffer.bytes(x));
+            }
+            if helper == 0 {
+                items_b = buffer.append(heap, items_b, "if ");
+            } else {
+                items_b = buffer.append(heap, items_b, "code = ");
+            }
+            borrow core as &x in {
+                items_b = buffer.append(heap, items_b, buffer.bytes(x));
+            }
+            if helper == 0 {
+                items_b = buffer.append(heap, items_b, " { code = 0; } ");
+            } else {
+                items_b = buffer.append(heap, items_b, "; ");
+            }
+            var c = 0;
+            while c < nopen {
+                items_b = buffer.append(heap, items_b, "} ");
+                c = c + 1;
+            }
+            borrow drops as &x in {
+                items_b = buffer.append(heap, items_b, buffer.bytes(x));
+            }
+            items_b = buffer.append(heap, items_b, "return code; }");
+            items_b = buffer.push(heap, items_b, byte_of(0));
+            items_b = buffer.append(heap, items_b, "pub fn test_");
+            items_b = buffer.append(heap, items_b, sid);
+            items_b = buffer.append(heap, items_b, "_");
+            items_b = buffer.push_nat(heap, items_b, k);
+            items_b = buffer.append(heap, items_b, "[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(cases_");
+            items_b = buffer.append(heap, items_b, sid);
+            items_b = buffer.append(heap, items_b, "_c");
+            items_b = buffer.push_nat(heap, items_b, k);
+            items_b = buffer.append(heap, items_b, "(heap), 0); return 0; }");
+        } else {
+            items_b = buffer.append(heap, items_b, "pub fn test_");
+            items_b = buffer.append(heap, items_b, sid);
+            items_b = buffer.append(heap, items_b, "_");
+            items_b = buffer.push_nat(heap, items_b, k);
+            if sg[11] == 1 {
+                items_b = buffer.append(heap, items_b, "[&h](heap: &!h Heap) -> [heap] int { ");
+            } else {
+                items_b = buffer.append(heap, items_b, "() -> [] int { ");
+            }
+            if helper == 0 {
+                items_b = buffer.append(heap, items_b, "test.assert(");
+            } else {
+                items_b = buffer.append(heap, items_b, "test.assert_eq(");
+            }
+            borrow core as &x in {
+                items_b = buffer.append(heap, items_b, buffer.bytes(x));
+            }
+            if helper == 0 {
+                items_b = buffer.append(heap, items_b, "); return 0; }");
+            } else {
+                items_b = buffer.append(heap, items_b, ", 0); return 0; }");
+            }
         }
         items_b = buffer.push(heap, items_b, byte_of(0));
-        // the example: NAME(CALL) == EXPECTED
-        var ln = buffer.empty(heap, 96);
-        ln = buffer.append(heap, ln, name);
-        ln = buffer.append(heap, ln, "(");
-        borrow call as &c in {
-            ln = buffer.append(heap, ln, buffer.bytes(c));
-        }
-        ln = buffer.append(heap, ln, ") == ");
-        borrow doc as &x in {
-            ln = buffer.append(heap, ln, buffer.bytes(x));
-        }
-        var usable = true;
-        borrow call as &c in {
-            if bytes.find(buffer.bytes(c), " == ") >= 0 {
-                usable = false;
+        buffer.drop(heap, core);
+        // the example: NAME(CALL) == EXPECTED, when every part can be shown
+        if nodoc == 0 {
+            var ln = buffer.append(heap, buffer.empty(heap, 96), name);
+            ln = buffer.append(heap, ln, "(");
+            var usable = true;
+            borrow calld as &x in {
+                ln = buffer.append(heap, ln, buffer.bytes(x));
+                if bytes.find(buffer.bytes(x), " == ") >= 0 {
+                    usable = false;
+                }
             }
-        }
-        borrow ln as &l in {
-            if bytes.find(buffer.bytes(l), "|| true") >= 0 || bytes.find(buffer.bytes(l), "or true") >= 0 {
-                usable = false;
+            ln = buffer.append(heap, ln, ") == ");
+            borrow wantd as &x in {
+                ln = buffer.append(heap, ln, buffer.bytes(x));
             }
-        }
-        if usable && nex_n < 3 {
             borrow ln as &l in {
-                exs_b = buffer.append(heap, exs_b, buffer.bytes(l));
+                if bytes.find(buffer.bytes(l), "|| true") >= 0 || bytes.find(buffer.bytes(l), "or true") >= 0 {
+                    usable = false;
+                }
             }
-            exs_b = buffer.push(heap, exs_b, byte_of(0));
-            nex_n = nex_n + 1;
+            if usable && nex_n < 3 {
+                borrow ln as &l in {
+                    exs_b = buffer.append(heap, exs_b, buffer.bytes(l));
+                }
+                exs_b = buffer.push(heap, exs_b, byte_of(0));
+                nex_n = nex_n + 1;
+            }
+            buffer.drop(heap, ln);
         }
-        buffer.drop(heap, ln);
     }
     buffer.drop(heap, call);
+    buffer.drop(heap, calld);
     buffer.drop(heap, want);
-    buffer.drop(heap, doc);
+    buffer.drop(heap, wantd);
+    buffer.drop(heap, locs);
+    buffer.drop(heap, opens);
+    buffer.drop(heap, drops);
     return Gen { rep: rep, items: items_b, exs: exs_b, nex: nex_n, used: used_n, errs: errs_n };
 }
 
-// The comma-separated parameter list of a helper: `heap: &!h Heap, a1: int, a2: &static [byte]`.
-fn put_plist[&h, &g](heap: &!h Heap, out: buffer.Buffer, sg: &!g [int]) -> [heap] buffer.Buffer {
-    var b = out;
+// `tpl` with every `{s}` replaced by the unit's id.
+fn put_tpl[&h, &a, &d](heap: &!h Heap, out: buffer.Buffer, tpl: &a [byte], sid: &d [byte]) -> [heap] buffer.Buffer {
+    var o = out;
+    var from = 0;
     var i = 0;
-    var n = 0;
-    while i < sg[4] {
-        if i > 0 {
-            b = buffer.append(heap, b, ", ");
-        }
-        let pk = sg[76 + i];
-        if pk == 3 {
-            b = buffer.append(heap, b, "heap: &!h Heap");
+    while i < len(tpl) {
+        if int_of(tpl[i]) == 123 && byte_at(tpl, i + 1) == 115 && byte_at(tpl, i + 2) == 125 {
+            o = buffer.append(heap, o, tpl[from..i]);
+            o = buffer.append(heap, o, sid);
+            i = i + 3;
+            from = i;
         } else {
-            n = n + 1;
-            b = buffer.append(heap, b, "a");
-            b = buffer.push_nat(heap, b, n);
-            if pk == 0 {
-                b = buffer.append(heap, b, ": int");
-            } else if pk == 1 {
-                b = buffer.append(heap, b, ": bool");
-            } else {
-                b = buffer.append(heap, b, ": &static [byte]");
-            }
+            i = i + 1;
         }
-        i = i + 1;
     }
-    return b;
+    return buffer.append(heap, o, tpl[from..len(tpl)]);
 }
 
 // `NAME(heap, a1, a2)`.
@@ -833,134 +1439,321 @@ fn put_call[&h, &n, &g](heap: &!h Heap, out: buffer.Buffer, name: &n [byte], sg:
     return buffer.append(heap, b, ")");
 }
 
-// `fn cases_SID_NAME[&h](PARAMS, want: W) -> [row] int`; `want` is empty for a helper that takes none.
-fn put_head[&h, &d, &w, &g](heap: &!h Heap, out: buffer.Buffer, sid: &d [byte], hname: &static [byte], want: &w [byte], sg: &!g [int]) -> [heap] buffer.Buffer {
+// The region list of a helper, without the brackets: `&h, &t1, &l2, &v3, &e3, &w`.
+fn put_regions[&h, &g](heap: &!h Heap, out: buffer.Buffer, sg: &!g [int], wt: int) -> [heap] buffer.Buffer {
+    var b = out;
+    var count = 0;
+    if sg[11] == 1 {
+        b = buffer.append(heap, b, "&h");
+        count = 1;
+    }
+    var i = 0;
+    var n = 0;
+    while i < sg[4] {
+        let pk = sg[76 + i];
+        if pk != 3 {
+            n = n + 1;
+        }
+        if pk >= 2 && pk != 3 && !(pk == 2 && sg[108 + i] == 1) {
+            if count > 0 {
+                b = buffer.append(heap, b, ", ");
+            }
+            count = count + 1;
+            if pk == 2 {
+                b = buffer.push_nat(heap, buffer.append(heap, b, "&t"), n);
+            } else if pk == 4 {
+                b = buffer.push_nat(heap, buffer.append(heap, b, "&l"), n);
+            } else {
+                b = buffer.push_nat(heap, buffer.append(heap, b, "&v"), n);
+                b = buffer.push_nat(heap, buffer.append(heap, b, ", &e"), n);
+            }
+        }
+        i = i + 1;
+    }
+    if wt >= 3 {
+        if count > 0 {
+            b = buffer.append(heap, b, ", ");
+        }
+        b = buffer.append(heap, b, "&w");
+    }
+    return b;
+}
+
+// The parameter list of a helper: `heap: &!h Heap, a1: int, a2: &t2 [byte]`, then `want`.
+fn put_plist[&h, &g](heap: &!h Heap, out: buffer.Buffer, sg: &!g [int], wt: int) -> [heap] buffer.Buffer {
+    var b = out;
+    var i = 0;
+    var n = 0;
+    while i < sg[4] {
+        if i > 0 {
+            b = buffer.append(heap, b, ", ");
+        }
+        let pk = sg[76 + i];
+        if pk == 3 {
+            b = buffer.append(heap, b, "heap: &!h Heap");
+        } else {
+            n = n + 1;
+            b = buffer.push_nat(heap, buffer.append(heap, b, "a"), n);
+            if pk == 0 {
+                b = buffer.append(heap, b, ": int");
+            } else if pk == 1 {
+                b = buffer.append(heap, b, ": bool");
+            } else if pk == 2 && sg[108 + i] == 1 {
+                b = buffer.append(heap, b, ": &static [byte]");
+            } else if pk == 2 {
+                b = buffer.push_nat(heap, buffer.append(heap, b, ": &t"), n);
+                b = buffer.append(heap, b, " [byte]");
+            } else if pk == 4 {
+                b = buffer.push_nat(heap, buffer.append(heap, b, ": &l"), n);
+                b = buffer.append(heap, b, " list.List[Box[Box[[byte]]]]");
+            } else {
+                b = buffer.push_nat(heap, buffer.append(heap, b, ": &v"), n);
+                b = buffer.append(heap, b, " vec.Vec[&e");
+                b = buffer.push_nat(heap, b, n);
+                b = buffer.append(heap, b, " [byte]]");
+            }
+        }
+        i = i + 1;
+    }
+    if wt > 0 {
+        if sg[4] > 0 {
+            b = buffer.append(heap, b, ", ");
+        }
+        if wt == 1 {
+            b = buffer.append(heap, b, "want: int");
+        } else if wt == 2 {
+            b = buffer.append(heap, b, "want: bool");
+        } else if wt == 3 {
+            b = buffer.append(heap, b, "want: &w [byte]");
+        } else {
+            b = buffer.append(heap, b, "want: &w list.List[Box[Box[[byte]]]]");
+        }
+    }
+    return b;
+}
+
+// `fn cases_SID_NAME[regions](params) -> row int`; `wt` is the type of `want`: 0 none, 1 int, 2 bool, 3 text, 4 list.
+fn put_head[&h, &d, &g](heap: &!h Heap, out: buffer.Buffer, sid: &d [byte], hname: &static [byte], sg: &!g [int], wt: int) -> [heap] buffer.Buffer {
     var b = buffer.append(heap, out, "fn cases_");
     b = buffer.append(heap, b, sid);
     b = buffer.append(heap, b, "_");
     b = buffer.append(heap, b, hname);
-    if sg[11] == 1 {
-        b = buffer.append(heap, b, "[&h]");
-    }
-    b = buffer.append(heap, b, "(");
-    b = put_plist(heap, b, sg);
-    if len(want) > 0 {
-        if sg[4] > 0 {
-            b = buffer.append(heap, b, ", ");
+    let regs = put_regions(heap, buffer.empty(heap, 32), sg, wt);
+    var nreg = 0;
+    borrow regs as &rr in {
+        nreg = buffer.size(rr);
+        if nreg > 0 {
+            b = buffer.append(heap, b, "[");
+            b = buffer.append(heap, b, buffer.bytes(rr));
+            b = buffer.append(heap, b, "]");
         }
-        b = buffer.append(heap, b, "want: ");
-        b = buffer.append(heap, b, want);
     }
+    buffer.drop(heap, regs);
+    b = buffer.append(heap, b, "(");
+    b = put_plist(heap, b, sg, wt);
     if sg[11] == 1 {
         return buffer.append(heap, b, ") -> [heap] int");
     }
     return buffer.append(heap, b, ") -> [] int");
 }
 
-// `var same = false; borrow VAR as &x in { ... } buffer.drop(heap, VAR); if same { return 0; } return 1;`
-fn put_cmp_buf[&h, &d](heap: &!h Heap, out: buffer.Buffer, sid: &d [byte], var_name: &static [byte]) -> [heap] buffer.Buffer {
-    var b = buffer.append(heap, out, "var same = false; borrow ");
+// The statements that compare `var` (of value kind `v`) with `want`, free it, and answer 0 or 1.
+fn put_cmp[&h, &d](heap: &!h Heap, out: buffer.Buffer, sid: &d [byte], var_name: &static [byte], v: int) -> [heap] buffer.Buffer {
+    var b = out;
+    if v == 0 || v == 1 {
+        b = buffer.append(heap, b, "if ");
+        b = buffer.append(heap, b, var_name);
+        return buffer.append(heap, b, " == want { return 0; } return 1;");
+    }
+    if v == 3 {
+        b = buffer.append(heap, b, "if cases_");
+        b = buffer.append(heap, b, sid);
+        b = buffer.append(heap, b, "_same(");
+        b = buffer.append(heap, b, var_name);
+        return buffer.append(heap, b, ", want) { return 0; } return 1;");
+    }
+    b = buffer.append(heap, b, "var same = false; borrow ");
     b = buffer.append(heap, b, var_name);
     b = buffer.append(heap, b, " as &x in { same = cases_");
     b = buffer.append(heap, b, sid);
-    b = buffer.append(heap, b, "_same(buffer.bytes(x), want); } buffer.drop(heap, ");
+    if v == 2 {
+        b = buffer.append(heap, b, "_same(buffer.bytes(x), want); } buffer.drop(heap, ");
+    } else if v == 5 {
+        b = buffer.append(heap, b, "_same(contents(x), want); } unbox_slice(heap, ");
+    } else {
+        b = buffer.append(heap, b, "_leq(x, want); } cases_");
+        b = buffer.append(heap, b, sid);
+        b = buffer.append(heap, b, "_ldrop(heap, ");
+    }
     b = buffer.append(heap, b, var_name);
     return buffer.append(heap, b, "); if same { return 0; } return 1;");
 }
 
-fn want_type(tk: int) -> [] &static [byte] {
-    if tk == 0 {
-        return "int";
+fn has_drop(v: int) -> [] bool {
+    return v == 2 || v == 4 || v == 5;
+}
+
+// The statement that frees `var` (of value kind `v`, which has something to free).
+fn put_drop[&h, &d](heap: &!h Heap, out: buffer.Buffer, sid: &d [byte], var_name: &static [byte], v: int) -> [heap] buffer.Buffer {
+    var b = out;
+    if v == 2 {
+        b = buffer.append(heap, b, "buffer.drop(heap, ");
+    } else if v == 5 {
+        b = buffer.append(heap, b, "unbox_slice(heap, ");
+    } else {
+        b = buffer.append(heap, b, "cases_");
+        b = buffer.append(heap, b, sid);
+        b = buffer.append(heap, b, "_ldrop(heap, ");
     }
-    if tk == 1 {
-        return "bool";
+    b = buffer.append(heap, b, var_name);
+    return buffer.append(heap, b, ");");
+}
+
+// `option.Option::Some(v) => { DROP return CODE; }` (or `Some(_)` when there is nothing to free).
+fn put_some_arm[&h, &d](heap: &!h Heap, out: buffer.Buffer, sid: &d [byte], v: int, code: int) -> [heap] buffer.Buffer {
+    var b = out;
+    if has_drop(v) {
+        b = buffer.append(heap, b, "option.Option::Some(v) => { ");
+        b = put_drop(heap, b, sid, "v", v);
+        b = buffer.append(heap, b, " return ");
+    } else {
+        b = buffer.append(heap, b, "option.Option::Some(_) => { return ");
     }
-    return "&static [byte]";
+    b = buffer.push_nat(heap, b, code);
+    return buffer.append(heap, b, "; }");
+}
+
+fn put_err_arm[&h](heap: &!h Heap, out: buffer.Buffer, e: int, code: int) -> [heap] buffer.Buffer {
+    var b = out;
+    if e == 2 {
+        b = buffer.append(heap, b, "result.Result::Err(e) => { buffer.drop(heap, e); return ");
+    } else {
+        b = buffer.append(heap, b, "result.Result::Err(_) => { return ");
+    }
+    b = buffer.push_nat(heap, b, code);
+    return buffer.append(heap, b, "; }");
+}
+
+// The `Ok` arm that frees what it holds and answers `code`.
+fn put_ok_drop_arm[&h, &d](heap: &!h Heap, out: buffer.Buffer, sid: &d [byte], v: int, topt: int, code: int) -> [heap] buffer.Buffer {
+    var b = out;
+    if topt == 1 {
+        b = buffer.append(heap, b, "result.Result::Ok(o) => { match o { ");
+        b = put_some_arm(heap, b, sid, v, code);
+        b = buffer.append(heap, b, " option.Option::None => { return ");
+        b = buffer.push_nat(heap, b, code);
+        return buffer.append(heap, b, "; } } }");
+    }
+    if has_drop(v) {
+        b = buffer.append(heap, b, "result.Result::Ok(v) => { ");
+        b = put_drop(heap, b, sid, "v", v);
+        b = buffer.append(heap, b, " return ");
+    } else {
+        b = buffer.append(heap, b, "result.Result::Ok(_) => { return ");
+    }
+    b = buffer.push_nat(heap, b, code);
+    return buffer.append(heap, b, "; }");
+}
+
+// The type of `want` for helper `which`.
+fn want_kind(which: int, v: int) -> [] int {
+    if which == 3 || which == 5 || which == 8 {
+        return 0;
+    }
+    if which == 6 || v == 0 {
+        return 1;
+    }
+    if v == 1 {
+        return 2;
+    }
+    if v == 4 {
+        return 4;
+    }
+    return 3;
 }
 
 // One helper, ended with a NUL.
 fn put_helper[&h, &d, &n, &g](heap: &!h Heap, out: buffer.Buffer, sid: &d [byte], name: &n [byte], sg: &!g [int], which: int) -> [heap] buffer.Buffer {
-    var b = out;
-    let kind = sg[6];
-    let tk = sg[7];
+    let v = sg[7];
+    let e = sg[8];
+    let topt = sg[140];
+    var b = put_head(heap, out, sid, helper_name(which), sg, want_kind(which, v));
+    b = buffer.append(heap, b, " { ");
     if which == 1 {
-        b = put_head(heap, b, sid, "is", "&static [byte]", sg);
-        b = buffer.append(heap, b, " { let got = ");
+        b = buffer.append(heap, b, "let got = ");
         b = put_call(heap, b, name, sg);
         b = buffer.append(heap, b, "; ");
-        if kind == 2 {
-            b = put_cmp_buf(heap, b, sid, "got");
+        b = put_cmp(heap, b, sid, "got", v);
+    } else {
+        b = buffer.append(heap, b, "match ");
+        b = put_call(heap, b, name, sg);
+        b = buffer.append(heap, b, " { ");
+        if which == 2 {
+            b = buffer.append(heap, b, "option.Option::Some(v) => { ");
+            b = put_cmp(heap, b, sid, "v", v);
+            b = buffer.append(heap, b, " } option.Option::None => { return 2; }");
+        } else if which == 3 {
+            b = put_some_arm(heap, b, sid, v, 2);
+            b = buffer.append(heap, b, " option.Option::None => { return 0; }");
+        } else if which == 4 {
+            b = buffer.append(heap, b, "result.Result::Ok(v) => { ");
+            b = put_cmp(heap, b, sid, "v", v);
+            b = buffer.append(heap, b, " } ");
+            b = put_err_arm(heap, b, e, 2);
+        } else if which == 5 {
+            b = put_ok_drop_arm(heap, b, sid, v, topt, 2);
+            b = buffer.append(heap, b, " ");
+            b = put_err_arm(heap, b, e, 0);
+        } else if which == 6 {
+            b = put_ok_drop_arm(heap, b, sid, v, topt, 2);
+            b = buffer.append(heap, b, " result.Result::Err(n) => { if n == want { return 0; } return 3; }");
+        } else if which == 7 {
+            b = buffer.append(heap, b, "result.Result::Ok(o) => { match o { option.Option::Some(v) => { ");
+            b = put_cmp(heap, b, sid, "v", v);
+            b = buffer.append(heap, b, " } option.Option::None => { return 3; } } } ");
+            b = put_err_arm(heap, b, e, 2);
         } else {
-            b = buffer.append(heap, b, "if cases_");
-            b = buffer.append(heap, b, sid);
-            b = buffer.append(heap, b, "_same(got, want) { return 0; } return 1;");
+            b = buffer.append(heap, b, "result.Result::Ok(o) => { match o { ");
+            b = put_some_arm(heap, b, sid, v, 1);
+            b = buffer.append(heap, b, " option.Option::None => { return 0; } } } ");
+            b = put_err_arm(heap, b, e, 2);
         }
         b = buffer.append(heap, b, " }");
-    } else if which == 2 {
-        b = put_head(heap, b, sid, "some", want_type(tk), sg);
-        b = buffer.append(heap, b, " { match ");
-        b = put_call(heap, b, name, sg);
-        b = buffer.append(heap, b, " { option.Option::Some(v) => { if v == want { return 0; } return 1; } option.Option::None => { return 2; } } }");
-    } else if which == 3 {
-        b = put_head(heap, b, sid, "none", "", sg);
-        b = buffer.append(heap, b, " { match ");
-        b = put_call(heap, b, name, sg);
-        b = buffer.append(heap, b, " { option.Option::Some(_) => { return 2; } option.Option::None => { return 0; } } }");
-    } else if which == 4 {
-        b = put_head(heap, b, sid, "ok", want_type(tk), sg);
-        b = buffer.append(heap, b, " { match ");
-        b = put_call(heap, b, name, sg);
-        b = buffer.append(heap, b, " { ");
-        if tk == 0 || tk == 1 {
-            b = buffer.append(heap, b, "result.Result::Ok(v) => { if v == want { return 0; } return 1; }");
-        } else if tk == 3 {
-            b = buffer.append(heap, b, "result.Result::Ok(v) => { if cases_");
-            b = buffer.append(heap, b, sid);
-            b = buffer.append(heap, b, "_same(v, want) { return 0; } return 1; }");
-        } else {
-            b = buffer.append(heap, b, "result.Result::Ok(b) => { ");
-            b = put_cmp_buf(heap, b, sid, "b");
-            b = buffer.append(heap, b, " }");
-        }
-        if sg[8] == 1 {
-            b = buffer.append(heap, b, " result.Result::Err(e) => { buffer.drop(heap, e); return 2; }");
-        } else {
-            b = buffer.append(heap, b, " result.Result::Err(_) => { return 2; }");
-        }
-        b = buffer.append(heap, b, " } }");
-    } else {
-        b = put_head(heap, b, sid, "err", "", sg);
-        b = buffer.append(heap, b, " { match ");
-        b = put_call(heap, b, name, sg);
-        b = buffer.append(heap, b, " { ");
-        if tk == 2 {
-            b = buffer.append(heap, b, "result.Result::Ok(b) => { buffer.drop(heap, b); return 2; }");
-        } else {
-            b = buffer.append(heap, b, "result.Result::Ok(_) => { return 2; }");
-        }
-        if sg[8] == 1 {
-            b = buffer.append(heap, b, " result.Result::Err(e) => { buffer.drop(heap, e); return 0; }");
-        } else {
-            b = buffer.append(heap, b, " result.Result::Err(_) => { return 0; }");
-        }
-        b = buffer.append(heap, b, " } }");
     }
+    b = buffer.append(heap, b, " }");
     return buffer.push(heap, b, byte_of(0));
 }
 
-// The helpers the cases need, then the cases' tests: all of the unit's `tests`, each item ended with a NUL.
+// The helper functions the cases need, then the cases' tests: all of the unit's `tests`, each item ended with a NUL.
 fn put_helpers[&h, &d, &n, &g](heap: &!h Heap, out: buffer.Buffer, sid: &d [byte], name: &n [byte], sg: &!g [int], used: int) -> [heap] buffer.Buffer {
     var b = out;
-    let kind = sg[6];
-    let tk = sg[7];
-    if kind == 2 || kind == 3 || (kind == 5 && (tk == 2 || tk == 3)) {
-        b = buffer.append(heap, b, "fn cases_");
-        b = buffer.append(heap, b, sid);
-        b = buffer.append(heap, b, "_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var i = 0; while i < len(x) { if int_of(x[i]) != int_of(y[i]) { return false; } i = i + 1; } return true; }");
+    let v = sg[7];
+    if v >= 2 {
+        b = put_tpl(heap, b, "fn cases_{s}_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool { if len(x) != len(y) { return false; } var i = 0; while i < len(x) { if int_of(x[i]) != int_of(y[i]) { return false; } i = i + 1; } return true; }", sid);
+        b = buffer.push(heap, b, byte_of(0));
+    }
+    if (used >> 9) & 1 == 1 {
+        b = put_tpl(heap, b, "fn cases_{s}_mk[&h, &r](heap: &!h Heap, s: &r [byte]) -> [heap] Box[[byte]] { let b = box_slice(heap, len(s), byte_of(0)); borrow mut b as &!w in { copy_into(contents(w), s); } return b; }", sid);
+        b = buffer.push(heap, b, byte_of(0));
+    }
+    if (used >> 10) & 1 == 1 {
+        b = put_tpl(heap, b, "fn cases_{s}_hexv(c: int) -> [] int { if c >= 97 { return c - 87; } return c - 48; }", sid);
+        b = buffer.push(heap, b, byte_of(0));
+        b = put_tpl(heap, b, "fn cases_{s}_unhex[&h, &r](heap: &!h Heap, hex: &r [byte]) -> [heap] Box[[byte]] { let n = len(hex) / 2; let b = box_slice(heap, n, byte_of(0)); borrow mut b as &!w in { let s = contents(w); var i = 0; while i < n { s[i] = byte_of(cases_{s}_hexv(int_of(hex[2 * i])) * 16 + cases_{s}_hexv(int_of(hex[2 * i + 1]))); i = i + 1; } } return b; }", sid);
+        b = buffer.push(heap, b, byte_of(0));
+    }
+    if (used >> 11) & 1 == 1 || v == 4 {
+        b = put_tpl(heap, b, "fn cases_{s}_ldrop[&h](heap: &!h Heap, l: list.List[Box[Box[[byte]]]]) -> [heap] int { match l { list.List::Empty => { return 0; } list.List::Cons(f, rest) => { unbox_slice(heap, unbox(heap, f)); let tail = unbox(heap, rest); return 1 + cases_{s}_ldrop(heap, tail); } } }", sid);
+        b = buffer.push(heap, b, byte_of(0));
+    }
+    if v == 4 {
+        b = put_tpl(heap, b, "fn cases_{s}_nth[&l](l: &l list.List[Box[Box[[byte]]]], i: int) -> [] &l [byte] { match l { list.List::Empty => { return \"\"; } list.List::Cons(f, rest) => { if i == 0 { return contents(contents(f)); } return cases_{s}_nth(contents(rest), i - 1); } } }", sid);
+        b = buffer.push(heap, b, byte_of(0));
+        b = put_tpl(heap, b, "fn cases_{s}_leq[&a, &b](x: &a list.List[Box[Box[[byte]]]], y: &b list.List[Box[Box[[byte]]]]) -> [] bool { if list.length(x) != list.length(y) { return false; } var i = 0; while i < list.length(x) { if !cases_{s}_same(cases_{s}_nth(x, i), cases_{s}_nth(y, i)) { return false; } i = i + 1; } return true; }", sid);
         b = buffer.push(heap, b, byte_of(0));
     }
     var which = 1;
-    while which <= 5 {
+    while which <= 8 {
         if (used >> which) & 1 == 1 {
             b = put_helper(heap, b, sid, name, sg, which);
         }
@@ -994,8 +1787,7 @@ fn unit_cases[&h, &s, &t, &w, &d, &x, &g](heap: &!h Heap, gen: Gen, src: &s [byt
         g2 = Gen { rep: r, items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
         return g2;
     }
-    let kind = sg[6];
-    if (kind == 2 || (kind == 5 && (sg[7] == 2 || sg[8] == 1))) && sg[11] == 0 {
+    if (sg[7] == 2 || sg[7] == 4 || sg[7] == 5 || sg[8] == 2) && sg[11] == 0 {
         let Gen { rep, items, exs, nex, used, errs } = g2;
         g2 = Gen { rep: emit(heap, rep, who, 0, "the function returns a buffer.Buffer but takes no heap parameter; give tests instead"), items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
         return g2;
@@ -1202,7 +1994,7 @@ fn unit_expand[&h, &s, &t](heap: &!h Heap, w: json.Writer, rep: buffer.Buffer, s
                     unbox_slice(heap, sigb);
                     let Gen { rep, items, exs, nex, used, errs } = gen;
                     if errs == 0 && fill && nex == 0 {
-                        gen = Gen { rep: emit(heap, rep, whot, 0, "no case can be shown as an example (its call text contains \" == \"); add a case without it, or give examples"), items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
+                        gen = Gen { rep: emit(heap, rep, whot, 0, "no case can be shown as an example (its call text contains \" == \" or a byte string); add a case without it, or give examples"), items: items, exs: exs, nex: nex, used: used, errs: errs + 1 };
                     } else {
                         gen = Gen { rep: rep, items: items, exs: exs, nex: nex, used: used, errs: errs };
                     }

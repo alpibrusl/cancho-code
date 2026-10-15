@@ -1,0 +1,30 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "two",
+   "signature": "fn two[&h, &a, &b](heap: &!h Heap, x: &a list.List[Box[Box[[byte]]]], y: &b [byte], n: int) -> [heap] int",
+   "cases": [
+    {
+     "args": [
+      [
+       "a"
+      ],
+      "b",
+      1
+     ],
+     "expect": 3
+    },
+    {
+     "args": [
+      [],
+      "\u0001",
+      2
+     ],
+     "expect": 2
+    }
+   ],
+   "deps": []
+  }
+ ]
+}
