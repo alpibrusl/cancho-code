@@ -345,6 +345,44 @@ fn field_problems[&h, &s, &t](heap: &!h Heap, src: &s [byte], tape: &t [int], no
     return b;
 }
 
+// Does a test's cancho source have a line break INSIDE a string literal? A cancho string literal cannot span lines; a model that writes `\n` in the
+// JSON text of a test gets a real line break in the source (the escape must be `\\n` in the JSON). Comments and character literals are skipped.
+fn newline_in_string[&t](t: &t [byte]) -> [] bool {
+    var i = 0;
+    var in_str = false;
+    while i < len(t) {
+        let c = int_of(t[i]);
+        if in_str {
+            if c == 92 {
+                i = i + 2;
+            } else {
+                if c == 34 {
+                    in_str = false;
+                } else if c == 10 {
+                    return true;
+                }
+                i = i + 1;
+            }
+        } else if c == 34 {
+            in_str = true;
+            i = i + 1;
+        } else if c == 47 && byte_at(t, i + 1) == 47 {
+            while i < len(t) && int_of(t[i]) != 10 {
+                i = i + 1;
+            }
+        } else if c == 39 {
+            if byte_at(t, i + 1) == 92 {
+                i = i + 4;
+            } else {
+                i = i + 3;
+            }
+        } else {
+            i = i + 1;
+        }
+    }
+    return false;
+}
+
 // `integ` is the unit named by the plan's `integration` (-1: none): the application of a service, built against the service's acceptance
 // scenarios, so it needs no example and no test (docs/plan.md).
 fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], info: &!i [int], n: int, u: int, integ: int) -> [heap] buffer.Buffer {
@@ -501,12 +539,28 @@ fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte
         if tn2 >= 0 && json.is_array(tape, tn2) {
             var k = 0;
             var bad = false;
+            var broken = false;
             while k < json.count(tape, tn2) {
                 let tt = node_text(src, tape, json.at(tape, tn2, k));
                 if bytes.starts_with(tt, "pub fn test_") && (bytes.find(tt, "World") >= 0 || bytes.find(tt, "split(") >= 0) {
                     bad = true;
                 }
+                // the DECODED source (the JSON escapes resolved): that is what the test file will hold
+                let dn = json.string_length(src, tape, json.at(tape, tn2, k));
+                if dn > 0 {
+                    let db = box_slice(heap, dn + 1, byte_of(0));
+                    borrow mut db as &!dw in {
+                        let got = json.string_into(src, tape, json.at(tape, tn2, k), contents(dw));
+                        if got > 0 && newline_in_string(contents(dw)[0..got]) {
+                            broken = true;
+                        }
+                    }
+                    unbox_slice(heap, db);
+                }
                 k = k + 1;
+            }
+            if broken {
+                b = emit(heap, b, "bad-test", who, "a string literal in one of the tests has a line break inside it, and a cancho string cannot span lines: the JSON text of the test has `\\n` (backslash, n) meaning a real line break. Write `\\\\n` in the JSON so that the cancho source holds `\\n` inside the quotes (and `\\\\\"` for a quote, `\\\\\\\\` for a backslash)");
             }
             if bad {
                 b = emit(heap, b, "bad-test", who, "a test cannot take a `World` or call `split`: write `pub fn test_NAME[&h](heap: &!h Heap) -> [heap] int { ...; return 0; }` (and `io: &!i Io` the same way) and answer 0 to pass");

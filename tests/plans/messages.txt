@@ -9,3 +9,5 @@ no-example	A unit with `tests` needs one too: it is documentation there
 example-own	none of the examples calls this unit's own function `g`: write at least one `g(ARGS) == VALUE`
 example-own	a helper's name keeps the task prefix
 example-callee	an example calls `ghost`, which no unit declares
+bad-test-newline	string literal in one of the tests has a line break inside it
+bad-test-newline	Write `\\n` in the JSON so that the cancho source holds `\n`

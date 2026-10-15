@@ -300,7 +300,7 @@ else:
 if bad:
     print("FAIL: guide: " + "; ".join(bad), file=sys.stderr); sys.exit(1)
 PY
-for want in "Cover everything the task states" "When \`cases\` cannot express a signature" "EVERY kind of error" "worked examples are exact"; do
+for want in "Cover everything the task states" "When \`cases\` cannot express a signature" "EVERY kind of error" "worked examples are exact" "cannot contain a real line break"; do
     grep -qF "$want" "$root/docs/plan-guide.md" || { echo "FAIL: guide: lacks '$want'" >&2; fail=1; }
 done
 

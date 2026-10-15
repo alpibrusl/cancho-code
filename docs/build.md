@@ -14,7 +14,7 @@ build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m>
 | `--guide <file>` | how to write a plan ([plan-guide.md](plan-guide.md)); required unless the work directory already holds a valid `plan.json` |
 | `--review on --review-guide <file>` | the blind re-derivation of every case ([review-guide.md](review-guide.md)) |
 | `--contract <file>` | exact public signatures the plan must keep |
-| `--rounds N` | the plan agent's own retry rounds (3). A round whose reply was cut off by the output bound (a model that thinks first can use all of it before the first byte) is asked again with the bound doubled, at most 32000, and told which case it was |
+| `--rounds N` | the plan agent's own retry rounds (3). A round whose reply was cut off by the output bound (a model that thinks first can use all of it before the first byte) is asked again with the bound doubled, at most 32000, and told which case it was; the unit agent does the same for a patch cut off (`agent-<id>.log` shows `a sample was cut off` and `the bound for the next round is N`) |
 | `--attempts N`, `--agent-seconds N` | per unit: the attempt ceiling (4) and the cap on one agent turn (30) |
 | `--plan-seconds N` | the cap on the whole plan call (900) |
 

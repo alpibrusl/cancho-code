@@ -28,7 +28,7 @@ edition 7;
 //   --tls           on | off                                     (on; ollama off)
 //   --num-ctx       ollama's context window in tokens            (8192)
 //   --num-predict   ollama's bound on one answer (= --max-tokens) (8192)
-//   --max-tokens    the bound on one answer                      (8192)
+//   --max-tokens    the bound on one answer                      (8192); a reply cut off by it is asked again with the bound doubled (at most 32000)
 //   --primer        a file with the language page, cached        (none)
 //   --thinking      adaptive | disabled                          (the model's own)
 //   --effort        low | medium | high | xhigh | max            (the model's own)
@@ -489,6 +489,18 @@ fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, 
     return (verdict, result);
 }
 
+// The bound for the round after one that was cut off by it: doubled, at most 32000 (never lowered). A model that thinks first can use the whole bound
+// before its first byte of answer (a plan, a patch); asking again with the same bound only repeats that.
+fn grown_bound(bound: int) -> [] int {
+    if bound >= 32000 {
+        return bound;
+    }
+    if bound * 2 > 32000 {
+        return 32000;
+    }
+    return bound * 2;
+}
+
 // ---- the work ------------------------------------------------------------
 
 fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, args: &g Args) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write, args] int {
@@ -748,7 +760,7 @@ fn make_body[&h, &m, &y, &s, &p, &g, &r, &k, &f](heap: &!h Heap, local: bool, pl
 // never written over the project.
 fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, args: &g Args, project: &p [byte], model: &m [byte], host: &o [byte], ip: &q [byte], port: int, secure: bool, local: bool, num_ctx: int, max_tokens: int, thinking: &y [byte], effort: &s [byte], plan_mode: bool, rounds: int, review_on: bool, patch_out: bool, key_raw: buffer.Buffer, roots: buffer.Buffer, primer: buffer.Buffer, guide: buffer.Buffer, rguide: buffer.Buffer, source: buffer.Buffer, task: buffer.Buffer, feedback0: buffer.Buffer) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write, args] int {
     var feedback = feedback0;
-    // The bound on one answer. A PLAN cut off by it is asked again with the bound doubled (at most 32000): a model that thinks first can spend the
+    // The bound on one answer. A reply (a plan, a patch) cut off by it is asked again with the bound doubled (at most 32000): a model that thinks first can spend the
     // whole bound before the first byte of the plan (the `semver` plan failed three rounds of three with 16000 tokens of thinking and no JSON).
     var bound = max_tokens;
     let workspace = opt(args, "--workspace");
@@ -967,11 +979,8 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                             }
                                             if cut {
                                                 io.error_all(io, "cancho-agent: a sample was cut off by the bound (--max-tokens / --num-predict)\n");
-                                                if bound < 32000 {
-                                                    bound = bound * 2;
-                                                    if bound > 32000 {
-                                                        bound = 32000;
-                                                    }
+                                                if grown_bound(bound) > bound {
+                                                    bound = grown_bound(bound);
                                                     var said = buffer.append(heap, buffer.empty(heap, 96), "cancho-agent: the bound for the next round is ");
                                                     said = buffer.push_nat(heap, said, bound);
                                                     said = buffer.push(heap, said, byte_of(10));
@@ -1108,6 +1117,16 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                         }
                                         if cut {
                                             io.error_all(io, "cancho-agent: a sample was cut off by the bound (--max-tokens / --num-predict)\n");
+                                            if grown_bound(bound) > bound {
+                                                bound = grown_bound(bound);
+                                                var said = buffer.append(heap, buffer.empty(heap, 96), "cancho-agent: the bound for the next round is ");
+                                                said = buffer.push_nat(heap, said, bound);
+                                                said = buffer.push(heap, said, byte_of(10));
+                                                borrow said as &sdq in {
+                                                    io.error_all(io, buffer.bytes(sdq));
+                                                }
+                                                buffer.drop(heap, said);
+                                            }
                                         } else if patch_out {
                                             if pa < 0 {
                                                 io.error_all(io, "cancho-agent: a sample has no code in it to add or change (reasoning, not a patch)\n");

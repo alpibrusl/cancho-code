@@ -41,3 +41,5 @@ integration-order  1  integration-order:app
 no-integration-field  1  no-example:app needs-tests:app
 integration-bad-signature  1  bad-signature:app
 valid-integration-chain  0
+bad-test-newline  1  bad-test:a
+valid-test-multiline  0
