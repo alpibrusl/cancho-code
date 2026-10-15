@@ -79,7 +79,7 @@ footer { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(-
 <header class="top"><div class="wrap">
   <a class="brand" href=".">cancho-code</a>
   <nav>
-    <a href="#how">How it works</a><a class="opt" href="#numbers">Results</a><a href="#try">Try it</a>
+    <a href="#how">How it works</a><a class="opt" href="#build">Build</a><a class="opt" href="#numbers">Results</a><a href="#try">Try it</a>
     <a class="opt" href="guide.html">Guide</a><a href="https://github.com/alpibrusl/cancho-code">GitHub</a>
   </nav>
 </div></header>
@@ -133,6 +133,21 @@ footer { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(-
     <path class="arrow" d="M540 287H588"/>
   </svg>
   </div>
+</div></section>
+
+<section id="build"><div class="wrap">
+  <h2>One command, one board</h2>
+  <p class="lead">Give it a brief. It writes the plan, checks it, builds every unit with the compiler as judge, and ends with a verdict.</p>
+<pre class="code"><code>build/cancho-build "$CANCHO" brief.txt work "$AGENT" \
+    --provider anthropic --model claude-haiku-5-5 --guide docs/plan-guide.md --review on
+
+[BUILD_VERDICT]  done</code></pre>
+  <div class="cards">
+    <div class="card"><div class="ic">📝</div><h3>Your names stay</h3><p>The functions your brief names are the ones built. A plan that renames one is refused before anything is built.</p></div>
+    <div class="card"><div class="ic">📋</div><h3>A board, not a transcript</h3><p>A read-only page shows every unit as waiting, building, verified or stuck, with its attempts, the compiler's refusals, tokens and cost. <a href="board.html">Open it</a> and load a run's <code>board.json</code>.</p></div>
+    <div class="card"><div class="ic">▶️</div><h3>Resumes</h3><p>Killed halfway? The next run keeps the verified units and does not ask for the plan again.</p></div>
+  </div>
+  <p class="fine">Example, one run: Claude Haiku 5.5 built the <code>roman</code> library from its brief alone, 6 units, 88 seconds, $0.013, and passed the hidden audit 439/439. One run on one task; the numbers below are the larger measurement. Details: <a href="https://github.com/alpibrusl/cancho-code/blob/main/docs/build.md">docs/build.md</a>, <a href="https://github.com/alpibrusl/cancho-code/blob/main/docs/dashboard.md">docs/dashboard.md</a>.</p>
 </div></section>
 
 <section class="alt" id="numbers"><div class="wrap">

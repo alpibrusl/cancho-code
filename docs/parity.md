@@ -19,7 +19,7 @@ Status is measured against `main` of this repository on 2026-10-12. "lex-code" r
 | P9 | **Unattended supervisor and report** (rounds, stall detection, thinking toggle, killed-round restore, `REPORT.md`) | `lex-code-overnight` | none | P0, P5 | a killed run restores the last checking copy; the report is read back from the store |
 | P10 | **Lessons mined from trails** | `--lessons` | none | P0 | a stalled fixture's real cause is listed first |
 | P11 | **Hints, patches, fallback provider** | `--hint`, `--patch`, `--fallback` | `--fallback` named in the design | P1 | each flag alone, one fixture each |
-| P12 | **Dashboard** | read-only live view | none | P0 | the trail rendered; no write path |
+| P12 | **Dashboard** | read-only live view | **built**: `cancho-board` + `docs/board.html` (docs/dashboard.md): a read-only kanban of the units with refusals, tokens and cost | P0 | the trail rendered; no write path |
 
 ## Order
 
