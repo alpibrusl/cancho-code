@@ -213,6 +213,33 @@ fn log_call[&h, &f, &p, &m, &t](heap: &!h Heap, fs: &f Fs(""), path: &p [byte], 
     return 0;
 }
 
+// The effort the task asks for: the text after `EFFORT: ` on its own line (a unit's `effort` in the plan, written by the driver), trimmed; empty when
+// there is none. It beats `--effort`: the unit knows how hard it is, the flag is the default.
+fn task_effort[&t](task: &t [byte]) -> [] &t [byte] {
+    var i = 0;
+    var found = task[0..0];
+    while i < len(task) {
+        var e = i;
+        while e < len(task) && int_of(task[e]) != 10 {
+            e = e + 1;
+        }
+        if e - i > 8 && int_of(task[i]) == 69 && int_of(task[i + 1]) == 70 && int_of(task[i + 2]) == 70 && int_of(task[i + 3]) == 79 && int_of(task[i + 4]) == 82 && int_of(task[i + 5]) == 84 && int_of(task[i + 6]) == 58 && int_of(task[i + 7]) == 32 {
+            var a = i + 8;
+            var z = e;
+            while z > a && (int_of(task[z - 1]) == 32 || int_of(task[z - 1]) == 13) {
+                z = z - 1;
+            }
+            found = task[a..z];
+        }
+        i = e + 1;
+    }
+    return found;
+}
+
+fn effort_valid[&t](e: &t [byte]) -> [] bool {
+    return bytes.equal(e, "low") || bytes.equal(e, "medium") || bytes.equal(e, "high") || bytes.equal(e, "xhigh") || bytes.equal(e, "max");
+}
+
 // The first line of the task, which names the unit (`UNIT: refill`), at most 100 bytes.
 fn task_head[&t](task: &t [byte]) -> [] &t [byte] {
     var a = 0;
@@ -569,7 +596,12 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
             key_present = len(trimmed_key(buffer.bytes(kq))) > 0;
         }
     }
-    if key_ok && key_present && roots_ok && primer_ok && source_ok && guide_ok && rguide_ok {
+    var task_ok = true;
+    borrow task as &tq0 in {
+        let te0 = task_effort(buffer.bytes(tq0));
+        task_ok = len(te0) == 0 || effort_valid(te0);
+    }
+    if key_ok && key_present && roots_ok && primer_ok && source_ok && guide_ok && rguide_ok && task_ok {
         // consumed: it drops all six
         return ask_and_write(heap, fs, net, clock, io, args, project, model, host, ip, port, secure, local, num_ctx, max_tokens, thinking, effort, plan_mode, rounds, review_on, patch_out, key_raw, roots, primer, guide, rguide, source, task, feedback);
     }
@@ -583,6 +615,9 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
         say(io, "cannot read --primer");
     } else if guide_ok == false {
         say(io, "cannot read --guide");
+    } else if task_ok == false {
+        say(io, "EFFORT in the task must be one of low, medium, high, xhigh, max");
+        rc = 2;
     } else if plan_mode {
         say(io, "cannot read --brief or --contract");
     } else {
@@ -664,7 +699,12 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                     borrow task as &tr in {
                         borrow feedback as &fr in {
                             buffer.drop(heap, body);
-                            body = make_body(heap, local, plan_mode, patch_out, model, num_ctx, max_tokens, thinking, effort, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                            let te = task_effort(buffer.bytes(tr));
+                            if len(te) > 0 {
+                                body = make_body(heap, local, plan_mode, patch_out, model, num_ctx, max_tokens, thinking, te, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                            } else {
+                                body = make_body(heap, local, plan_mode, patch_out, model, num_ctx, max_tokens, thinking, effort, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                            }
                         }
                     }
                 }
