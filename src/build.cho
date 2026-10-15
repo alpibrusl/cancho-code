@@ -14,6 +14,7 @@ module build;
 import acceptance;
 import plan;
 import project;
+import trail;
 import std.buffer;
 import std.bytes;
 import std.io;
@@ -319,7 +320,9 @@ fn plan_command[&h, &a, &p, &m, &g, &r, &c, &w, &k](heap: &!h Heap, agent: &a [b
     }
     b = buffer.append(heap, b, " --usage-log ");
     b = buffer.append(heap, b, wd);
-    b = buffer.append(heap, b, "/usage.jsonl");
+    b = buffer.append(heap, b, "/usage.jsonl --journal ");
+    b = buffer.append(heap, b, wd);
+    b = buffer.append(heap, b, "/journal");
     return b;
 }
 
@@ -385,6 +388,11 @@ fn code_of(word: &static [byte]) -> [] int {
 // End the run: `build.json` with the verdict (stage `done`), then the `[BUILD_VERDICT]` line.
 fn finish[&h, &i, &z, &l, &w, &b, &p, &m](heap: &!h Heap, io: &!i Io, fs: &z Fs(""), log: &l [byte], wd: &w [byte], brief: &b [byte], valid: bool, total: int, verdict: &static [byte], started_ms: int, now_ms: int, provider: &p [byte], model: &m [byte]) -> [heap, io_write, fs_read(""), fs_write("")] int {
     write_state(heap, fs, wd, brief, "done", valid, total, count_verified(heap, fs, wd), verdict, started_ms, now_ms, provider, model);
+    let jd = trail.journal_dir(heap, wd);
+    borrow jd as &jq in {
+        trail.run_end(heap, now_ms, fs, buffer.bytes(jq), verdict, code_of(verdict), (now_ms - started_ms) / 1000);
+    }
+    buffer.drop(heap, jd);
     var line = buffer.append(heap, buffer.empty(heap, 64), "[BUILD_VERDICT]\t");
     line = buffer.append(heap, line, verdict);
     line = buffer.append(heap, line, "\n");
@@ -414,6 +422,12 @@ pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q](heap: &!h Hea
             if project.append_file(heap, fs, lg, "") < 0 {
                 io.error_all(io, "build: the work directory cannot be written\n");
             } else {
+                let jd = trail.journal_dir(heap, wd);
+                borrow jd as &jq in {
+                    trail.journal_dirs(heap, exec, clock, buffer.bytes(jq));
+                    trail.run_start(heap, clock, fs, buffer.bytes(jq), brief, provider, model, review, rounds, attempts, agent_ms, plan_ms);
+                }
+                buffer.drop(heap, jd);
                 // A plan.json from an earlier run that the check accepts is kept.
                 let (old, readable) = slurp(heap, fs, pp, 1048576);
                 var units = 0 - 1;
@@ -460,6 +474,17 @@ pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q](heap: &!h Hea
                         }
                         buffer.drop(heap, fresh);
                     }
+                }
+                if provider_away == false && (asked || units >= 0) {
+                    let jd2 = trail.journal_dir(heap, wd);
+                    var counted = units;
+                    if counted < 0 {
+                        counted = 0;
+                    }
+                    borrow jd2 as &jq2 in {
+                        trail.plan_final(heap, clock, fs, buffer.bytes(jq2), units >= 0, counted, pp);
+                    }
+                    buffer.drop(heap, jd2);
                 }
                 if provider_away {
                     status = finish(heap, io, fs, lg, wd, brief, false, 0, "provider_error", started, clock_unix_ms(clock), provider, model);

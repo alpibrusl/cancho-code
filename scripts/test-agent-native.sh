@@ -8,6 +8,10 @@
 #   key       the key is in no output (stdout, stderr, the saved raw replies); a missing, empty or unnamed key file is an error, no request
 #   usage     the saved raw reply records the token usage the API reported; --usage-log writes one JSON line per API call (tokens in, out, thinking (inside out), cache write,
 #             cache read, stop reason, outcome, sizes, milliseconds, the task's first line), for every outcome including an API error, never the key
+#   journal   editing a unit, the agent leaves beside the project file what the driver's journal needs (docs/journal.md), only when the directory
+#             `<project.cho>.call` is there: prompt.txt (the message after the primer, exactly what was sent), reply.txt (the raw reply; a later sample is
+#             appended after `=== sample K ===`), meta.json (tokens, stop reason, samples, primer flag), primer.txt once; planning with --journal writes plan
+#             events; the key is in none of it
 #   workspace the id is sent as anthropic-workspace-id only when named
 #   thinking  thinking and effort are sent only when named; a bad value is exit 2 and no request; an all-thinking reply says so
 #   cut off   a reply that stopped at max_tokens is retried, never written, and the next request has the bound doubled (at most 32000)
@@ -33,7 +37,7 @@ expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail
 
 d=$(mktemp -d -t cc-native-agent-XXXXXX)
 exe="$d/agent"
-"$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" "$root/src/prompt.cho" "$root/src/planprompt.cho" "$root/src/plan.cho" "$root/src/cases.cho" "$root/src/review.cho" "$root/src/splice.cho" "$root/src/provider.cho" "$root/src/reply.cho" \
+"$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" "$root/src/prompt.cho" "$root/src/planprompt.cho" "$root/src/plan.cho" "$root/src/cases.cho" "$root/src/review.cho" "$root/src/splice.cho" "$root/src/provider.cho" "$root/src/reply.cho" "$root/src/calls.cho" \
     "$root/vendor/fetch_io.cho" "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho --std --backend cranelift -o "$exe" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }
 
@@ -135,6 +139,84 @@ for f in out.txt err.txt raw.txt; do
 done
 [ -s "$d/raw.txt" ] || { echo "FAIL: key: the raw reply was not saved (--save-raw)" >&2; fail=1; }
 case "$(cat "$d/raw.txt" 2>/dev/null)" in *"input_tokens=11 output_tokens=22 cache_creation_input_tokens=33 cache_read_input_tokens=44"*) ;; *) echo "FAIL: usage: the saved reply does not record the token usage ($(head -c 200 "$d/raw.txt"))" >&2; fail=1 ;; esac
+# journal: the sidecars of a unit's call, and the key in none of them (the stub of the cases above is replaced by one per case, and one is left running)
+stop
+start; broken; rm -rf "$F.call"
+agent --primer "$d/primer.md" >/dev/null 2>&1
+[ -e "$F.call" ] && { echo "FAIL: journal: the agent made a .call directory the driver did not" >&2; fail=1; }
+stop
+start; broken; rm -rf "$F.call"; mkdir -p "$F.call"
+agent --primer "$d/primer.md" >/dev/null 2>"$d/err.txt"; rc=$?
+expect "journal: exit code" "$rc" 0
+python3 -I - "$d" "$F" <<'PY' || fail=1
+import json, os, sys
+d, f = sys.argv[1:3]
+c = f + ".call/"
+req = json.load(open(d + "/request.json"))
+bad = []
+for n in ("prompt.txt", "reply.txt", "meta.json", "primer.txt"):
+    if not os.path.exists(c + n): bad.append("no " + n)
+if not bad:
+    if open(c + "prompt.txt").read() != req["messages"][0]["content"]: bad.append("prompt.txt is not the message that was sent")
+    if open(c + "reply.txt").read() != "```cancho\nedition 7;\nfn fixed() -> [] int { return 1; }\n```\n": bad.append("reply.txt is not the raw reply: %r" % open(c + "reply.txt").read())
+    m = json.load(open(c + "meta.json"))
+    if m["tokens"] != {"in": 11, "out": 22, "thinking": 7, "cache_write": 33, "cache_read": 44}: bad.append("tokens %r" % m["tokens"])
+    if (m["samples"], m["stop"], m["outcome"], m.get("primer")) != (1, "end_turn", "written", True): bad.append("meta %r" % m)
+    if open(c + "primer.txt").read() != open(d + "/primer.md").read(): bad.append("primer.txt is not the primer")
+    if "PRIMER SENTENCE" in req["messages"][0]["content"]: bad.append("the prompt holds the primer")
+if bad: print("FAIL: journal: " + "; ".join(bad), file=sys.stderr); sys.exit(1)
+PY
+if grep -rq "$KEY" "$F.call"; then echo "FAIL: journal: the key is in the sidecars" >&2; fail=1; fi
+stop
+# two samples in one turn: the first has no program, the second is written; the totals add up and the replies follow one another
+start; broken; rm -rf "$F.call"; mkdir -p "$F.call"; printf 'I would think about it first.\n' > "$d/response.1.txt"
+agent >/dev/null 2>&1
+python3 -I - "$F" <<'PY' || fail=1
+import json, sys
+c = sys.argv[1] + ".call/"
+m = json.load(open(c + "meta.json")); r = open(c + "reply.txt").read()
+bad = []
+if (m["samples"], m["tokens"]["in"], m["tokens"]["out"], m["outcome"]) != (2, 22, 44, "written"): bad.append("meta %r" % m)
+if not r.startswith("I would think about it first.\n") or "\n=== sample 2 ===\n```cancho" not in r: bad.append("reply.txt %r" % r)
+if bad: print("FAIL: journal samples: " + "; ".join(bad), file=sys.stderr); sys.exit(1)
+PY
+stop
+rm -f "$d"/response.*.txt
+# an API error is recorded too: the prompt, the error as the reply, the outcome
+start; broken; rm -rf "$F.call"; mkdir -p "$F.call"; : > "$d/force-error"
+agent >/dev/null 2>&1; rm -f "$d/force-error"
+python3 -I - "$F" <<'PY' || fail=1
+import json, sys
+c = sys.argv[1] + ".call/"
+m = json.load(open(c + "meta.json"))
+if m["outcome"] != "api_error" or "Overloaded" not in open(c + "reply.txt").read() or not open(c + "prompt.txt").read(): print("FAIL: journal api error: %r" % m, file=sys.stderr); sys.exit(1)
+PY
+stop
+# planning with --journal: the events are written by the agent, the key is nowhere under the journal
+printf '# Guide\nWrite a plan as JSON.\n' > "$d/pguide.md"; printf 'Write clampy.\n' > "$d/pbrief.txt"
+PGOOD='{"name": "clampy", "units": [{"id": "clamp", "signature": "fn clampy(x: int, lo: int, hi: int) -> [] int", "description": "x limited to [lo, hi].", "examples": ["clampy(5, 1, 3) == 3"], "deps": []}]}'
+JD="$d/jdir"; rm -rf "$JD"; mkdir -p "$JD/blobs"
+start; printf '%s' "$PGOOD" > "$d/response.txt"
+env -i "$exe" --provider anthropic --model stub-model --key-file "$d/key" --host localhost --ip 127.0.0.1 --port "$port" --roots "$d/ca.pem" --primer "$d/primer.md" --mode plan --guide "$d/pguide.md" --brief "$d/pbrief.txt" --journal "$JD" --save-raw "$d/praw.txt" "$d/pplan.json" >/dev/null 2>"$d/perr.txt"; rc=$?
+expect "journal plan: exit code ($(head -c 200 "$d/perr.txt"))" "$rc" 0
+python3 -I - "$JD" <<'PY' || fail=1
+import json, os, sys
+jd = sys.argv[1]
+ev = [json.loads(l) for l in open(jd + "/events.jsonl")]
+bad = []
+if len(ev) != 1 or ev[0]["kind"] != "plan_call": bad.append("events %r" % ev)
+else:
+    e = ev[0]
+    if e["tokens"] != {"in": 11, "out": 22, "thinking": 7, "cache_write": 33, "cache_read": 44}: bad.append("tokens %r" % e["tokens"])
+    if (e["stop"], e["outcome"], e["round"], e["sample"], e["errors"], e.get("primer")) != ("end_turn", "written", 1, 1, [], True): bad.append("fields %r" % e)
+    if "# Guide" not in open(jd + "/blobs/" + e["prompt"]).read(): bad.append("prompt blob")
+if bad: print("FAIL: journal plan: " + "; ".join(bad), file=sys.stderr); sys.exit(1)
+PY
+if grep -rq "$KEY" "$JD"; then echo "FAIL: journal plan: the key is under the journal" >&2; fail=1; fi
+rm -f "$d/response.txt" "$d/response.1.txt"
+rm -rf "$F.call"
+stop
+start
 
 # workspace
 broken; agent >/dev/null 2>&1

@@ -1,0 +1,537 @@
+edition 7;
+
+module calls;
+
+// `calls` -- what the native agent records of the model calls it makes (docs/md). It is the agent's half of the journal:
+//
+//  * editing a unit, the agent leaves sidecar files beside the project file, in `<project.cho>.call/` (a directory the driver made; when there
+//    is none, nothing is written): `prompt.txt` (what was sent after the primer), `reply.txt` (the raw replies), `meta.json` (tokens, time,
+//    stop reason, number of samples) and `primer.txt` (the primer, once). The driver knows the unit and the attempt, and turns them into the
+//    `attempt` event.
+//  * planning, with `--journal <dir>`, the agent writes the events itself: one `plan_call` per model call (the plan's and the review's), a
+//    `plan_review` per review, and the blobs they name.
+//
+// The key, the request's headers and the request body never come here: the prompt is the text the agent built from the task, the file and the
+// checker's answer, which is what a person reads to know what the model was asked.
+
+import planprompt;
+import prompt;
+import std.buffer;
+import std.bytes;
+import std.json;
+
+// ---- the journal's base (the same as src/trail.cho's, which the driver uses; the agent does not run a shell, so it does not carry that module) ----
+
+// The most a blob holds. A longer text is cut and ends with `marker()`, which the cut text plus the marker never exceed.
+fn blob_cap() -> [] int {
+    return 262144;
+}
+
+fn marker() -> [] &static [byte] {
+    return "\n[... cut here: a journal blob holds at most 262144 bytes ...]\n";
+}
+
+// `<dir>/<one><two>`.
+fn path_under[&h, &d, &a, &b](heap: &!h Heap, dir: &d [byte], one: &a [byte], two: &b [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, buffer.empty(heap, len(dir) + len(one) + len(two) + 8), dir);
+    b = buffer.append(heap, b, "/");
+    b = buffer.append(heap, b, one);
+    b = buffer.append(heap, b, two);
+    return b;
+}
+
+// `<one><two>`.
+fn path_cat[&h, &a, &b](heap: &!h Heap, one: &a [byte], two: &b [byte]) -> [heap] buffer.Buffer {
+    return buffer.append(heap, buffer.append(heap, buffer.empty(heap, len(one) + len(two) + 8), one), two);
+}
+
+// Add `line` (one JSON object, no newline) to `<dir>/events.jsonl`: 0, or -1 when it could not be written or the file is full (2 MiB:
+// the events are small, the bulk is in the blobs; a run that fills it stops being recorded, it does not stop).
+fn journal_emit[&h, &z, &d, &l](heap: &!h Heap, fs: &z Fs(""), dir: &d [byte], line: &l [byte]) -> [heap, fs_read(""), fs_write("")] int {
+    let room = 2097152;
+    let ep = path_under(heap, dir, "events.jsonl", "");
+    let tp = path_under(heap, dir, "events.jsonl.tmp", "");
+    let store = box_slice(heap, room, byte_of(0));
+    var b = buffer.empty(heap, 512);
+    var full = false;
+    borrow ep as &eq in {
+        borrow mut store as &!sw in {
+            let n = fs_read(fs, buffer.bytes(eq), contents(sw));
+            if n >= room {
+                full = true;
+            } else if n > 0 {
+                b = buffer.append(heap, b, contents(sw)[0..n]);
+            }
+        }
+    }
+    unbox_slice(heap, store);
+    var r = -1;
+    if full == false {
+        b = buffer.append(heap, b, line);
+        b = buffer.push(heap, b, byte_of(10));
+        borrow b as &bb in {
+            borrow tp as &tq in {
+                borrow ep as &eq2 in {
+                    let all = buffer.bytes(bb);
+                    if fs_write(fs, buffer.bytes(tq), all) == len(all) {
+                        match fs_rename(fs, buffer.bytes(tq), buffer.bytes(eq2)) {
+                            Done::Ok(k) => { r = 0; }
+                            Done::Failed(e) => { }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    buffer.drop(heap, b);
+    buffer.drop(heap, ep);
+    buffer.drop(heap, tp);
+    return r;
+}
+
+// An event being written: `{"t_ms": <now>, "kind": "<kind>"` and the caller adds the rest.
+fn begin_event[&h](heap: &!h Heap, now_ms: int, kind: &static [byte]) -> [heap] json.Writer {
+    var w = json.writer(heap, 512);
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "t_ms");
+    w = json.put_int(heap, w, now_ms);
+    w = json.put_key(heap, w, "kind");
+    w = json.put_string(heap, w, kind);
+    return w;
+}
+
+// End the event and add it to the 
+fn end_event[&h, &z, &d](heap: &!h Heap, fs: &z Fs(""), dir: &d [byte], w: json.Writer) -> [heap, fs_read(""), fs_write("")] int {
+    let done = json.end_object(heap, w);
+    let line = json.finish(done);
+    var r = -1;
+    borrow line as &lb in {
+        r = journal_emit(heap, fs, dir, buffer.bytes(lb));
+    }
+    buffer.drop(heap, line);
+    return r;
+}
+
+// A string field.
+fn put_str[&h, &t](heap: &!h Heap, w: json.Writer, key: &static [byte], text: &t [byte]) -> [heap] json.Writer {
+    var o = json.put_key(heap, w, key);
+    o = json.put_string(heap, o, text);
+    return o;
+}
+
+fn put_num[&h](heap: &!h Heap, w: json.Writer, key: &static [byte], n: int) -> [heap] json.Writer {
+    var o = json.put_key(heap, w, key);
+    o = json.put_int(heap, o, n);
+    return o;
+}
+
+fn put_flag[&h](heap: &!h Heap, w: json.Writer, key: &static [byte], v: bool) -> [heap] json.Writer {
+    var o = json.put_key(heap, w, key);
+    o = json.put_bool(heap, o, v);
+    return o;
+}
+
+// Write `text` as the blob `name`, cut to the cap with the marker: 0, or -1 when it could not be written.
+// `<dir>/blobs/<name>`.
+fn blob_path[&h, &d, &n](heap: &!h Heap, dir: &d [byte], name: &n [byte]) -> [heap] buffer.Buffer {
+    return path_under(heap, dir, "blobs/", name);
+}
+
+fn blob_put[&h, &z, &d, &n, &t](heap: &!h Heap, fs: &z Fs(""), dir: &d [byte], name: &n [byte], text: &t [byte]) -> [heap, fs_write("")] int {
+    let p = blob_path(heap, dir, name);
+    var b = buffer.empty(heap, len(text) + 96);
+    let keep = blob_cap() - 96;
+    if len(text) > keep {
+        b = buffer.append(heap, b, text[0..keep]);
+        b = buffer.append(heap, b, marker());
+    } else {
+        b = buffer.append(heap, b, text);
+    }
+    var r = -1;
+    borrow p as &pb in {
+        borrow b as &bb in {
+            let all = buffer.bytes(bb);
+            if fs_write(fs, buffer.bytes(pb), all) == len(all) {
+                r = 0;
+            }
+        }
+    }
+    buffer.drop(heap, b);
+    buffer.drop(heap, p);
+    return r;
+}
+
+// Whether the blob `name` is there.
+fn blob_there[&h, &z, &d, &n](heap: &!h Heap, fs: &z Fs(""), dir: &d [byte], name: &n [byte]) -> [heap, fs_read("")] bool {
+    let p = blob_path(heap, dir, name);
+    var there = false;
+    borrow p as &pb in {
+        region g {
+            let probe = alloc_slice[g](16, byte_of(0));
+            there = fs_read(fs, buffer.bytes(pb), probe) >= 0;
+        }
+    }
+    buffer.drop(heap, p);
+    return there;
+}
+
+// The integer at node `i` (0 when it is not one).
+fn int_at[&s, &t](src: &s [byte], tape: &t [int], i: int) -> [] int {
+    if i >= 0 && json.is_int(tape, i) {
+        return json.to_int(src, tape, i);
+    }
+    return 0;
+}
+
+// ---- the prompt -----------------------------------------------------------
+
+// The text the model was asked, after the primer: what varies from call to call. The same dispatch as the request builder's.
+pub fn asked_text[&h, &g, &s, &t, &f](heap: &!h Heap, plan_mode: bool, patch_out: bool, guide: &g [byte], source: &s [byte], task: &t [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
+    if plan_mode {
+        return planprompt.build(heap, guide, source, task, feedback);
+    }
+    if patch_out {
+        return prompt.build_patch(heap, source, task, feedback);
+    }
+    return prompt.build(heap, source, task, feedback);
+}
+
+// ---- a unit's call: the sidecars --------------------------------------------
+
+// The totals recorded by the earlier samples of this agent turn: (samples, in, out, thinking, cache_write, cache_read, ms).
+fn totals_so_far[&z, &p](fs: &z Fs(""), meta_path: &p [byte]) -> [fs_read("")] (int, int, int, int, int, int, int) {
+    var a = 0;
+    var b = 0;
+    var c = 0;
+    var d = 0;
+    var e = 0;
+    var f = 0;
+    var g = 0;
+    region r {
+        let text = alloc_slice[r](8192, byte_of(0));
+        let n = fs_read(fs, meta_path, text);
+        if n > 0 && n < 8192 {
+            let src = text[0..n];
+            let tp = alloc_slice[r](json.tape_len(src) + 3, 0);
+            let nodes = json.parse(src, tp);
+            if nodes > 0 && json.is_object(tp, 0) {
+                a = int_at(src, tp, json.get(src, tp, 0, "samples"));
+                g = int_at(src, tp, json.get(src, tp, 0, "ms"));
+                let tk = json.get(src, tp, 0, "tokens");
+                if tk >= 0 && json.is_object(tp, tk) {
+                    b = int_at(src, tp, json.get(src, tp, tk, "in"));
+                    c = int_at(src, tp, json.get(src, tp, tk, "out"));
+                    d = int_at(src, tp, json.get(src, tp, tk, "thinking"));
+                    e = int_at(src, tp, json.get(src, tp, tk, "cache_write"));
+                    f = int_at(src, tp, json.get(src, tp, tk, "cache_read"));
+                }
+            }
+        }
+    }
+    return (a, b, c, d, e, f, g);
+}
+
+// Write one unit-edit call's sidecars into `<project>.call/`. Sample 1 starts the turn (the files are written whole); a later sample (a reply
+// without a program is asked for again within the turn) appends its reply after a `=== sample K ===` line and adds to the totals in meta.json.
+fn unit_note[&h, &z, &p, &a, &y](heap: &!h Heap, fs: &z Fs(""), project: &p [byte], sample: int, tin: int, tout: int, tthink: int, cw: int, cr: int, stop: &static [byte], outcome: &static [byte], ms: int, asked: &a [byte], reply: &y [byte], has_primer: bool) -> [heap, fs_read(""), fs_write("")] int {
+    let dir = path_cat(heap, project, ".call");
+    var wrote = 0;
+    borrow dir as &dq in {
+        let pp = path_under(heap, buffer.bytes(dq), "prompt.txt", "");
+        let rp = path_under(heap, buffer.bytes(dq), "reply.txt", "");
+        let mp = path_under(heap, buffer.bytes(dq), "meta.json", "");
+        borrow pp as &ppq in {
+            borrow rp as &rpq in {
+                borrow mp as &mpq in {
+                    if true {
+                        var samples = 1;
+                        var it = tin;
+                        var ot = tout;
+                        var kt = tthink;
+                        var wt = cw;
+                        var ct = cr;
+                        var tm = ms;
+                        var first = true;
+                        if sample > 1 {
+                            first = false;
+                            let (s0, i0, o0, k0, w0, c0, m0) = totals_so_far(fs, buffer.bytes(mpq));
+                            samples = s0 + 1;
+                            it = it + i0;
+                            ot = ot + o0;
+                            kt = kt + k0;
+                            wt = wt + w0;
+                            ct = ct + c0;
+                            tm = tm + m0;
+                        }
+                        // the prompt: the first sample's (the later ones ask the same)
+                        if first {
+                            if fs_write(fs, buffer.bytes(ppq), asked) == len(asked) {
+                                wrote = 1;
+                            }
+                        } else {
+                            wrote = 1;
+                        }
+                        if wrote == 1 {
+                            // the replies
+                            var body = buffer.empty(heap, len(reply) + 64);
+                            if first == false {
+                                let old = box_slice(heap, blob_cap(), byte_of(0));
+                                borrow mut old as &!ow in {
+                                    let on = fs_read(fs, buffer.bytes(rpq), contents(ow));
+                                    if on > 0 {
+                                        body = buffer.append(heap, body, contents(ow)[0..on]);
+                                    }
+                                }
+                                unbox_slice(heap, old);
+                                body = buffer.append(heap, body, "\n=== sample ");
+                                body = buffer.push_nat(heap, body, samples);
+                                body = buffer.append(heap, body, " ===\n");
+                            }
+                            body = buffer.append(heap, body, reply);
+                            borrow body as &bq in {
+                                fs_write(fs, buffer.bytes(rpq), buffer.bytes(bq));
+                            }
+                            buffer.drop(heap, body);
+                            // the totals
+                            var w = json.writer(heap, 256);
+                            w = json.begin_object(heap, w);
+                            w = put_num(heap, w, "samples", samples);
+                            w = json.put_key(heap, w, "tokens");
+                            w = json.begin_object(heap, w);
+                            w = put_num(heap, w, "in", it);
+                            w = put_num(heap, w, "out", ot);
+                            w = put_num(heap, w, "thinking", kt);
+                            w = put_num(heap, w, "cache_write", wt);
+                            w = put_num(heap, w, "cache_read", ct);
+                            w = json.end_object(heap, w);
+                            w = put_num(heap, w, "ms", tm);
+                            w = put_str(heap, w, "stop", stop);
+                            w = put_str(heap, w, "outcome", outcome);
+                            if has_primer {
+                                w = put_flag(heap, w, "primer", true);
+                            }
+                            w = json.end_object(heap, w);
+                            var doc = json.finish(w);
+                            doc = buffer.push(heap, doc, byte_of(10));
+                            borrow doc as &docq in {
+                                fs_write(fs, buffer.bytes(mpq), buffer.bytes(docq));
+                            }
+                            buffer.drop(heap, doc);
+                        }
+                    }
+                }
+            }
+        }
+        buffer.drop(heap, pp);
+        buffer.drop(heap, rp);
+        buffer.drop(heap, mp);
+    }
+    buffer.drop(heap, dir);
+    return wrote;
+}
+
+// ---- a plan's call: the events ----------------------------------------------
+
+// The lines of `text` as a JSON array of strings, each at most 300 bytes, at most 30 lines (what the plan check or the cases refused).
+fn put_lines[&h, &t](heap: &!h Heap, w: json.Writer, key: &static [byte], text: &t [byte]) -> [heap] json.Writer {
+    var o = json.put_key(heap, w, key);
+    o = json.begin_array(heap, o);
+    var i = 0;
+    var kept = 0;
+    while i < len(text) && kept < 30 {
+        var e = i;
+        while e < len(text) && int_of(text[e]) != 10 {
+            e = e + 1;
+        }
+        var z = e;
+        if z - i > 300 {
+            z = i + 300;
+        }
+        if z > i {
+            o = json.put_string(heap, o, text[i..z]);
+            kept = kept + 1;
+        }
+        i = e + 1;
+    }
+    o = json.end_array(heap, o);
+    return o;
+}
+
+// `<what>` of round `round`, sample `sample`: `<label>-r<round>-s<sample>-<what>` (`plan` for the plan's call, `review` for the review's).
+fn call_name[&h](heap: &!h Heap, label: &static [byte], round: int, sample: int, what: &static [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, buffer.empty(heap, 48), label);
+    b = buffer.append(heap, b, "-r");
+    b = buffer.push_nat(heap, b, round);
+    b = buffer.append(heap, b, "-s");
+    b = buffer.push_nat(heap, b, sample);
+    b = buffer.append(heap, b, "-");
+    b = buffer.append(heap, b, what);
+    return b;
+}
+
+// One `plan_call` event: a model call of the plan stage (the plan itself, or its review). `errors` is what the checks refused, one per line, to be
+// fed back next round (empty: none). The primer is stored once as `blobs/primer.txt`; the event says `"primer": true` and the prompt blob holds
+// the rest.
+pub fn plan_call[&h, &z, &c, &j, &a, &y, &e](heap: &!h Heap, fs: &z Fs(""), clock: &c Clock, jdir: &j [byte], label: &static [byte], round: int, sample: int, tin: int, tout: int, tthink: int, cw: int, cr: int, ms: int, stop: &static [byte], outcome: &static [byte], asked: &a [byte], reply: &y [byte], errors: &e [byte], has_primer: bool) -> [heap, clock, fs_read(""), fs_write("")] int {
+    if len(jdir) == 0 {
+        return -1;
+    }
+    var w = begin_event(heap, clock_unix_ms(clock), "plan_call");
+    w = put_num(heap, w, "round", round);
+    w = put_num(heap, w, "sample", sample);
+    w = json.put_key(heap, w, "tokens");
+    w = json.begin_object(heap, w);
+    w = put_num(heap, w, "in", tin);
+    w = put_num(heap, w, "out", tout);
+    w = put_num(heap, w, "thinking", tthink);
+    w = put_num(heap, w, "cache_write", cw);
+    w = put_num(heap, w, "cache_read", cr);
+    w = json.end_object(heap, w);
+    w = put_num(heap, w, "ms", ms);
+    if len(stop) > 0 {
+        w = put_str(heap, w, "stop", stop);
+    }
+    w = put_str(heap, w, "outcome", outcome);
+    if has_primer {
+        w = put_flag(heap, w, "primer", true);
+    }
+    let pn = call_name(heap, label, round, sample, "prompt.txt");
+    borrow pn as &pq in {
+        if blob_put(heap, fs, jdir, buffer.bytes(pq), asked) == 0 {
+            w = put_str(heap, w, "prompt", buffer.bytes(pq));
+        }
+    }
+    buffer.drop(heap, pn);
+    if len(reply) > 0 {
+        let rn = call_name(heap, label, round, sample, "reply.txt");
+        borrow rn as &rq in {
+            if blob_put(heap, fs, jdir, buffer.bytes(rq), reply) == 0 {
+                w = put_str(heap, w, "reply", buffer.bytes(rq));
+            }
+        }
+        buffer.drop(heap, rn);
+    }
+    w = put_lines(heap, w, "errors", errors);
+    return end_event(heap, fs, jdir, w);
+}
+
+// The call the agent just made, whatever the mode: editing a unit leaves the sidecars, planning adds a `plan_call` event. `asked` is the prompt
+// (`asked_text`, built when the request was).
+pub fn note[&h, &z, &c, &j, &p, &a, &y, &e](heap: &!h Heap, fs: &z Fs(""), clock: &c Clock, jdir: &j [byte], project: &p [byte], plan_mode: bool, sample: int, tin: int, tout: int, tthink: int, cw: int, cr: int, ms: int, stop: &static [byte], outcome: &static [byte], asked: &a [byte], reply: &y [byte], errors: &e [byte], has_primer: bool) -> [heap, clock, fs_read(""), fs_write("")] int {
+    if plan_mode {
+        return plan_call(heap, fs, clock, jdir, "plan", sample, 1, tin, tout, tthink, cw, cr, ms, stop, outcome, asked, reply, errors, has_primer);
+    }
+    return unit_note(heap, fs, project, sample, tin, tout, tthink, cw, cr, stop, outcome, ms, asked, reply, has_primer);
+}
+
+// The primer (13k tokens, the same on every call) is kept once: `blobs/primer.txt` of the journal when planning, `<project>.call/primer.txt` when
+// editing (the driver moves it into the journal). Nothing happens when it is there already or there is no place to put it.
+pub fn keep_primer[&h, &z, &j, &p, &q](heap: &!h Heap, fs: &z Fs(""), jdir: &j [byte], project: &p [byte], plan_mode: bool, primer: &q [byte]) -> [heap, fs_read(""), fs_write("")] int {
+    if len(primer) == 0 {
+        return 0;
+    }
+    if plan_mode {
+        if len(jdir) > 0 && blob_there(heap, fs, jdir, "primer.txt") == false {
+            blob_put(heap, fs, jdir, "primer.txt", primer);
+        }
+        return 0;
+    }
+    let path = path_cat(heap, project, ".call/primer.txt");
+    borrow path as &pq in {
+        region g {
+            let probe = alloc_slice[g](16, byte_of(0));
+            if fs_read(fs, buffer.bytes(pq), probe) < 0 {
+                fs_write(fs, buffer.bytes(pq), primer);
+            }
+        }
+    }
+    buffer.drop(heap, path);
+    return 0;
+}
+
+// The `plan_review` event, from the review's report (src/review.cho: `[REVIEW_DROPPED]<TAB>unit<TAB>case<TAB>planner .. reviewer ..` for a
+// case it did not confirm, `[REVIEW_ERROR]` for a problem, `[REVIEW]<TAB>kept K of N cases` last). `failed`: the review refused the plan, and the
+// report is the refusal. The whole report is the blob.
+pub fn plan_review[&h, &z, &c, &j, &r](heap: &!h Heap, fs: &z Fs(""), clock: &c Clock, jdir: &j [byte], round: int, report: &r [byte], failed: bool) -> [heap, clock, fs_read(""), fs_write("")] int {
+    if len(jdir) == 0 {
+        return -1;
+    }
+    var w = begin_event(heap, clock_unix_ms(clock), "plan_review");
+    w = put_num(heap, w, "round", round);
+    var kept = 0;
+    var total = 0;
+    var errors = buffer.empty(heap, 64);
+    var has_err = false;
+    var dropped = json.writer(heap, 256);
+    dropped = json.begin_array(heap, dropped);
+    var i = 0;
+    while i < len(report) {
+        var e = i;
+        while e < len(report) && int_of(report[e]) != 10 {
+            e = e + 1;
+        }
+        let line = report[i..e];
+        if bytes.starts_with(line, "[REVIEW_DROPPED]") {
+            dropped = json.begin_object(heap, dropped);
+            dropped = put_str(heap, dropped, "unit", bytes.field(line, 9, 2));
+            dropped = put_num(heap, dropped, "case", number_of(bytes.field(line, 9, 3)));
+            dropped = put_str(heap, dropped, "reason", bytes.field(line, 9, 4));
+            dropped = json.end_object(heap, dropped);
+        } else if bytes.starts_with(line, "[REVIEW_ERROR]") {
+            if has_err {
+                errors = buffer.append(heap, errors, "; ");
+            }
+            has_err = true;
+            errors = buffer.append(heap, errors, bytes.field(line, 9, 4));
+        } else if bytes.starts_with(line, "[REVIEW]") {
+            // `[REVIEW]<TAB>kept K of N cases`
+            let words = bytes.field(line, 9, 2);
+            kept = number_of(bytes.field(words, 32, 2));
+            total = number_of(bytes.field(words, 32, 4));
+        }
+        i = e + 1;
+    }
+    dropped = json.end_array(heap, dropped);
+    if failed == false {
+        w = put_num(heap, w, "kept", kept);
+        w = put_num(heap, w, "of", total);
+    }
+    w = json.put_key(heap, w, "dropped");
+    borrow dropped as &dq in {
+        w = json.put_fragment(heap, w, json.bytes(dq));
+    }
+    json.drop(heap, dropped);
+    borrow errors as &eq in {
+        if len(buffer.bytes(eq)) > 0 {
+            w = put_str(heap, w, "error", buffer.bytes(eq));
+        } else if failed {
+            var cut = len(report);
+            if cut > 300 {
+                cut = 300;
+            }
+            w = put_str(heap, w, "error", report[0..cut]);
+        }
+    }
+    buffer.drop(heap, errors);
+    var name = buffer.append(heap, buffer.empty(heap, 32), "plan-r");
+    name = buffer.push_nat(heap, name, round);
+    name = buffer.append(heap, name, "-review.txt");
+    borrow name as &nq in {
+        if blob_put(heap, fs, jdir, buffer.bytes(nq), report) == 0 {
+            w = put_str(heap, w, "blob", buffer.bytes(nq));
+        }
+    }
+    buffer.drop(heap, name);
+    return end_event(heap, fs, jdir, w);
+}
+
+// The non-negative integer in `text` (0 when there is none).
+fn number_of[&t](text: &t [byte]) -> [] int {
+    var n = 0;
+    var i = 0;
+    while i < len(text) && int_of(text[i]) >= 48 && int_of(text[i]) <= 57 {
+        n = n * 10 + int_of(text[i]) - 48;
+        i = i + 1;
+    }
+    return n;
+}

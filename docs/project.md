@@ -23,6 +23,8 @@ project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds
 | `project.cho.before` | `project.cho` as it was before the unit was built; a unit that fails (not one that is merely unavailable) puts it back, so the units that do not depend on it still build on a file without the failed unit's leftovers |
 | `project.cho.feedback`, `.acceptance`, `.trail.jsonl`, `.agent.err`, `.agent.log`, `project.cho.snap<N>.cho`... | what `fix`'s loop writes beside its file (the loop is reused: `driver.run_issue`) |
 
+The run's story is also kept in `journal/` (`events.jsonl` and `blobs/`: every attempt's prompt, reply, code, the compiler's whole refusal, the acceptance output and the diff against the attempt before; [journal.md](journal.md)); the files above are as they were.
+
 Files without a `module` header share one namespace when compiled together, so the tests call the functions unqualified.
 
 ## The task file

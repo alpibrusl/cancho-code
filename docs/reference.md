@@ -49,6 +49,8 @@ real API, the checker still the oracle.
 
 `build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [options]` goes from a brief to a verified build in one command: the agent writes the plan, the plan is checked, the project is built, and the run ends `[BUILD_VERDICT] done|stuck|gate_failed|plan_failed|provider_error` (exit 0, 1, 1, 3, 4), resuming from `plan.json` and `state.txt`, with `build.json` for dashboards. Spec: [docs/build.md](build.md); gate: `scripts/test-build.sh` (a stand-in agent, no model).
 
+Every run of `build` and `project` also leaves a **journal** in `<workdir>/journal/`: the events in order (`events.jsonl`) and the texts they name (`blobs/`): each model call's prompt and reply, each attempt's code, the compiler's whole refusal, the acceptance output and the diff against the attempt before, the review's dropped cases, the sweeps and the verdict, so the full story of a run can be shown. Spec: [docs/journal.md](journal.md); gate: `scripts/test-journal.sh`.
+
 ## A Claude agent
 
 `scripts/cancho-agent.sh --provider anthropic` is the same agent over Anthropic's Messages API. **Its key comes from a file**, never from the environment or the command line: the driver's agent has no environment, and a key in the agent command would be in the process list. The agent verifies the server's certificate against the system's CA bundle (native TLS) and prints the key nowhere.

@@ -13,6 +13,8 @@
 #   review    a second, blind pass; a case survives only if the reviewer re-derives it; "agreed with none" rejects the plan; a MISCOUNTED answer (a slip of the reviewer) is retried once, told what was wrong, and if it fails again the plan is kept UNREVIEWED and says so on stderr
 #   cut off   a plan cut off by the bound is asked again with the bound doubled (at most 32000); an empty cut-off reply is told its thinking used the bound
 #   usage     --usage-log records one line per call with the round's outcome (rejected | written | no_plan | cut_off | needs_input)
+#   journal   --journal <dir> records every model call of the plan stage (docs/journal.md): one `plan_call` event per call with the prompt and the raw reply as
+#             blobs, tokens, time, stop reason, outcome and what the checks refused; the primer once; a `plan_review` with the cases the reviewer dropped and why
 #   required  no --guide / no --brief / no output path: exit 2 before any request
 set -u
 CANCHO="${CANCHO:-cancho}"
@@ -26,7 +28,7 @@ fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }
 d=$(mktemp -d -t cc-planner-XXXXXX)
 exe="$d/agent"
-"$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" "$root/src/prompt.cho" "$root/src/planprompt.cho" "$root/src/plan.cho" "$root/src/cases.cho" "$root/src/review.cho" "$root/src/splice.cho" "$root/src/provider.cho" "$root/src/reply.cho" \
+"$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" "$root/src/prompt.cho" "$root/src/planprompt.cho" "$root/src/plan.cho" "$root/src/cases.cho" "$root/src/review.cho" "$root/src/splice.cho" "$root/src/provider.cho" "$root/src/reply.cho" "$root/src/calls.cho" \
     "$root/vendor/fetch_io.cho" "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho --std --backend cranelift -o "$exe" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }
 "$CANCHO" build "$root/tests/programs/plancheck.cho" "$root/src/plan.cho" --std --backend cranelift -o "$d/plancheck" >/dev/null 2>&1 || { echo "plancheck did not build" >&2; exit 2; }
@@ -186,6 +188,25 @@ expect "review miscount: the second try reviewed it: the agreed case survives, t
 case "$(cat "$d/e")" in *"REVIEW_ERROR"*"1 answers for 2 cases"*) ;; *) echo "FAIL: review miscount: the first try's error is not on stderr" >&2; fail=1 ;; esac
 case "$(cat "$d/e")" in *unreviewed*) echo "FAIL: review miscount: marked unreviewed although the second try worked" >&2; fail=1 ;; esac
 stop
+# the journal of a review that miscounts and is asked again: both review calls are events, the first review_failed with what was wrong
+JM="$d/jmis"; rm -rf "$JM"; mkdir -p "$JM/blobs"
+start; printf '%s' "$RC" > "$d/response.1.txt"; printf '{"units": [{"id": "clamp", "answers": [{"expect": 3}]}]}' > "$d/response.2.txt"; printf '{"units": [{"id": "clamp", "answers": [{"expect": 3}, {"expect": 1}]}]}' > "$d/response.3.txt"; rm -f "$d/out/plan.json" "$d/response.txt"
+plan $G $RV --journal "$JM" >/dev/null 2>&1
+python3 -I - "$JM" <<'PY' || fail=1
+import json, sys
+jd = sys.argv[1]
+ev = [json.loads(l) for l in open(jd + "/events.jsonl")]
+k = [e["kind"] + ":" + e.get("outcome", "") + ":" + str(e.get("sample", "")) for e in ev]
+bad_ = []
+if k != ["plan_call:written:1", "plan_call:review_failed:1", "plan_review::", "plan_call:reviewed:2", "plan_review::"]: bad_.append("events %r" % k)
+else:
+    f = ev[1]
+    if not any("1 answers for 2 cases" in x for x in f["errors"]): bad_.append("errors of the failed review %r" % f["errors"])
+    if f["prompt"] == ev[3]["prompt"] or "UNUSABLE" not in open(jd + "/blobs/" + ev[3]["prompt"]).read(): bad_.append("the second review's prompt does not carry the slip")
+    if ev[4]["kept"] != 1 or ev[4]["of"] != 2: bad_.append("second review %r" % ev[4])
+if bad_: print("FAIL: journal miscount: " + "; ".join(bad_), file=sys.stderr); sys.exit(1)
+PY
+stop
 # miscounts twice: the plan is KEPT, unreviewed (both its cases), and the log says so, with the errors: never silent, never a rejected plan
 start; printf '%s' "$RC" > "$d/response.1.txt"; printf '{"units": [{"id": "clamp", "answers": [{"expect": 3}]}]}' > "$d/response.2.txt"; cp "$d/response.2.txt" "$d/response.3.txt"; rm -f "$d/out/plan.json" "$d/ulog"
 plan $G $RV --usage-log "$d/ulog" >/dev/null 2>"$d/e"; rc=$?
@@ -199,6 +220,89 @@ stop
 # --review on needs its guide
 start; plan $G --review on >/dev/null 2>"$d/e"; rc=$?
 expect "review: no --review-guide is exit 2" "$rc" 2
+stop
+
+# journal: every call of the plan stage is recorded
+printf 'PRIMER-ONCE-XYZ\n' > "$d/primer.md"
+JD="$d/jr"; rm -rf "$JD"; mkdir -p "$JD/blobs"
+start; printf '%s' "$BAD" > "$d/response.1.txt"; printf 'Corrected:\n%s\n' "$GOOD" > "$d/response.2.txt"; rm -f "$d/out/plan.json"
+plan $G --primer "$d/primer.md" --journal "$JD" >/dev/null 2>"$d/e"; rc=$?
+expect "journal: exit code" "$rc" 0
+python3 -I - "$JD" "$d" "$BAD" <<'PY' || fail=1
+import json, sys
+jd, d, bad = sys.argv[1:4]
+ev = [json.loads(l) for l in open(jd + "/events.jsonl")]
+blob = lambda n: open(jd + "/blobs/" + n, encoding="utf-8").read()
+req = lambda n: json.load(open("%s/request.%d.json" % (d, n)))["prompt"]
+primer = open(d + "/primer.md").read()
+bad_ = []
+if [e["kind"] for e in ev] != ["plan_call", "plan_call"]: bad_.append("kinds %r" % [e["kind"] for e in ev])
+else:
+    a, b = ev
+    if (a["round"], a["sample"], a["outcome"], b["round"], b["outcome"]) != (1, 1, "rejected", 2, "written"): bad_.append("rounds/outcomes %r" % [(e["round"], e["sample"], e["outcome"]) for e in ev])
+    if a["tokens"] != {"in": 9, "out": 7, "thinking": 0, "cache_write": 0, "cache_read": 0}: bad_.append("tokens %r" % a["tokens"])
+    if a.get("stop") != "stop" or not isinstance(a.get("ms"), int): bad_.append("stop/ms %r %r" % (a.get("stop"), a.get("ms")))
+    if not any("no-example" in x for x in a["errors"]): bad_.append("errors of round 1: %r" % a["errors"])
+    if b["errors"] != []: bad_.append("errors of round 2: %r" % b["errors"])
+    for n, e in ((1, a), (2, b)):
+        if primer + blob(e["prompt"]) != req(n): bad_.append("round %d: primer + prompt blob is not the request's prompt" % n)
+        if not e.get("primer"): bad_.append("round %d: no primer flag" % n)
+    if blob(a["reply"]) != bad: bad_.append("reply 1 is not the model's reply: %r" % blob(a["reply"]))
+    if "Corrected:" not in blob(b["reply"]): bad_.append("reply 2 is not the model's reply")
+    if blob("primer.txt") != primer: bad_.append("blobs/primer.txt is not the primer")
+    import os
+    holders = [f for f in os.listdir(jd + "/blobs") if "PRIMER-ONCE-XYZ" in blob(f)]
+    if holders != ["primer.txt"]: bad_.append("the primer is in %r" % holders)
+    if "REJECTED" not in blob(b["prompt"]) or "no-example" not in blob(b["prompt"]): bad_.append("round 2's prompt blob does not carry the refusal")
+if bad_: print("FAIL: journal: " + "; ".join(bad_), file=sys.stderr); sys.exit(1)
+PY
+stop
+# without --journal nothing is written
+JN="$d/jn"; rm -rf "$JN"; mkdir -p "$JN"
+start; printf '%s' "$GOOD" > "$d/response.txt"; rm -f "$d/response.1.txt" "$d/response.2.txt"
+plan $G >/dev/null 2>&1; expect "journal: off without --journal" "$(ls "$JN" | wc -l | tr -d ' ')" 0
+stop
+# the review: its call, and the cases it dropped with the reason
+JR="$d/jrev"; rm -rf "$JR"; mkdir -p "$JR/blobs"
+start; printf '%s' "$RC" > "$d/response.1.txt"; printf '{"units": [{"id": "clamp", "answers": [{"expect": 3}, {"expect": 1}]}]}' > "$d/response.2.txt"; rm -f "$d/response.txt" "$d/out/plan.json"
+plan $G $RV --primer "$d/primer.md" --journal "$JR" >/dev/null 2>&1
+python3 -I - "$JR" <<'PY' || fail=1
+import json, sys
+jd = sys.argv[1]
+ev = [json.loads(l) for l in open(jd + "/events.jsonl")]
+bad_ = []
+if [e["kind"] for e in ev] != ["plan_call", "plan_call", "plan_review"]: bad_.append("kinds %r" % [e["kind"] for e in ev])
+else:
+    p, r, v = ev
+    if (p["outcome"], r["outcome"], r["round"], r["sample"]) != ("written", "reviewed", 1, 1): bad_.append("outcomes %r" % [e["outcome"] for e in ev[:2]])
+    if "Verifying the cases" not in open(jd + "/blobs/" + r["prompt"]).read(): bad_.append("the review's prompt is not in its blob")
+    if p["prompt"] == r["prompt"] or p["reply"] == r["reply"] or "=== THE TASK ===" not in open(jd + "/blobs/" + p["prompt"]).read(): bad_.append("the review's blobs overwrote the plan's")
+    if p.get("primer") is not True or r.get("primer"): bad_.append("primer flags: the plan call carries the primer, the review call does not: %r %r" % (p.get("primer"), r.get("primer")))
+    if (v["kept"], v["of"]) != (1, 2): bad_.append("kept %r of %r" % (v["kept"], v["of"]))
+    d = v["dropped"]
+    if len(d) != 1 or d[0]["unit"] != "clamp" or d[0]["case"] != 2 or not d[0]["reason"].startswith("planner 99 reviewer 1"): bad_.append("dropped %r" % d)
+    if "REVIEW_DROPPED" not in open(jd + "/blobs/" + v["blob"]).read(): bad_.append("the review's blob is not its report")
+if bad_: print("FAIL: journal review: " + "; ".join(bad_), file=sys.stderr); sys.exit(1)
+PY
+stop
+# a review that refuses the plan (it agrees with none of a unit's cases): the refusal is in the event
+JX="$d/jrev2"; rm -rf "$JX"; mkdir -p "$JX/blobs"
+start; printf '%s' "$RC" > "$d/response.1.txt"; printf '{"units": [{"id": "clamp", "answers": [{"skip": true}, {"expect": 1}]}]}' > "$d/response.2.txt"
+printf '%s' "$RC" | sed 's/"expect": 99/"expect": 1/' > "$d/response.3.txt"; printf '{"units": [{"id": "clamp", "answers": [{"expect": 3}, {"expect": 1}]}]}' > "$d/response.4.txt"; rm -f "$d/out/plan.json"
+plan $G $RV --journal "$JX" >/dev/null 2>&1
+python3 -I - "$JX" <<'PY' || fail=1
+import json, sys
+ev = [json.loads(l) for l in open(sys.argv[1] + "/events.jsonl")]
+bad_ = []
+k = [e["kind"] + (":" + e["outcome"] if "outcome" in e else "") for e in ev]
+if k != ["plan_call:written", "plan_call:review_rejected", "plan_review", "plan_call:written", "plan_call:reviewed", "plan_review"]: bad_.append("events %r" % k)
+else:
+    rej = ev[2]
+    if "agreed with none" not in rej.get("error", "") and "agreed with none" not in "".join(ev[1]["errors"]): bad_.append("no refusal in the events: %r" % rej)
+    if rej["dropped"] != [{"unit": "clamp", "case": 1, "reason": "planner 3 reviewer skip"}, {"unit": "clamp", "case": 2, "reason": "planner 99 reviewer 1"}]: bad_.append("dropped of the refused review %r" % rej["dropped"])
+    if ev[1]["errors"] == []: bad_.append("the refusal fed back is not in plan_call errors")
+if bad_: print("FAIL: journal review none: " + "; ".join(bad_), file=sys.stderr); sys.exit(1)
+PY
 stop
 
 # ceiling: every round rejected; an existing file is untouched

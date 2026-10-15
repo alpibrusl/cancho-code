@@ -51,6 +51,7 @@ edition 7;
 // Exit 2: the command line was wrong; nothing was read or sent.
 
 import anthropic;
+import calls;
 import cases;
 import ollama;
 import plan;
@@ -304,7 +305,7 @@ fn only_disagreement[&r](rep: &r [byte]) -> [] bool {
 // arguments of each case, never an expected value) and re-derives the results; `review.apply` keeps the cases it agrees with. Up to two tries to get a
 // usable answer. Answers (0, the plan as expanded again after the drops), (1, the report: the review refused the plan: a unit lost all its cases) or
 // (2, empty: no usable review, the plan stands unreviewed).
-fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, &r9, &r10, &r11, &r12, &r13](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, host: &r1 [byte], ip: &r2 [byte], port: int, secure: bool, path: &r3 [byte], headers: &r4 [byte], roots: &r5 [byte], entropy: &!e [byte], local: bool, model: &r7 [byte], num_ctx: int, max_tokens: int, thinking: &r8 [byte], effort: &r9 [byte], obj: &r10 [byte], rguide: &r11 [byte], usage_path: &r6 [byte], provider_label: &static [byte], task: &r12 [byte], attempt: int) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write] (int, buffer.Buffer) {
+fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, &r9, &r10, &r11, &r12, &r13](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, host: &r1 [byte], ip: &r2 [byte], port: int, secure: bool, path: &r3 [byte], headers: &r4 [byte], roots: &r5 [byte], entropy: &!e [byte], local: bool, model: &r7 [byte], num_ctx: int, max_tokens: int, thinking: &r8 [byte], effort: &r9 [byte], obj: &r10 [byte], rguide: &r11 [byte], usage_path: &r6 [byte], provider_label: &static [byte], task: &r12 [byte], attempt: int, jdir: &r13 [byte]) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write] (int, buffer.Buffer) {
     let questions = review.blind(heap, obj);
     var verdict = 2;
     var result = buffer.empty(heap, 16);
@@ -327,6 +328,9 @@ fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, 
     var slip = buffer.empty(heap, 16);
     var tries = 0;
     var settled = false;
+    var jrep = buffer.empty(heap, 16);
+    var jfail = false;
+    var jhave = false;
     while tries < 2 && settled == false {
         tries = tries + 1;
         var body = buffer.empty(heap, 16);
@@ -349,7 +353,6 @@ fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, 
                 body = anthropic.request_body(heap, model, max_tokens, "", buffer.bytes(pr), thinking, effort);
             }
         }
-        buffer.drop(heap, asked);
         let t0 = clock_ms(clock);
         var text = buffer.empty(heap, 16);
         var cut = false;
@@ -395,6 +398,12 @@ fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, 
             if status == 200 && cut == false && ja >= 0 {
                 let answers = buffer.bytes(xr)[ja..jz];
                 let (filtered, rrep, rcode) = review.apply(heap, obj, answers);
+                borrow rrep as &rrj in {
+                    buffer.drop(heap, jrep);
+                    jrep = buffer.append(heap, buffer.empty(heap, len(buffer.bytes(rrj)) + 8), buffer.bytes(rrj));
+                    jfail = rcode != 0;
+                    jhave = true;
+                }
                 var judged = false;
                 if rcode != 0 {
                     borrow rrep as &rq in {
@@ -477,9 +486,47 @@ fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, 
             tlen = len(buffer.bytes(tq));
         }
         log_call(heap, fs, usage_path, provider_label, model, task, attempt, tin, tout, tthink, tcw, tcr, "", outcome, status, tlen, 0, clock_ms(clock) - t0);
+        var rstop = "end_turn";
+        if local {
+            rstop = "stop";
+        }
+        if cut {
+            rstop = "max_tokens";
+            if local {
+                rstop = "length";
+            }
+        }
+        if status != 200 {
+            rstop = "";
+        }
+        borrow asked as &ptj in {
+            borrow text as &txj in {
+                borrow result as &rsj in {
+                    if bytes.equal(outcome, "review_rejected") {
+                        calls.plan_call(heap, fs, clock, jdir, "review", attempt, tries, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, rstop, outcome, buffer.bytes(ptj), buffer.bytes(txj), buffer.bytes(rsj), false);
+                    } else if bytes.equal(outcome, "review_failed") && jhave {
+                        borrow slip as &slj in {
+                            calls.plan_call(heap, fs, clock, jdir, "review", attempt, tries, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, rstop, outcome, buffer.bytes(ptj), buffer.bytes(txj), buffer.bytes(slj), false);
+                        }
+                    } else if bytes.equal(outcome, "review_failed") {
+                        calls.plan_call(heap, fs, clock, jdir, "review", attempt, tries, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, rstop, outcome, buffer.bytes(ptj), buffer.bytes(txj), "the review gave no usable answer", false);
+                    } else {
+                        calls.plan_call(heap, fs, clock, jdir, "review", attempt, tries, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, rstop, outcome, buffer.bytes(ptj), buffer.bytes(txj), "", false);
+                    }
+                }
+            }
+        }
+        if jhave {
+            borrow jrep as &jrq in {
+                calls.plan_review(heap, fs, clock, jdir, attempt, buffer.bytes(jrq), jfail);
+            }
+            jhave = false;
+        }
         buffer.drop(heap, text);
         buffer.drop(heap, body);
+        buffer.drop(heap, asked);
     }
+    buffer.drop(heap, jrep);
     buffer.drop(heap, prompt_text);
     buffer.drop(heap, slip);
     if settled == false {
@@ -780,6 +827,10 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
         fs_read(fs, "/dev/urandom", contents(ew));
     }
     let usage_path = opt(args, "--usage-log");
+    // docs/journal.md: the directory the plan stage's model calls are recorded in (none: they are not), and the prompt of this round
+    let jdir = opt(args, "--journal");
+    var asked_now = buffer.empty(heap, 16);
+    var has_primer = false;
     var provider_label = "anthropic";
     if local {
         provider_label = "ollama";
@@ -800,6 +851,12 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                     borrow task as &tr in {
                         borrow feedback as &fr in {
                             buffer.drop(heap, body);
+                            buffer.drop(heap, asked_now);
+                            asked_now = calls.asked_text(heap, plan_mode, patch_out, buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                            has_primer = len(buffer.bytes(pr)) > 0;
+                            if attempt == 1 {
+                                calls.keep_primer(heap, fs, jdir, project, plan_mode, buffer.bytes(pr));
+                            }
                             let te = task_effort(buffer.bytes(tr));
                             if len(te) > 0 {
                                 body = make_body(heap, local, plan_mode, patch_out, model, num_ctx, bound, thinking, te, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
@@ -821,6 +878,9 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                             borrow task as &lt in {
                                 log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, 0, 0, 0, 0, 0, "", "unreachable", 0, 0, 0, clock_ms(clock) - t0);
                             }
+                            borrow asked_now as &anj in {
+                                calls.note(heap, fs, clock, jdir, project, plan_mode, attempt, 0, 0, 0, 0, 0, clock_ms(clock) - t0, "", "unreachable", buffer.bytes(anj), "", "the API could not be reached", has_primer);
+                            }
                             io.error_all(io, "cancho-agent: cannot reach the API: ");
                             io.error_all(io, provider.tag_of(tag));
                             io.error_all(io, "\n");
@@ -832,6 +892,9 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                 if status != 200 {
                                     borrow task as &lt in {
                                         log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, 0, 0, 0, 0, 0, "", "api_error", status, len(answer), 0, clock_ms(clock) - t0);
+                                    }
+                                    borrow asked_now as &anj in {
+                                        calls.note(heap, fs, clock, jdir, project, plan_mode, attempt, 0, 0, 0, 0, 0, clock_ms(clock) - t0, "", "api_error", buffer.bytes(anj), answer, "the API answered with an error", has_primer);
                                     }
                                     var why = buffer.empty(heap, 16);
                                     buffer.drop(heap, why);
@@ -959,11 +1022,24 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                             borrow task as &lt in {
                                                 log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, tin, tout, tthink, tcw, tcr, pstop, po, status, len(buffer.bytes(xr)), jlen, clock_ms(clock) - t0);
                                             }
+                                            borrow asked_now as &anj in {
+                                                borrow report as &rpj in {
+                                                    if cut {
+                                                        calls.note(heap, fs, clock, jdir, project, plan_mode, attempt, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, pstop, po, buffer.bytes(anj), buffer.bytes(xr), "the reply was cut off by the token bound", has_primer);
+                                                    } else if ja < 0 {
+                                                        calls.note(heap, fs, clock, jdir, project, plan_mode, attempt, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, pstop, po, buffer.bytes(anj), buffer.bytes(xr), "the reply contains no JSON object", has_primer);
+                                                    } else if bytes.equal(po, "rejected") {
+                                                        calls.note(heap, fs, clock, jdir, project, plan_mode, attempt, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, pstop, po, buffer.bytes(anj), buffer.bytes(xr), buffer.bytes(rpj), has_primer);
+                                                    } else {
+                                                        calls.note(heap, fs, clock, jdir, project, plan_mode, attempt, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, pstop, po, buffer.bytes(anj), buffer.bytes(xr), "", has_primer);
+                                                    }
+                                                }
+                                            }
                                             if accepted && review_on {
                                                 // the blind second pass: the cases the reviewer cannot re-derive are dropped
                                                 borrow rguide as &rgr in {
                                                     borrow task as &lt2 in {
-                                                        let (rv, rres) = review_phase(heap, fs, net, clock, io, host, ip, port, secure, path, buffer.bytes(hr), buffer.bytes(rr), contents(ew), local, model, num_ctx, max_tokens, thinking, effort, buffer.bytes(xr)[ja..jz], buffer.bytes(rgr), usage_path, provider_label, task_head(buffer.bytes(lt2)), attempt);
+                                                        let (rv, rres) = review_phase(heap, fs, net, clock, io, host, ip, port, secure, path, buffer.bytes(hr), buffer.bytes(rr), contents(ew), local, model, num_ctx, max_tokens, thinking, effort, buffer.bytes(xr)[ja..jz], buffer.bytes(rgr), usage_path, provider_label, task_head(buffer.bytes(lt2)), attempt, jdir);
                                                         if rv == 0 {
                                                             buffer.drop(heap, final_plan);
                                                             final_plan = rres;
@@ -1115,6 +1191,9 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                         borrow task as &lt in {
                                             log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, tin, tout, tthink, tcw, tcr, stop, outcome, status, len(buffer.bytes(xr)), plen, clock_ms(clock) - t0);
                                         }
+                                        borrow asked_now as &anj in {
+                                            calls.note(heap, fs, clock, jdir, project, plan_mode, attempt, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, stop, outcome, buffer.bytes(anj), buffer.bytes(xr), "", has_primer);
+                                        }
                                         if cut {
                                             io.error_all(io, "cancho-agent: a sample was cut off by the bound (--max-tokens / --num-predict)\n");
                                             if grown_bound(bound) > bound {
@@ -1176,6 +1255,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
         }
     }
     unbox_slice(heap, entropy);
+    buffer.drop(heap, asked_now);
     buffer.drop(heap, headers);
     buffer.drop(heap, body);
     buffer.drop(heap, key_raw);
