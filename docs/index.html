@@ -3,90 +3,154 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>cancho-code: an assistant for cancho that proves its work</title>
-<meta name="description" content="A coding assistant written in cancho that ends every task in a machine-readable verdict produced by the type checker — never by what the model says about itself. Loop-safety as contracts: attempt ceilings, a same-signature stop rule, snapshot and restore.">
-<meta property="og:title" content="cancho-code: an assistant for cancho that proves its work">
-<meta property="og:description" content="Every task ends in a verdict produced by the compiler, bounded by contracts, with the agent any local or cloud model.">
+<title>cancho-code: an AI coding assistant that proves its work</title>
+<meta name="description" content="cancho-code builds software unit by unit and ends every task with a verdict from the compiler, not from the model. Works with Claude or a local model.">
+<meta property="og:title" content="cancho-code: an AI coding assistant that proves its work">
+<meta property="og:description" content="The compiler decides when the work is done. Loops stop. Any model.">
 <meta name="color-scheme" content="light dark">
 <style>
 :root {
   --bg: #fbfcfd; --fg: #14181a; --muted: #55606a; --line: #dfe5e7; --surface: #ffffff; --soft: #eff4f4;
-  --accent: #1f5fa6; --accent-fg: #ffffff; --good: #0f7b5f; --warn: #92400e; --warn-bg: #fdf6e7; --warn-line: #e0b765; --bad: #b42d27;
+  --accent: #1f5fa6; --accent-fg: #ffffff; --good: #0f7b5f; --bad: #b42d27; --warn: #92400e;
+  --term-bg: #0f1519; --term-fg: #d6e2e6; --term-dim: #7d8f96; --term-good: #5fd3a6; --term-bad: #ff8a80; --term-acc: #8ec0ff;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #0b0f14; --fg: #e7ebec; --muted: #9aa8ae; --line: #212a2d; --surface: #131a1c; --soft: #172022;
-    --accent: #7fb2ff; --accent-fg: #07162c; --good: #4fd1a5; --warn: #f3c77a; --warn-bg: #1d1a12; --warn-line: #8a6a2a; --bad: #ff7b73; }
+    --accent: #7fb2ff; --accent-fg: #07162c; --good: #4fd1a5; --bad: #ff7b73; --warn: #f3c77a; --term-bg: #0a1013; }
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; scroll-padding-top: 4rem; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 1rem/1.6 var(--font); }
 a { color: var(--accent); text-underline-offset: .15em; }
-.wrap { width: 100%; max-width: 68rem; margin: 0 auto; padding: 0 16px; }
+.wrap { width: 100%; max-width: 64rem; margin: 0 auto; padding: 0 16px; }
 header.top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
 header.top .wrap { display: flex; align-items: center; gap: 1.5rem; height: 3.4rem; }
-.brand { display: inline-flex; align-items: center; gap: .5rem; font: 700 1rem var(--mono); color: var(--fg); text-decoration: none; letter-spacing: -.01em; }
+.brand { font: 700 1rem var(--mono); color: var(--fg); text-decoration: none; }
 nav { display: flex; gap: 1.2rem; margin-left: auto; }
 nav a { color: var(--muted); text-decoration: none; font-size: .93rem; }
 nav a:hover { color: var(--fg); }
 @media (max-width: 40rem) { nav a.opt { display: none; } }
-.hero { padding: 3.5rem 0 2.5rem; border-bottom: 1px solid var(--line); }
-.hero h1 { font-size: clamp(1.6rem, 4vw, 2.6rem); line-height: 1.15; margin: 0 0 1rem; letter-spacing: -.02em; }
-.hero .sub { font-size: 1.1rem; color: var(--muted); max-width: 44rem; margin: 0; }
-.pill { display: inline-block; font: 600 .78rem var(--mono); color: var(--warn); border: 1px solid var(--warn-line); background: var(--warn-bg); padding: .2rem .6rem; border-radius: 99px; margin-bottom: 1rem; }
-main { padding: 2rem 0 4rem; }
-section { margin: 2.5rem 0; }
-h2 { font-size: 1.35rem; margin: 0 0 .8rem; letter-spacing: -.01em; }
-h3 { font-size: 1.05rem; margin: 1.6rem 0 .5rem; }
-p { margin: .6rem 0; max-width: 46rem; }
-ul { max-width: 44rem; padding-left: 1.2rem; }
-li { margin: .3rem 0; }
-pre { background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: .9rem 1rem; overflow-x: auto; font: .88rem/1.5 var(--mono); margin: 1rem 0; }
-code { font: .9em var(--mono); background: var(--soft); border-radius: 4px; padding: .08em .3em; }
-pre code { background: none; padding: 0; }
-table { border-collapse: collapse; width: 100%; max-width: 46rem; margin: 1rem 0; font-size: .93rem; }
-th, td { border: 1px solid var(--line); padding: .5rem .7rem; text-align: left; vertical-align: top; }
-th { background: var(--soft); font-weight: 600; }
-.note { border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: 8px; padding: .8rem 1rem; margin: 1rem 0; max-width: 46rem; }
-.note b { color: var(--warn); }
-.ok { color: var(--good); font-weight: 600; }
-footer { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(--muted); font-size: .9rem; }
+.hero { padding: 3.5rem 0 2rem; text-align: center; }
+.hero h1 { font-size: clamp(2rem, 6vw, 3.4rem); line-height: 1.1; margin: 0 auto 1rem; letter-spacing: -.03em; max-width: 18ch; }
+.hero .sub { font-size: 1.2rem; color: var(--muted); max-width: 36rem; margin: 0 auto 1.6rem; }
+.cta { display: flex; gap: .8rem; justify-content: center; flex-wrap: wrap; }
+.btn { display: inline-block; padding: .65rem 1.2rem; border-radius: 8px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); color: var(--fg); background: var(--surface); }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+section { margin: 0; padding: 3rem 0; }
+section.alt { background: var(--soft); }
+h2 { font-size: clamp(1.4rem, 3vw, 1.9rem); margin: 0 0 .6rem; letter-spacing: -.02em; text-align: center; }
+.lead { text-align: center; color: var(--muted); max-width: 38rem; margin: 0 auto 2rem; }
+.term { background: var(--term-bg); color: var(--term-fg); border-radius: 12px; border: 1px solid var(--line); max-width: 46rem; margin: 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,.18); overflow: hidden; }
+.term .bar { display: flex; align-items: center; gap: .4rem; padding: .55rem .8rem; border-bottom: 1px solid #1f2a30; font: .78rem var(--mono); color: var(--term-dim); }
+.term .bar i { width: .7rem; height: .7rem; border-radius: 50%; background: #2c3a41; display: inline-block; }
+.term .bar button { margin-left: auto; font: .78rem var(--mono); color: var(--term-fg); background: #1b262c; border: 1px solid #2c3a41; border-radius: 6px; padding: .2rem .6rem; cursor: pointer; }
+.term pre { margin: 0; padding: 1rem 1.1rem; min-height: 17.5rem; overflow-x: auto; font: .85rem/1.55 var(--mono); white-space: pre; }
+.term .g { color: var(--term-good); } .term .b { color: var(--term-bad); } .term .d { color: var(--term-dim); } .term .a { color: var(--term-acc); }
+.caption { text-align: center; color: var(--muted); font-size: .88rem; max-width: 46rem; margin: .8rem auto 0; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 1rem; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1.2rem; }
+.card h3 { margin: 0 0 .4rem; font-size: 1.05rem; }
+.card p { margin: 0; color: var(--muted); font-size: .95rem; }
+.card .ic { font-size: 1.5rem; margin-bottom: .4rem; }
+.diagram { max-width: 52rem; margin: 0 auto; }
+.diagram svg { width: 100%; height: auto; display: block; }
+.diagram .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+.diagram .boxa { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+.diagram .ok { fill: var(--surface); stroke: var(--good); stroke-width: 2; }
+.diagram .no { fill: var(--surface); stroke: var(--bad); stroke-width: 2; }
+.diagram text { fill: var(--fg); font: 600 15px var(--font); }
+.diagram .sm { font: 13px var(--font); fill: var(--muted); font-weight: 400; }
+.diagram .arrow { stroke: var(--muted); stroke-width: 1.8; fill: none; marker-end: url(#ah); }
+.diagram .arrow.bad { stroke: var(--bad); stroke-dasharray: 5 4; }
+.nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 1rem; text-align: center; }
+.num b { display: block; font-size: 2.3rem; letter-spacing: -.03em; color: var(--accent); }
+.num span { color: var(--muted); font-size: .92rem; }
+.fine { max-width: 46rem; margin: 1.5rem auto 0; color: var(--muted); font-size: .88rem; text-align: center; }
+pre.code { background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: .9rem 1rem; overflow-x: auto; font: .85rem/1.5 var(--mono); max-width: 46rem; margin: 0 auto 1rem; }
+code { font: .9em var(--mono); }
+.steps { max-width: 46rem; margin: 0 auto; padding-left: 1.2rem; }
+.steps li { margin: .4rem 0; }
+footer { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(--muted); font-size: .9rem; text-align: center; }
 </style>
 </head>
 <body>
 <header class="top"><div class="wrap">
   <a class="brand" href=".">cancho-code</a>
   <nav>
-    <a href="#why">Why</a>
-    <a href="#run">Run it</a>
-    <a href="#ollama">Ollama walkthrough</a>
-    <a href="#cases">Run the cases</a>
-    <a href="#contracts">Contracts</a>
-    <a class="opt" href="https://github.com/alpibrusl/cancho-code">GitHub</a>
+    <a href="#how">How it works</a><a class="opt" href="#numbers">Results</a><a href="#try">Try it</a>
+    <a class="opt" href="guide.html">Guide</a><a href="https://github.com/alpibrusl/cancho-code">GitHub</a>
   </nav>
 </div></header>
 
-<div class="hero"><div class="wrap">
-  <span class="pill">design stage; the loop, the driver and the gates are built</span>
-  <h1>An assistant for <a href="https://github.com/alpibrusl/cancho">cancho</a> that proves its work</h1>
-  <p class="sub">Every task ends in a machine-readable verdict produced by the type checker and by examples written before the code — not by what the model says about itself. The agent is any model: a local one over Ollama, or a cloud one over native HTTPS. The loop is bounded by contracts, so a run that stops names its stop.</p>
-</div></div>
+<div class="wrap hero">
+  <h1>The AI coder that shows its work.</h1>
+  <p class="sub">cancho-code builds software one small piece at a time, and the compiler — not the model — decides when each piece is done.</p>
+  <div class="cta"><a class="btn primary" href="#try">Try it</a><a class="btn" href="#how">See how it works</a></div>
+</div>
 
-<main class="wrap">
+<div class="wrap" style="padding-bottom:2.5rem">
+  <div class="term" role="img" aria-label="Replay of a real build log: a function is refused by the compiler, the model retries, and it is verified">
+    <div class="bar"><i></i><i></i><i></i> a real run, replayed <button id="replay" type="button">↻ replay</button></div>
+    <pre id="screen"></pre>
+  </div>
+  <p class="caption">A real run (Claude Haiku 5.5 building the <code>editdistance</code> library, six units; the middle of the log is elided). The attempt lines come from the run's trail file. It is a replay of the log, not a live session.</p>
+</div>
 
-<section id="why">
-<h2>Why</h2>
-<p>Most coding assistants hand you a transcript and ask you to read the diff. cancho-code hands you a verdict:</p>
-<pre><code>[ISSUE_VERDICT]	verified	attempts 1</code></pre>
-<p>The model does not decide when it is done. The compiler does. A run of the loop is: the agent edits the file, <code>cancho check --output json</code> answers, the loop decides — retry, stop the issue, stop the run — and after a verified answer it <em>checks again</em> before believing it, then snapshots it. Every way the run can end prints one named verdict line; there is no state in which it runs silently.</p>
-<p>The failure it is built not to repeat is <a href="https://github.com/alpibrusl/lex-code">lex-code</a>'s own, measured and documented there: runs that continue for a long time without solving anything. Loop-safety here is contracts with defaults, not tuning flags — and each one has a gate where a stand-in loops forever and the assertion is that the loop stops, in seconds rather than hours.</p>
-</section>
+<section class="alt" id="why"><div class="wrap">
+  <h2>Trust the check, not the chat</h2>
+  <p class="lead">Most assistants say “done” and leave you to read the diff. Here, “done” has to be earned.</p>
+  <div class="cards">
+    <div class="card"><div class="ic">✅</div><h3>Compiler-verified</h3><p>Every piece is type-checked by the real compiler and run against its own examples. A model's confidence counts for nothing.</p></div>
+    <div class="card"><div class="ic">🧩</div><h3>Small pieces</h3><p>A brief becomes a plan of small units. A failing unit is fixed alone, and everything already verified is re-checked after each step.</p></div>
+    <div class="card"><div class="ic">🛑</div><h3>Loops that stop</h3><p>Attempt ceilings and a “same refusal twice” rule end a stuck run, named, instead of burning your money.</p></div>
+    <div class="card"><div class="ic">🔌</div><h3>Any model</h3><p>Claude with an API key, or a local model through Ollama. You pick the provider and the model every time.</p></div>
+  </div>
+</div></section>
 
-<section id="run">
-<h2>Run it</h2>
-<p>Build the <code>fix</code> tool from a checkout of this repository, with the compiler's packages beside it:</p>
-<pre data-check="build" data-out="fix"><code>git clone https://github.com/alpibrusl/cancho-code.git
+<section id="how"><div class="wrap">
+  <h2>How it works</h2>
+  <p class="lead">Plan, build, check, repeat. Each lap ends in a verdict you can read.</p>
+  <div class="diagram">
+  <svg viewBox="0 0 760 330" role="img" aria-label="Flow: a brief becomes a plan of units; for each unit the model writes code, the compiler checks it; a refusal goes back to the model, a pass moves on; at the end a verdict.">
+    <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
+    <rect class="box" x="10" y="30" width="130" height="64" rx="10"/><text x="75" y="58" text-anchor="middle">Your brief</text><text class="sm" x="75" y="78" text-anchor="middle">what you want</text>
+    <rect class="box" x="190" y="30" width="150" height="64" rx="10"/><text x="265" y="58" text-anchor="middle">Plan</text><text class="sm" x="265" y="78" text-anchor="middle">small units + examples</text>
+    <path class="arrow" d="M140 62H188"/>
+    <rect class="boxa" x="390" y="30" width="150" height="64" rx="10"/><text x="465" y="58" text-anchor="middle">Model writes</text><text class="sm" x="465" y="78" text-anchor="middle">one unit at a time</text>
+    <path class="arrow" d="M340 62H388"/>
+    <rect class="boxa" x="390" y="150" width="150" height="64" rx="10"/><text x="465" y="178" text-anchor="middle">Compiler checks</text><text class="sm" x="465" y="198" text-anchor="middle">types + examples</text>
+    <path class="arrow" d="M465 94V148"/>
+    <path class="arrow bad" d="M390 190H350Q330 190 330 170V130Q330 110 360 110H400Q410 110 410 98"/>
+    <text class="sm" x="236" y="150" text-anchor="middle" style="fill:var(--bad)">refused: the exact error</text>
+    <text class="sm" x="236" y="168" text-anchor="middle" style="fill:var(--bad)">goes back to the model</text>
+    <rect class="ok" x="590" y="30" width="160" height="64" rx="10"/><text x="670" y="58" text-anchor="middle">Verified ✓</text><text class="sm" x="670" y="78" text-anchor="middle">next unit, re-check all</text>
+    <path class="arrow" d="M540 182H570Q670 182 670 98" style="stroke:var(--good)"/>
+    <rect class="no" x="190" y="260" width="350" height="54" rx="10"/><text x="365" y="283" text-anchor="middle">Stuck? It says so.</text><text class="sm" x="365" y="302" text-anchor="middle">same refusal twice, or out of attempts → named stop</text>
+    <path class="arrow bad" d="M465 214V258"/>
+    <rect class="ok" x="590" y="260" width="160" height="54" rx="10"/><text x="670" y="283" text-anchor="middle">Final verdict</text><text class="sm" x="670" y="302" text-anchor="middle">done · stuck · …</text>
+    <path class="arrow" d="M540 287H588"/>
+  </svg>
+  </div>
+</div></section>
+
+<section class="alt" id="numbers"><div class="wrap">
+  <h2>Measured, not promised</h2>
+  <p class="lead">Thirteen small library tasks (parsers, encoders, a rate limiter…), each built three times by Claude Haiku 5.5.</p>
+  <div class="nums">
+    <div class="num"><b>38 / 39</b><span>builds finished and verified</span></div>
+    <div class="num"><b>$0.30</b><span>for all 39 builds (about 0.8¢ each)</span></div>
+    <div class="num"><b>−26%</b><span>output tokens when the model returns only the changed piece</span></div>
+    <div class="num"><b>33 / 39</b><span>builds when the model also writes the plan, with a review pass</span></div>
+  </div>
+  <p class="fine">Hidden tests the model never sees score the results. One model, three runs per task, hand-written plans except the last figure — see the dated reports in <a href="https://github.com/alpibrusl/cancho-code/tree/main/eval/results">eval/results</a> for the conditions and the failures (one task, <code>ini</code>, accounts for the one miss).</p>
+</div></section>
+
+<section id="try"><div class="wrap">
+  <h2>Try it</h2>
+  <p class="lead">You need the <a href="https://github.com/alpibrusl/cancho">cancho</a> compiler and either an Anthropic key or a local Ollama model.</p>
+<pre class="code" data-check="build" data-out="fix"><code>git clone https://github.com/alpibrusl/cancho-code.git
 cd cancho-code
 export CANCHO=&lt;path-to-the-cancho-binary&gt;      # the commit named in .cancho-rev
 export CANCHO_PACKAGES=&lt;compiler-checkout&gt;/packages
@@ -95,224 +159,57 @@ export CANCHO_PACKAGES=&lt;compiler-checkout&gt;/packages
     src/driver.cho src/checker.cho src/signature.cho \
     src/loop_check.cho src/snapshot.cho src/trail.cho src/acceptance.cho \
     --std --backend cranelift -o ./fix</code></pre>
-<p>Then point it at a broken program and an agent:</p>
-<pre><code>./fix "$CANCHO" /abs/path/project.cho "$(pwd)/scripts/cancho-agent.sh --provider ollama --model qwen3.8:27b" 4</code></pre>
-<p>The three arguments are the compiler (by its absolute path — the child of <code>exec_spawn</code> gets no <code>PATH</code> of its own), the file to fix, and the agent: any shell command that edits the file. The fourth is the attempt ceiling; an optional fifth is the seconds one agent turn may take (default 30), and a sixth is an acceptance command that must also hold before a file counts as verified. Exit codes: 0 verified, 1 the budgets named a stop, 2 usage, 3 the checker or the agent is away — a wait, rerun. Beside the file the run leaves <code>&lt;file&gt;.trail.jsonl</code> (one record per attempt), <code>&lt;file&gt;.feedback</code> (what the agent is shown) and, once verified, <code>&lt;file&gt;.snap0.cho</code>.</p>
-</section>
+  <p class="lead" style="margin-bottom:0">Then fix a broken program with a local model, or build a whole plan with Claude: the <a href="guide.html">step-by-step guide</a> has both.</p>
+</div></section>
 
-<section id="ollama">
-<h2>A realistic walkthrough: Ollama, qwen3.8:27b, a broken program</h2>
-<p>This is the whole point of the tool, end to end, on one machine: a local model with no key and no egress, a real program with a real error, and a compiler that decides when the model is done.</p>
+<section class="alt"><div class="wrap">
+  <h2>Go deeper</h2>
+  <div class="cards">
+    <div class="card"><h3><a href="guide.html">Guide</a></h3><p>A full walkthrough on a local model, with the loop explained turn by turn.</p></div>
+    <div class="card"><h3><a href="https://github.com/alpibrusl/cancho-code/blob/main/docs/reference.md">Reference</a></h3><p>Every flag, contract and test gate.</p></div>
+    <div class="card"><h3><a href="https://github.com/alpibrusl/cancho-code/blob/main/docs/design.md">Design</a></h3><p>Why the loop is built from contracts, and the measurements behind it.</p></div>
+  </div>
+</div></section>
 
-<h3>1. Install Ollama and pull the model</h3>
-<pre><code>curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen3.8:27b</code></pre>
-<p>27B wants a machine with roughly 20&nbsp;GB of memory to spare; on a laptop-class machine a whole run takes minutes, not seconds. That is fine — the budgets are in attempts and turns, not milliseconds.</p>
+<footer><div class="wrap">cancho-code · EUPL-1.2 · written in <a href="https://github.com/alpibrusl/cancho">cancho</a></div></footer>
 
-<h3>2. Make a program with a real error</h3>
-<pre><code>mkdir demo &amp;&amp; cat &gt; demo/wordcount.cho &lt;&lt;'EOF'
-edition 7;
-
-// A broken word counter. Two errors, deliberately the same rule with
-// different messages, so a model that fixes one and not the other
-// changes the failure signature and gets its full budget back.
-fn counts[&i](io: &!i Io) -> [io_read] int {
-    var words = 0;
-    var inside = false;
-    var c = getchar(io);
-    while c >= 0 {
-        if c == 32 || c == 10 {
-            inside = false;
-        } else {
-            if inside == false {
-                words = words + 1;
-            }
-            inside = true;
-        }
-        c = getchar(io);
-    }
-    return inside;
-}
-
-fn label(total: int) -> [] int {
-    if total > 0 {
-        return "many";
-    }
-    return 0;
-}
-
-fn main(world: World) -> [] int {
-    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
-    release(ffi); release(fs); release(net); release(clock);
-    release(signals); release(exec); release(args);
-    release(io);
-    release(heap);
-    return 0;
-}
-EOF</code></pre>
-<p>Two errors, both <code>type-mismatch</code> with different messages: <code>counts</code> returns a <code>bool</code> where its signature says <code>int</code>, and <code>label</code> returns a string where it says <code>int</code>. The checker answers both in one pass:</p>
-<pre><code>"$CANCHO" check demo/wordcount.cho --output json --backend cranelift</code></pre>
-
-<h3>3. Run the loop with the local model as the agent</h3>
-<pre><code>./fix "$CANCHO" "$(pwd)/demo/wordcount.cho" \
-    "$(pwd)/scripts/cancho-agent.sh --provider ollama --model qwen3.8:27b" 4 300</code></pre>
-<p class="note"><b>The agent has no environment.</b> Nothing you <code>export</code> reaches it: the driver passes it exactly one variable, <code>PATH</code>. The model name goes inside the agent command, as above (on Apple silicon the installed tag may be <code>qwen3.8:27b-mlx</code>; <code>ollama list</code> shows it). Paths must be absolute and may not contain <code>..</code>.</p>
-<p>What happens, turn by turn:</p>
-<ul>
-  <li>The driver runs <code>scripts/cancho-agent.sh --provider ollama --model qwen3.8:27b demo/wordcount.cho</code>: the agent (a cancho program) sends the file, the instruction ("reply with the complete corrected file") and the compiler's current refusals (the driver left them in <code>&lt;file&gt;.feedback</code>) to Ollama's HTTP API, keeps the program out of the reply (it cuts markdown fences and the model's reasoning, and retries a reply that has no program in it or was cut off), and overwrites the file with the answer.</li>
-  <li>The driver runs the real <code>cancho check --output json</code> on the result. The model's word is worth nothing here; the checker's JSON is the only oracle.</li>
-  <li><code>signature.of</code> turns the refusal into a failure signature — the <code>rule</code> verbatim, the message with its backticked spans kept and numbers normalised — and <code>loop_check.decide</code> decides with the §4 budgets: attempt ceiling 4, same-signature stop at K=2.</li>
-  <li>If the model fixes <code>counts</code> and not <code>label</code>: the signature changes ("expected <code>int</code>, found <code>bool</code>" becomes "expected <code>int</code>, found a string"), the counter resets, the loop tries again — a struggling model gets its full budget.</li>
-  <li>If the model returns the same wrong answer twice: the same-signature stop fires — <code>[ISSUE_VERDICT]	failed	signature</code> — and the run ends, named, instead of burning the night.</li>
-  <li>When the check says clean: the driver checks <em>again</em> (the re-verify pass) and only then snapshots the file and prints <code>[ISSUE_VERDICT]	verified	attempts N</code>.</li>
-</ul>
-
-<h3>4. What a good run looks like</h3>
-<pre><code>$ ./fix "$CANCHO" demo/wordcount.cho "$(pwd)/scripts/cancho-agent.sh --provider ollama --model qwen3.8:27b" 4
-[ISSUE_VERDICT]	verified	attempts 2
-$ echo $?
-0
-$ "$CANCHO" check demo/wordcount.cho --output json --backend cranelift
-{
-  "refused": []
-}</code></pre>
-<p class="ok">Done is a proof, not a status.</p>
-
-<h3>5. What a bad run looks like (and why it is cheap)</h3>
-<p>A model that keeps answering with the same broken shape stops on the second identical refusal:</p>
-<pre><code>[ISSUE_VERDICT]	failed	signature
-$ echo $?
-1</code></pre>
-<p>Beside the file, <code>demo/wordcount.cho.trail.jsonl</code> has one line per attempt (how long the agent took, what the checker said, the signature the stop rule compared, what the loop decided), and a verified state is kept as <code>demo/wordcount.cho.snap0.cho</code>: a stopped run explains itself.</p>
-
-<h3>Cloud models</h3>
-<p>The same loop drives a cloud provider over native HTTPS — <code>scripts/test-provider.sh mistral</code> with <code>MISTRAL_API_KEY</code> in the environment runs the end-to-end gate against the real API, the checker still the oracle. The provider is written in cancho on <code>packages/http-client</code> and <code>packages/tls</code>; the key rides the <code>Authorization</code> header and exists nowhere else.</p>
-</section>
-
-<section id="cases">
-<h2>Run the cases: build a library from a plan, then audit it</h2>
-<p>The walkthrough above repairs one file. This section builds whole libraries from the <a href="https://github.com/alpibrusl/cancho-code/issues/9">lex-code backlog</a> with a local model, and grades them against a hidden oracle. Three cases are wired up: <code>07-tokenbucket</code>, <code>05-duration</code> and <code>03-csv</code>. Each is a <em>plan</em> (what to build, unit by unit), a <em>reference</em> (an implementation known to pass), and an <em>audit</em> (the oracle's cases, which the model never sees).</p>
-
-<h3>1. Build the two tools</h3>
-<pre data-check="build" data-out="project"><code>export CANCHO=&lt;path-to-the-cancho-binary&gt;      # the commit named in .cancho-rev
-
-"$CANCHO" build tests/programs/project.cho src/project.cho src/plan.cho \
-    src/driver.cho src/checker.cho src/signature.cho src/loop_check.cho \
-    src/snapshot.cho src/trail.cho src/acceptance.cho \
-    --std --backend cranelift -o ./project</code></pre>
-<pre data-check="build" data-out="plancheck"><code>"$CANCHO" build tests/programs/plancheck.cho src/plan.cho \
-    --std --backend cranelift -o ./plancheck</code></pre>
-
-<h3>2. Prepare the input</h3>
-<p>A run needs four things, none of which the model sees except the first three.</p>
-<table>
-<tr><th>Input</th><th>What it is</th><th>How you get it</th></tr>
-<tr><td>The primer</td><td>the language's own page for an agent, the single biggest lever measured</td><td><code>"$CANCHO" agent-guidelines &gt; guidelines.md</code></td></tr>
-<tr><td>The plan</td><td>units, each with a <code>signature</code>, a <code>description</code>, <code>examples</code> and <code>tests</code>, and <code>deps</code></td><td>written once from the brief; <code>eval/&lt;item&gt;/plan.json</code>. There is no generator yet (lex-code's <code>--package</code>, a model drafting the plan, is not built here): write it, then check it</td></tr>
-<tr><td>The scaffold</td><td>the starting <code>project.cho</code>: the imports and any record type the signatures name</td><td>one <code>printf</code> per item, below</td></tr>
-<tr><td>The audit's cases</td><td>the oracle's inputs and expected answers, as JSON lines</td><td><code>python3 eval/&lt;item&gt;/oracle.py</code></td></tr>
-</table>
-<p>A plan is JSON. This is the shape (a real one, shortened; <code>docs/plan.md</code> has the twelve rules the checker enforces):</p>
-<pre><code>{"name": "tokenbucket",
- "units": [
-  {"id": "refill",
-   "signature": "fn bucket_refill(tokens_milli: int, last_ms: int, now_ms: int, capacity: int, per_sec: int) -&gt; [] int",
-   "description": "Amounts are milli-tokens... never more than capacity * 1000.",
-   "examples": ["bucket_refill(0, 0, 1000, 10, 1) == 1000"],
-   "deps": []},
-  {"id": "take",
-   "signature": "fn bucket_take(tokens_milli: int, cost: int) -&gt; [] option.Option[int]",
-   "examples": ["bucket_take(5000, 5) == option.Option::Some(0)",
-                "bucket_take(4999, 5) == option.Option::None"],
-   "deps": []}]}</code></pre>
-<ul>
-  <li><code>examples</code> are <code>CALL == EXPECTED</code> and become tests; <code>==</code> compares scalars, and an <code>Option</code> result is run as a <code>match</code>.</li>
-  <li>For a function an example cannot call (a result that is text, or a <code>Result</code>), a unit carries its own <code>tests</code>: cancho source appended verbatim to the unit's tests file.</li>
-  <li><code>description</code> says what the signature and the examples cannot: units of measure, edge rules. Without it the first tokenbucket runs failed on every unit.</li>
-</ul>
-<pre><code>./plancheck eval/duration/plan.json
-[PLAN]	valid</code></pre>
-<p>Every problem is reported, not the first, as <code>[PLAN_ERROR]&lt;TAB&gt;rule&lt;TAB&gt;unit&lt;TAB&gt;message</code>, with exit code 1.</p>
-
-<h3>3. Run a case</h3>
-<p>The work directory must exist, and every path must be absolute and free of <code>..</code>. The scaffold is the only file you write in it:</p>
-<pre><code># 07-tokenbucket (the brief names a record type, so the scaffold declares it)
-WORK=/abs/path/work-tokenbucket; mkdir -p "$WORK"
-printf 'edition 7;\nimport std.option;\n\nstruct Allow { allowed: bool, tokens_milli: int, retry_ms: int }\n' &gt; "$WORK/project.cho"
-PLAN="$(pwd)/eval/tokenbucket/plan.json"
-
-# 05-duration
-WORK=/abs/path/work-duration; mkdir -p "$WORK"
-printf 'edition 7;\nimport std.result;\nimport std.buffer;\n' &gt; "$WORK/project.cho"
-PLAN="$(pwd)/eval/duration/plan.json"
-
-# 03-csv
-WORK=/abs/path/work-csv; mkdir -p "$WORK"
-printf 'edition 7;\nimport std.list;\nimport std.result;\n' &gt; "$WORK/project.cho"
-PLAN="$(pwd)/eval/csv/plan.json"</code></pre>
-<p>Then the same command for each, with the model and the primer written <em>inside</em> the agent command (the agent has no environment). The numbers are the attempts per unit and the seconds one agent turn may take:</p>
-<pre><code>./project "$CANCHO" "$PLAN" "$WORK" \
-  "$(pwd)/scripts/cancho-agent.sh --provider ollama --model qwen3.8:27b --num-ctx 24576 --primer $(pwd)/guidelines.md" \
-  6 900</code></pre>
-<p>It prints one line per step and ends with a verdict (exit 0 <code>done</code>, 1 <code>stuck</code>, 3 <code>no_plan</code>, 4 <code>provider_error</code>):</p>
-<pre><code>[PLAN]	valid
-[UNIT]	refill	building
-[ACCEPTANCE]	pass
-[UNIT]	refill	verified
-...
-[PROJECT_VERDICT]	done</code></pre>
-<p>Rerun the same command after a stop: the verified units are kept (<code>state.txt</code>), re-checked, and only what is left is built. <code>trail-&lt;unit&gt;.jsonl</code> in the work directory shows every attempt.</p>
-
-<h3>4. Grade it against the hidden oracle</h3>
-<p><code>done</code> means the plan's own examples held. The audit is the oracle's full set, written before any run:</p>
-<pre><code>python3 eval/audit_tokenbucket.py "$WORK/project.cho"      # 46 cases
-python3 eval/audit_duration.py   "$WORK/project.cho"      # 64 cases
-python3 eval/audit_csv.py        "$WORK/project.cho"      # 50 cases</code></pre>
-<p>Each prints a line per function group and exits 0 only if every case holds. A function of the wrong shape costs its own group only.</p>
-
-<h3>5. Check the setup before spending GPU time</h3>
-<p>The reference implementation of each case must pass its plan's tests through the whole driver and score full marks on the audit, and a deliberately broken copy must not. This needs no model:</p>
-<pre><code>CANCHO="$CANCHO" sh scripts/test-eval.sh        # prints: eval gate: ok
-CANCHO="$CANCHO" sh scripts/test-project.sh     # the driver against a stand-in agent</code></pre>
-
-<h3>What these runs have shown so far</h3>
-<p>Three runs each, one model (qwen3.8:27b), the compiler's own page as the primer; the detail and the caveats are in <a href="https://github.com/alpibrusl/cancho-code/issues/9">issue #9</a>.</p>
-<table>
-<tr><th>Case</th><th>Result</th><th>What decided it</th></tr>
-<tr><td><code>07-tokenbucket</code></td><td>3 of 3 <code>done</code>, hidden audit 46/46</td><td>integer arithmetic, an <code>Option</code> shown in the task; the item was used to tune the setup, so this is not a held-out result</td></tr>
-<tr><td><code>05-duration</code></td><td>0 of 3 on the first try; 2 of 3 once the language page covered <code>Option</code>/<code>Result</code>, <code>break</code> and text</td><td>the model's guesses (<code>result.err(..)</code>, <code>break</code>) are not cancho; the page did not say so</td></tr>
-<tr><td><code>03-csv</code></td><td>0 of 3 on the first try</td><td>lists: the model guesses <code>list.nil()</code> and <code>List::Nil</code>; the real names are <code>list.List::Empty</code> and <code>list.List::Cons</code></td></tr>
-</table>
-<p class="note"><b>Read these as measurements of a setup, not of a model.</b> Samples are small, the plans were written by hand, and the lever that moved results every time was what the model was told about cancho's standard library.</p>
-</section>
-
-<section id="contracts">
-<h2>The loop-safety contracts</h2>
-<table>
-<tr><th>Contract</th><th>Rule</th><th>Default</th></tr>
-<tr><td>Attempt ceiling</td><td>attempts per issue before it is given up on, named</td><td>4</td></tr>
-<tr><td>Same-signature stop</td><td>K consecutive identical failure signatures end the issue — the rule lex-code left open: it grouped failures to report, never to stop</td><td>K = 2</td></tr>
-<tr><td>Plan defects never retried</td><td>the store's word, not how the failure looks</td><td>always on</td></tr>
-<tr><td>Re-verify pass</td><td>check again before believing a verified; a regressed file goes back on the board</td><td>always on</td></tr>
-<tr><td>Snapshot and restore</td><td>the newest state that checked clean is one restore away</td><td>ring of 8</td></tr>
-<tr><td>Outages are waits</td><td>a checker or agent that never answers is a named stop, attempts preserved</td><td>always on</td></tr>
-</table>
-<p>Each one has a gate: <code>scripts/test-checker.sh</code>, <code>test-snapshot.sh</code>, <code>test-driver.sh</code> (three cases: a fix verifies in one attempt; a looping agent stops at the signature rule; a cycling agent gets its full ceiling). Thirteen unit tests cover the decision functions and the signature normalisation.</p>
-</section>
-
-<section id="status">
-<h2>Status and limits, stated plainly</h2>
-<ul>
-  <li>Built: the decision module, the failure signature, the subprocess checker driver, the snapshot of a verified state, the composed loop with its verdict lines, the per-attempt trail, the acceptance command, the Mistral provider over native HTTPS, the Ollama agent script (HTTP API, with the compiler's refusals in the prompt), the <code>fix</code> front door, the plan check (<code>plancheck</code>) and the project driver (<code>project</code>: dependency order, a sweep after every unit, resume). The authority reports are pinned in CI. All gates are green in CI without a network or a key.</li>
-  <li>Not built: a model that drafts the plan, hardening (invariants on generated inputs), acceptance scenarios for services, integration repair, an unattended supervisor with a report, lessons mined from trails, a dashboard. <a href="https://github.com/alpibrusl/cancho-code/blob/main/docs/parity.md">docs/parity.md</a> maps each to lex-code.</li>
-  <li>The local-model path shells out to <code>ollama</code> through the <code>Exec</code> capability: the tool's authority report names the one directory its agents may live in.</li>
-  <li>Measured on this repo's own gates, four silent false-passes were found and fixed by the gates themselves, not by review: a reversed-signature normalisation, a shell <code>$0</code> argv bug, an edition-less fixture, a negative ring position.</li>
-</ul>
-</section>
-
-</main>
-<footer><div class="wrap">
-  <p><a href="https://github.com/alpibrusl/cancho-code">GitHub</a> · part of the <a href="https://github.com/alpibrusl/cancho">cancho</a> ecosystem · EUPL-1.2 · built under the principles of trust without comprehension.</p>
-</div></footer>
+<script>
+(function () {
+  var screen = document.getElementById("screen");
+  var lines = [
+    ["d", "$ project plan.json work/ \"cancho-agent --provider anthropic --model claude-haiku-5-5\""],
+    ["g", "[PLAN]            valid"],
+    ["a", "[UNIT]            min3          building"],
+    ["g", "[ISSUE_VERDICT]   verified      attempts 1"],
+    ["a", "[UNIT]            char_count    building"],
+    ["b", "  attempt 0  refused   expected an expression, found `if`"],
+    ["d", "             the compiler's message goes back to the model"],
+    ["g", "  attempt 1  verified"],
+    ["g", "[ISSUE_VERDICT]   verified      attempts 2"],
+    ["d", "             ...4 more units, each checked, earlier ones re-checked"],
+    ["g", "[PROJECT_VERDICT] done"]
+  ];
+  function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  function full() { screen.innerHTML = lines.map(function (l) { return '<span class="' + l[0] + '">' + esc(l[1]) + "</span>"; }).join("\n"); }
+  var timer = null;
+  function play() {
+    clearTimeout(timer); screen.innerHTML = "";
+    var i = 0, j = 0, html = "";
+    (function tick() {
+      if (i >= lines.length) { return; }
+      var l = lines[i];
+      j += 3;
+      var shown = l[1].slice(0, j);
+      screen.innerHTML = html + '<span class="' + l[0] + '">' + esc(shown) + "</span>";
+      if (j >= l[1].length) { html += '<span class="' + l[0] + '">' + esc(l[1]) + "</span>\n"; i++; j = 0; timer = setTimeout(tick, l[0] === "b" ? 900 : 450); }
+      else { timer = setTimeout(tick, 14); }
+    })();
+  }
+  full();
+  var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  document.getElementById("replay").addEventListener("click", function () { if (reduce) { full(); } else { play(); } });
+  if (!reduce) { play(); }
+})();
+</script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 #!/bin/sh
-# The project page gate (docs/index.html): what the page tells a reader to run still works. A page that teaches something the code no
+# The project page gate (docs/index.html and docs/guide.html): what the page tells a reader to run still works. A page that teaches something the code no
 # longer does is worse than no page (the walkthrough told readers to `export OLLAMA_MODEL`, which the agent never receives, and showed a
 # build command that no longer built).
 #
@@ -17,10 +17,10 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 tmp=$(mktemp -d -t cc-page-XXXXXX)
 fail=0
 
-python3 - "$root/docs/index.html" "$tmp" <<'PY' || exit 1
+python3 - "$root/docs/index.html" "$root/docs/guide.html" "$tmp" <<'PY' || exit 1
 import html, re, sys
-page = open(sys.argv[1], encoding="utf-8").read()
-tmp = sys.argv[2]
+page = "".join(open(f, encoding="utf-8").read() for f in sys.argv[1:-1])
+tmp = sys.argv[-1]
 blocks = re.findall(r'<pre data-check="build" data-out="([a-z]+)"><code>(.*?)</code></pre>', page, re.S)
 if not blocks:
     sys.exit("the page has no data-check build blocks")
