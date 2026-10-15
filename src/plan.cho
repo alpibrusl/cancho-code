@@ -383,6 +383,33 @@ fn newline_in_string[&t](t: &t [byte]) -> [] bool {
     return false;
 }
 
+// Does `t` call `name`: the name, not part of a longer identifier, then `(`.
+fn calls_name[&t, &n](t: &t [byte], name: &n [byte]) -> [] bool {
+    var i = 0;
+    while i + len(name) < len(t) {
+        if bytes.equal(t[i..i + len(name)], name) && byte_at(t, i + len(name)) == 40 && (i == 0 || !is_part(byte_at(t, i - 1))) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+// Does the result type of a signature own memory (a buffer, a Box, a list, a vec: anything the compiler treats as linear)? The type is what follows the
+// effort row; an error type that is `&static [byte]` or an `int` owns nothing.
+fn owning_result[&t](sig: &t [byte]) -> [] bool {
+    let arrow = bytes.find(sig, "->");
+    if arrow < 0 {
+        return false;
+    }
+    let close = bytes.find(sig[arrow..len(sig)], "]");
+    if close < 0 {
+        return false;
+    }
+    let ty = sig[arrow + close + 1..len(sig)];
+    return bytes.find(ty, "buffer.") >= 0 || bytes.find(ty, "Box[") >= 0 || bytes.find(ty, "list.") >= 0 || bytes.find(ty, "vec.") >= 0;
+}
+
 // `integ` is the unit named by the plan's `integration` (-1: none): the application of a service, built against the service's acceptance
 // scenarios, so it needs no example and no test (docs/plan.md).
 fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], info: &!i [int], n: int, u: int, integ: int) -> [heap] buffer.Buffer {
@@ -540,10 +567,16 @@ fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte
             var k = 0;
             var bad = false;
             var broken = false;
+            var discards = false;
+            let owns = owning_result(node_text(src, tape, get_f(info, u, f_sig())));
             while k < json.count(tape, tn2) {
                 let tt = node_text(src, tape, json.at(tape, tn2, k));
                 if bytes.starts_with(tt, "pub fn test_") && (bytes.find(tt, "World") >= 0 || bytes.find(tt, "split(") >= 0) {
                     bad = true;
+                }
+                // `Ok(_)` / `Some(_)` on the result of the unit's own function, whose payload owns memory: the compiler refuses to discard it
+                if owns && calls_name(tt, fn_name(src, tape, info, u)) && (bytes.find(tt, "Ok(_)") >= 0 || bytes.find(tt, "Some(_)") >= 0) {
+                    discards = true;
                 }
                 // the DECODED source (the JSON escapes resolved): that is what the test file will hold
                 let dn = json.string_length(src, tape, json.at(tape, tn2, k));
@@ -558,6 +591,9 @@ fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte
                     unbox_slice(heap, db);
                 }
                 k = k + 1;
+            }
+            if discards {
+                b = emit(heap, b, "bad-test", who, "a test matches this function's result with `Ok(_)` or `Some(_)`, but the payload owns memory (a buffer, a Box, a list) and the compiler refuses to discard it: bind it and free it in that arm (`buffer.drop(heap, b)` for a buffer, `unbox_slice(heap, b)` for a Box), as the guide's tests example does");
             }
             if broken {
                 b = emit(heap, b, "bad-test", who, "a string literal in one of the tests has a line break inside it, and a cancho string cannot span lines: the JSON text of the test has `\\n` (backslash, n) meaning a real line break. Write `\\\\n` in the JSON so that the cancho source holds `\\n` inside the quotes (and `\\\\\"` for a quote, `\\\\\\\\` for a backslash)");
