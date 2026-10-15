@@ -53,7 +53,7 @@ PY
         fi
     }
     mutant column  'col_stuck()' 'col_verified()'          # a failed unit is put in the Verified column
-    mutant cost    'in_price * ' 'out_price * '            # the input tokens are priced as output tokens
+    mutant cost    'n_in * tier_in' 'n_in * tier_out'            # the input tokens are priced as output tokens
     mutant refuse  'inside(out, wd)' 'false'               # an output path inside the run directory is no longer refused
     exit $fail
 fi

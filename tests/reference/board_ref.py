@@ -354,6 +354,7 @@ def main():
         "files": {"plan": plan is not None, "run_log": log is not None, "state": state is not None, "usage": usage is not None,
                   "run_json": run_json is not None, "build_json": build_json is not None, "audit": audit is not None, "prices": bool(price)},
         "metrics": m,
+        "truncated": False,
         "units": ucards,
     }
     print(json.dumps(board, indent=1))
