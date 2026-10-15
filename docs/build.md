@@ -61,6 +61,7 @@ Exit 2 is a usage error (nothing was run). A killed run is resumed by running th
 | `trail-<id>.jsonl` | the unit's trail, kept whatever its outcome |
 | `usage.jsonl` | one JSON line per API call, plan and units, written by the agent |
 | `project.cho`, `main.cho`, `tests-<id>.cho`, ... | the project driver's files ([docs/project.md](project.md)) |
+| `journal/` | the whole story of the run: `events.jsonl` and `blobs/` ([journal.md](journal.md)) |
 | `run.log` | the lines below, appended by every run |
 | `build.json` | the run as a whole, rewritten after each stage and at the end |
 

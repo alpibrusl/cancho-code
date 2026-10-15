@@ -66,7 +66,7 @@ elif what == "diff":
     e = att(u, n)
     prev = blob(att(u, n - 1)["code"]) if n > 0 else open(sys.argv[5], "rb").read()
     src = os.path.join(wd, "probe.prev"); open(src, "wb").write(prev)
-    r = subprocess.run(["patch", "-s", "-o", "-", src], input=blob(e["diff"]), capture_output=True)
+    r = subprocess.run(["patch", "-s", "-r", "/dev/null", "--no-backup-if-mismatch", "-o", "-", src], input=blob(e["diff"]), capture_output=True)
     os.remove(src)
     print("rebuilds" if r.stdout == blob(e["code"]) else "WRONG")
 elif what == "field":
