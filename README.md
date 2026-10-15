@@ -15,9 +15,11 @@ compiler and the task's own examples say so — never because the model says so.
 [PROJECT_VERDICT] done
 ```
 
-- **Describe it, get a plan, get a build.** A brief becomes a plan of small
-  units, each with a signature and examples; each unit is built and checked on
-  its own.
+- **Describe it, get a plan, get a build — in one command.** A brief becomes a
+  plan of small units, each with a signature and examples; each unit is built
+  and checked on its own. The functions your brief names keep their names.
+- **See it.** A read-only board shows every unit (waiting, building, verified,
+  stuck) with its attempts, refusals, tokens and cost.
 - **Loops stop.** Attempt ceilings and a same-refusal stop rule end a stuck
   run, named, instead of burning money.
 - **Any model.** Claude (API key) or a local model through Ollama. You choose
@@ -35,15 +37,24 @@ compiler and the task's own examples say so — never because the model says so.
 ```sh
 git clone https://github.com/alpibrusl/cancho-code.git && cd cancho-code
 export CANCHO=<path-to-the-cancho-binary>      # the commit named in .cancho-rev
-scripts/build-agent.sh                         # the agent is itself a cancho program
+scripts/build-agent.sh && scripts/build-cancho-build.sh
+
+# one brief in, a verified build out (Claude; the key is read from a file)
+build/cancho-build "$CANCHO" brief.txt "$PWD/work" \
+  "$PWD/scripts/cancho-agent.sh --key-file $HOME/.config/cancho-code/anthropic.key --primer $PWD/guidelines.md --max-tokens 16000" \
+  --provider anthropic --model claude-haiku-5-5 --guide "$PWD/docs/plan-guide.md" --review on --review-guide "$PWD/docs/review-guide.md"
+
+# watch or review it as a board
+scripts/cancho-board.sh work && python3 -m http.server -d docs 8000     # then open /board.html
 ```
 
-Then follow the [guide](docs/guide.html) (a local model, no key) or the
-[Claude section of the reference](docs/reference.md#a-claude-agent).
+[`docs/build.md`](docs/build.md) explains the command and the run directory,
+[`docs/dashboard.md`](docs/dashboard.md) the board. For a local model with no
+key, follow the [guide](docs/guide.html).
 
 ## More
 
-[Design](docs/design.md) · [Plans](docs/plan.md) · [Projects](docs/project.md) ·
+[Build command](docs/build.md) · [Dashboard](docs/dashboard.md) · [Design](docs/design.md) · [Plans](docs/plan.md) · [Projects](docs/project.md) ·
 [Epic and working rules](https://github.com/alpibrusl/cancho-code/issues/8)
 
 EUPL-1.2.
