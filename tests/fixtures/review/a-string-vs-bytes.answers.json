@@ -1,0 +1,46 @@
+{
+ "units": [
+  {
+   "id": "u",
+   "answers": [
+    {
+     "expect": {
+      "bytes": [
+       104,
+       105
+      ]
+     }
+    },
+    {
+     "expect": "\u00ff"
+    },
+    {
+     "expect": ""
+    },
+    {
+     "expect": {
+      "bytes": [
+       195,
+       169
+      ]
+     }
+    },
+    {
+     "expect": {
+      "bytes": [
+       1,
+       2
+      ]
+     }
+    },
+    {
+     "expect": {
+      "bytes": [
+       "x"
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

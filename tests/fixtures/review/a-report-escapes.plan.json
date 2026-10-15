@@ -1,0 +1,20 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "u",
+   "signature": "fn add(a: int, b: int) -> [] int",
+   "cases": [
+    {
+     "args": [],
+     "expect": "a\"\n\u0001\u00e9"
+    },
+    {
+     "args": [],
+     "expect": 1
+    }
+   ],
+   "deps": []
+  }
+ ]
+}

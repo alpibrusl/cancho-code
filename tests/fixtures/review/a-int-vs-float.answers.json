@@ -1,0 +1,24 @@
+{
+ "units": [
+  {
+   "id": "u",
+   "answers": [
+    {
+     "expect": 1.0
+    },
+    {
+     "expect": 1.0
+    },
+    {
+     "expect": 1.5
+    },
+    {
+     "expect": 2.0
+    },
+    {
+     "expect": 0
+    }
+   ]
+  }
+ ]
+}

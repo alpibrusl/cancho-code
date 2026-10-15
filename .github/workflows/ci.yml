@@ -91,6 +91,7 @@ jobs:
           sh scripts/test-prompt.sh
           sh scripts/test-metrics.sh
           sh scripts/test-cases.sh
+          sh scripts/test-review.sh
           sh scripts/test-planner.sh
           sh scripts/test-services.sh
           sh scripts/test-agent-native.sh

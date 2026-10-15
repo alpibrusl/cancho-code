@@ -23,7 +23,7 @@ fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }
 d=$(mktemp -d -t cc-planner-XXXXXX)
 exe="$d/agent"
-"$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" "$root/src/prompt.cho" "$root/src/planprompt.cho" "$root/src/plan.cho" "$root/src/cases.cho" "$root/src/provider.cho" "$root/src/reply.cho" \
+"$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" "$root/src/prompt.cho" "$root/src/planprompt.cho" "$root/src/plan.cho" "$root/src/cases.cho" "$root/src/review.cho" "$root/src/provider.cho" "$root/src/reply.cho" \
     "$root/vendor/fetch_io.cho" "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho --std --backend cranelift -o "$exe" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }
 "$CANCHO" build "$root/tests/programs/plancheck.cho" "$root/src/plan.cho" --std --backend cranelift -o "$d/plancheck" >/dev/null 2>&1 || { echo "plancheck did not build" >&2; exit 2; }
@@ -116,6 +116,43 @@ if bad: print("FAIL: cases: " + "; ".join(bad), file=sys.stderr); sys.exit(1)
 PY
 "$d/plancheck" "$d/out/plan.json" >/dev/null 2>&1 || { echo "FAIL: cases: the expanded plan does not pass plancheck" >&2; fail=1; }
 expect "cases: usage outcomes" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog')])")" "['rejected', 'written']"
+stop
+
+# review: a second, BLIND pass. A reviewer re-derives each case's result from the description only; a case survives only if it agrees
+printf '# Verifying the cases\nDerive each value.\n' > "$d/rguide.md"
+RV="--review on --review-guide $d/rguide.md"
+RC='{"name": "clampy", "units": [{"id": "clamp", "signature": "fn clampy(x: int, lo: int, hi: int) -> [] int", "description": "x limited to [lo, hi].", "examples": ["clampy(5, 1, 3) == 3"], "cases": [{"args": [5, 1, 3], "expect": 3}, {"args": [-5, 1, 3], "expect": 99}], "deps": []}]}'
+start; printf '%s' "$RC" > "$d/response.1.txt"; printf '{"units": [{"id": "clamp", "answers": [{"expect": 3}, {"expect": 1}]}]}' > "$d/response.2.txt"; rm -f "$d/out/plan.json" "$d/ulog"
+plan $G $RV --usage-log "$d/ulog" >/dev/null 2>"$d/e"; rc=$?
+expect "review: exit code ($(head -c 200 "$d/e"))" "$rc" 0
+expect "review: two requests (the plan, then the review)" "$(count)" 2
+R2=$(prompt_of 2)
+for want in "Verifying the cases" "clampy" "x limited to"; do
+    case "$R2" in *"$want"*) ;; *) echo "FAIL: review: the review prompt lacks '$want'" >&2; fail=1 ;; esac
+done
+case "$R2" in *'"expect"'*|*99*) echo "FAIL: review: the reviewer was shown an expected value" >&2; fail=1 ;; esac
+expect "review: only the agreed case survives as a test" "$(python3 -c "import json; p = json.load(open('$d/out/plan.json')); print(sum(t.count('pub fn test_') for t in p['units'][0]['tests']))")" 1
+expect "review: usage outcomes" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog')])")" "['written', 'reviewed']"
+case "$(cat "$d/e")" in *"REVIEW_DROPPED"*) ;; *) echo "FAIL: review: the dropped case is not reported on stderr" >&2; fail=1 ;; esac
+stop
+# the reviewer agrees with none: the plan is rejected and the planner is told
+start; printf '%s' "$RC" > "$d/response.1.txt"; printf '{"units": [{"id": "clamp", "answers": [{"skip": true}, {"expect": 1}]}]}' > "$d/response.2.txt"
+printf '%s' "$RC" | sed 's/"expect": 99/"expect": 1/' > "$d/response.3.txt"; printf '{"units": [{"id": "clamp", "answers": [{"expect": 3}, {"expect": 1}]}]}' > "$d/response.4.txt"; rm -f "$d/out/plan.json"
+plan $G $RV >/dev/null 2>"$d/e"; rc=$?
+expect "review none: exit code" "$rc" 0
+expect "review none: four requests" "$(count)" 4
+case "$(prompt_of 3)" in *"REVIEW"*"agreed with none"*|*"agreed with none"*) ;; *) echo "FAIL: review none: the planner was not told the reviewer agreed with none" >&2; fail=1 ;; esac
+stop
+# an unusable review is not a plan failure: the plan is written, unreviewed, and the log says so
+start; printf '%s' "$RC" > "$d/response.1.txt"; printf 'I cannot verify this.\n' > "$d/response.2.txt"; cp "$d/response.2.txt" "$d/response.3.txt"; rm -f "$d/out/plan.json" "$d/ulog"
+plan $G $RV --usage-log "$d/ulog" >/dev/null 2>"$d/e"; rc=$?
+expect "review failed: exit code" "$rc" 0
+case "$(cat "$d/e")" in *unreviewed*) ;; *) echo "FAIL: review failed: the plan is not marked unreviewed on stderr" >&2; fail=1 ;; esac
+expect "review failed: usage outcomes" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog')])")" "['written', 'review_failed', 'review_failed']"
+stop
+# --review on needs its guide
+start; plan $G --review on >/dev/null 2>"$d/e"; rc=$?
+expect "review: no --review-guide is exit 2" "$rc" 2
 stop
 
 # ceiling: every round rejected; an existing file is untouched

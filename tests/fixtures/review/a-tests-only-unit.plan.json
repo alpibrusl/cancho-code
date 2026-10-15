@@ -1,0 +1,30 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "u",
+   "signature": "fn add(a: int, b: int) -> [] int",
+   "tests": [
+    "pub fn test_u_1() -> [] int { return 0; }"
+   ],
+   "cases": [
+    {
+     "args": [
+      1,
+      2
+     ],
+     "expect": 3
+    }
+   ],
+   "deps": []
+  },
+  {
+   "id": "v",
+   "signature": "fn add(a: int, b: int) -> [] int",
+   "tests": [
+    "x"
+   ],
+   "deps": []
+  }
+ ]
+}

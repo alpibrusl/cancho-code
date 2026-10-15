@@ -1,0 +1,46 @@
+{
+ "units": [
+  {
+   "id": "u",
+   "answers": [
+    {
+     "expect": {
+      "err": "msg"
+     }
+    },
+    {
+     "expect": {
+      "err": true
+     }
+    },
+    {
+     "expect": {
+      "err": 3
+     }
+    },
+    {
+     "expect": {
+      "err": true
+     }
+    },
+    {
+     "expect": {
+      "err": 4
+     }
+    },
+    {
+     "expect": {
+      "err": [
+       1
+      ]
+     }
+    },
+    {
+     "expect": {
+      "err": 3
+     }
+    }
+   ]
+  }
+ ]
+}

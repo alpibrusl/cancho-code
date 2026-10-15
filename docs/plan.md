@@ -68,3 +68,14 @@ A unit may carry `cases`: `[{"args": [...], "expect": ...}, ...]`. `src/cases.ch
 - A signature with another type (a record, a slice of ints) is reported (`give tests instead`); a unit with both `cases` and `tests` is refused; a malformed value is refused for that case with its position.
 - `examples` are filled (up to three documentation lines) when the unit has none. A unit with `cases` satisfies the `needs-tests` rule.
 - Gate: `scripts/test-cases.sh`: a differential against `tests/reference/cases_ref.py` on 120 plans, and 53 real units whose generated tests pass against the hand-checked references and fail when one expected value is flipped.
+
+## `review`: a blind second pass over the cases
+
+About 1 in 80 expected values a planner writes is wrong (arithmetic it cannot do), and one wrong case makes its unit unsatisfiable. `src/review.cho` (`module review`, pure, effect row `[heap]`) filters them with a second model that never sees the planner's values:
+
+- `review.blind(heap, plan) -> Buffer`: the reviewer's questions, `{"units":[{"id","signature","description","cases":[{"args":[...]}]}]}` for every unit with a non-empty `cases`, in plan order. No `expect`, `examples`, `tests` or `deps` (examples contain expected values). A plan that is not JSON gives `{"units":[]}`.
+- `review.apply(heap, plan, answers) -> (Buffer plan, Buffer report, int code)`: `answers` is `{"units":[{"id","answers":[{"expect": V} | {"skip": true}, ...]}]}`, one answer per case, in order. A case survives iff the answer is `{"expect": V}` and V equals the planner's `expect`; a mismatch or a skip drops it. The plan comes back without the dropped cases, everything else as it was.
+- Equality: integers by value and `1` is not `1.0`; a text is a string or `{"bytes":[...]}` and two texts are equal iff their bytes are (so `{"bytes":[104,105]}` equals `"hi"`); arrays element by element; objects by key and value; `{"err": x}` is equal iff both `x` are the same integer or neither is an integer (the error payload is compared only when it is an integer, as `cases` does).
+- Report: `[REVIEW_DROPPED]<TAB>unit<TAB>case<TAB>planner V reviewer W|skip` per dropped case, `[REVIEW_ERROR]<TAB>unit<TAB>-<TAB>message` per problem (a unit that lost all its cases, no answers for a unit, a wrong number of answers, an answer of another shape, answers or plan that are not the right JSON), then `[REVIEW]<TAB>kept K of N cases`. Code 0 when every unit with `cases` (and no `tests`) keeps at least one; code 1 otherwise, and then the plan is the input.
+- Gate: `scripts/test-review.sh`: a differential against `tests/reference/review_ref.py` (blind on 162 plans, apply on 39 pairs), 54 plans whose perturbed and skipped answers drop exactly those cases and whose survivors still expand and pass the plan check, and a check that no planner value reaches the questions.
+

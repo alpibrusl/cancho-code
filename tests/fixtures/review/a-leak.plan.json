@@ -1,0 +1,61 @@
+{
+ "name": "t",
+ "units": [
+  {
+   "id": "u",
+   "signature": "fn f[&r](s: &r [byte]) -> [] result.Result[int, int]",
+   "description": "parses things",
+   "examples": [
+    "f(\"in\") == \"example text here\"",
+    "f(\"in\") == 12345678"
+   ],
+   "tests": [],
+   "cases": [
+    {
+     "args": [
+      "in"
+     ],
+     "expect": {
+      "ok": "secret-value-one"
+     }
+    },
+    {
+     "args": [
+      "in2"
+     ],
+     "expect": [
+      "another long text",
+      {
+       "bytes": [
+        112,
+        108,
+        97,
+        105,
+        110,
+        32,
+        98,
+        121,
+        116,
+        101,
+        115
+       ]
+      }
+     ]
+    },
+    {
+     "args": [
+      "x"
+     ],
+     "expect": "caf\u00e9 au lait"
+    },
+    {
+     "args": [
+      "y"
+     ],
+     "expect": 12345
+    }
+   ],
+   "deps": []
+  }
+ ]
+}
