@@ -152,14 +152,16 @@ footer { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(-
 
 <section class="alt" id="numbers"><div class="wrap">
   <h2>Measured, not promised</h2>
-  <p class="lead">Thirteen small library tasks (parsers, encoders, a rate limiter…), each built three times by Claude Haiku 5.5.</p>
+  <p class="lead">Thirteen small library tasks (parsers, encoders, a rate limiter…) and four small web services, built by Claude Haiku 5.5.</p>
   <div class="nums">
-    <div class="num"><b>38 / 39</b><span>builds finished and verified</span></div>
+    <div class="num"><b>38 / 39</b><span>builds finished and verified, from hand-written plans</span></div>
     <div class="num"><b>$0.30</b><span>for all 39 builds (about 0.8¢ each)</span></div>
+    <div class="num"><b>20 / 26</b><span>builds finished from a plain-language brief alone, the model writing its own plan</span></div>
+    <div class="num"><b>14 / 26</b><span>of those fully right on tests the model never sees</span></div>
     <div class="num"><b>−26%</b><span>output tokens when the model returns only the changed piece</span></div>
-    <div class="num"><b>33 / 39</b><span>builds when the model also writes the plan, with a review pass</span></div>
+    <div class="num"><b>4 / 4</b><span>small web services built unit by unit (see the note)</span></div>
   </div>
-  <p class="fine">Hidden tests the model never sees score the results. One model, three runs per task, hand-written plans except the last figure — see the dated reports in <a href="https://github.com/alpibrusl/cancho-code/tree/main/eval/results">eval/results</a> for the conditions and the failures (one task, <code>ini</code>, accounts for the one miss).</p>
+  <p class="fine">Hidden tests the model never sees score the results. One model (Claude Haiku 5.5), two or three runs per task. The first four figures: 13 small libraries; the brief-only rows come from 2 runs per task and a model-written plan with a review pass (with the required function signatures given too, 20 of 26 finish and 19 of 26 are fully right). Services: the four services (webhooks, jobs, invoices, kvstore) were built from hand-written plans; with the instructions as first written the application unit got no answer in 7 of 8 runs, and the final scores (webhooks 129/129, jobs 188/188, invoices 163/165, kvstore up to 225/225 on the hidden attack) came after the guide was changed to fix the failures it showed, so treat them as what is reachable, not as a blind result. See the dated reports in <a href="https://github.com/alpibrusl/cancho-code/tree/main/eval/results">eval/results</a> for conditions and failures.</p>
 </div></section>
 
 <section id="try"><div class="wrap">

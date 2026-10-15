@@ -24,9 +24,13 @@ compiler and the task's own examples say so — never because the model says so.
   run, named, instead of burning money.
 - **Any model.** Claude (API key) or a local model through Ollama. You choose
   the provider and the model every time; there is no default.
-- **Measured.** On 13 library tasks × 3 runs with Claude Haiku 5.5: 38 of 39
-  builds finished and passed the hidden audits, for $0.30 in total.
-  Conditions and caveats are in [`eval/results`](eval/results).
+- **Measured** (Claude Haiku 5.5; hidden tests the model never sees):
+  13 small libraries from hand-written plans finish 38 of 39 for $0.30 in total;
+  from a plain-language brief alone, with the model writing the plan, 20 of 26
+  builds finish and 14 are fully right. Four small web services were built unit
+  by unit; their final scores came after the guide was fixed on the failures it
+  showed, so they show what is reachable, not a blind result.
+  Conditions and caveats: [`eval/results`](eval/results).
 
 **[Project page](https://alpibrusl.github.io/cancho-code)** ·
 [Guide: run it end to end](docs/guide.html) ·
