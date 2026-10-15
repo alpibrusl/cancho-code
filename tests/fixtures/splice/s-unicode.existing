@@ -1,0 +1,4 @@
+edition 7;
+
+// café 日本
+fn u() -> [] int { return len("é"); }

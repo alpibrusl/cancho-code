@@ -1,0 +1,4 @@
+import std.list;
+fn big_150(x: int) -> [] int { return 0; }
+fn big_new() -> [] int { return 1; }
+struct Tail { a: int }

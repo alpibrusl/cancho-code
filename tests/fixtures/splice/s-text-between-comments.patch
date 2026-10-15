@@ -1,0 +1,6 @@
+// one
+// two
+
+// three
+fn z() -> [] int { return 1; }
+// trailing comment

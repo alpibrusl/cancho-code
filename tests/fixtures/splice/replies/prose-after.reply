@@ -1,0 +1,5 @@
+fn a() -> [] int {
+    return 1;
+}
+
+This works because it returns one.

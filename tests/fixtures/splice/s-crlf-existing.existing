@@ -1,0 +1,9 @@
+edition 7;
+import std.buffer;
+
+// c
+fn a() -> [] int {
+    return 1;
+}
+
+fn b() -> [] int { return 2; }

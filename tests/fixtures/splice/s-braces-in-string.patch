@@ -1,0 +1,6 @@
+fn s() -> [] int {
+    let a = "}{ } \" } {";
+    let b = "\\";
+    return len(a);
+}
+fn after() -> [] int { return 3; }

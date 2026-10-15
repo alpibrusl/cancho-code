@@ -1,0 +1,4 @@
+```cancho
+fn a() -> [] int {
+    return 1;
+}

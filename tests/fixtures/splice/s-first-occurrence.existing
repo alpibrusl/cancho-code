@@ -1,0 +1,5 @@
+edition 7;
+
+fn a() -> [] int { return 1; }
+
+fn a() -> [] int { return 2; }

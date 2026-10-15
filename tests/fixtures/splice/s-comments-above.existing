@@ -1,0 +1,10 @@
+edition 7;
+
+// free comment
+
+// attached
+fn a() -> [] int { return 1; }
+
+// free 2
+
+fn b() -> [] int { return 2; }

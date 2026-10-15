@@ -1,0 +1,2 @@
+res struct Owner { b: buffer.Buffer }
+pub res struct Owner2 { b: buffer.Buffer }

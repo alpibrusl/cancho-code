@@ -1,0 +1,5 @@
+fn c() -> [] int {
+    // } } }
+    return 1; // {
+}
+fn d() -> [] int { return 2; }

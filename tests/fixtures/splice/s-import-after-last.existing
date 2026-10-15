@@ -1,0 +1,5 @@
+edition 7;
+import a.b;
+import c.d;
+
+fn f() -> [] int { return 1; }

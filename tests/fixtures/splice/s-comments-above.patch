@@ -1,0 +1,4 @@
+// free patch comment
+
+// new attached
+fn a() -> [] int { return 9; }

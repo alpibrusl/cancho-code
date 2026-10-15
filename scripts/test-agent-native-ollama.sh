@@ -26,7 +26,7 @@ expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail
 
 d=$(mktemp -d -t cc-ollama-d-XXXXXX)
 exe="$d/agent"
-"$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" "$root/src/prompt.cho" "$root/src/planprompt.cho" "$root/src/plan.cho" "$root/src/cases.cho" "$root/src/review.cho" "$root/src/provider.cho" "$root/src/reply.cho" \
+"$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" "$root/src/prompt.cho" "$root/src/planprompt.cho" "$root/src/plan.cho" "$root/src/cases.cho" "$root/src/review.cho" "$root/src/splice.cho" "$root/src/provider.cho" "$root/src/reply.cho" \
     "$root/vendor/fetch_io.cho" "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho --std --backend cranelift -o "$exe" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }
 # the agent, with no environment at all; $port is read when it runs
@@ -225,6 +225,42 @@ ag "$d/raw.cho" >/dev/null 2>&1
 expect "raw: nothing is saved unless asked" "$(grep -c 'Some prose first' "$d/raw.out")" 1
 kill $stub 2>/dev/null; wait $stub 2>/dev/null
 rm -f "$d"/response*.txt "$d"/response*.reason
+
+# patch output (--output patch): the model returns only the code to add or change; a program splices it into the file
+mkpatch() { printf 'edition 7;\nimport std.result;\n\nfn keep() -> [] int { return 1; }\n\nfn change() -> [] int { return 2; }\n' > "$d/pt.cho"; printf 'UNIT: add\nFUNCTION: added\n' > "$d/pt.cho.task"; rm -f "$d/ulog.pt"; }
+python3 "$d/stub.py" "$d" & stub=$!
+rm -f "$d/port" "$d"/response*.txt "$d"/request.json; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
+mkpatch; printf 'Here you go:\n```cancho\nfn added() -> [] int { return 3; }\n```\nDone.\n' > "$d/response.txt"
+ag --output patch --usage-log "$d/ulog.pt" "$d/pt.cho" >/dev/null 2>&1; rc=$?
+expect "patch: exit code" "$rc" 0
+printf 'edition 7;\nimport std.result;\n\nfn keep() -> [] int { return 1; }\n\nfn change() -> [] int { return 2; }\n\nfn added() -> [] int { return 3; }\n' > "$d/pt.want"
+cmp -s "$d/pt.cho" "$d/pt.want" || { echo "FAIL: patch: the new function is not appended and the rest kept byte for byte" >&2; fail=1; }
+case "$(python3 -c "import json; print(json.load(open('$d/request.json'))['prompt'])")" in *"ADD or CHANGE"*"fn keep()"*) ;; *) echo "FAIL: patch: the prompt does not ask for only the code to add or change (and show the file)" >&2; fail=1 ;; esac
+expect "patch: usage outcome" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog.pt')])")" "['written']"
+mkpatch; printf 'fn change() -> [] int { return 20; }\n' > "$d/response.txt"
+ag --output patch "$d/pt.cho" >/dev/null 2>&1
+printf 'edition 7;\nimport std.result;\n\nfn keep() -> [] int { return 1; }\n\nfn change() -> [] int { return 20; }\n' > "$d/pt.want"
+cmp -s "$d/pt.cho" "$d/pt.want" || { echo "FAIL: patch: a function with the same name is not replaced in place" >&2; fail=1; }
+mkpatch; printf 'edition 7;\nimport std.result;\n\nfn keep() -> [] int { return 1; }\n\nfn change() -> [] int { return 2; }\n' > "$d/response.txt"
+cp "$d/pt.cho" "$d/pt.before"
+ag --output patch "$d/pt.cho" >/dev/null 2>&1; rc=$?
+expect "patch: a whole-file reply is accepted as a patch (exit)" "$rc" 0
+cmp -s "$d/pt.cho" "$d/pt.before" || { echo "FAIL: patch: re-sending the whole file changed it" >&2; fail=1; }
+mkpatch; printf 'I am not sure what to write here.\n' > "$d/response.txt"; cp "$d/pt.cho" "$d/pt.before"; rm -f "$d/ulog.pt"
+ag --output patch --usage-log "$d/ulog.pt" "$d/pt.cho" >/dev/null 2>&1; rc=$?
+expect "patch: prose only is exit 1" "$rc" 1
+cmp -s "$d/pt.cho" "$d/pt.before" || { echo "FAIL: patch: the file changed though nothing usable came back" >&2; fail=1; }
+expect "patch: three samples, all no_program" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog.pt')])")" "['no_program', 'no_program', 'no_program']"
+kill $stub 2>/dev/null; wait $stub 2>/dev/null
+python3 "$d/stub.py" "$d" & stub=$!
+rm -f "$d/port" "$d"/response*.txt; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
+mkpatch; printf 'fn broken() -> [] int { return 1;\n' > "$d/response.1.txt"; printf 'fn added() -> [] int { return 3; }\n' > "$d/response.2.txt"; rm -f "$d/response.txt" "$d/ulog.pt"
+ag --output patch --usage-log "$d/ulog.pt" "$d/pt.cho" >/dev/null 2>&1; rc=$?
+expect "patch: an item that never closes is retried (exit)" "$rc" 0
+expect "patch: ... and logged" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog.pt')])")" "['splice_error', 'written']"
+kill $stub 2>/dev/null; wait $stub 2>/dev/null
+rm -f "$d"/response*.txt
+ag --output bogus "$d/pt.cho" >/dev/null 2>&1; expect "patch: an unknown --output is exit 2" "$?" 2
 
 # truncated: a reply that stopped because it hit the generation bound (done_reason "length") is cut off mid-program, not an answer. Written
 # to the project it left `expected ..., found end of file` as the refusal, which a model cannot act on (the first CSV runs: 7 of 12 units).

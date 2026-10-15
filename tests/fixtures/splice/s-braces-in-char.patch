@@ -1,0 +1,8 @@
+fn c() -> [] int {
+    let a = '{';
+    let b = '}';
+    let q = '\'';
+    let s = '\\';
+    return 1;
+}
+fn d() -> [] int { return 2; }

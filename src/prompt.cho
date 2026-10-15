@@ -158,15 +158,23 @@ pub fn feedback_text[&h, &s, &f](heap: &!h Heap, source: &s [byte], feedback: &f
 
 // The prompt: the task (or the instruction to fix), the checker's current
 // output, then the file between rules.
-pub fn build[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
+fn compose[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte], patch: bool) -> [heap] buffer.Buffer {
     var p = buffer.empty(heap, 4096);
     let job = trimmed(task);
     if len(job) > 0 {
         p = buffer.append(heap, p, "Your task, for the cancho program below:\n");
         p = buffer.append(heap, p, job);
-        p = buffer.append(heap, p, "\n\nReply with the complete file, with the task done, and nothing else: no markdown fences, no explanation.\n");
+        if patch {
+            p = buffer.append(heap, p, "\n\nThe file below is kept as it is. Reply with ONLY the code to ADD or CHANGE: the function(s) this task asks for, and any helper functions or types it needs, as complete top-level items. Do not repeat the other items of the file; if you must change one, give its complete new definition. No `edition` line, no imports the file already has, no tests, no markdown fences, no explanation.\n");
+        } else {
+            p = buffer.append(heap, p, "\n\nReply with the complete file, with the task done, and nothing else: no markdown fences, no explanation.\n");
+        }
     } else {
-        p = buffer.append(heap, p, "The cancho program below is refused by its compiler. Reply with the complete corrected file and nothing else: no markdown fences, no explanation.\n");
+        if patch {
+            p = buffer.append(heap, p, "The cancho program below is refused by its compiler. Reply with ONLY the complete corrected definition of each item that must change, as top-level items, and nothing else: not the items that are fine, no `edition` line, no markdown fences, no explanation.\n");
+        } else {
+            p = buffer.append(heap, p, "The cancho program below is refused by its compiler. Reply with the complete corrected file and nothing else: no markdown fences, no explanation.\n");
+        }
     }
     let fb = feedback_text(heap, source, feedback);
     borrow fb as &fr in {
@@ -180,4 +188,14 @@ pub fn build[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte],
     p = buffer.append(heap, p, source);
     p = buffer.append(heap, p, "---\n");
     return p;
+}
+
+// The prompt that asks for the complete file.
+pub fn build[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
+    return compose(heap, source, task, feedback, false);
+}
+
+// The prompt that asks for only the code to add or change: what the model re-emits is the unit, not the whole file (`splice` puts it in).
+pub fn build_patch[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
+    return compose(heap, source, task, feedback, true);
 }

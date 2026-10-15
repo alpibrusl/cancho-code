@@ -1,0 +1,5 @@
+fn extra() -> [] int { return 5; }
+fn helper(x: int) -> [] int { return 0; }
+import std.list;
+struct N { a: int }
+struct Point { q: int }

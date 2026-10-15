@@ -1,0 +1,7 @@
+Here you go:
+```cancho
+fn a() -> [] int {
+    return 1;
+}
+```
+Done.

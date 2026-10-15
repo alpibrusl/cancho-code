@@ -1,0 +1,2 @@
+fn a() -> [] int { let c = '}'; return 1; }
+bye

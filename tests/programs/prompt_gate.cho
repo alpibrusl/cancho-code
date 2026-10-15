@@ -2,13 +2,14 @@ edition 7;
 
 // `prompt_gate` — the gate program for `src/prompt.cho`.
 //
-//     prompt_gate <project-file> x x x
+//     prompt_gate <project-file> <mode: patch or anything> x x
 //
 // Reads `<file>`, `<file>.task` and `<file>.feedback` (each may be missing)
 // and prints the prompt. The harness pads the arguments.
 
 import prompt;
 import std.buffer;
+import std.bytes;
 import std.io;
 
 // The file's bytes onto the heap, or nothing when it is not there.
@@ -35,8 +36,10 @@ fn main(world: World) -> [] int {
     var console = io;
     var h = heap;
     var path = "";
+    var mode = "";
     borrow args as &g in {
         path = arg(g, 1);
+        mode = arg(g, 2);
     }
     borrow fs as &f in {
         borrow mut console as &!i in {
@@ -61,7 +64,13 @@ fn main(world: World) -> [] int {
                 borrow source as &sr in {
                     borrow task as &tr in {
                         borrow feedback as &fr in {
-                            let p = prompt.build(hh, buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                            var p = buffer.empty(hh, 16);
+                            buffer.drop(hh, p);
+                            if bytes.equal(mode, "patch") {
+                                p = prompt.build_patch(hh, buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                            } else {
+                                p = prompt.build(hh, buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                            }
                             borrow p as &pr in {
                                 io.write_all(i, buffer.bytes(pr));
                             }

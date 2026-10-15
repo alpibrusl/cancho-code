@@ -1,0 +1,2 @@
+import a.b;
+fn a() -> [] int { return 1; }

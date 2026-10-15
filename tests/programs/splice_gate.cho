@@ -1,0 +1,95 @@
+edition 7;
+
+// splice_gate span REPLY | splice_gate splice EXISTING PATCH: src/splice.cho (the edit mode, docs/plan.md). `span` prints "START END" of the
+// patch in a model's reply ("-1 -1" when there is none). `splice` prints the new file on stdout and the report on stderr, and exits 0 or 1.
+// Exit 2: usage, a file that cannot be read, or one of 1 MiB or more.
+
+import std.buffer;
+import std.bytes;
+import std.io;
+import splice;
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(net);
+    release(clock);
+    release(signals);
+    release(exec);
+    var console = io;
+    var h = heap;
+    var mode = "";
+    var path1 = "";
+    var path2 = "";
+    var given = 0;
+    var status = 2;
+    borrow args as &g in {
+        given = arg_count(g);
+        if given >= 3 {
+            mode = arg(g, 1);
+            path1 = arg(g, 2);
+        }
+        if given >= 4 {
+            path2 = arg(g, 3);
+        }
+    }
+    let wants = bytes.equal(mode, "span") && given == 3 || bytes.equal(mode, "splice") && given == 4;
+    if wants {
+        borrow fs as &f in {
+            borrow mut console as &!i in {
+                borrow mut h as &!hh in {
+                    let room1 = box_slice(hh, 1048576, byte_of(0));
+                    let room2 = box_slice(hh, 1048576, byte_of(0));
+                    borrow mut room1 as &!r1 in {
+                        borrow mut room2 as &!r2 in {
+                            let t1 = contents(r1);
+                            let t2 = contents(r2);
+                            let n1 = fs_read(f, path1, t1);
+                            var n2 = 0;
+                            if given == 4 {
+                                n2 = fs_read(f, path2, t2);
+                            }
+                            if n1 < 0 || n2 < 0 || n1 >= 1048576 || n2 >= 1048576 {
+                                io.error_all(i, "splice_gate: a file cannot be read, or is 1 MiB or more\n");
+                            } else if given == 3 {
+                                let (a, b) = splice.patch_span(t1[0..n1]);
+                                var line = buffer.empty(hh, 32);
+                                if a < 0 {
+                                    line = buffer.append(hh, line, "-1 -1\n");
+                                } else {
+                                    line = buffer.push_nat(hh, line, a);
+                                    line = buffer.append(hh, line, " ");
+                                    line = buffer.push_nat(hh, line, b);
+                                    line = buffer.append(hh, line, "\n");
+                                }
+                                borrow line as &lr in {
+                                    buffer.write(i, lr);
+                                }
+                                buffer.drop(hh, line);
+                                status = 0;
+                            } else {
+                                let (file, report, code) = splice.splice(hh, t1[0..n1], t2[0..n2]);
+                                borrow file as &p in {
+                                    buffer.write(i, p);
+                                }
+                                buffer.drop(hh, file);
+                                borrow report as &r in {
+                                    io.error_all(i, buffer.bytes(r));
+                                }
+                                buffer.drop(hh, report);
+                                status = code;
+                            }
+                        }
+                    }
+                    unbox_slice(hh, room2);
+                    unbox_slice(hh, room1);
+                }
+            }
+        }
+    }
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return status;
+}

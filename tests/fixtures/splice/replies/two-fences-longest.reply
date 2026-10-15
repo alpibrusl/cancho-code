@@ -1,0 +1,9 @@
+```
+fn s() -> [] int { return 0; }
+```
+and
+```cancho
+fn a() -> [] int {
+    return 1;
+}
+```

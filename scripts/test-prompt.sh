@@ -67,12 +67,20 @@ for name, (src, task, feedback) in cases.items():
     if feedback is not None: open(f + ".feedback", "w", encoding="utf-8").write(feedback)
     _, want = agent_lib.build_prompt(f, "t", "NO_SUCH_PRIMER_VARIABLE")
     p = subprocess.run([os.path.join(d, "gate"), f, "x", "x", "x"], capture_output=True)
+    # patch mode: the same prompt with the instruction that asks for only the code to add or change
+    PATCH_TASK = "\n\nThe file below is kept as it is. Reply with ONLY the code to ADD or CHANGE: the function(s) this task asks for, and any helper functions or types it needs, as complete top-level items. Do not repeat the other items of the file; if you must change one, give its complete new definition. No `edition` line, no imports the file already has, no tests, no markdown fences, no explanation.\n"
+    PATCH_FIX = "The cancho program below is refused by its compiler. Reply with ONLY the complete corrected definition of each item that must change, as top-level items, and nothing else: not the items that are fine, no `edition` line, no markdown fences, no explanation.\n"
+    want_patch = want.replace("\n\nReply with the complete file, with the task done, and nothing else: no markdown fences, no explanation.\n", PATCH_TASK, 1).replace("The cancho program below is refused by its compiler. Reply with the complete corrected file and nothing else: no markdown fences, no explanation.\n", PATCH_FIX, 1)
+    pp = subprocess.run([os.path.join(d, "gate"), f, "patch", "x", "x"], capture_output=True)
+    if pp.returncode != 0 or pp.stdout != want_patch.encode("utf-8"):
+        fails += 1
+        print("FAIL: patch prompt: %s (exit %d)\n  wanted %r\n  got    %r" % (name, pp.returncode, want_patch.encode()[:260], pp.stdout[:260]), file=sys.stderr)
     if p.returncode != 0 or p.stdout != want.encode("utf-8"):
         fails += 1
         a, b = want.encode("utf-8"), p.stdout
         i = next((k for k in range(min(len(a), len(b))) if a[k] != b[k]), min(len(a), len(b)))
         print("FAIL: %s (exit %d): first difference at byte %d\n  python %r\n  cancho %r" % (name, p.returncode, i, a[max(0, i - 30):i + 60], b[max(0, i - 30):i + 60]), file=sys.stderr)
-print("prompt: %d cases" % len(cases))
+print("prompt: %d cases, each also in patch mode" % len(cases))
 
 # the planner's prompt: guide, THE TASK, REQUIRED PUBLIC FUNCTIONS only when given, the rejection only when there is one
 def plan_case(name, guide, brief, contract, feedback):
