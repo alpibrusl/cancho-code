@@ -1,9 +1,9 @@
-Build a small Lex library package named "base64": encode and strictly decode RFC 4648 base64 (section 4, the standard alphabet, with padding). It is a pure library: no network, no database, no files, no environment. Use only the Lex standard library (std.bytes, std.list, std.int and the like); do not depend on any other package. Every function is pure (no effect annotation) and every function has examples.
+Build a small library package named "base64": encode and strictly decode RFC 4648 base64 (section 4, the standard alphabet, with padding). It is a pure library: no network, no database, no files, no environment. Use only the standard library; do not depend on any other package. Every function is pure and every function has examples.
 
 The package exposes exactly two functions:
 
-- base64_encode(data :: Bytes) -> Bytes : the base64 text of data, as ASCII bytes. Never fails.
-- base64_decode(text :: Bytes) -> Result[Bytes, Str] : the original bytes, or Err(message) if text is not exactly the base64 that base64_encode would produce for some data.
+- base64_encode(data) : the base64 text of data, as ASCII bytes. Never fails. Inputs: data is bytes. Result: bytes.
+- base64_decode(text) : the original bytes, or Err(message) if text is not exactly the base64 that base64_encode would produce for some data. Inputs: text is bytes. Result: bytes, or an error message.
 
 Alphabet. The 64 characters are A-Z (values 0-25), a-z (26-51), 0-9 (52-61), "+" (62) and "/" (63). The URL-safe characters "-" and "_" are NOT part of it. Padding is "=".
 

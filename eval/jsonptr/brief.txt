@@ -1,13 +1,13 @@
-Build a small Lex library package named "jsonptr": work with JSON Pointers (RFC 6901) as strings. It is a pure library: no network, no database, no files, no environment. Use only the Lex standard library (std.str, std.list, std.int and the like); do not depend on any other package. Every function is pure (no effect annotation) and every function has examples.
+Build a small library package named "jsonptr": work with JSON Pointers (RFC 6901) as strings. It is a pure library: no network, no database, no files, no environment. Use only the standard library; do not depend on any other package. Every function is pure and every function has examples.
 
 A JSON Pointer is either the empty string (the whole document) or a sequence of reference tokens, each written as "/" followed by the token. Inside a token, "~0" stands for "~" and "~1" stands for "/"; a "~" that is not followed by 0 or 1 is invalid. Escaping must be undone in the right order (turn "~1" into "/" first, then "~0" into "~", so "~01" means the two characters "~1"). A token may be empty ("/" is a pointer to the key ""), and a pointer may contain empty tokens ("//").
 
 The package exposes exactly four functions, taking and returning only plain values:
 
-- ptr_parse(p :: Str) -> Result[List[Str], Str] : the list of unescaped tokens. "" gives Ok([]). A non-empty pointer that does not start with "/" is an Err, and so is any invalid "~" escape.
-- ptr_format(tokens :: List[Str]) -> Str : the pointer for a list of tokens: each token escaped ("~" becomes "~0", "/" becomes "~1") and prefixed with "/". The empty list gives "".
-- ptr_append(p :: Str, token :: Str) -> Result[Str, Str] : Err if p is not a valid pointer, otherwise p followed by "/" and the escaped token.
-- ptr_parent(p :: Str) -> Result[Str, Str] : Err if p is not a valid pointer or is the empty pointer (the root has no parent), otherwise p without its last token.
+- ptr_parse(p) : the list of unescaped tokens. "" gives Ok([]). A non-empty pointer that does not start with "/" is an Err, and so is any invalid "~" escape. Inputs: p is text. Result: a list of texts, or an error message.
+- ptr_format(tokens) : the pointer for a list of tokens: each token escaped ("~" becomes "~0", "/" becomes "~1") and prefixed with "/". The empty list gives "". Inputs: tokens is a list of texts. Result: text.
+- ptr_append(p, token) : Err if p is not a valid pointer, otherwise p followed by "/" and the escaped token. Inputs: p is text; token is text. Result: text, or an error message.
+- ptr_parent(p) : Err if p is not a valid pointer or is the empty pointer (the root has no parent), otherwise p without its last token. Inputs: p is text. Result: text, or an error message.
 
 Worked examples (the answers are exact):
 

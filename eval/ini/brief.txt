@@ -1,9 +1,9 @@
-Build a small Lex library package named "iniconf": parse INI-style configuration text. It is a pure library: no network, no database, no files, no environment. Use only the Lex standard library (std.str, std.list, std.int and the like); do not depend on any other package. Every function is pure (no effect annotation) and every function has examples.
+Build a small library package named "iniconf": parse INI-style configuration text. It is a pure library: no network, no database, no files, no environment. Use only the standard library; do not depend on any other package. Every function is pure and every function has examples.
 
 The package exposes exactly two functions, taking and returning only plain values:
 
-- ini_parse(text :: Str) -> Result[List[Str], Str] : the settings in the text as a list of "name=value" strings, or Err(message) naming the offending line number (1-based) if the text is malformed.
-- ini_get(text :: Str, section :: Str, key :: Str) -> Result[Option[Str], Str] : Err if the text is malformed, otherwise Some(value) of the setting in that section (the empty string "" means before any section header) or None if there is no such setting.
+- ini_parse(text) : the settings in the text as a list of "name=value" strings, or Err(message) naming the offending line number (1-based) if the text is malformed. Inputs: text is text. Result: a list of texts, or an error message.
+- ini_get(text, section, key) : Err if the text is malformed, otherwise Some(value) of the setting in that section (the empty string "" means before any section header) or None if there is no such setting. Inputs: text is text; section is text; key is text. Result: text, or nothing, or an error message.
 
 Syntax. The text is read line by line; lines end with a line feed, and a carriage return just before it is ignored. Whitespace around a line is ignored. Then:
 - A blank line is skipped. A line whose first character is ";" or "#" is a comment and is skipped. Comments only start at the beginning of a line: there are no trailing comments, so in "a = x ; y" the value is "x ; y".

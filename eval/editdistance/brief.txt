@@ -1,12 +1,12 @@
-Build a small Lex library package named "editdistance": Levenshtein distance and fuzzy matching on text. It is a pure library: no network, no database, no files, no environment. Use only the Lex standard library (std.str, std.list, std.int and the like); do not depend on any other package. Every function is pure (no effect annotation) and every function has examples.
+Build a small library package named "editdistance": Levenshtein distance and fuzzy matching on text. It is a pure library: no network, no database, no files, no environment. Use only the standard library; do not depend on any other package. Every function is pure and every function has examples.
 
 Everything counts Unicode characters (code points), never bytes: "é" is one character, "日本語" is three. Keep that in mind for every length and every position.
 
 The package exposes exactly three functions, taking and returning only plain values:
 
-- edit_distance(a :: Str, b :: Str) -> Int : the Levenshtein distance: the fewest single-character insertions, deletions and substitutions that turn a into b. It must handle strings of 60 characters quickly (a dynamic-programming table or two rows, not exponential recursion).
-- similarity_pct(a :: Str, b :: Str) -> Int : a whole number from 0 to 100. If both strings are empty it is 100. Otherwise, with m the length (in characters) of the longer string and d the edit distance, it is (100 * (m - d)) divided by m using integer division that rounds down.
-- closest(query :: Str, candidates :: List[Str]) -> Option[Str] : the candidate with the smallest edit distance to query; if several tie, the one that comes first in the list; None for an empty list.
+- edit_distance(a, b) : the Levenshtein distance: the fewest single-character insertions, deletions and substitutions that turn a into b. It must handle strings of 60 characters quickly (a dynamic-programming table or two rows, not exponential recursion). Inputs: a is text; b is text. Result: an integer.
+- similarity_pct(a, b) : a whole number from 0 to 100. If both strings are empty it is 100. Otherwise, with m the length (in characters) of the longer string and d the edit distance, it is (100 * (m - d)) divided by m using integer division that rounds down. Inputs: a is text; b is text. Result: an integer.
+- closest(query, candidates) : the candidate with the smallest edit distance to query; if several tie, the one that comes first in the list; None for an empty list. Inputs: query is text; candidates is a list of texts. Result: text, or nothing.
 
 Worked examples (the answers are exact):
 

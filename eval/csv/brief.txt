@@ -1,9 +1,9 @@
-Build a small Lex library package named "csvline": parse and format one CSV record (RFC 4180 quoting). It is a pure library: no network, no database, no files, no environment. Use only the Lex standard library (std.str, std.list, std.int and the like); do not depend on any other package. Every function is pure (no effect annotation) and every function has examples.
+Build a small library package named "csvline": parse and format one CSV record (RFC 4180 quoting). It is a pure library: no network, no database, no files, no environment. Use only the standard library; do not depend on any other package. Every function is pure and every function has examples.
 
 The package exposes exactly two functions, taking and returning only plain values:
 
-- csv_parse_line(line :: Str) -> Result[List[Str], Str] : split one record into its fields, or Err(message) if it is malformed.
-- csv_format_line(fields :: List[Str]) -> Str : the record for a list of fields.
+- csv_parse_line(line) : split one record into its fields, or Err(message) if it is malformed. Inputs: line is text. Result: a list of texts, or an error message.
+- csv_format_line(fields) : the record for a list of fields. Inputs: fields is a list of texts. Result: text.
 
 Parsing rules. Fields are separated by ",". A field is either unquoted or quoted.
 - An unquoted field is the text up to the next "," (or the end), kept exactly, including leading and trailing spaces. It must not contain a double quote, a carriage return or a line feed; otherwise the record is malformed.
