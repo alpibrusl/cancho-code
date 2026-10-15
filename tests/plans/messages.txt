@@ -1,0 +1,11 @@
+# fixture<TAB>a piece of the message of its first [PLAN_ERROR] line: what the model reads on the next round must name the unit's missing field, the function it
+# should have called, the callee that is undeclared. (scripts/test-plan.sh)
+unit-field	`deps` is missing or is not an array of strings
+description-not-string	`description` is not a string
+bad-effort	`effort` is not one of low, medium, high, xhigh, max
+unit-not-object	this unit is not a JSON object
+no-example	give at least one `CALL == EXPECTED` that calls `f`
+no-example	A unit with `tests` needs one too: it is documentation there
+example-own	none of the examples calls this unit's own function `g`: write at least one `g(ARGS) == VALUE`
+example-own	a helper's name keeps the task prefix
+example-callee	an example calls `ghost`, which no unit declares

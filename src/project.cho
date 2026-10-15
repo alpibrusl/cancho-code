@@ -556,7 +556,10 @@ fn build[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb](heap:
     act = buffer.append(heap, act, agent);
     act = buffer.append(heap, act, " ");
     act = buffer.append(heap, act, wd);
-    act = buffer.append(heap, act, "/project.cho\0");
+    // the agent's standard error goes to a file the driver reads after every turn (src/driver.cho `agent_note`)
+    act = buffer.append(heap, act, "/project.cho 2>");
+    act = buffer.append(heap, act, wd);
+    act = buffer.append(heap, act, "/project.cho.agent.err\0");
     var prefix = buffer.append(heap, buffer.empty(heap, 128), wd);
     prefix = buffer.append(heap, prefix, "/project.cho.snap");
     let accept = unit_accept(heap, checker, wd, id, u == integ, accept_cmd, libs);
@@ -619,6 +622,21 @@ fn keep_copy[&h, &z, &w, &d](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], name:
 fn keep_trail[&h, &z, &d, &w](heap: &!h Heap, fs: &z Fs(""), id: &d [byte], wd: &w [byte]) -> [heap, fs_read(""), fs_write("")] int {
     let from = in_wd(heap, wd, "project.cho.trail.jsonl", "", "");
     let into = in_wd(heap, wd, "trail-", id, ".jsonl");
+    var r = -1;
+    borrow from as &fb in {
+        borrow into as &ib in {
+            r = snapshot.copy(fs, buffer.bytes(fb), buffer.bytes(ib), 65536);
+        }
+    }
+    buffer.drop(heap, from);
+    buffer.drop(heap, into);
+    return r;
+}
+
+// Keep the unit's agent log (the standard error of every turn, src/driver.cho), whatever its outcome: `agent-<id>.log`.
+fn keep_agent_log[&h, &z, &d, &w](heap: &!h Heap, fs: &z Fs(""), id: &d [byte], wd: &w [byte]) -> [heap, fs_read(""), fs_write("")] int {
+    let from = in_wd(heap, wd, "project.cho.agent.log", "", "");
+    let into = in_wd(heap, wd, "agent-", id, ".log");
     var r = -1;
     borrow from as &fb in {
         borrow into as &ib in {
@@ -731,6 +749,19 @@ fn drive[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb](heap:
                 let r = build(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, next, checker, wd, agent, attempts, agent_ms, log, integ, accept, libs);
                 // The unit's trail is kept whatever the outcome: a unit that failed is the one whose trail is wanted.
                 keep_trail(heap, fs, id, wd);
+                keep_agent_log(heap, fs, id, wd);
+                if r != 0 {
+                    // where the agent's own words are, for a unit that did not verify (a provider error has its cause there)
+                    var al = buffer.append(heap, buffer.empty(heap, 64), "[AGENT_LOG]\t");
+                    al = buffer.append(heap, al, id);
+                    al = buffer.append(heap, al, "\tagent-");
+                    al = buffer.append(heap, al, id);
+                    al = buffer.append(heap, al, ".log\n");
+                    borrow al as &alb in {
+                        tell(heap, io, fs, log, buffer.bytes(alb));
+                    }
+                    buffer.drop(heap, al);
+                }
                 if r == 0 {
                     meta[3 * next] = 1;
                     state_write(heap, fs, src, tape, nodes, meta, count, wd);

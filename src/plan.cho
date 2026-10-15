@@ -308,13 +308,60 @@ fn call_len[&x](left: &x [byte]) -> [] int {
     return e;
 }
 
+// What is wrong with a unit that is not usable, field by field: one sentence naming each missing or mistyped field and the form it takes.
+fn field_problems[&h, &s, &t](heap: &!h Heap, src: &s [byte], tape: &t [int], node: int) -> [heap] buffer.Buffer {
+    var b = buffer.empty(heap, 256);
+    if !json.is_object(tape, node) {
+        return buffer.append(heap, b, "this unit is not a JSON object; a unit is {\"id\": \"...\", \"signature\": \"fn NAME(params) -> [row] TYPE\", \"description\": \"...\", \"examples\": [\"CALL == EXPECTED\"], \"deps\": []}");
+    }
+    let idn = json.get(src, tape, node, "id");
+    if idn < 0 || !json.is_string(tape, idn) {
+        b = buffer.append(heap, b, "`id` is missing or is not a string (letters, digits, underscore); ");
+    }
+    let sg = json.get(src, tape, node, "signature");
+    if sg < 0 || !json.is_string(tape, sg) {
+        b = buffer.append(heap, b, "`signature` is missing or is not a string (`fn NAME(params) -> [row] TYPE`); ");
+    }
+    let ex = json.get(src, tape, node, "examples");
+    if !all_strings(tape, ex) {
+        b = buffer.append(heap, b, "`examples` is missing or is not an array of strings (each `CALL == EXPECTED`, at least one); ");
+    }
+    let dp = json.get(src, tape, node, "deps");
+    if !all_strings(tape, dp) {
+        b = buffer.append(heap, b, "`deps` is missing or is not an array of strings (the ids of the units this one calls; `[]` for none); ");
+    }
+    let ds = json.get(src, tape, node, "description");
+    if ds >= 0 && !json.is_string(tape, ds) {
+        b = buffer.append(heap, b, "`description` is not a string; ");
+    }
+    let ts = json.get(src, tape, node, "tests");
+    if ts >= 0 && !all_strings(tape, ts) {
+        b = buffer.append(heap, b, "`tests` is not an array of strings (one cancho function each); ");
+    }
+    let ef = json.get(src, tape, node, "effort");
+    if ef >= 0 && !effort_level(src, tape, ef) {
+        b = buffer.append(heap, b, "`effort` is not one of low, medium, high, xhigh, max; ");
+    }
+    return b;
+}
+
 // `integ` is the unit named by the plan's `integration` (-1: none): the application of a service, built against the service's acceptance
 // scenarios, so it needs no example and no test (docs/plan.md).
 fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], info: &!i [int], n: int, u: int, integ: int) -> [heap] buffer.Buffer {
     var b = out;
     let who = label(src, tape, info, u);
     if get_f(info, u, f_ok()) != 1 {
-        return emit(heap, b, "unit-field", who, "a unit must be an object with a string id, a string signature, an array of strings examples and an array of strings deps (and a description, if any, that is a string, tests, if any, an array of strings, and an effort, if any, one of low, medium, high, xhigh, max)");
+        let why = field_problems(heap, src, tape, get_f(info, u, f_node()));
+        var msg = buffer.append(heap, buffer.empty(heap, 128), "the unit cannot be read: ");
+        borrow why as &wr in {
+            msg = buffer.append(heap, msg, buffer.bytes(wr));
+        }
+        buffer.drop(heap, why);
+        borrow msg as &mr in {
+            b = emit(heap, b, "unit-field", who, buffer.bytes(mr));
+        }
+        buffer.drop(heap, msg);
+        return b;
     }
     if find_id(src, tape, info, n, who) != u {
         b = emit(heap, b, "duplicate-id", who, "another unit already has this id");
@@ -329,7 +376,19 @@ fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte
     let m = json.count(tape, ex);
     if m == 0 {
         if u != integ {
-            b = emit(heap, b, "no-example", who, "the unit has no example; give at least one `CALL == EXPECTED`");
+            var msg = buffer.append(heap, buffer.empty(heap, 192), "the unit has no example: give at least one `CALL == EXPECTED` that calls ");
+            if ns >= 0 {
+                msg = buffer.push(heap, msg, byte_of(96));
+                msg = buffer.append(heap, msg, fn_name(src, tape, info, u));
+                msg = buffer.push(heap, msg, byte_of(96));
+            } else {
+                msg = buffer.append(heap, msg, "the unit's function");
+            }
+            msg = buffer.append(heap, msg, " (its name exactly as in the signature, then the arguments, ` == `, the value). A unit with `tests` needs one too: it is documentation there, so it may pass a heap or text, e.g. `NAME(heap, \"a=1\", \"a\") == 1`");
+            borrow msg as &mr in {
+                b = emit(heap, b, "no-example", who, buffer.bytes(mr));
+            }
+            buffer.drop(heap, msg);
         }
     } else if ns >= 0 {
         var own = false;
@@ -351,7 +410,15 @@ fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte
             q = q + 1;
         }
         if !own && shaped > 0 {
-            b = emit(heap, b, "example-own", who, "none of the examples calls this unit's own function");
+            var msg = buffer.append(heap, buffer.empty(heap, 192), "none of the examples calls this unit's own function `");
+            msg = buffer.append(heap, msg, fn_name(src, tape, info, u));
+            msg = buffer.append(heap, msg, "`: write at least one `");
+            msg = buffer.append(heap, msg, fn_name(src, tape, info, u));
+            msg = buffer.append(heap, msg, "(ARGS) == VALUE`, with the whole name from the signature (a helper's name keeps the task prefix, `hexnum_parse`, not `parse`)");
+            borrow msg as &mr in {
+                b = emit(heap, b, "example-own", who, buffer.bytes(mr));
+            }
+            buffer.drop(heap, msg);
         }
     }
     var q = 0;
@@ -365,7 +432,13 @@ fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte
             cl = call_len(left);
         }
         if ns >= 0 && cl > 0 && find_fn(src, tape, info, n, left[0..cl]) < 0 {
-            b = emit(heap, b, "example-callee", who, "an example calls a function that no unit declares");
+            var msg = buffer.append(heap, buffer.empty(heap, 192), "an example calls `");
+            msg = buffer.append(heap, msg, left[0..cl]);
+            msg = buffer.append(heap, msg, "`, which no unit declares: use the name exactly as a signature of this plan spells it (a helper's name keeps the task prefix) or fix the signature");
+            borrow msg as &mr in {
+                b = emit(heap, b, "example-callee", who, buffer.bytes(mr));
+            }
+            buffer.drop(heap, msg);
         }
         q = q + 1;
     }

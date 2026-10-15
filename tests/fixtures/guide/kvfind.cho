@@ -1,0 +1,20 @@
+edition 7;
+import std.option;
+import std.bytes;
+
+// A reference implementation for the guide's "tests" example (docs/plan-guide.md, scripts/test-planner.sh): the unit `kv_find` the guide plans.
+fn kv_find[&h, &t, &k](heap: &!h Heap, text: &t [byte], key: &k [byte]) -> [heap] option.Option[Box[[byte]]] {
+    let eq = bytes.find(text, "=");
+    if eq < 0 {
+        return option.Option::None;
+    }
+    if !bytes.equal(text[0..eq], key) {
+        return option.Option::None;
+    }
+    let value = text[eq + 1..len(text)];
+    let b = box_slice(heap, len(value), byte_of(0));
+    borrow mut b as &!w in {
+        copy_into(contents(w), value);
+    }
+    return option.Option::Some(b);
+}

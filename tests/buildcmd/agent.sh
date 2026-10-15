@@ -22,6 +22,7 @@ echo "$*" > "$recipes/unit.args"
 file=$last
 unit=$(sed -n 's/^UNIT: //p' "$file.task" | head -1)
 echo "$unit" >> "$log"
+echo "stub-agent: unit $unit" >&2
 n=$(grep -c "^$unit\$" "$log")
 if [ -f "$recipes/$unit.$n.sh" ]; then sh "$recipes/$unit.$n.sh" "$file"
 elif [ -f "$recipes/$unit.sh" ]; then sh "$recipes/$unit.sh" "$file"
