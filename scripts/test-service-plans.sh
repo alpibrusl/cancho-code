@@ -17,7 +17,7 @@ pk="${CANCHO_PACKAGES:-$(dirname "$(dirname "$CANCHO")")/packages}"
 export CANCHO_PACKAGES="$pk"
 exe=$(mktemp -t cc-svcplan-XXXXXX); pc=$(mktemp -t cc-svcplan-pc-XXXXXX)
 "$CANCHO" build "$root/tests/programs/project.cho" "$root/src/project.cho" "$root/src/plan.cho" "$root/src/driver.cho" \
-    "$root/src/checker.cho" "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" \
+    "$root/src/checker.cho" "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" "$root/src/journal.cho" "$root/src/runjournal.cho" \
     "$root/src/acceptance.cho" --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 "$CANCHO" build "$root/tests/programs/plancheck.cho" "$root/src/plan.cho" --std --backend cranelift -o "$pc" || { echo "plancheck did not build" >&2; exit 2; }
 

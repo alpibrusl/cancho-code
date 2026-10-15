@@ -31,6 +31,7 @@ import checker;
 import snapshot;
 import acceptance;
 import trail;
+import journal;
 import loop_check;
 import std.buffer;
 import std.bytes;
@@ -78,6 +79,24 @@ fn note[&h, &z, &t, &o, &s, &d](heap: &!h Heap, fs: &z Fs(""), tpath: &t buffer.
 // verified unit (the §4 contract), so a later regression has a clean
 // copy to restore from.
 pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int, accept: &q [byte], accept_timeout_ms: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
+    return run_core(heap, exec, clock, io, fs, file, agent, check_cmd, snap_prefix, max_attempts, k_signature, agent_timeout_ms, accept, accept_timeout_ms, "", "");
+}
+
+// `run_issue` for a unit of a project, with the journal (docs/journal.md): every attempt of `unit` is recorded in `jdir` (the journal directory,
+// `<workdir>/journal`, which exists): the code, the checker's whole answer, the acceptance output, the diff, the agent's stderr and what the agent
+// left in `<file>.call/`. The agent's standard error goes to `<file>.call/stderr.txt`; nothing else about the loop changes.
+pub fn run_issue_journal[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int, accept: &q [byte], accept_timeout_ms: int, jdir: &j [byte], unit: &u [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
+    journal.make_call_dir(heap, exec, clock, file);
+    let wrapped = journal.wrap_agent(heap, agent, file);
+    var ended = Ended::Unavailable;
+    borrow wrapped as &wq in {
+        ended = run_core(heap, exec, clock, io, fs, file, buffer.bytes(wq), check_cmd, snap_prefix, max_attempts, k_signature, agent_timeout_ms, accept, accept_timeout_ms, jdir, unit);
+    }
+    buffer.drop(heap, wrapped);
+    return ended;
+}
+
+fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int, accept: &q [byte], accept_timeout_ms: int, jdir: &j [byte], unit: &u [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
     var tpath = buffer.append(heap, buffer.empty(heap, 256), file);
     tpath = buffer.append(heap, tpath, ".trail.jsonl");
     borrow tpath as &tq0 in {
@@ -114,9 +133,17 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q](heap: &!h Heap, exec: &
     var ended = Ended::Unavailable;
     var going = true;
     while going {
+        // What this attempt leaves for the journal (docs/journal.md): the checker's whole answer and the acceptance output after the attempt.
+        var jchk = buffer.empty(heap, 16);
+        var jacc = buffer.empty(heap, 16);
+        var jexit = 0 - 1;
+        let jn = attempts;
         borrow fbcmd as &fq in {
             let fb = checker.run(heap, exec, clock, file, buffer.bytes(fq), 4096, 30000);
             checker.drop(heap, fb);
+        }
+        if len(jdir) > 0 {
+            journal.clear_call(fs, file);
         }
         // The agent's turn. Its output is not ours to parse: the check
         // below is the only oracle (design §2 — done is what the gate
@@ -141,6 +168,7 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q](heap: &!h Heap, exec: &
                         let agent_ms = clock_ms(clock) - t0;
                         match agent_ran {
                             process.Ran::Code(n) => {
+                                jexit = n;
                                 if n != 0 {
                                     // The agent itself failed (a script that could not run
                                     // its model, a missing tool): named in its own verdict
@@ -153,7 +181,9 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q](heap: &!h Heap, exec: &
                                     going = false;
                                 } else {
                                 // The agent answered; the check is the oracle.
-                                let answer = checker.run(heap, exec, clock, file, check_cmd, 4096, 30000);
+                                let (answer, said_by_checker) = checker.run_said(heap, exec, clock, file, check_cmd, 4096, 30000);
+                                buffer.drop(heap, jchk);
+                                jchk = said_by_checker;
                                 let checker.Answer { outcome, sig } = answer;
                                 var oc = outcome;
                                 var sg = sig;
@@ -183,6 +213,9 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q](heap: &!h Heap, exec: &
                                         buffer.drop(heap, sg);
                                         sg = why;
                                         oc = loop_check.Outcome::Retryable;
+                                    }
+                                    borrow said as &sdj in {
+                                        jacc = buffer.append(heap, jacc, buffer.bytes(sdj));
                                     }
                                     buffer.drop(heap, said);
                                 }
@@ -369,6 +402,15 @@ pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q](heap: &!h Heap, exec: &
                 }
             }
         }
+        if len(jdir) > 0 {
+            borrow jchk as &jcq in {
+                borrow jacc as &jaq in {
+                    journal.attempt(heap, exec, clock, fs, jdir, unit, jn, file, buffer.bytes(jcq), buffer.bytes(jaq), jexit);
+                }
+            }
+        }
+        buffer.drop(heap, jchk);
+        buffer.drop(heap, jacc);
     }
     buffer.drop(heap, last);
     buffer.drop(heap, tpath);

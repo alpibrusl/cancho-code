@@ -75,7 +75,7 @@ case "$(printf '%s\n' "$out" | grep 'duration_format:')" in "  duration_format: 
 # the plan's tests hold for the reference, through the whole driver (a stand-in agent installs it); and they refuse the mutation
 pexe=$(mktemp -t cc-eval-proj-XXXXXX)
 "$CANCHO" build "$root/tests/programs/project.cho" "$root/src/project.cho" "$root/src/plan.cho" "$root/src/driver.cho" \
-    "$root/src/checker.cho" "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" \
+    "$root/src/checker.cho" "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" "$root/src/journal.cho" "$root/src/runjournal.cho" \
     "$root/src/acceptance.cho" --std --backend cranelift -o "$pexe" >/dev/null 2>&1 || { echo "FAIL: duration: the project driver did not build" >&2; fail=1; }
 for which in reference mutated; do
     wd=$(mktemp -d -t cc-eval-wd-XXXXXX); rcp=$(mktemp -d -t cc-eval-rc-XXXXXX); : > "$wd/agent.log"

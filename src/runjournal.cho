@@ -1,0 +1,162 @@
+edition 7;
+
+module runjournal;
+
+// `runjournal` -- the events of the run itself (docs/journal.md): where it started and ended, the plan it was given, each unit's start and
+// end, the sweeps that re-check what had verified. The attempts are written by the driver (src/journal.cho), the model calls of the plan
+// stage by the agent (src/calls.cho). Every function here is one event; none can fail the run: the answer is 0, or -1 when the event could
+// not be written, and the callers ignore it.
+
+import journal;
+import plan;
+import std.buffer;
+import std.bytes;
+import std.json;
+
+// `<wd>/journal`.
+pub fn dir_of[&h, &w](heap: &!h Heap, wd: &w [byte]) -> [heap] buffer.Buffer {
+    return journal.under(heap, wd, "journal", "");
+}
+
+// `run_start`: where the run began. `brief` is the path as it was given; an empty provider, model or brief (a project run by hand has none) is left out.
+pub fn run_start[&h, &c, &z, &d, &b, &p, &m](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), dir: &d [byte], brief: &b [byte], provider: &p [byte], model: &m [byte], review: bool, rounds: int, attempts: int, agent_ms: int, plan_ms: int) -> [heap, clock, fs_read(""), fs_write("")] int {
+    var w = journal.begin_event(heap, clock_unix_ms(clock), "run_start");
+    if len(brief) > 0 {
+        w = journal.put_str(heap, w, "brief", brief);
+    }
+    if len(provider) > 0 {
+        w = journal.put_str(heap, w, "provider", provider);
+    }
+    if len(model) > 0 {
+        w = journal.put_str(heap, w, "model", model);
+    }
+    w = json.put_key(heap, w, "options");
+    w = json.begin_object(heap, w);
+    w = journal.put_flag(heap, w, "review", review);
+    if rounds > 0 {
+        w = journal.put_num(heap, w, "rounds", rounds);
+    }
+    w = journal.put_num(heap, w, "attempts", attempts);
+    w = journal.put_num(heap, w, "agent_seconds", agent_ms / 1000);
+    if plan_ms > 0 {
+        w = journal.put_num(heap, w, "plan_seconds", plan_ms / 1000);
+    }
+    w = json.end_object(heap, w);
+    return journal.end_event(heap, fs, dir, w);
+}
+
+// `run_end`: the verdict word, the exit code, the seconds this invocation took.
+pub fn run_end[&h, &z, &d, &v](heap: &!h Heap, now_ms: int, fs: &z Fs(""), dir: &d [byte], verdict: &v [byte], code: int, seconds: int) -> [heap, fs_read(""), fs_write("")] int {
+    var w = journal.begin_event(heap, now_ms, "run_end");
+    w = journal.put_str(heap, w, "verdict", verdict);
+    w = journal.put_num(heap, w, "exit", code);
+    w = journal.put_num(heap, w, "seconds", seconds);
+    return journal.end_event(heap, fs, dir, w);
+}
+
+// `plan_final`: whether the plan the build goes on with is valid, how many units it has, and the plan itself (a blob copied from `plan_path`;
+// left out when there is none to copy).
+pub fn plan_final[&h, &c, &z, &d, &p](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), dir: &d [byte], valid: bool, units: int, plan_path: &p [byte]) -> [heap, clock, fs_read(""), fs_write("")] int {
+    let now = clock_unix_ms(clock);
+    var w = journal.begin_event(heap, now, "plan_final");
+    w = journal.put_flag(heap, w, "valid", valid);
+    w = journal.put_num(heap, w, "units", units);
+    var name = buffer.append(heap, buffer.empty(heap, 32), "plan-");
+    name = buffer.push_nat(heap, name, now);
+    name = buffer.append(heap, name, ".json");
+    borrow name as &nq in {
+        if journal.blob_copy(heap, fs, dir, buffer.bytes(nq), plan_path) == 0 {
+            w = journal.put_str(heap, w, "plan", buffer.bytes(nq));
+        }
+    }
+    buffer.drop(heap, name);
+    return journal.end_event(heap, fs, dir, w);
+}
+
+// `unit_start`: the unit, the function it adds (from its signature) and the units it depends on. `node` is the unit's object in the plan's tape.
+pub fn unit_start[&h, &c, &z, &d, &s, &t](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), dir: &d [byte], src: &s [byte], tape: &t [int], node: int) -> [heap, clock, fs_read(""), fs_write("")] int {
+    var w = journal.begin_event(heap, clock_unix_ms(clock), "unit_start");
+    var id = journal.add_string(heap, buffer.empty(heap, 32), src, tape, json.get(src, tape, node, "id"));
+    borrow id as &iq in {
+        w = journal.put_str(heap, w, "unit", buffer.bytes(iq));
+    }
+    buffer.drop(heap, id);
+    var sig = journal.add_string(heap, buffer.empty(heap, 96), src, tape, json.get(src, tape, node, "signature"));
+    borrow sig as &sq in {
+        let (a, e) = plan.name_range(buffer.bytes(sq));
+        if a >= 0 {
+            w = journal.put_str(heap, w, "function", buffer.bytes(sq)[a..e]);
+        }
+    }
+    buffer.drop(heap, sig);
+    w = json.put_key(heap, w, "deps");
+    w = json.begin_array(heap, w);
+    let ds = json.get(src, tape, node, "deps");
+    if ds >= 0 && json.is_array(tape, ds) {
+        var j = ds + 1;
+        var left = json.count(tape, ds);
+        while left > 0 {
+            var dep = journal.add_string(heap, buffer.empty(heap, 32), src, tape, j);
+            borrow dep as &dq in {
+                w = json.put_string(heap, w, buffer.bytes(dq));
+            }
+            buffer.drop(heap, dep);
+            j = json.skip(tape, j);
+            left = left - 1;
+        }
+    }
+    w = json.end_array(heap, w);
+    return journal.end_event(heap, fs, dir, w);
+}
+
+// The number of records the unit's trail holds so far: its attempts.
+fn attempts_so_far[&z, &p](fs: &z Fs(""), trail_path: &p [byte]) -> [fs_read("")] int {
+    var n = 0;
+    region r {
+        let text = alloc_slice[r](65536, byte_of(0));
+        let got = fs_read(fs, trail_path, text);
+        var i = 0;
+        while i < got {
+            if int_of(text[i]) == 10 {
+                n = n + 1;
+            }
+            i = i + 1;
+        }
+    }
+    return n;
+}
+
+// `unit_end`: `state` is verified, stuck or unavailable; the attempts are counted from the trail of the unit (`trail_path`).
+pub fn unit_end[&h, &c, &z, &d, &u, &p](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), dir: &d [byte], unit: &u [byte], state: &static [byte], trail_path: &p [byte]) -> [heap, clock, fs_read(""), fs_write("")] int {
+    var w = journal.begin_event(heap, clock_unix_ms(clock), "unit_end");
+    w = journal.put_str(heap, w, "unit", unit);
+    w = journal.put_str(heap, w, "state", state);
+    w = journal.put_num(heap, w, "attempts", attempts_so_far(fs, trail_path));
+    return journal.end_event(heap, fs, dir, w);
+}
+
+// One `[...]` of names from a comma-separated list.
+fn put_names[&h, &l](heap: &!h Heap, w: json.Writer, key: &static [byte], names: &l [byte]) -> [heap] json.Writer {
+    var o = json.put_key(heap, w, key);
+    o = json.begin_array(heap, o);
+    if len(names) > 0 {
+        var k = 1;
+        let total = bytes.count_byte(names, 44) + 1;
+        while k <= total {
+            o = json.put_string(heap, o, bytes.field(names, 44, k));
+            k = k + 1;
+        }
+    }
+    o = json.end_array(heap, o);
+    return o;
+}
+
+// `sweep`: after unit `after` verified (empty: the check at the start of a resumed run), the units that were re-checked and held and those that
+// no longer did. Both are comma-separated lists of unit ids.
+pub fn sweep[&h, &c, &z, &d, &a, &k, &g](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), dir: &d [byte], after: &a [byte], held: &k [byte], regressed: &g [byte]) -> [heap, clock, fs_read(""), fs_write("")] int {
+    var w = journal.begin_event(heap, clock_unix_ms(clock), "sweep");
+    w = journal.put_str(heap, w, "after_unit", after);
+    w = put_names(heap, w, "held", held);
+    w = put_names(heap, w, "regressed", regressed);
+    return journal.end_event(heap, fs, dir, w);
+}

@@ -74,6 +74,14 @@ pub fn drop[&h](heap: &!h Heap, a: Answer) -> [heap] int {
 //     → `Outcome::ProviderOutage` too: the same wait-not-burn rule, and the
 //     report names the checker.
 pub fn run[&h, &x, &c, &f, &m](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, file: &f [byte], cmd: &m [byte], most: int, timeout: int) -> [heap, exec(""), clock, poll] Answer {
+    let (answer, said) = run_said(heap, exec, clock, file, cmd, most, timeout);
+    buffer.drop(heap, said);
+    return answer;
+}
+
+// `run`, and the checker's whole answer too (what it printed, at most `most` bytes: a longer answer is an outage, never a cut one). The journal
+// (docs/journal.md) keeps it; the loop decides on the `Answer`.
+pub fn run_said[&h, &x, &c, &f, &m](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, file: &f [byte], cmd: &m [byte], most: int, timeout: int) -> [heap, exec(""), clock, poll] (Answer, buffer.Buffer) {
     region a {
         // The command is one shell invocation: `sh` is what the Exec
         // capability names, and the command string is the caller's.
@@ -82,14 +90,14 @@ pub fn run[&h, &x, &c, &f, &m](heap: &!h Heap, exec: &x Exec(""), clock: &c Cloc
         match process.channels() {
             process.Channels::Failed(e) => {
                 let empty = buffer.empty(heap, 16);
-                return Answer { outcome: loop_check.Outcome::ProviderOutage, sig: empty };
+                return (Answer { outcome: loop_check.Outcome::ProviderOutage, sig: empty }, buffer.empty(heap, 16));
             }
             process.Channels::Ok(to_child, child_in, from_child, child_out) => {
                 match exec_spawn(exec, path, argv, "", Stdio::Pipe(child_in), Stdio::Pipe(child_out), Stdio::Null) {
                     Spawned::Failed(e) => {
                         process.close(to_child, from_child);
                         let empty = buffer.empty(heap, 16);
-                        return Answer { outcome: loop_check.Outcome::ProviderOutage, sig: empty };
+                        return (Answer { outcome: loop_check.Outcome::ProviderOutage, sig: empty }, buffer.empty(heap, 16));
                     }
                     Spawned::Ok(child) => {
                         let (out, ran) = process.capture(heap, clock, child, to_child, from_child, "", most, timeout);
@@ -141,8 +149,7 @@ pub fn run[&h, &x, &c, &f, &m](heap: &!h Heap, exec: &x Exec(""), clock: &c Cloc
                                 outcome = loop_check.Outcome::ProviderOutage;
                             }
                         }
-                        buffer.drop(heap, out);
-                        return Answer { outcome: outcome, sig: sig };
+                        return (Answer { outcome: outcome, sig: sig }, out);
                     }
                 }
             }

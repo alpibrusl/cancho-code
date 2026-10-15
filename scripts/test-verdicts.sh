@@ -21,7 +21,7 @@ command -v "$CANCHO" >/dev/null 2>&1 || { echo "no cancho on PATH; set CANCHO=" 
 root=$(cd "$(dirname "$0")/.." && pwd)
 exe=$(mktemp -t cc-verdicts-XXXXXX)
 "$CANCHO" build "$root/tests/programs/fix.cho" "$root/src/driver.cho" "$root/src/checker.cho" \
-    "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" "$root/src/acceptance.cho" \
+    "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" "$root/src/journal.cho" "$root/src/acceptance.cho" \
     --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 fail=0

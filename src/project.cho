@@ -11,7 +11,9 @@ module project;
 
 import acceptance;
 import driver;
+import journal;
 import plan;
+import runjournal;
 import snapshot;
 import std.buffer;
 import std.bytes;
@@ -503,22 +505,61 @@ fn verify[&h, &x, &c, &k, &w, &d, &ac, &lb](heap: &!h Heap, exec: &x Exec(""), c
     return ans;
 }
 
+// `ids` and `id` after it, comma-separated (the journal's sweep event).
+fn note_id[&h, &d](heap: &!h Heap, ids: buffer.Buffer, id: &d [byte]) -> [heap] buffer.Buffer {
+    var b = ids;
+    var some = false;
+    borrow b as &bq in {
+        some = buffer.size(bq) > 0;
+    }
+    if some {
+        b = buffer.push(heap, b, byte_of(44));
+    }
+    return buffer.append(heap, b, id);
+}
+
+// The sweep event of a `recheck` (docs/journal.md), when it checked anything; ends the two lists.
+fn sweep_event[&h, &c, &z, &w, &b](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), wd: &w [byte], skip: int, broke: &b [byte], held_ids: buffer.Buffer, bad_ids: buffer.Buffer) -> [heap, clock, fs_read(""), fs_write("")] int {
+    let jd = runjournal.dir_of(heap, wd);
+    borrow jd as &jq in {
+        borrow held_ids as &hq in {
+            borrow bad_ids as &bq in {
+                if len(buffer.bytes(hq)) + len(buffer.bytes(bq)) > 0 {
+                    if skip >= 0 {
+                        runjournal.sweep(heap, clock, fs, buffer.bytes(jq), broke, buffer.bytes(hq), buffer.bytes(bq));
+                    } else {
+                        runjournal.sweep(heap, clock, fs, buffer.bytes(jq), "", buffer.bytes(hq), buffer.bytes(bq));
+                    }
+                }
+            }
+        }
+    }
+    buffer.drop(heap, jd);
+    buffer.drop(heap, held_ids);
+    buffer.drop(heap, bad_ids);
+    return 0;
+}
+
 // Re-verify every verified unit but `skip` (-1: none): the ones that fail go back on the board, with a NOTE naming `broke`.
 fn recheck[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &b, &l, &ac, &lb](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], tape: &t [int], nodes: &n [int], meta: &!m [int], notes: &!o [byte], count: int, skip: int, broke: &b [byte], keep: bool, checker: &k [byte], wd: &w [byte], log: &l [byte], integ: int, accept: &ac [byte], libs: &lb [byte]) -> [heap, exec(""), clock, poll, io_write, fs_read(""), fs_write("")] int {
     var u = 0;
     var dropped = 0;
+    var held_ids = buffer.empty(heap, 64);
+    var bad_ids = buffer.empty(heap, 64);
     while u < count {
         if u != skip && meta[3 * u] == 1 {
             let r = verify(heap, exec, clock, checker, wd, uid(src, tape, nodes, u), u == integ, accept, libs);
             let acceptance.Result { held, why, said } = r;
             buffer.drop(heap, why);
             if held == 0 {
+                held_ids = note_id(heap, held_ids, uid(src, tape, nodes, u));
                 if keep {
                     say(heap, io, fs, log, uid(src, tape, nodes, u), "kept");
                 }
             } else {
                 meta[3 * u] = 0;
                 dropped = dropped + 1;
+                bad_ids = note_id(heap, bad_ids, uid(src, tape, nodes, u));
                 say(heap, io, fs, log, uid(src, tape, nodes, u), "regressed");
                 borrow said as &sd in {
                     set_note(notes, meta, u, broke, buffer.bytes(sd));
@@ -531,6 +572,7 @@ fn recheck[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &b, &l, &ac, &lb](hea
     if dropped > 0 {
         state_write(heap, fs, src, tape, nodes, meta, count, wd);
     }
+    sweep_event(heap, clock, fs, wd, skip, broke, held_ids, bad_ids);
     return dropped;
 }
 
@@ -560,13 +602,15 @@ fn build[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb](heap:
     var prefix = buffer.append(heap, buffer.empty(heap, 128), wd);
     prefix = buffer.append(heap, prefix, "/project.cho.snap");
     let accept = unit_accept(heap, checker, wd, id, u == integ, accept_cmd, libs);
+    let jd = runjournal.dir_of(heap, wd);
     var status = 1;
+    borrow jd as &jq in {
     borrow file as &fb in {
         borrow cmd as &ce in {
             borrow act as &ae in {
                 borrow prefix as &pe in {
                     borrow accept as &qe in {
-                        match driver.run_issue(heap, exec, clock, io, fs, buffer.bytes(fb), buffer.bytes(ae), buffer.bytes(ce), buffer.bytes(pe), attempts, 2, agent_ms, buffer.bytes(qe), accept_ms(u == integ)) {
+                        match driver.run_issue_journal(heap, exec, clock, io, fs, buffer.bytes(fb), buffer.bytes(ae), buffer.bytes(ce), buffer.bytes(pe), attempts, 2, agent_ms, buffer.bytes(qe), accept_ms(u == integ), buffer.bytes(jq), id) {
                             driver.Ended::Verified => {
                                 status = 0;
                             }
@@ -588,12 +632,32 @@ fn build[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb](heap:
             }
         }
     }
+    }
+    buffer.drop(heap, jd);
     buffer.drop(heap, file);
     buffer.drop(heap, cmd);
     buffer.drop(heap, act);
     buffer.drop(heap, prefix);
     buffer.drop(heap, accept);
     return status;
+}
+
+// The unit's journal event (docs/journal.md): its start (`ended` false), or its end in `state` (the attempts are those of its trail).
+fn unit_event[&h, &c, &z, &s, &t, &n, &w, &d](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), wd: &w [byte], src: &s [byte], tape: &t [int], node: int, id: &d [byte], state: &static [byte], ended: bool) -> [heap, clock, fs_read(""), fs_write("")] int {
+    let jd = runjournal.dir_of(heap, wd);
+    let tp = in_wd(heap, wd, "project.cho.trail.jsonl", "", "");
+    borrow jd as &jq in {
+        borrow tp as &tq in {
+            if ended {
+                runjournal.unit_end(heap, clock, fs, buffer.bytes(jq), id, state, buffer.bytes(tq));
+            } else {
+                runjournal.unit_start(heap, clock, fs, buffer.bytes(jq), src, tape, node);
+            }
+        }
+    }
+    buffer.drop(heap, jd);
+    buffer.drop(heap, tp);
+    return 0;
 }
 
 // Copy project.cho to `<name>` in the work directory, or `<name>` back over project.cho (`back`): 0, or -1.
@@ -728,9 +792,17 @@ fn drive[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb](heap:
                 // A unit that fails leaves its attempts in project.cho; the file goes back to what it was, so the units
                 // that do not depend on it still build.
                 keep_copy(heap, fs, wd, "project.cho.before", false);
+                unit_event(heap, clock, fs, wd, src, tape, nodes[next], id, "", false);
                 let r = build(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, next, checker, wd, agent, attempts, agent_ms, log, integ, accept, libs);
                 // The unit's trail is kept whatever the outcome: a unit that failed is the one whose trail is wanted.
                 keep_trail(heap, fs, id, wd);
+                if r == 0 {
+                    unit_event(heap, clock, fs, wd, src, tape, nodes[next], id, "verified", true);
+                } else if r == 1 {
+                    unit_event(heap, clock, fs, wd, src, tape, nodes[next], id, "stuck", true);
+                } else {
+                    unit_event(heap, clock, fs, wd, src, tape, nodes[next], id, "unavailable", true);
+                }
                 if r == 0 {
                     meta[3 * next] = 1;
                     state_write(heap, fs, src, tape, nodes, meta, count, wd);
@@ -792,6 +864,11 @@ pub fn run_logged[&h, &x, &c, &i, &z, &s, &k, &w, &a, &l, &ac, &lb](heap: &!h He
         io.error_all(io, "project: the work directory cannot be written\n");
         return 2;
     }
+    let jd0 = runjournal.dir_of(heap, wd);
+    borrow jd0 as &jq0 in {
+        journal.begin(heap, exec, clock, buffer.bytes(jq0));
+    }
+    buffer.drop(heap, jd0);
     var status = 1;
     let tb = box_slice(heap, json.tape_len(src), 0);
     borrow mut tb as &!tw in {
@@ -819,9 +896,33 @@ pub fn run_logged[&h, &x, &c, &i, &z, &s, &k, &w, &a, &l, &ac, &lb](heap: &!h He
 // Build the plan in `src` in `wd` (the exit code of docs/project.md: 0 done, 1 stuck or gate failed, 2 the work directory cannot be
 // written, 3 no plan, 4 the agent or the checker is away).
 pub fn run[&h, &x, &c, &i, &z, &s, &k, &w, &a, &ac, &lb](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], checker: &k [byte], wd: &w [byte], agent: &a [byte], attempts: int, agent_ms: int, accept: &ac [byte], libs: &lb [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write, err_write] int {
-    let status = run_logged(heap, exec, clock, io, fs, src, checker, wd, agent, attempts, agent_ms, "", accept, libs);
-    if status == 5 {
-        return 1;
+    let started = clock_unix_ms(clock);
+    let jd = runjournal.dir_of(heap, wd);
+    borrow jd as &jq in {
+        journal.begin(heap, exec, clock, buffer.bytes(jq));
+        runjournal.run_start(heap, clock, fs, buffer.bytes(jq), "", "", "", false, 0, attempts, agent_ms, 0);
     }
-    return status;
+    let status = run_logged(heap, exec, clock, io, fs, src, checker, wd, agent, attempts, agent_ms, "", accept, libs);
+    var code = status;
+    if status == 5 {
+        code = 1;
+    }
+    var word = "stuck";
+    if status == 0 {
+        word = "done";
+    } else if status == 2 {
+        word = "usage";
+    } else if status == 3 {
+        word = "no_plan";
+    } else if status == 4 {
+        word = "provider_error";
+    } else if status == 5 {
+        word = "gate_failed";
+    }
+    borrow jd as &jq2 in {
+        let now = clock_unix_ms(clock);
+        runjournal.run_end(heap, now, fs, buffer.bytes(jq2), word, code, (now - started) / 1000);
+    }
+    buffer.drop(heap, jd);
+    return code;
 }
