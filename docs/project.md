@@ -3,10 +3,10 @@
 docs/parity.md P5. `fix` drives one issue against one file. A **project** is a plan (docs/plan.md) built unit by unit: the next unit whose dependencies are done, each verified by its own examples, everything that had verified re-checked after every unit, a killed run resumable. lex-code's `lex issue next` / `--project` is the model.
 
 ```
-project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds]]
+project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds [acceptance-command [lib-files]]]]
 ```
 
-`checker` and `workdir` are absolute paths (a relative checker is exit 2: the first implementation died with SIGILL on one); `workdir` must exist. The agent command is the same shell command `fix` takes: it is run with the project file appended as its last argument and reads `<project.cho>.task` to learn what to write (scripts/cancho-agent.sh does). `attempts` is the ceiling per unit (default 4), `agent-seconds` the cap on one agent turn (default 30).
+`checker` and `workdir` are absolute paths (a relative checker is exit 2: the first implementation died with SIGILL on one); `workdir` must exist. The agent command is the same shell command `fix` takes: it is run with the project file appended as its last argument and reads `<project.cho>.task` to learn what to write (scripts/cancho-agent.sh does). `attempts` is the ceiling per unit (default 4), `agent-seconds` the cap on one agent turn (default 30). `acceptance-command` and `lib-files` are for a plan with an `integration` unit (below); they are the `fix` hook's and extra files' counterparts.
 
 ## Layout (flat: a program cannot make directories)
 
@@ -61,6 +61,21 @@ A unit that carries `tests` (docs/plan.md) uses them instead: each is decoded an
 6. Units never reached because a dependency failed are printed `[UNIT]<TAB><id><TAB>skipped`. If any unit failed or was skipped: `[PROJECT_VERDICT]<TAB>stuck`, exit 1. Otherwise the **final gate**: check `project.cho` + `main.cho`, and run every unit's tests, one `cancho test` per tests file (each starts `import std.test;`, and two such files in one run are refused: `test is already bound to another import`). Holds: `[PROJECT_VERDICT]<TAB>done`, exit 0. Fails: `[PROJECT_VERDICT]<TAB>gate_failed`, exit 1.
 
 Usage errors (fewer than 4 arguments, `workdir` or the plan file unreadable): exit 2.
+
+## Services: the integration unit
+
+A service (docs/parity.md P7) is not built from one function, but its logic is: the briefs in `eval/services/<name>/brief.txt` name the pure functions (parsing, validation, state transitions) and the application only wires them to the fixed skeleton (`eval/services/skeleton/main.cho`: the server loop and `main`). The blocker for decomposing it was that unit tests need `cancho test`, which supplies its own `main`, and the skeleton has one. The smallest change that removes it:
+
+- **Pure units are ordinary units.** Their logic is pure, so `cancho test project.cho tests-<id>.cho` needs no skeleton. What they need is the project file to import what it uses: `project.cho` of a service starts with the imports the skeleton would have made (`eval/services/bare.sh --header <reference>`: the skeleton's own import lines, plus the reference's std.hmac / std.utf8), and the whole service is built with `eval/services/skeleton/main_bare.cho`, which is `main.cho` without its import lines (files compiled together share their imports, and an import twice is an error; `scripts/test-services.sh` pins that the bare file is `main.cho` minus its imports).
+- **The last unit is the application**, named by the plan's `integration` field (docs/plan.md). It has no examples and no tests file. Its acceptance command is the one given as the 7th argument (`python3 eval/service_run.py accept --bare <service>`: build with the skeleton, start the service, replay the scenarios); the driver appends `project.cho` to it. The loop is `driver.run_issue` as for any unit, so a failing scenario is the feedback of the next attempt (the scenario output is in `project.cho.feedback`, cut to the 4096 bytes the driver reads: `service_run.py accept` keeps the head, which names the first failures, and the result line), and the unit fails at the attempt ceiling or the same-signature stop like any other. The task of this unit has no `EXAMPLES:`; its `INSTRUCTIONS:` say to add the application wired from the existing functions, that the scenarios are run on the whole service, and that an earlier function may be corrected if a scenario shows it wrong (the sweep then re-runs every earlier unit's tests, and a unit that broke is rebuilt with a NOTE).
+- **`lib-files`** (8th argument, space separated) are source files every compile gets beside the project: the `http-server` package (`project.cho` imports `http.server` through the skeleton's import list). They are added to the check command, to every unit's tests and to the final gate.
+- The integration unit's check command is the normal one (`project.cho` + the driver's `main.cho` + the libs): it type-checks the application without the skeleton, and the acceptance command builds the real service (a build error is the first line of its output, which becomes the signature).
+- The acceptance of the integration unit may take minutes (a build, a server, scenarios that sleep): 300 seconds per run instead of 60.
+- **The final gate** checks `project.cho` + `main.cho` + libs, runs every non-integration unit's tests, then runs the acceptance command once more. After a resume the integration unit is re-verified by the acceptance command like the others.
+- A plan with an `integration` unit and no acceptance command is a usage error (`project: the plan names an integration unit and no acceptance command was given`, exit 2, nothing asked of the agent).
+- `eval/services/<name>/plan.json` is the hand plan of each service; `pieces.txt` says which top-level items of the reference application belong to which unit; `scripts/test-service-plans.sh` builds each plan with a stand-in agent (`eval/services/standin.sh`) that appends those pieces, then grades the finished project with the hidden attack. `eval/run_service_plan.py` runs the real pipeline (driver + `cancho-agent --output patch`) and grades with the attack.
+
+Gate: `scripts/test-project.sh` case `service` (a stand-in service in `tests/project/service/`: lib file used by a pure unit, a fixed `main`, an acceptance script that builds and runs; happy path, a rerun that keeps both units, a failing scenario whose output reaches the agent and is retried, a never-satisfied application that ends `stuck` with the pure unit still verified, and the usage error).
 
 ## Two facts the first implementation and the gate turned up
 

@@ -9,7 +9,12 @@
    "examples": [
     "name_ok(\"alpha\") == true",
     "name_ok(\"A\") == false",
-    "name_ok(\"\") == false"
+    "name_ok(\"\") == false",
+    "name_ok(\"a-b_9\") == true",
+    "name_ok(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\") == true",
+    "name_ok(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\") == false",
+    "name_ok(\"a b\") == false",
+    "name_ok(\"a:b\") == false"
    ],
    "tests": [
     "pub fn test_name_ok_1() -> [] int { test.assert(name_ok(\"alpha\")); return 0; }",
@@ -30,7 +35,12 @@
    "description": "Is `id` a valid EVENT ID: 1 to 64 characters, each a letter (either case), a digit, \"_\" or \"-\"? Anything else (empty, 65 or more characters, a space, any other byte) is false. It must never panic on any bytes.",
    "examples": [
     "event_id_ok(\"Evt_1-a\") == true",
-    "event_id_ok(\"a b\") == false"
+    "event_id_ok(\"a b\") == false",
+    "event_id_ok(\"\") == false",
+    "event_id_ok(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\") == true",
+    "event_id_ok(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\") == false",
+    "event_id_ok(\"a.b\") == false",
+    "event_id_ok(\"A-Z_09\") == true"
    ],
    "tests": [
     "pub fn test_event_id_ok_1() -> [] int { test.assert(event_id_ok(\"Evt_1-a\")); return 0; }",
@@ -53,7 +63,13 @@
    "examples": [
     "secrets_ok(\"a:x,b-2:y z\") == true",
     "secrets_ok(\"a\") == false",
-    "secrets_ok(\"a:\") == false"
+    "secrets_ok(\"a:\") == false",
+    "secrets_ok(\"A:x\") == false",
+    "secrets_ok(\"a:x:y\") == false",
+    "secrets_ok(\"\") == false",
+    "secrets_ok(\"a:x,\") == false",
+    "secrets_ok(\"a:x\") == true",
+    "secrets_ok(\":x\") == false"
    ],
    "tests": [
     "pub fn test_secrets_ok_1() -> [] int { test.assert(secrets_ok(\"a:x,b-2:y z\")); return 0; }",
@@ -76,7 +92,12 @@
    "signature": "fn secret_span[&s, &n](text: &s [byte], name: &n [byte]) -> [] (int, int)",
    "description": "Where the secret of source `name` lies in a valid secrets text (\"a:xy,b:z\"), as (start, end) byte offsets into `text` (end exclusive): the bytes after the first \":\" of the entry whose name equals `name`, up to the \",\" or the end. (-1, -1) when no entry has that name. The first entry of that name wins. Never panics.",
    "examples": [
-    "secret_span(\"a:xy,b:z\", \"b\") == (7, 8)"
+    "secret_span(\"a:xy,b:z\", \"b\") == (7, 8)",
+    "secret_span(\"a:xy,b:z\", \"a\") == (2, 4)",
+    "secret_span(\"a:xy,b:z\", \"c\") == (0 - 1, 0 - 1)",
+    "secret_span(\"a:xy,b:z\", \"\") == (0 - 1, 0 - 1)",
+    "secret_span(\"\", \"a\") == (0 - 1, 0 - 1)",
+    "secret_span(\"a:x,a:y\", \"a\") == (2, 3)"
    ],
    "tests": [
     "pub fn test_secret_span_1() -> [] int { let (a, b) = secret_span(\"a:xy,b:z\", \"b\"); test.assert(a == 7 && b == 8); return 0; }",
@@ -97,7 +118,12 @@
    "description": "The number an X-Timestamp header spells: 1 to 12 ASCII digits and nothing else (no sign, no space, no other byte). Its value, or -1 for the empty text, a text with any other byte, or 13 or more digits. Never overflows.",
    "examples": [
     "timestamp_value(\"1700000000\") == 1700000000",
-    "timestamp_value(\"12a\") == 0 - 1"
+    "timestamp_value(\"12a\") == 0 - 1",
+    "timestamp_value(\"0\") == 0",
+    "timestamp_value(\"\") == 0 - 1",
+    "timestamp_value(\"-5\") == 0 - 1",
+    "timestamp_value(\"1234567890123\") == 0 - 1",
+    "timestamp_value(\"123456789012\") == 123456789012"
    ],
    "tests": [
     "pub fn test_timestamp_value_1() -> [] int { test.assert(timestamp_value(\"1700000000\") == 1700000000); return 0; }",
@@ -117,7 +143,12 @@
    "description": "Is the timestamp `ts` (Unix seconds) within 300 seconds of `now_s`, in the past or in the future, 300 itself included? (1000, 1300) is true, (1000, 1301) is false.",
    "examples": [
     "timestamp_in_window(1000, 1300) == true",
-    "timestamp_in_window(1000, 1301) == false"
+    "timestamp_in_window(1000, 1301) == false",
+    "timestamp_in_window(1300, 1000) == true",
+    "timestamp_in_window(1301, 1000) == false",
+    "timestamp_in_window(700, 1000) == true",
+    "timestamp_in_window(699, 1000) == false",
+    "timestamp_in_window(1000, 1000) == true"
    ],
    "tests": [
     "pub fn test_timestamp_in_window_1() -> [] int { test.assert(timestamp_in_window(1000, 1300)); return 0; }",
@@ -175,7 +206,11 @@
    "description": "Do `x` and `y` hold the same bytes (same length, same contents)? The comparison must not stop at the first difference: when the lengths are equal it looks at every byte (it is used to compare signatures, so its time must not depend on where they differ). The length is not secret.",
    "examples": [
     "same_bytes(\"abc\", \"abc\") == true",
-    "same_bytes(\"abc\", \"abd\") == false"
+    "same_bytes(\"abc\", \"abd\") == false",
+    "same_bytes(\"abc\", \"ab\") == false",
+    "same_bytes(\"\", \"\") == true",
+    "same_bytes(\"abc\", \"xbc\") == false",
+    "same_bytes(\"\", \"a\") == false"
    ],
    "tests": [
     "pub fn test_same_bytes_1() -> [] int { test.assert(same_bytes(\"abc\", \"abc\")); return 0; }",
@@ -195,7 +230,10 @@
    "examples": [
     "token_ok(\"abc\") == true",
     "token_ok(\"a b\") == false",
-    "token_ok(\"\") == false"
+    "token_ok(\"\") == false",
+    "token_ok(\"~!\") == true",
+    "token_ok(\" \") == false",
+    "token_ok(\"adm-token-xyz\") == true"
    ],
    "tests": [
     "pub fn test_token_ok_1() -> [] int { test.assert(token_ok(\"abc\")); return 0; }",
@@ -213,7 +251,14 @@
    "signature": "fn bearer_span[&s](header: &s [byte]) -> [] (int, int)",
    "description": "The span (start, end) of the token in an Authorization header value: the header must be exactly \"Bearer \" (capital B, one space) followed by a valid token (token_ok: one or more printable ASCII characters other than space, up to the end of the header). \"Bearer abc\" is (7, 10). Anything else (\"bearer abc\", \"Bearer\", \"Bearer \", \"Bearer a b\", \"Basic x\", \"\") is (-1, -1).",
    "examples": [
-    "bearer_span(\"Bearer abc\") == (7, 10)"
+    "bearer_span(\"Bearer abc\") == (7, 10)",
+    "bearer_span(\"bearer abc\") == (0 - 1, 0 - 1)",
+    "bearer_span(\"Bearer\") == (0 - 1, 0 - 1)",
+    "bearer_span(\"Bearer \") == (0 - 1, 0 - 1)",
+    "bearer_span(\"Bearer a b\") == (0 - 1, 0 - 1)",
+    "bearer_span(\"Basic x\") == (0 - 1, 0 - 1)",
+    "bearer_span(\"\") == (0 - 1, 0 - 1)",
+    "bearer_span(\"Bearer  abc\") == (0 - 1, 0 - 1)"
    ],
    "tests": [
     "pub fn test_bearer_span_1() -> [] int { let (a, b) = bearer_span(\"Bearer abc\"); test.assert(a == 7 && b == 10); return 0; }",
@@ -236,7 +281,18 @@
    "description": "The `limit` query value: a number from 1 to 100 written as plain decimal digits (no sign, no leading zero, no other character). Its value, or -1 for anything else: empty, \"0\", \"101\", \"05\", \"+5\", \"x\", \"1000\".",
    "examples": [
     "limit_value(\"7\") == 7",
-    "limit_value(\"101\") == 0 - 1"
+    "limit_value(\"101\") == 0 - 1",
+    "limit_value(\"100\") == 100",
+    "limit_value(\"1\") == 1",
+    "limit_value(\"99\") == 99",
+    "limit_value(\"\") == 0 - 1",
+    "limit_value(\"0\") == 0 - 1",
+    "limit_value(\"05\") == 0 - 1",
+    "limit_value(\"+5\") == 0 - 1",
+    "limit_value(\"x\") == 0 - 1",
+    "limit_value(\"1000\") == 0 - 1",
+    "limit_value(\"-1\") == 0 - 1",
+    "limit_value(\"1.5\") == 0 - 1"
    ],
    "tests": [
     "pub fn test_limit_value_1() -> [] int { test.assert(limit_value(\"7\") == 7); return 0; }",
@@ -261,7 +317,12 @@
    "signature": "fn flag_span[&c, &f](config: &c [byte], flag: &f [byte]) -> [] (int, int)",
    "description": "Find a flag in the configuration text \"flag\\nvalue\\nflag\\nvalue\\n...\" (each flag and each value followed by a newline). The span (start, end) of the value line that follows the FIRST line equal to `flag`, without the newline. (-1, -1) when the flag is absent or has no value line after it. In \"--a\\n1\\n--b\\n2\\n\" the flag \"--b\" is (10, 11).",
    "examples": [
-    "flag_span(\"--a\\n1\\n--b\\n2\\n\", \"--b\") == (10, 11)"
+    "flag_span(\"--a\\n1\\n--b\\n2\\n\", \"--b\") == (10, 11)",
+    "flag_span(\"--a\\n1\\n\", \"--b\") == (0 - 1, 0 - 1)",
+    "flag_span(\"--a\\n1\\n--a\\n2\\n\", \"--a\") == (4, 5)",
+    "flag_span(\"--a\\n\", \"--a\") == (0 - 1, 0 - 1)",
+    "flag_span(\"\", \"--a\") == (0 - 1, 0 - 1)",
+    "flag_span(\"--a\\nxyz\\n\", \"--a\") == (4, 7)"
    ],
    "tests": [
     "pub fn test_flag_span_1() -> [] int { let (a, b) = flag_span(\"--a\\n1\\n--b\\n2\\n\", \"--b\"); test.assert(a == 10 && b == 11); return 0; }",

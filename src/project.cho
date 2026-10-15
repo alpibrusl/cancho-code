@@ -642,18 +642,18 @@ fn final_gate[&h, &x, &c, &s, &t, &n, &k, &w, &ac, &lb](heap: &!h Heap, exec: &x
     b = buffer.append(heap, b, " > /dev/null");
     var u = 0;
     while u < count {
-      if u != integ {
-        b = buffer.append(heap, b, " && ");
-        b = buffer.append(heap, b, checker);
-        b = buffer.append(heap, b, " test --std --backend cranelift ");
-        b = buffer.append(heap, b, wd);
-        b = buffer.append(heap, b, "/project.cho ");
-        b = buffer.append(heap, b, wd);
-        b = buffer.append(heap, b, "/tests-");
-        b = buffer.append(heap, b, uid(src, tape, nodes, u));
-        b = buffer.append(heap, b, ".cho ");
-        b = buffer.append(heap, b, libs);
-      }
+        if u != integ {
+            b = buffer.append(heap, b, " && ");
+            b = buffer.append(heap, b, checker);
+            b = buffer.append(heap, b, " test --std --backend cranelift ");
+            b = buffer.append(heap, b, wd);
+            b = buffer.append(heap, b, "/project.cho ");
+            b = buffer.append(heap, b, wd);
+            b = buffer.append(heap, b, "/tests-");
+            b = buffer.append(heap, b, uid(src, tape, nodes, u));
+            b = buffer.append(heap, b, ".cho ");
+            b = buffer.append(heap, b, libs);
+        }
         u = u + 1;
     }
     if integ >= 0 {

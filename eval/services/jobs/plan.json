@@ -8,7 +8,12 @@
    "description": "The token of an Authorization header value: what follows exactly \"Bearer \" (capital B, one space), as a view into `header`. An empty slice for anything else: no token after \"Bearer \", \"Bearer\" alone, \"bearer abc\", \"Basic abc\", the empty header. Never panics.",
    "examples": [
     "bearer_token(\"Bearer abc\") == \"abc\"",
-    "bearer_token(\"Basic abc\") == \"\""
+    "bearer_token(\"Basic abc\") == \"\"",
+    "bearer_token(\"Bearer \") == \"\"",
+    "bearer_token(\"Bearer\") == \"\"",
+    "bearer_token(\"bearer abc\") == \"\"",
+    "bearer_token(\"\") == \"\"",
+    "bearer_token(\"Bearer a\") == \"a\""
    ],
    "tests": [
     "pub fn test_bearer_token_1() -> [] int { test.assert(bytes.equal(bearer_token(\"Bearer abc\"), \"abc\")); return 0; }",
@@ -28,7 +33,15 @@
    "description": "`spec` is the --tokens value \"token:tenant,token:tenant\" (the token is everything before the first \":\" of an entry, the tenant everything after it; several tokens may name one tenant). The (start, end) of the TENANT NAME inside `spec` for the entry whose token equals `token`, or (-1, -1) when none does. An entry with an empty token or an empty tenant is ignored; an empty `token` matches nothing; the first matching entry wins. The comparison of tokens must be constant time: compare EVERY entry completely, with no early exit on the first differing byte and no early exit once an entry matched (a helper that ORs the differences of all bytes of the longer text is the usual way). \"tokA:acme,tokB:globex\" with \"tokB\" is (15, 21).",
    "examples": [
     "token_tenant(\"tokA:acme,tokB:globex\", \"tokB\") == (15, 21)",
-    "token_tenant(\"a:x\", \"a:x\") == (-1, -1)"
+    "token_tenant(\"a:x\", \"a:x\") == (-1, -1)",
+    "token_tenant(\"tokA:acme,tokB:globex\", \"tokA\") == (5, 9)",
+    "token_tenant(\"tokA:acme,tokB:globex\", \"tokC\") == (0 - 1, 0 - 1)",
+    "token_tenant(\"tokA:acme,tokB:globex\", \"\") == (0 - 1, 0 - 1)",
+    "token_tenant(\"a:x\", \"a:x\") == (0 - 1, 0 - 1)",
+    "token_tenant(\"tokA:,:x,tokB:t\", \"tokB\") == (14, 15)",
+    "token_tenant(\"tokA:acme\", \"tokAx\") == (0 - 1, 0 - 1)",
+    "token_tenant(\"tokA:acme\", \"tok\") == (0 - 1, 0 - 1)",
+    "token_tenant(\"\", \"a\") == (0 - 1, 0 - 1)"
    ],
    "tests": [
     "pub fn test_token_tenant_1() -> [] int { let (a, b) = token_tenant(\"tokA:acme,tokB:globex\", \"tokB\"); test.assert(a == 15 && b == 21); return 0; }",
@@ -51,7 +64,10 @@
    "examples": [
     "transition(0, 0) == 1",
     "transition(1, 1) == 2",
-    "transition(1, 0) == 0 - 1"
+    "transition(1, 0) == 0 - 1",
+    "transition(0, 1) == 0 - 1",
+    "transition(2, 0) == 0 - 1",
+    "transition(2, 1) == 0 - 1"
    ],
    "tests": [
     "pub fn test_transition_1() -> [] int { test.assert(transition(0, 0) == 1); return 0; }",
@@ -70,7 +86,17 @@
    "description": "The job id a path segment spells: a positive integer written as plain decimal digits, at most 17 of them (so it cannot overflow). Its value, or -1 for the empty text, \"0\", a sign, a space, a letter, a dot, or 18 or more digits. \"12\" is 12; \"0\", \"\", \"-1\", \"1x\", \"1 \", \"123456789012345678\" are -1; \"12345678901234567\" is 12345678901234567. You may add a helper that reads a run of digits.",
    "examples": [
     "parse_job_id(\"12\") == 12",
-    "parse_job_id(\"0\") == 0 - 1"
+    "parse_job_id(\"0\") == 0 - 1",
+    "parse_job_id(\"1\") == 1",
+    "parse_job_id(\"12345678901234567\") == 12345678901234567",
+    "parse_job_id(\"\") == 0 - 1",
+    "parse_job_id(\"-1\") == 0 - 1",
+    "parse_job_id(\"1x\") == 0 - 1",
+    "parse_job_id(\"1 \") == 0 - 1",
+    "parse_job_id(\"123456789012345678\") == 0 - 1",
+    "parse_job_id(\"abc\") == 0 - 1",
+    "parse_job_id(\"1.5\") == 0 - 1",
+    "parse_job_id(\"../etc/passwd\") == 0 - 1"
    ],
    "tests": [
     "pub fn test_parse_job_id_1() -> [] int { test.assert(parse_job_id(\"12\") == 12); return 0; }",
@@ -95,7 +121,23 @@
    "description": "Read the query string of GET /jobs (without the \"?\") as (error, state, limit, after). error is 0 when every value that is present is valid, else 1. state: -1 when absent, else 0 for \"queued\", 1 for \"running\", 2 for \"done\" (exactly these lowercase words; anything else, an empty value included, is an error). limit: 20 when absent, else a number 1 to 50 written as plain digits (an empty value, \"0\", \"51\", a sign, a letter, a dot are errors). after: 0 when absent, else a non-negative integer of at most 17 plain digits (a sign or an empty value is an error). Values are taken as written, never percent-decoded; other parameters are ignored. Use `http.query_value(query, \"name\")`, which answers the (start, end) of the value of a parameter, or (-1, -1): look it up in the standard library page you were given. When error is 1 the other three numbers are not examined.",
    "examples": [
     "parse_list_query(\"\") == (0, -1, 20, 0)",
-    "parse_list_query(\"state=running&limit=5&after=7\") == (0, 1, 5, 7)"
+    "parse_list_query(\"state=running&limit=5&after=7\") == (0, 1, 5, 7)",
+    "parse_list_query(\"\") == (0, 0 - 1, 20, 0)",
+    "parse_list_query(\"state=queued&x=1\") == (0, 0, 20, 0)",
+    "parse_list_query(\"limit=50\") == (0, 0 - 1, 50, 0)",
+    "parse_list_query(\"state=done&after=0\") == (0, 2, 20, 0)",
+    "parse_list_query(\"limit=0\") == (1, _, _, _)  (error 1, the other numbers are not examined)",
+    "parse_list_query(\"state=bogus\") == (1, _, _, _)  (error 1, the other numbers are not examined)",
+    "parse_list_query(\"after=-1\") == (1, _, _, _)  (error 1, the other numbers are not examined)",
+    "parse_list_query(\"state=QUEUED\") == (1, _, _, _)  (error 1, the other numbers are not examined)",
+    "parse_list_query(\"limit=51\") == (1, _, _, _)  (error 1, the other numbers are not examined)",
+    "parse_list_query(\"limit=\") == (1, _, _, _)  (error 1, the other numbers are not examined)",
+    "parse_list_query(\"limit=1.5\") == (1, _, _, _)  (error 1, the other numbers are not examined)",
+    "parse_list_query(\"limit=+5\") == (1, _, _, _)  (error 1, the other numbers are not examined)",
+    "parse_list_query(\"state=\") == (1, _, _, _)  (error 1, the other numbers are not examined)",
+    "parse_list_query(\"after=\") == (1, _, _, _)  (error 1, the other numbers are not examined)",
+    "parse_list_query(\"after=1.5\") == (1, _, _, _)  (error 1, the other numbers are not examined)",
+    "parse_list_query(\"state=queued' OR '1'='1\") == (1, _, _, _)  (error 1, the other numbers are not examined)"
    ],
    "tests": [
     "pub fn test_parse_list_query_1() -> [] int { let (a, b, c, d) = parse_list_query(\"\"); test.assert(a == 0 && b == 0 - 1 && c == 20 && d == 0); return 0; }",
@@ -127,7 +169,13 @@
    "description": "Is `kind` a valid job kind: 1 to 40 bytes, each a lowercase letter a-z, a digit, \"_\" or \"-\"? \"build-1_x\" is true; \"\", \"Deploy\", \"a b\" and 41 characters are false.",
    "examples": [
     "valid_kind(\"build-1_x\") == true",
-    "valid_kind(\"Deploy\") == false"
+    "valid_kind(\"Deploy\") == false",
+    "valid_kind(\"\") == false",
+    "valid_kind(\"a b\") == false",
+    "valid_kind(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\") == true",
+    "valid_kind(\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\") == false",
+    "valid_kind(\"0-_\") == true",
+    "valid_kind(\"a.b\") == false"
    ],
    "tests": [
     "pub fn test_valid_kind_1() -> [] int { test.assert(valid_kind(\"build-1_x\")); return 0; }",
@@ -147,7 +195,22 @@
    "signature": "fn validate_create[&h, &b](heap: &!h Heap, body: &b [byte]) -> [heap] int",
    "description": "Validate the body of POST /jobs. 0 when it is valid; otherwise the first of: 1 not JSON (including the empty body and very deep nesting); 2 JSON but not an object; 3 an unknown field (the only allowed members are \"kind\" and \"payload\"); 4 \"kind\" missing or not a string; 5 \"kind\" is a string but not a valid kind (valid_kind, after JSON-decoding its escapes; also more than 40 characters); 6 \"payload\" missing or not a string; 7 \"payload\" longer than 1000 characters (Unicode characters, not bytes; the decoded payload may need up to 4000 bytes; the empty payload is valid). It allocates its parse tape from the heap with `box_slice(heap, json.tape_len(body), 0)` and must free everything it allocates (`unbox_slice`). Use std.json: json.parse(body, tape), json.is_object, json.count, json.get(body, tape, 0, \"kind\"), json.is_string, json.string_equals, json.string_length, json.string_into(body, tape, node, out), json.skip (read the std.json section of the page you were given), and std.utf8 (already imported: `utf8.count(bytes)` counts characters). It must never panic on any bytes.",
    "examples": [
-    "validate_create(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"\\\"}\") == 0"
+    "validate_create(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"\\\"}\") == 0",
+    "validate_create(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"\\\",\\\"state\\\":\\\"done\\\"}\") == 3",
+    "validate_create(heap, \"{\\\"kind\\\":\\\"X\\\",\\\"payload\\\":\\\"\\\"}\") == 5",
+    "validate_create(heap, \"not json\") == 1",
+    "validate_create(heap, \"\") == 1",
+    "validate_create(heap, \"[1]\") == 2",
+    "validate_create(heap, \"\\\"s\\\"\") == 2",
+    "validate_create(heap, \"{\\\"payload\\\":\\\"\\\"}\") == 4",
+    "validate_create(heap, \"{\\\"kind\\\":5,\\\"payload\\\":\\\"\\\"}\") == 4",
+    "validate_create(heap, \"{\\\"kind\\\":\\\"x\\\"}\") == 6",
+    "validate_create(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":5}\") == 6",
+    "validate_create(heap, \"{\\\"kind\\\":\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\",\\\"payload\\\":\\\"\\\"}\") == 5",
+    "validate_create(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"\\\",\\\"id\\\":1}\") == 3",
+    "validate_create(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"\\\",\\\"tenant\\\":\\\"t\\\"}\") == 3",
+    "validate_create(heap, \"{\\\"kind\\\":\\\"x\\\",\\\"payload\\\":\\\"a \\\\\\\"quoted\\\\\\\" \\\\n line\\\"}\") == 0",
+    "validate_create(heap, \"{\\\"kind\\\":\\\"b\\\\u0041\\\",\\\"payload\\\":\\\"\\\"}\") == 5"
    ],
    "tests": [
     "fn jobs_code[&h](heap: &!h Heap, body: &static [byte]) -> [heap] int { return validate_create(heap, body); }",

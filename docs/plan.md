@@ -26,6 +26,8 @@ A unit may carry `effort` (`low`, `medium`, `high`, `xhigh` or `max`, the API's 
 
 A unit may carry `tests` (an array of strings): cancho source items, usually `pub fn test_...`, that the project driver appends verbatim to the unit's tests file and that **replace** the tests made from `examples` when present. This is for functions an example cannot call: a result that is text or a `Result` needs a heap or a match, which `CALL == EXPECTED` cannot say. The `examples` stay as documentation shown to the model and are still checked for shape. A signature may carry region and type parameters after the name: `fn f[&r](s: &r [byte]) -> [] int`.
 
+A plan may carry `integration` (a string at the root, next to `name` and `units`): the id of the unit that is the **application** of a service. That unit is built last, against the service's acceptance scenarios and not against examples: it needs no example (`no-example` and `needs-tests` do not apply to it; if it has examples they are still checked for shape), and the project driver judges it with the acceptance command it was given (docs/project.md, "Services"). The plan check enforces that the field names a unit (`bad-integration`) and that this unit depends, directly or through other units, on every other unit (`integration-order`): the application is the last thing built, wired from functions that were each verified alone. Without the field a unit with no example is still refused. The hand plans of the four services are `eval/services/<name>/plan.json` (the briefs name the pure functions; each is a unit, the application is the last).
+
 ## Output
 
 One line per problem, then the verdict:
@@ -53,6 +55,8 @@ Exit 0 valid, 1 invalid, 2 usage (no argument, or the file cannot be read). **Ev
 | `needs-tests` | the function takes a heap, or its result holds text, a buffer or a list (alone or inside a `Result`/`Option`), and the unit has neither `tests` nor `cases`: an example `CALL == EXPECTED` cannot run for it (`==` compares scalars; a test has no heap). A `Result` or `Option` of scalars is not flagged |
 | `bad-test` | one of the unit's `tests` is a `pub fn test_...` that takes a `World` or calls `split`: that is not a test form (tests take `Heap`/`Io` references directly), so the unit's test file could never build |
 | `cycle` | the dependencies form a cycle (reported once, on the first unit of it in the file) |
+| `bad-integration` | the plan's `integration` is not a string, or is not the `id` of any unit (reported on the plan, `-`) |
+| `integration-order` | the integration unit does not depend, directly or through other units, on every other unit (reported on the integration unit) |
 
 ## What this does not check
 

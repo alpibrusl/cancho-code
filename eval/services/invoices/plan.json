@@ -7,7 +7,12 @@
    "signature": "fn flag_value[&c, &f](config: &c [byte], flag: &f [byte]) -> [] &c [byte]",
    "description": "Read a flag from the configuration text \"flag\\nvalue\\nflag\\nvalue\\n...\" (every argument after the program name followed by a newline). The value line that follows the first line equal to `flag`, as a view into `config` without the newline; an empty slice when the flag is absent or has no value line. flag_value(\"--x\\n1\\n--tokens\\na:b\\n\", \"--tokens\") is \"a:b\"; flag_value(\"--x\\n1\\n\", \"--tokens\") is \"\". Never panics.",
    "examples": [
-    "flag_value(\"--x\\n1\\n--tokens\\na:b\\n\", \"--tokens\") == \"a:b\""
+    "flag_value(\"--x\\n1\\n--tokens\\na:b\\n\", \"--tokens\") == \"a:b\"",
+    "flag_value(\"--x\\n1\\n\", \"--tokens\") == \"\"",
+    "flag_value(\"\", \"--tokens\") == \"\"",
+    "flag_value(\"--tokens\\nt:a\\n\", \"--tokens\") == \"t:a\"",
+    "flag_value(\"--tokens\\n\", \"--tokens\") == \"\"",
+    "flag_value(\"--x\\n--tokens\\n\", \"--tokens\") == \"\""
    ],
    "tests": [
     "pub fn test_flag_value_1() -> [] int { test.assert(bytes.equal(flag_value(\"--x\\n1\\n--tokens\\na:b\\n\", \"--tokens\"), \"a:b\")); return 0; }",
@@ -26,7 +31,11 @@
    "description": "The token of an Authorization header value: what follows exactly \"Bearer \" (capital B, one space), as a view into `header`. An empty slice for anything else. bearer_token(\"Bearer tokA\") is \"tokA\"; \"Bearer \", \"Bearer\", \"Basic dG9r\" and \"\" give \"\"; \"Bearer a b\" gives \"a b\" (the token is everything after the prefix).",
    "examples": [
     "bearer_token(\"Bearer tokA\") == \"tokA\"",
-    "bearer_token(\"Bearer\") == \"\""
+    "bearer_token(\"Bearer\") == \"\"",
+    "bearer_token(\"Bearer \") == \"\"",
+    "bearer_token(\"Basic dG9r\") == \"\"",
+    "bearer_token(\"\") == \"\"",
+    "bearer_token(\"Bearer a b\") == \"a b\""
    ],
    "tests": [
     "pub fn test_bearer_token_1() -> [] int { test.assert(bytes.equal(bearer_token(\"Bearer tokA\"), \"tokA\")); return 0; }",
@@ -45,7 +54,17 @@
    "description": "`tokens` is the --tokens value \"token:tenant,token:tenant,...\" (the token before the first \":\" of an entry, the tenant after it; an entry with an empty token or an empty tenant is ignored; several tokens may name one tenant). The number of the tenant the presented token belongs to; tenants are numbered 0, 1, ... in order of first appearance of their name in the list; -1 if the token is not listed (an empty token is not listed). Constant time with respect to the token: every entry is compared completely (no early exit on the first differing byte, none once an entry matched); a helper that ORs the differences of all bytes of the longer text is the usual way. With tokens \"tokA:acme,tokB:globex,tokC:acme\": \"tokA\" is 0, \"tokB\" is 1, \"tokC\" is 0, \"tok\" is -1, \"tokAx\" is -1, \"\" is -1; with \"x,:b,c:,d:e\": \"d\" is 0, \"x\" is -1, \"c\" is -1. You may add helper functions.",
    "examples": [
     "tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tokB\") == 1",
-    "tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tokC\") == 0"
+    "tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tokC\") == 0",
+    "tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tokA\") == 0",
+    "tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tok\") == 0 - 1",
+    "tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tokAx\") == 0 - 1",
+    "tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"\") == 0 - 1",
+    "tenant_index(\"x,:b,c:,d:e\", \"d\") == 0",
+    "tenant_index(\"x,:b,c:,d:e\", \"x\") == 0 - 1",
+    "tenant_index(\"x,:b,c:,d:e\", \"c\") == 0 - 1",
+    "tenant_index(\"\", \"a\") == 0 - 1",
+    "tenant_index(\"a:t1,b:t2,c:t3,d:t2\", \"d\") == 1",
+    "tenant_index(\"a:t1,b:t2,c:t3\", \"c\") == 2"
    ],
    "tests": [
     "pub fn test_tenant_index_1() -> [] int { test.assert(tenant_index(\"tokA:acme,tokB:globex,tokC:acme\", \"tokA\") == 0); return 0; }",
@@ -70,7 +89,16 @@
    "description": "The invoice id a path segment spells: plain decimal digits, no leading zero, at most 9 of them (so it fits comfortably in an int). Its value, or -1 for anything else. \"7\" is 7, \"123456789\" is 123456789; \"0\", \"007\", \"-1\", \"1.5\", \"1234567890\", \"\", \"1%20OR%201=1\" are -1.",
    "examples": [
     "path_id(\"7\") == 7",
-    "path_id(\"007\") == 0 - 1"
+    "path_id(\"007\") == 0 - 1",
+    "path_id(\"123456789\") == 123456789",
+    "path_id(\"10\") == 10",
+    "path_id(\"0\") == 0 - 1",
+    "path_id(\"-1\") == 0 - 1",
+    "path_id(\"1.5\") == 0 - 1",
+    "path_id(\"1234567890\") == 0 - 1",
+    "path_id(\"\") == 0 - 1",
+    "path_id(\"1%20OR%201=1\") == 0 - 1",
+    "path_id(\"abc\") == 0 - 1"
    ],
    "tests": [
     "pub fn test_path_id_1() -> [] int { test.assert(path_id(\"7\") == 7); return 0; }",
@@ -94,7 +122,19 @@
    "description": "Route a request. Answers (route, id): route 1 is POST /invoices, 2 is GET /invoices, 3 is GET /invoices/{id}, 4 is POST /invoices/{id}/pay, 0 means no such path, -1 means a known path with another method. `id` is path_id of the id segment (0 for routes 1 and 2, and -1 when the segment is not a valid id; for route 0 and -1 it is 0). The path is compared exactly (no trailing slash tolerance): (\"POST\",\"/invoices\") is (1,0); (\"GET\",\"/invoices/12\") is (3,12); (\"POST\",\"/invoices/12/pay\") is (4,12); (\"POST\",\"/invoices/x/pay\") is (4,-1); (\"DELETE\",\"/invoices/12\") is (-1,0); (\"GET\",\"/invoices/\") is (0,0); (\"GET\",\"/invoices/1/pay\") is (-1,0); (\"GET\",\"/other\") is (0,0). Anything else after the id other than exactly \"/pay\" is route 0.",
    "examples": [
     "route_request(\"POST\", \"/invoices\") == (1, 0)",
-    "route_request(\"GET\", \"/other\") == (0, 0)"
+    "route_request(\"GET\", \"/other\") == (0, 0)",
+    "route_request(\"GET\", \"/invoices\") == (2, 0)",
+    "route_request(\"GET\", \"/invoices/12\") == (3, 12)",
+    "route_request(\"POST\", \"/invoices/12/pay\") == (4, 12)",
+    "route_request(\"POST\", \"/invoices/x/pay\") == (4, 0 - 1)",
+    "route_request(\"DELETE\", \"/invoices/12\") == (0 - 1, 0)",
+    "route_request(\"GET\", \"/invoices/\") == (0, 0)",
+    "route_request(\"GET\", \"/invoices/1/pay\") == (0 - 1, 0)",
+    "route_request(\"PUT\", \"/invoices\") == (0 - 1, 0)",
+    "route_request(\"GET\", \"/invoices/x\") == (3, 0 - 1)",
+    "route_request(\"POST\", \"/invoices/12\") == (0 - 1, 0)",
+    "route_request(\"POST\", \"/invoices/12/payx\") == (0, 0)",
+    "route_request(\"GET\", \"/\") == (0, 0)"
    ],
    "tests": [
     "pub fn test_route_request_1() -> [] int { let (a, b) = route_request(\"POST\", \"/invoices\"); test.assert(a == 1 && b == 0); return 0; }",
@@ -123,7 +163,9 @@
    "description": "Is `text` (a customer name, already JSON-decoded) acceptable: well-formed UTF-8 (std.utf8: `utf8.is_valid(bytes)`), and 1 to 100 characters (`utf8.count(bytes)` counts Unicode characters) AFTER trimming ASCII whitespace at both ends (`bytes.trim`)? \"a\" true, \"\" false, \"   \" false, \"  a  \" true, 100 times \"a\" true, 101 times \"a\" false, 100 times \"é\" true (200 bytes), 101 times \"é\" false. Std.utf8 is already imported.",
    "examples": [
     "customer_ok(\"a\") == true",
-    "customer_ok(\"   \") == false"
+    "customer_ok(\"   \") == false",
+    "customer_ok(\"\") == false",
+    "customer_ok(\"  a  \") == true"
    ],
    "tests": [
     "pub fn test_customer_ok_1() -> [] int { test.assert(customer_ok(\"a\")); return 0; }",
@@ -143,7 +185,23 @@
    "signature": "fn validate_create[&b, &t](body: &b [byte], tape: &!t [int]) -> [] int",
    "description": "Validate the body of POST /invoices. `tape` is a std.json tape with room for json.tape_len(body) ints; parse into it with json.parse(body, tape). Answers 0 when the body is a valid create body, otherwise 1 not valid JSON or not an object; 2 the object does not have exactly the three members customer, amount_cents, currency (a missing member, an extra or unknown member such as \"paid\"); 3 bad customer (not a string, longer than 4096 bytes decoded, or not customer_ok after JSON-decoding its escapes: decode with json.string_into(body, tape, node, buf) into a 4096-byte buffer from `region r { let buf = alloc_slice[r](4096, byte_of(0)); ... }`); 4 bad amount_cents (not an integer (json.is_int), not fitting 64 bits (json.fits_int), or outside 1..10000000); 5 bad currency (not exactly \"USD\", \"EUR\" or \"GBP\"). The checks run in that order. It must be pure (effect row []) and never panic. Use json.get(body, tape, 0, \"name\") for a member (it answers a negative number when missing), json.count(tape, 0), json.is_string, json.string_length, json.to_int; read the std.json section of the page you were given. You may add a helper for the currency check.",
    "examples": [
-    "validate_create({\"customer\":\"a\",\"amount_cents\":5,\"currency\":\"USD\"}) == 0"
+    "validate_create({\"customer\":\"a\",\"amount_cents\":5,\"currency\":\"USD\"}) == 0",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"USD\\\"}\", tape) == 0",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"USD\\\",\\\"paid\\\":true}\", tape) == 2",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"usd\\\"}\", tape) == 5",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":0,\\\"currency\\\":\\\"USD\\\"}\", tape) == 4",
+    "validate_create(\"{\\\"customer\\\":\\\"  \\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"USD\\\"}\", tape) == 3",
+    "validate_create(\"[1]\", tape) == 1",
+    "validate_create(\"x\", tape) == 1",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":5}\", tape) == 2",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":10000001,\\\"currency\\\":\\\"USD\\\"}\", tape) == 4",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":10000000,\\\"currency\\\":\\\"EUR\\\"}\", tape) == 0",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":\\\"5\\\",\\\"currency\\\":\\\"USD\\\"}\", tape) == 4",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":1.5,\\\"currency\\\":\\\"USD\\\"}\", tape) == 4",
+    "validate_create(\"{\\\"customer\\\":5,\\\"amount_cents\\\":5,\\\"currency\\\":\\\"USD\\\"}\", tape) == 3",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":5,\\\"currency\\\":\\\"JPY\\\"}\", tape) == 5",
+    "validate_create(\"{\\\"customer\\\":\\\"a\\\",\\\"amount_cents\\\":99999999999999999999,\\\"currency\\\":\\\"USD\\\"}\", tape) == 4",
+    "validate_create(\"{\\\"customer\\\":\\\"\\\\u00e9\\\",\\\"amount_cents\\\":1,\\\"currency\\\":\\\"USD\\\"}\", tape) == 0"
    ],
    "tests": [
     "fn inv_code[&h](heap: &!h Heap, body: &static [byte]) -> [heap] int { let tb = box_slice(heap, json.tape_len(body), 0); var code = 0 - 1; borrow mut tb as &!tw in { code = validate_create(body, contents(tw)); } unbox_slice(heap, tb); return code; }",
@@ -177,7 +235,10 @@
    "examples": [
     "may_access(1, 1) == true",
     "may_access(1, 2) == false",
-    "may_access(0 - 1, 0 - 1) == false"
+    "may_access(0 - 1, 0 - 1) == false",
+    "may_access(0, 0) == true",
+    "may_access(0, 0 - 1) == false",
+    "may_access(2, 1) == false"
    ],
    "tests": [
     "pub fn test_may_access_1() -> [] int { test.assert(may_access(1, 1)); return 0; }",
