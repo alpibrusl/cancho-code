@@ -22,6 +22,8 @@ A plan is a JSON file. It says what to build as **units** (one function each), w
 
 A unit may also carry a `description` (a string): what the function means in the author's words, which the signature and the examples cannot say (units of measure, an edge rule). The project driver puts it in the task the agent reads (docs/project.md). It is optional and not checked beyond being a string.
 
+A unit may carry `effort` (`low`, `medium`, `high`, `xhigh` or `max`, the API's own values): how hard the model should think about this unit. The project driver writes it into the task as an `EFFORT:` line and the Claude agent sends it as `output_config.effort` for that unit, overriding `--effort`; absent, the flag (or the model's default) applies. Any other value is refused by `unit-field`. What it buys, measured: [eval/results/2026-10-19-effort-per-unit.md](../eval/results/2026-10-19-effort-per-unit.md).
+
 A unit may carry `tests` (an array of strings): cancho source items, usually `pub fn test_...`, that the project driver appends verbatim to the unit's tests file and that **replace** the tests made from `examples` when present. This is for functions an example cannot call: a result that is text or a `Result` needs a heap or a match, which `CALL == EXPECTED` cannot say. The `examples` stay as documentation shown to the model and are still checked for shape. A signature may carry region and type parameters after the name: `fn f[&r](s: &r [byte]) -> [] int`.
 
 ## Output
