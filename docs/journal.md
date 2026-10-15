@@ -26,7 +26,7 @@ The other files of a run (`state.txt`, `trail-<id>.jsonl`, `usage.jsonl`, `raw.t
 | `kind` | when | fields |
 |---|---|---|
 | `run_start` | a run begins | `brief` (path as given), `provider`, `model`, `options` {`review`, `rounds`, `attempts`, `agent_seconds`, `plan_seconds`}. A `project` run by hand has only `options` {`review`, `attempts`, `agent_seconds`}. |
-| `plan_call` | each model call of the plan stage: the plan's, and the review's | `round`, `sample` (1; the review's retry is 2), `tokens` {`in`, `out`, `thinking`, `cache_write`, `cache_read`}, `ms`, `stop`, `outcome` (`written`, `rejected`, `cut_off`, `no_plan`, `needs_input`; the review's: `reviewed`, `review_rejected`, `review_failed`; `unreachable`, `api_error`), `prompt`, `reply` (blobs), `primer`, `errors` (what the plan check or the cases refused, one string per line, to be fed back next round) |
+| `plan_call` | each model call of the plan stage: the plan's, and the review's (its blobs are `review-r<round>-s<sample>-*`, and it carries no primer) | `round`, `sample` (1; the review's retry is 2), `tokens` {`in`, `out`, `thinking`, `cache_write`, `cache_read`}, `ms`, `stop`, `outcome` (`written`, `rejected`, `cut_off`, `no_plan`, `needs_input`; the review's: `reviewed`, `review_rejected`, `review_failed`; `unreachable`, `api_error`), `prompt`, `reply` (blobs), `primer`, `errors` (what the plan check or the cases refused, one string per line, to be fed back next round) |
 | `plan_review` | after a review answered | `round`, `kept` and `of` (cases), `dropped` [{`unit`, `case`, `reason`}] (`reason` is "planner X reviewer Y"), `error` (the refusal, when the review refused the plan), `blob` (the review's whole report) |
 | `plan_final` | the plan the build goes on with is known | `valid`, `units`, `plan` (blob; a plan reused from an earlier run is recorded too) |
 | `unit_start` | a unit is handed to the agent | `unit`, `function`, `deps` |
@@ -60,26 +60,37 @@ The plan stage has no unit and no attempt, so the plan agent (`--mode plan`) wri
 
 ## An example
 
-A two-unit project; `to_roman` is refused once. The events (blob names shortened, `t_ms` left out):
+A real run (`sortedmap`, claude-haiku-5-5; trimmed: `t_ms`, most tokens and the other six units left out). The plan is refused once, written on the second round, reviewed; the unit `get` is refused by its own tests twice and the run ends `stuck`:
 
 ```
-{"kind":"run_start","brief":"/runs/roman/brief.txt","provider":"anthropic","model":"claude-haiku-5-5","options":{"review":true,"rounds":3,"attempts":6,"agent_seconds":300,"plan_seconds":900}}
-{"kind":"plan_call","round":1,"sample":1,"tokens":{"in":3112,"out":2650,"thinking":0,"cache_write":0,"cache_read":13350},"ms":21400,"stop":"end_turn","outcome":"written","prompt":"plan-r1-s1-prompt.txt","reply":"plan-r1-s1-reply.txt","primer":true,"errors":[]}
-{"kind":"plan_call","round":1,"sample":1,"tokens":{"in":1840,"out":410,"thinking":0,"cache_write":0,"cache_read":0},"ms":4100,"stop":"end_turn","outcome":"reviewed","prompt":"plan-r1-s1-prompt.txt","reply":"plan-r1-s1-reply.txt","primer":true,"errors":[]}
-{"kind":"plan_review","round":1,"kept":13,"of":14,"dropped":[{"unit":"roman_value","case":4,"reason":"planner 4 reviewer 6"}],"blob":"plan-r1-review.txt"}
-{"kind":"plan_final","valid":true,"units":2,"plan":"plan-1792068490000.json"}
-{"kind":"unit_start","unit":"roman_value","function":"roman_value","deps":[]}
-{"kind":"attempt","unit":"roman_value","n":0,"outcome":"verified","decision":"verified","signature":"","ms":5230,"exit":0,"tokens":{...},"stop":"end_turn","prompt":"roman_value-a0-prompt.txt","reply":"roman_value-a0-reply.txt","code":"roman_value-a0-code.cho","diff":"roman_value-a0-diff.txt","checker":"roman_value-a0-checker.json","acceptance":"roman_value-a0-acceptance.txt",...}
-{"kind":"unit_end","unit":"roman_value","state":"verified","attempts":1}
-{"kind":"unit_start","unit":"to_roman","function":"to_roman","deps":["roman_value"]}
-{"kind":"attempt","unit":"to_roman","n":0,"outcome":"refused","decision":"retry","signature":"borrow-escape:...","ms":8120,"checker":"to_roman-a0-checker.json","code":"to_roman-a0-code.cho",...}
-{"kind":"attempt","unit":"to_roman","n":1,"outcome":"verified","decision":"verified","signature":"","feedback":"to_roman-a1-feedback.txt","diff":"to_roman-a1-diff.txt",...}
-{"kind":"unit_end","unit":"to_roman","state":"verified","attempts":2}
-{"kind":"sweep","after_unit":"to_roman","held":["roman_value"],"regressed":[]}
-{"kind":"run_end","verdict":"done","exit":0,"seconds":96}
+{"kind":"run_start","brief":"/runs/sortedmap/brief.txt","provider":"anthropic","model":"claude-haiku-5-5","options":{"review":true,"rounds":3,"attempts":6,"agent_seconds":300,"plan_seconds":900}}
+{"kind":"plan_call","round":1,"sample":1,"tokens":{"in":4530,"out":13115,"thinking":5897,"cache_write":0,"cache_read":13374},"ms":48396,"stop":"end_turn","outcome":"rejected","primer":true,"prompt":"plan-r1-s1-prompt.txt","reply":"plan-r1-s1-reply.txt","errors":["[PLAN_ERROR]\tno-example\tlower_bound\tthe unit has no example; give at least one `CALL == EXPECTED`", "..."]}
+{"kind":"plan_call","round":2,"sample":1,"tokens":{...},"ms":30946,"stop":"end_turn","outcome":"written","primer":true,"prompt":"plan-r2-s1-prompt.txt","reply":"plan-r2-s1-reply.txt","errors":[]}
+{"kind":"plan_call","round":2,"sample":1,"tokens":{...},"ms":1554,"stop":"end_turn","outcome":"reviewed","prompt":"review-r2-s1-prompt.txt","reply":"review-r2-s1-reply.txt","errors":[]}
+{"kind":"plan_review","round":2,"kept":5,"of":5,"dropped":[],"blob":"plan-r2-review.txt"}
+{"kind":"plan_final","valid":true,"units":8,"plan":"plan-1792097306798.json"}
+{"kind":"unit_start","unit":"get","function":"sm_get","deps":["lower_bound"]}
+{"kind":"attempt","unit":"get","n":0,"outcome":"acceptance_failed","decision":"retry","signature":"acceptance:/runs/.../tests-get.cho:3:1: erro","ms":3120,"exit":0,"tokens":{...},"stop":"end_turn","samples":1,"primer":true,"prompt":"get-a0-prompt.txt","reply":"get-a0-reply.txt","stderr":"get-a0-stderr.txt","feedback":"get-a0-feedback.txt","code":"get-a0-code.cho","checker":"get-a0-checker.json","acceptance":"get-a0-acceptance.txt","diff":"get-a0-diff.txt"}
+{"kind":"attempt","unit":"get","n":1,"outcome":"acceptance_failed","decision":"signature","signature":"acceptance:/runs/.../tests-get.cho:3:1: erro","ms":6314,...,"feedback":"get-a1-feedback.txt","code":"get-a1-code.cho","diff":"get-a1-diff.txt",...}
+{"kind":"unit_end","unit":"get","state":"stuck","attempts":2}
+{"kind":"run_end","verdict":"stuck","exit":1,"seconds":126}
 ```
 
-The story of the retry is `to_roman-a0-checker.json` (what the compiler said, whole), `to_roman-a1-feedback.txt` (what the next attempt was shown: the same text), `to_roman-a1-prompt.txt` and `-reply.txt` (what the model was asked and answered), and `to_roman-a1-diff.txt` (what it changed).
+The story of the retry is in the blobs. `get-a0-acceptance.txt` is what the examples said about the first attempt (here the unit's own test file did not compile: "`option` is already bound to another import here"); `get-a1-feedback.txt` is what the second attempt was shown (the checker's clean answer, then that text); `get-a1-prompt.txt` and `get-a1-reply.txt` are what the model was asked and answered; `get-a1-code.cho` is its code and `get-a1-diff.txt` what it changed from the first attempt:
+
+```
+--- a0
++++ a1
+@@ -1,5 +1,6 @@
+ edition 7;
+ import std.option;
++import std.option as opt;
+@@ -19,12 +20,12 @@
+-fn sm_get[&k, &v](...) -> [] option.Option[int] {
++fn sm_get[&k, &v](...) -> [] opt.Option[int] {
+```
+
+A run that fails for a reason the verdict hides is told the same way: another run's unit `parse` ended `provider_error`, and its single `attempt` event says `"outcome":"agent_failed"`, `"exit":1`, `"stop":"max_tokens"`, `"tokens":{"out":48000,...}`, with `parse-a0-stderr.txt` holding three lines "a sample was cut off by the bound": the model was cut off three times, the API was never down.
 
 ## Showing it
 

@@ -200,7 +200,7 @@ stop
 # the review: its call, and the cases it dropped with the reason
 JR="$d/jrev"; rm -rf "$JR"; mkdir -p "$JR/blobs"
 start; printf '%s' "$RC" > "$d/response.1.txt"; printf '{"units": [{"id": "clamp", "answers": [{"expect": 3}, {"expect": 1}]}]}' > "$d/response.2.txt"; rm -f "$d/response.txt" "$d/out/plan.json"
-plan $G $RV --journal "$JR" >/dev/null 2>&1
+plan $G $RV --primer "$d/primer.md" --journal "$JR" >/dev/null 2>&1
 python3 -I - "$JR" <<'PY' || fail=1
 import json, sys
 jd = sys.argv[1]
@@ -212,6 +212,7 @@ else:
     if (p["outcome"], r["outcome"], r["round"], r["sample"]) != ("written", "reviewed", 1, 1): bad_.append("outcomes %r" % [e["outcome"] for e in ev[:2]])
     if "Verifying the cases" not in open(jd + "/blobs/" + r["prompt"]).read(): bad_.append("the review's prompt is not in its blob")
     if p["prompt"] == r["prompt"] or p["reply"] == r["reply"] or "=== THE TASK ===" not in open(jd + "/blobs/" + p["prompt"]).read(): bad_.append("the review's blobs overwrote the plan's")
+    if p.get("primer") is not True or r.get("primer"): bad_.append("primer flags: the plan call carries the primer, the review call does not: %r %r" % (p.get("primer"), r.get("primer")))
     if (v["kept"], v["of"]) != (1, 2): bad_.append("kept %r of %r" % (v["kept"], v["of"]))
     d = v["dropped"]
     if len(d) != 1 or d[0]["unit"] != "clamp" or d[0]["case"] != 2 or not d[0]["reason"].startswith("planner 99 reviewer 1"): bad_.append("dropped %r" % d)

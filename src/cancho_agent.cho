@@ -258,7 +258,7 @@ fn task_head[&t](task: &t [byte]) -> [] &t [byte] {
 // arguments of each case, never an expected value) and re-derives the results; `review.apply` keeps the cases it agrees with. Up to two tries to get a
 // usable answer. Answers (0, the plan as expanded again after the drops), (1, the report: the review refused the plan: a unit lost all its cases) or
 // (2, empty: no usable review, the plan stands unreviewed).
-fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, &r9, &r10, &r11, &r12, &r13](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, host: &r1 [byte], ip: &r2 [byte], port: int, secure: bool, path: &r3 [byte], headers: &r4 [byte], roots: &r5 [byte], entropy: &!e [byte], local: bool, model: &r7 [byte], num_ctx: int, max_tokens: int, thinking: &r8 [byte], effort: &r9 [byte], obj: &r10 [byte], rguide: &r11 [byte], usage_path: &r6 [byte], provider_label: &static [byte], task: &r12 [byte], attempt: int, jdir: &r13 [byte], has_primer: bool) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write] (int, buffer.Buffer) {
+fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, &r9, &r10, &r11, &r12, &r13](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, host: &r1 [byte], ip: &r2 [byte], port: int, secure: bool, path: &r3 [byte], headers: &r4 [byte], roots: &r5 [byte], entropy: &!e [byte], local: bool, model: &r7 [byte], num_ctx: int, max_tokens: int, thinking: &r8 [byte], effort: &r9 [byte], obj: &r10 [byte], rguide: &r11 [byte], usage_path: &r6 [byte], provider_label: &static [byte], task: &r12 [byte], attempt: int, jdir: &r13 [byte]) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write] (int, buffer.Buffer) {
     let questions = review.blind(heap, obj);
     var verdict = 2;
     var result = buffer.empty(heap, 16);
@@ -420,11 +420,11 @@ fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, 
             borrow text as &txj in {
                 borrow result as &rsj in {
                     if bytes.equal(outcome, "review_rejected") {
-                        calls.plan_call(heap, fs, clock, jdir, "review", attempt, tries, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, rstop, outcome, buffer.bytes(ptj), buffer.bytes(txj), buffer.bytes(rsj), has_primer);
+                        calls.plan_call(heap, fs, clock, jdir, "review", attempt, tries, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, rstop, outcome, buffer.bytes(ptj), buffer.bytes(txj), buffer.bytes(rsj), false);
                     } else if bytes.equal(outcome, "review_failed") {
-                        calls.plan_call(heap, fs, clock, jdir, "review", attempt, tries, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, rstop, outcome, buffer.bytes(ptj), buffer.bytes(txj), "the review gave no usable answer", has_primer);
+                        calls.plan_call(heap, fs, clock, jdir, "review", attempt, tries, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, rstop, outcome, buffer.bytes(ptj), buffer.bytes(txj), "the review gave no usable answer", false);
                     } else {
-                        calls.plan_call(heap, fs, clock, jdir, "review", attempt, tries, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, rstop, outcome, buffer.bytes(ptj), buffer.bytes(txj), "", has_primer);
+                        calls.plan_call(heap, fs, clock, jdir, "review", attempt, tries, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, rstop, outcome, buffer.bytes(ptj), buffer.bytes(txj), "", false);
                     }
                 }
             }
@@ -934,7 +934,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                                 // the blind second pass: the cases the reviewer cannot re-derive are dropped
                                                 borrow rguide as &rgr in {
                                                     borrow task as &lt2 in {
-                                                        let (rv, rres) = review_phase(heap, fs, net, clock, io, host, ip, port, secure, path, buffer.bytes(hr), buffer.bytes(rr), contents(ew), local, model, num_ctx, max_tokens, thinking, effort, buffer.bytes(xr)[ja..jz], buffer.bytes(rgr), usage_path, provider_label, task_head(buffer.bytes(lt2)), attempt, jdir, has_primer);
+                                                        let (rv, rres) = review_phase(heap, fs, net, clock, io, host, ip, port, secure, path, buffer.bytes(hr), buffer.bytes(rr), contents(ew), local, model, num_ctx, max_tokens, thinking, effort, buffer.bytes(xr)[ja..jz], buffer.bytes(rgr), usage_path, provider_label, task_head(buffer.bytes(lt2)), attempt, jdir);
                                                         if rv == 0 {
                                                             buffer.drop(heap, final_plan);
                                                             final_plan = rres;
