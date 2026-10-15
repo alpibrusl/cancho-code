@@ -14,5 +14,5 @@ Same experiment, same setup (Claude Haiku 5.5, patch mode, review on, brief only
 
 - No run asks a question instead of planning. The 2 plan failures: `basics` 2 (the plan dropped `clamp`: the brief-name check refused it) and `ini` 2 (cases cannot express an `Option` type and a unit with no example of its own function).
 - More plans now reach the build, so more builds can be wrong: of the 20 `done` builds, 14 are fully right on the hidden audit; the others score from 35/50 (`csv`) to 382/385 (`expr`). The plan's own examples held and the audit found what they did not cover - the planner writes thinner examples than the hand plans.
-  With the signatures given, 19 of the 20 `done` are fully right, so the remaining gap is mostly the API: the planner picks signatures the audit does not call (it is graded against the hand plan's signatures), not logic.
+  With the signatures given, 19 of the 20 `done` are fully right; why the signatures help this much is not established here (the brief-name check already forces the brief's names, so a renamed API is not the explanation; I have not read the failing runs' plans).
 - Caveats: 2 runs per cell, one model; the plain briefs were written by the same hand that wrote the previous ones, and the audits are unchanged.
