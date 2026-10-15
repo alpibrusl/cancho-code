@@ -1,0 +1,1 @@
+{"name": "x", "units": [{"id": "a", "signature": "fn f[&h, &r](heap: &!h Heap, s: &r [byte]) -> [heap] buffer.Buffer", "examples": ["f(heap, \"a\") == 1"], "tests": ["pub fn test_a[&h](heap: &!h Heap) -> [heap] int { test.assert_eq(len(\"a\nb\"), 3); return 0; }"], "deps": []}]}

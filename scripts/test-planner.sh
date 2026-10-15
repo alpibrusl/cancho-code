@@ -6,9 +6,12 @@
 #             holds the guide, the task and the required signatures
 #   feedback  a rejected plan is not written; the NEXT request carries the plan check's own report and the rejected plan; a good second plan is written
 #   cases     a unit's `cases` (data) are expanded into its `tests` by src/cases.cho before the plan check; an expansion error is fed back like a plan-check error; the plan written has tests and no cases
+#   fallback  a signature `cases` cannot express: the report says to delete the unit's cases and write tests (and which types cases can express); a plan that does is accepted; the guide's own tests example compiles, passes, and fails when a value is flipped
 #   ceiling   every round rejected: exit 1, nothing written, the file that was there is untouched, the last report is on stderr
 #   questions {"status":"unclear"} / {"status":"too_big"}: exit 3, the model's object is saved beside the output, no plan is written, one request
 #   no json   prose without an object, and a reply cut off by the bound, are rounds that fail and are retried; neither is ever written
+#   review    a second, blind pass; a case survives only if the reviewer re-derives it; "agreed with none" rejects the plan; a MISCOUNTED answer (a slip of the reviewer) is retried once, told what was wrong, and if it fails again the plan is kept UNREVIEWED and says so on stderr
+#   cut off   a plan cut off by the bound is asked again with the bound doubled (at most 32000); an empty cut-off reply is told its thinking used the bound
 #   usage     --usage-log records one line per call with the round's outcome (rejected | written | no_plan | cut_off | needs_input)
 #   journal   --journal <dir> records every model call of the plan stage (docs/journal.md): one `plan_call` event per call with the prompt and the raw reply as
 #             blobs, tokens, time, stop reason, outcome and what the checks refused; the primer once; a `plan_review` with the cases the reviewer dropped and why
@@ -120,6 +123,27 @@ PY
 expect "cases: usage outcomes" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog')])")" "['rejected', 'written']"
 stop
 
+# fallback: a unit whose signature `cases` cannot express (an Option of a Box). The expander's report is the next round's teacher: it says to delete
+# the unit's `cases` and write `tests`, that the unit still needs an example, and which types cases can express; a plan that does as told is accepted
+KV_CASES='{"name": "kv", "units": [{"id": "find", "signature": "fn kv_find[&h, &t, &k](heap: &!h Heap, text: &t [byte], key: &k [byte]) -> [heap] option.Option[Box[[byte]]]", "description": "Some(value) of key=value, else None.", "examples": ["kv_find(heap, \"a=1\", \"a\") == option.Option::Some(\"1\")"], "cases": [{"args": ["a=1", "a"], "expect": "1"}], "deps": []}]}'
+start; printf '%s' "$KV_CASES" > "$d/response.1.txt"; cp "$d/guide-kv.json" "$d/response.2.txt" 2>/dev/null; rm -f "$d/out/plan.json" "$d/ulog"
+python3 - "$root/docs/plan-guide.md" "$d/guide-kv.json" <<'PY'
+import re, sys
+blocks = re.findall(r"```json\n(.*?)\n```", open(sys.argv[1], encoding="utf-8").read(), re.S)
+open(sys.argv[2], "w", encoding="utf-8").write(blocks[1] + "\n")
+PY
+cp "$d/guide-kv.json" "$d/response.2.txt"
+plan $G --usage-log "$d/ulog" >/dev/null 2>"$d/e"; rc=$?
+expect "fallback: exit code ($(head -c 300 "$d/e"))" "$rc" 0
+expect "fallback: two requests" "$(count)" 2
+P2=$(prompt_of 2)
+for want in "[CASES_ERROR]" "(option.Option[Box[[byte]]])" "delete the \`cases\` of this unit and write \`tests\`" "keep one \`examples\` entry" "buffer.Buffer (owned text)" "When cases cannot express a signature"; do
+    case "$P2" in *"$want"*) ;; *) echo "FAIL: fallback: the second prompt lacks '$want'" >&2; fail=1 ;; esac
+done
+expect "fallback: usage outcomes" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog')])")" "['rejected', 'written']"
+"$d/plancheck" "$d/out/plan.json" >/dev/null 2>&1 || { echo "FAIL: fallback: the written plan does not pass plancheck" >&2; fail=1; }
+stop
+
 # review: a second, BLIND pass. A reviewer re-derives each case's result from the description only; a case survives only if it agrees
 printf '# Verifying the cases\nDerive each value.\n' > "$d/rguide.md"
 RV="--review on --review-guide $d/rguide.md"
@@ -151,6 +175,47 @@ plan $G $RV --usage-log "$d/ulog" >/dev/null 2>"$d/e"; rc=$?
 expect "review failed: exit code" "$rc" 0
 case "$(cat "$d/e")" in *unreviewed*) ;; *) echo "FAIL: review failed: the plan is not marked unreviewed on stderr" >&2; fail=1 ;; esac
 expect "review failed: usage outcomes" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog')])")" "['written', 'review_failed', 'review_failed']"
+stop
+# a review that miscounts (one answer fewer than cases) is the reviewer's slip, not the plan's: it is asked again, told what was wrong, and the plan
+# is not rejected for it
+start; printf '%s' "$RC" > "$d/response.1.txt"; printf '{"units": [{"id": "clamp", "answers": [{"expect": 3}]}]}' > "$d/response.2.txt"; printf '{"units": [{"id": "clamp", "answers": [{"expect": 3}, {"expect": 1}]}]}' > "$d/response.3.txt"; rm -f "$d/out/plan.json" "$d/ulog"
+plan $G $RV --usage-log "$d/ulog" >/dev/null 2>"$d/e"; rc=$?
+expect "review miscount: exit code ($(head -c 200 "$d/e"))" "$rc" 0
+expect "review miscount: three requests (the plan, the review, the review again), no second plan round" "$(count)" 3
+case "$(prompt_of 3)" in *"YOUR PREVIOUS ANSWER WAS UNUSABLE"*"1 answers for 2 cases"*) ;; *) echo "FAIL: review miscount: the second review prompt does not say what was wrong" >&2; fail=1 ;; esac
+expect "review miscount: usage outcomes" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog')])")" "['written', 'review_failed', 'reviewed']"
+expect "review miscount: the second try reviewed it: the agreed case survives, the other is dropped" "$(python3 -c "import json; p = json.load(open('$d/out/plan.json')); print(sum(t.count('pub fn test_') for t in p['units'][0]['tests']))")" 1
+case "$(cat "$d/e")" in *"REVIEW_ERROR"*"1 answers for 2 cases"*) ;; *) echo "FAIL: review miscount: the first try's error is not on stderr" >&2; fail=1 ;; esac
+case "$(cat "$d/e")" in *unreviewed*) echo "FAIL: review miscount: marked unreviewed although the second try worked" >&2; fail=1 ;; esac
+stop
+# the journal of a review that miscounts and is asked again: both review calls are events, the first review_failed with what was wrong
+JM="$d/jmis"; rm -rf "$JM"; mkdir -p "$JM/blobs"
+start; printf '%s' "$RC" > "$d/response.1.txt"; printf '{"units": [{"id": "clamp", "answers": [{"expect": 3}]}]}' > "$d/response.2.txt"; printf '{"units": [{"id": "clamp", "answers": [{"expect": 3}, {"expect": 1}]}]}' > "$d/response.3.txt"; rm -f "$d/out/plan.json" "$d/response.txt"
+plan $G $RV --journal "$JM" >/dev/null 2>&1
+python3 -I - "$JM" <<'PY' || fail=1
+import json, sys
+jd = sys.argv[1]
+ev = [json.loads(l) for l in open(jd + "/events.jsonl")]
+k = [e["kind"] + ":" + e.get("outcome", "") + ":" + str(e.get("sample", "")) for e in ev]
+bad_ = []
+if k != ["plan_call:written:1", "plan_call:review_failed:1", "plan_review::", "plan_call:reviewed:2", "plan_review::"]: bad_.append("events %r" % k)
+else:
+    f = ev[1]
+    if not any("1 answers for 2 cases" in x for x in f["errors"]): bad_.append("errors of the failed review %r" % f["errors"])
+    if f["prompt"] == ev[3]["prompt"] or "UNUSABLE" not in open(jd + "/blobs/" + ev[3]["prompt"]).read(): bad_.append("the second review's prompt does not carry the slip")
+    if ev[4]["kept"] != 1 or ev[4]["of"] != 2: bad_.append("second review %r" % ev[4])
+if bad_: print("FAIL: journal miscount: " + "; ".join(bad_), file=sys.stderr); sys.exit(1)
+PY
+stop
+# miscounts twice: the plan is KEPT, unreviewed (both its cases), and the log says so, with the errors: never silent, never a rejected plan
+start; printf '%s' "$RC" > "$d/response.1.txt"; printf '{"units": [{"id": "clamp", "answers": [{"expect": 3}]}]}' > "$d/response.2.txt"; cp "$d/response.2.txt" "$d/response.3.txt"; rm -f "$d/out/plan.json" "$d/ulog"
+plan $G $RV --usage-log "$d/ulog" >/dev/null 2>"$d/e"; rc=$?
+expect "review miscount twice: exit code" "$rc" 0
+expect "review miscount twice: three requests" "$(count)" 3
+expect "review miscount twice: the plan is written with both cases (unreviewed)" "$(python3 -c "import json; p = json.load(open('$d/out/plan.json')); print(sum(t.count('pub fn test_') for t in p['units'][0]['tests']))")" 2
+case "$(cat "$d/e")" in *"the plan stands unreviewed"*) ;; *) echo "FAIL: review miscount twice: stderr does not say the plan stands unreviewed" >&2; fail=1 ;; esac
+expect "review miscount twice: the error is on stderr both times" "$(grep -c 'REVIEW_ERROR.*1 answers for 2 cases' "$d/e")" 2
+expect "review miscount twice: usage outcomes" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog')])")" "['written', 'review_failed', 'review_failed']"
 stop
 # --review on needs its guide
 start; plan $G --review on >/dev/null 2>"$d/e"; rc=$?
@@ -271,6 +336,26 @@ expect "no json: the outcomes" "$(python3 -c "import json; print([json.loads(l)[
 case "$(prompt_of 2)" in *"no JSON object"*) ;; *) echo "FAIL: no json: the next prompt does not say the reply had no JSON object" >&2; fail=1 ;; esac
 stop
 
+# cut off: a plan cut off by the bound is asked again with the bound doubled (at most 32000); a reply with nothing in it (the model's thinking used
+# all of the bound) is told that, not told to write a shorter plan
+npred() { python3 -c "import json; print(json.load(open('$d/request.$1.json'))['options']['num_predict'])"; }
+start; printf '' > "$d/response.1.txt"; printf 'length' > "$d/response.1.reason"; printf '{"name": "clampy", "units": [{"id": "clamp"' > "$d/response.2.txt"; printf 'length' > "$d/response.2.reason"; printf '%s' "$GOOD" > "$d/response.3.txt"; rm -f "$d/out/plan.json" "$d/ulog"
+plan $G --max-tokens 20000 --rounds 4 --usage-log "$d/ulog" >/dev/null 2>"$d/e"; rc=$?
+expect "cut off: exit code" "$rc" 0
+expect "cut off: three requests" "$(count)" 3
+expect "cut off: the bound of the first round" "$(npred 1)" 20000
+expect "cut off: the bound of the second round (doubled, at most 32000)" "$(npred 2)" 32000
+expect "cut off: the bound of the third round (the cap)" "$(npred 3)" 32000
+case "$(prompt_of 2)" in *"your thinking used all of it"*) ;; *) echo "FAIL: cut off: an empty cut-off reply is not told that thinking used the bound" >&2; fail=1 ;; esac
+case "$(prompt_of 3)" in *"SHORTER plan"*) ;; *) echo "FAIL: cut off: a partial cut-off reply is not told to write a shorter plan" >&2; fail=1 ;; esac
+stop
+start; printf '{"name": "clampy", "units": [{"id": "clamp"' > "$d/response.1.txt"; printf 'length' > "$d/response.1.reason"; printf '%s' "$GOOD" > "$d/response.2.txt"; rm -f "$d/out/plan.json"
+plan $G --max-tokens 1000 >/dev/null 2>"$d/e"; rc=$?
+expect "cut off 1000: exit code" "$rc" 0
+expect "cut off 1000: the second round has twice the bound" "$(npred 2)" 2000
+case "$(cat "$d/e")" in *"the bound for the next round is 2000"*) ;; *) echo "FAIL: cut off 1000: the raised bound is not on stderr" >&2; fail=1 ;; esac
+stop
+
 # required
 start
 rm -f "$d/count"
@@ -292,6 +377,35 @@ PY
 "$d/plancheck" "$d/guide-example.json" >"$d/o" 2>&1 || { echo "FAIL: guide: its worked example is not a valid plan: $(cat "$d/o")" >&2; fail=1; }
 for want in unclear too_big "REQUIRED PUBLIC FUNCTIONS" "ONE function"; do
     grep -q "$want" "$root/docs/plan-guide.md" || { echo "FAIL: guide: lacks '$want'" >&2; fail=1; }
+done
+
+# the guide's second worked example (the `tests` fallback for a signature cases cannot express) is a valid plan AND its tests compile and pass
+# against a reference implementation (tests/fixtures/guide/kvfind.cho); one expected value flipped must fail it (the tests check something)
+python3 - "$root/docs/plan-guide.md" "$d" "$CANCHO" "$root" <<'PY' || fail=1
+import json, os, re, subprocess, sys
+guide, d, cancho, root = sys.argv[1:5]
+blocks = re.findall(r"```json\n(.*?)\n```", open(guide, encoding="utf-8").read(), re.S)
+bad = []
+if len(blocks) != 2: bad.append("the guide has %d json blocks, wanted 2 (a plan, and the tests fallback)" % len(blocks))
+else:
+    plan = json.loads(blocks[1])
+    unit = plan["units"][0]
+    if "cases" in unit: bad.append("the fallback example has cases")
+    if not unit.get("tests") or not unit.get("examples"): bad.append("the fallback example lacks tests or examples")
+    def run(tests):
+        tf = os.path.join(d, "guide-tests.cho")
+        open(tf, "w").write("edition 7;\nimport std.test;\n" + "\n".join(tests) + "\n")
+        return subprocess.run([cancho, "test", "--std", "--backend", "cranelift", os.path.join(root, "tests", "fixtures", "guide", "kvfind.cho"), tf], capture_output=True, cwd=d)
+    r = run(unit["tests"])
+    if r.returncode != 0: bad.append("the guide's tests do not pass against the reference: " + (r.stdout + r.stderr).decode()[-300:])
+    flipped = [t.replace('"a=1", "a", "1"', '"a=1", "a", "2"') for t in unit["tests"]]
+    if flipped == unit["tests"]: bad.append("nothing to flip in the guide's tests")
+    elif run(flipped).returncode == 0: bad.append("the guide's tests still pass with a wrong expected value: they check nothing")
+if bad:
+    print("FAIL: guide: " + "; ".join(bad), file=sys.stderr); sys.exit(1)
+PY
+for want in "Cover everything the task states" "When \`cases\` cannot express a signature" "EVERY kind of error" "worked examples are exact" "cannot contain a real line break" "cannot be discarded"; do
+    grep -qF "$want" "$root/docs/plan-guide.md" || { echo "FAIL: guide: lacks '$want'" >&2; fail=1; }
 done
 
 rm -rf "$d"

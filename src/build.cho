@@ -236,8 +236,30 @@ fn count_verified[&h, &z, &w](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte]) -> [
     return n;
 }
 
+// What the plan's review came to, read from the plan agent's output in `plan.log`: "unreviewed" (the review gave no usable answer, so the plan's
+// cases were kept without a second reader), "reviewed" (a review ran and its report is there), "none" (no review, or no plan.log).
+fn review_state[&h, &z, &w](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte]) -> [heap, fs_read("")] &static [byte] {
+    let lp = project.in_wd(heap, wd, "plan.log", "", "");
+    var state = "none";
+    borrow lp as &lb in {
+        let (text, ok) = slurp(heap, fs, buffer.bytes(lb), 1048576);
+        if ok {
+            borrow text as &tb in {
+                if bytes.find(buffer.bytes(tb), "the plan stands unreviewed") >= 0 {
+                    state = "unreviewed";
+                } else if bytes.find(buffer.bytes(tb), "[REVIEW]\tkept ") >= 0 {
+                    state = "reviewed";
+                }
+            }
+        }
+        buffer.drop(heap, text);
+    }
+    buffer.drop(heap, lp);
+    return state;
+}
+
 // `build.json`: the one file the dashboard reads for the run as a whole. Written whole, after each stage.
-fn write_state[&h, &z, &w, &b, &p, &m, &v](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], brief: &b [byte], stage: &static [byte], valid: bool, total: int, verified: int, verdict: &v [byte], started_ms: int, now_ms: int, provider: &p [byte], model: &m [byte]) -> [heap, fs_write("")] int {
+fn write_state[&h, &z, &w, &b, &p, &m, &v](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], brief: &b [byte], stage: &static [byte], valid: bool, total: int, verified: int, verdict: &v [byte], started_ms: int, now_ms: int, provider: &p [byte], model: &m [byte]) -> [heap, fs_read(""), fs_write("")] int {
     var j = json.writer(heap, 512);
     j = json.begin_object(heap, j);
     j = json.put_key(heap, j, "brief");
@@ -260,6 +282,8 @@ fn write_state[&h, &z, &w, &b, &p, &m, &v](heap: &!h Heap, fs: &z Fs(""), wd: &w
     j = json.put_string(heap, j, provider);
     j = json.put_key(heap, j, "model");
     j = json.put_string(heap, j, model);
+    j = json.put_key(heap, j, "review");
+    j = json.put_string(heap, j, review_state(heap, fs, wd));
     j = json.end_object(heap, j);
     var text = json.finish(j);
     text = buffer.push(heap, text, byte_of(10));
@@ -432,6 +456,13 @@ pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q](heap: &!h Hea
                         asked_status = ask_plan(heap, exec, clock, fs, wd, buffer.bytes(cb), pp, plan_ms);
                     }
                     buffer.drop(heap, command);
+                    // the review's outcome is part of the run's record, whichever it was: a plan kept without a second reader says so
+                    let rv = review_state(heap, fs, wd);
+                    if bytes.equal(rv, "unreviewed") {
+                        project.tell(heap, io, fs, lg, "[PLAN_REVIEW]\tunreviewed\n");
+                    } else if bytes.equal(rv, "reviewed") {
+                        project.tell(heap, io, fs, lg, "[PLAN_REVIEW]\treviewed\n");
+                    }
                     if asked_status == 2 {
                         provider_away = true;
                     } else {

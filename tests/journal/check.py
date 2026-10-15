@@ -79,6 +79,9 @@ elif what == "blobtext":
     e = att(u, n)
     if k not in e: print("<absent>")
     else: print(blob(e[k]).decode("utf-8", "replace").strip().replace("\n", " | ")[:200])
+elif what == "blobraw":
+    u, n, k = sys.argv[3], int(sys.argv[4]), sys.argv[5]
+    print(repr(blob(att(u, n)[k]).decode()))
 elif what == "blobsize":
     u, n, k = sys.argv[3], int(sys.argv[4]), sys.argv[5]
     e = att(u, n)

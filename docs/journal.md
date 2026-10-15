@@ -46,7 +46,7 @@ An `attempt` is one turn of the agent and the check that followed:
 
 ## The agent's sidecars
 
-The driver knows the unit and the attempt; the agent knows the call. So the agent leaves what it knows beside the project file, the way `.feedback` and `.task` work, and the driver turns it into the `attempt` event. The driver makes the directory `<project.cho>.call/` and clears its files before each turn; an agent writes into it when it can and a stand-in agent need not:
+The driver knows the unit and the attempt; the agent knows the call. So the agent leaves what it knows beside the project file, the way `.feedback` and `.task` work, and the driver turns it into the `attempt` event. The driver makes the directory `<project.cho>.call/` and clears its files before each turn. The agent's standard error is not a sidecar: the project driver already runs the agent with `2>` to `<project.cho>.agent.err` (docs/project.md), and the attempt's `stderr` blob is a bounded copy of that file as it stands after the turn, so any agent has one; an agent writes into it when it can and a stand-in agent need not:
 
 | file | what |
 |---|---|
@@ -54,7 +54,6 @@ The driver knows the unit and the attempt; the agent knows the call. So the agen
 | `reply.txt` | the raw reply; a later sample of the same turn follows a line `=== sample K ===` |
 | `meta.json` | `{"samples":1,"tokens":{"in":..,"out":..,"thinking":..,"cache_write":..,"cache_read":..},"ms":..,"stop":"end_turn","outcome":"written","primer":true}`, totals over the samples of the turn |
 | `primer.txt` | the primer; the driver keeps the first as `blobs/primer.txt` |
-| `stderr.txt` | the agent's standard error, written by the driver itself (the agent command runs with `2>`), so any agent has one |
 
 The plan stage has no unit and no attempt, so the plan agent (`--mode plan`) writes its own events: `build` gives it `--journal <workdir>/journal`, and it adds a `plan_call` per model call and a `plan_review` per review, with their blobs. Without `--journal` it records nothing.
 

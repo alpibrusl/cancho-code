@@ -14,7 +14,7 @@
 #             events; the key is in none of it
 #   workspace the id is sent as anthropic-workspace-id only when named
 #   thinking  thinking and effort are sent only when named; a bad value is exit 2 and no request; an all-thinking reply says so
-#   cut off   a reply that stopped at max_tokens is retried, never written
+#   cut off   a reply that stopped at max_tokens is retried, never written, and the next request has the bound doubled (at most 32000)
 #   no program three replies with no program in them: exit 1, the file untouched
 #   error     an HTTP error is exit 1 with the API's own message, one request, the file untouched
 #   required  no --provider, no --model: exit 2 before any request (there is no default)
@@ -53,6 +53,7 @@ class H(http.server.BaseHTTPRequestHandler):
         n_requests += 1
         body = self.rfile.read(int(self.headers["Content-Length"]))
         open(out + "/request.json", "wb").write(body)
+        open(out + "/request.%d.json" % n_requests, "wb").write(body)
         open(out + "/count", "w").write(str(n_requests))
         open(out + "/headers.json", "w").write(json.dumps({
             "path": self.path, "key_matches": self.headers.get("x-api-key") == key,
@@ -92,7 +93,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -keyout "$d/other.key" -out "$d/other.
 mkcert srv localhost
 mkcert wrong elsewhere.example
 
-start() { rm -f "$d/port" "$d/count" "$d/request.json" "$d/headers.json" "$d/force-error"; python3 "$d/stub.py" "$d" "$KEY" "${1:-$d/srv.pem}" "${2:-$d/srv.key}" & stub=$!
+start() { rm -f "$d/port" "$d/count" "$d"/request.*json "$d/headers.json" "$d/force-error"; python3 "$d/stub.py" "$d" "$KEY" "${1:-$d/srv.pem}" "${2:-$d/srv.key}" & stub=$!
           n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port"); }
 stop() { kill $stub 2>/dev/null; wait $stub 2>/dev/null; }
 F="$d/project.cho"
@@ -265,6 +266,26 @@ expect "cut off: exit code" "$rc" 0
 expect "cut off: the whole sample is the file" "$(cat "$F")" "edition 7;
 fn whole() -> [] int { return 2; }"
 expect "cut off: two requests" "$(count)" 2
+rm -f "$d/response"*
+
+# cut off: the next round has the bound doubled (at most 32000): a model that thinks first can use all of the bound before its first byte
+mtok() { python3 -c "import json; print(json.load(open('$d/request.$1.json'))['max_tokens'])"; }
+stop; start
+printf 'edition 7;\nfn cut_off() -> [] int {\n' > "$d/response.1.txt"; printf 'max_tokens' > "$d/response.1.stop"
+printf 'edition 7;\nfn cut_off() -> [] int {\n' > "$d/response.2.txt"; printf 'max_tokens' > "$d/response.2.stop"
+printf 'edition 7;\nfn whole() -> [] int { return 2; }\n' > "$d/response.3.txt"
+broken; agent --max-tokens 20000 >/dev/null 2>"$d/err.txt"; rc=$?
+expect "cut off bound: exit code" "$rc" 0
+expect "cut off bound: three requests" "$(count)" 3
+expect "cut off bound: the first request has the bound it was given" "$(mtok 1)" 20000
+expect "cut off bound: the second has it doubled, at most 32000" "$(mtok 2)" 32000
+expect "cut off bound: the third stays at the cap" "$(mtok 3)" 32000
+case "$(cat "$d/err.txt")" in *"the bound for the next round is 32000"*) ;; *) echo "FAIL: cut off bound: the raised bound is not on stderr" >&2; fail=1 ;; esac
+stop; start
+printf 'edition 7;\nfn cut_off() -> [] int {\n' > "$d/response.1.txt"; printf 'max_tokens' > "$d/response.1.stop"
+printf 'edition 7;\nfn whole() -> [] int { return 2; }\n' > "$d/response.2.txt"
+broken; agent --max-tokens 3000 >/dev/null 2>&1
+expect "cut off bound: 3000 doubles to 6000" "$(mtok 2)" 6000
 rm -f "$d/response"*
 
 # no program in any of three replies

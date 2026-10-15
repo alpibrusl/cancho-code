@@ -1,0 +1,1129 @@
+{
+ "baseline": "2026-10-21-plain-briefs.json",
+ "setup": "brief-only arm, Claude Haiku 5.5, patch mode, review on, 2 runs per item; round 1 = branch planner-gaps at 6f1def0; round 2 = after the plan-check rules for tests (newline in a string, Ok(_) is not part of round 2) and the unit agent's bound growth, binaries built at the commit 'Plan check: a line break inside a string literal of a test; the bound grows for a cut-off patch too'",
+ "summary": {
+  "baseline": {
+   "runs": 26,
+   "done": 20,
+   "audit100": 14,
+   "plan_failed": 2,
+   "stuck": 3,
+   "provider_error": 1,
+   "out_tokens": 800668,
+   "cost": 0.481
+  },
+  "round1": {
+   "runs": 26,
+   "done": 19,
+   "audit100": 11,
+   "plan_failed": 1,
+   "stuck": 2,
+   "provider_error": 4,
+   "out_tokens": 1035880,
+   "cost": 0.617
+  },
+  "round2": {
+   "runs": 26,
+   "done": 22,
+   "audit100": 15,
+   "plan_failed": 0,
+   "stuck": 4,
+   "provider_error": 0,
+   "out_tokens": 1075602,
+   "cost": 0.636
+  }
+ },
+ "round1": [
+  {
+   "item": "base64",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 329,
+    "of": 329
+   },
+   "tokens": {
+    "in": 16112,
+    "out": 29718,
+    "cache_write": 13374,
+    "cache_read": 80244,
+    "thinking": 22294
+   },
+   "cost_usd": 0.018945,
+   "seconds": 167.6,
+   "calls": 8,
+   "units_total": 5,
+   "units_verified": 5
+  },
+  {
+   "item": "base64",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 329,
+    "of": 329
+   },
+   "tokens": {
+    "in": 14486,
+    "out": 19965,
+    "cache_write": 0,
+    "cache_read": 80244,
+    "thinking": 13484
+   },
+   "cost_usd": 0.012233,
+   "seconds": 107.9,
+   "calls": 7,
+   "units_total": 5,
+   "units_verified": 5
+  },
+  {
+   "item": "basics",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 221,
+    "of": 221
+   },
+   "tokens": {
+    "in": 14586,
+    "out": 11936,
+    "cache_write": 0,
+    "cache_read": 106992,
+    "thinking": 7416
+   },
+   "cost_usd": 0.008497,
+   "seconds": 71.4,
+   "calls": 9,
+   "units_total": 7,
+   "units_verified": 7
+  },
+  {
+   "item": "basics",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 221,
+    "of": 221
+   },
+   "tokens": {
+    "in": 15544,
+    "out": 11672,
+    "cache_write": 0,
+    "cache_read": 120366,
+    "thinking": 6260
+   },
+   "cost_usd": 0.008593,
+   "seconds": 66.2,
+   "calls": 10,
+   "units_total": 8,
+   "units_verified": 8
+  },
+  {
+   "item": "csv",
+   "run": 1,
+   "build_verdict": "stuck",
+   "audit": {
+    "passed": 0,
+    "of": 50
+   },
+   "tokens": {
+    "in": 31125,
+    "out": 56774,
+    "cache_write": 0,
+    "cache_read": 147114,
+    "thinking": 48592
+   },
+   "cost_usd": 0.032971,
+   "seconds": 259.5,
+   "calls": 12,
+   "units_total": 7,
+   "units_verified": 6
+  },
+  {
+   "item": "csv",
+   "run": 2,
+   "build_verdict": "provider_error",
+   "audit": {
+    "passed": 35,
+    "of": 50
+   },
+   "tokens": {
+    "in": 30198,
+    "out": 49849,
+    "cache_write": 0,
+    "cache_read": 133740,
+    "thinking": 43231
+   },
+   "cost_usd": 0.029282,
+   "seconds": 224.5,
+   "calls": 11,
+   "units_total": 4,
+   "units_verified": 3
+  },
+  {
+   "item": "duration",
+   "run": 1,
+   "build_verdict": "stuck",
+   "audit": {
+    "passed": 22,
+    "of": 64
+   },
+   "tokens": {
+    "in": 13713,
+    "out": 17561,
+    "cache_write": 13374,
+    "cache_read": 80244,
+    "thinking": 12229
+   },
+   "cost_usd": 0.012626,
+   "seconds": 98.3,
+   "calls": 8,
+   "units_total": 5,
+   "units_verified": 4
+  },
+  {
+   "item": "duration",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 64,
+    "of": 64
+   },
+   "tokens": {
+    "in": 13363,
+    "out": 17904,
+    "cache_write": 0,
+    "cache_read": 80244,
+    "thinking": 12399
+   },
+   "cost_usd": 0.011092,
+   "seconds": 109.0,
+   "calls": 7,
+   "units_total": 5,
+   "units_verified": 5
+  },
+  {
+   "item": "editdistance",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 45,
+    "of": 54
+   },
+   "tokens": {
+    "in": 22274,
+    "out": 38787,
+    "cache_write": 0,
+    "cache_read": 120366,
+    "thinking": 31030
+   },
+   "cost_usd": 0.022825,
+   "seconds": 190.7,
+   "calls": 10,
+   "units_total": 7,
+   "units_verified": 7
+  },
+  {
+   "item": "editdistance",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 45,
+    "of": 54
+   },
+   "tokens": {
+    "in": 19572,
+    "out": 23485,
+    "cache_write": 0,
+    "cache_read": 120366,
+    "thinking": 17313
+   },
+   "cost_usd": 0.014902,
+   "seconds": 123.7,
+   "calls": 10,
+   "units_total": 8,
+   "units_verified": 8
+  },
+  {
+   "item": "expr",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 385,
+    "of": 385
+   },
+   "tokens": {
+    "in": 28014,
+    "out": 43948,
+    "cache_write": 0,
+    "cache_read": 93618,
+    "thinking": 31125
+   },
+   "cost_usd": 0.025712,
+   "seconds": 192.2,
+   "calls": 8,
+   "units_total": 4,
+   "units_verified": 4
+  },
+  {
+   "item": "expr",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 373,
+    "of": 385
+   },
+   "tokens": {
+    "in": 31208,
+    "out": 52091,
+    "cache_write": 0,
+    "cache_read": 80244,
+    "thinking": 40835
+   },
+   "cost_usd": 0.02997,
+   "seconds": 233.1,
+   "calls": 8,
+   "units_total": 3,
+   "units_verified": 3
+  },
+  {
+   "item": "glob",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 84,
+    "of": 87
+   },
+   "tokens": {
+    "in": 24893,
+    "out": 42904,
+    "cache_write": 13374,
+    "cache_read": 120366,
+    "thinking": 36142
+   },
+   "cost_usd": 0.026817,
+   "seconds": 256.8,
+   "calls": 11,
+   "units_total": 8,
+   "units_verified": 8
+  },
+  {
+   "item": "glob",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 86,
+    "of": 87
+   },
+   "tokens": {
+    "in": 23393,
+    "out": 65067,
+    "cache_write": 0,
+    "cache_read": 120366,
+    "thinking": 57849
+   },
+   "cost_usd": 0.036076,
+   "seconds": 320.5,
+   "calls": 10,
+   "units_total": 6,
+   "units_verified": 6
+  },
+  {
+   "item": "ini",
+   "run": 1,
+   "build_verdict": "provider_error",
+   "audit": {
+    "passed": 0,
+    "of": 76
+   },
+   "tokens": {
+    "in": 49686,
+    "out": 79447,
+    "cache_write": 0,
+    "cache_read": 240732,
+    "thinking": 65588
+   },
+   "cost_usd": 0.0471,
+   "seconds": 371.1,
+   "calls": 19,
+   "units_total": 12,
+   "units_verified": 11
+  },
+  {
+   "item": "ini",
+   "run": 2,
+   "build_verdict": "provider_error",
+   "audit": {
+    "passed": 0,
+    "of": 76
+   },
+   "tokens": {
+    "in": 21305,
+    "out": 79095,
+    "cache_write": 0,
+    "cache_read": 120366,
+    "thinking": 73218
+   },
+   "cost_usd": 0.042881,
+   "seconds": 402.8,
+   "calls": 10,
+   "units_total": 5,
+   "units_verified": 4
+  },
+  {
+   "item": "jsonptr",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 141,
+    "of": 160
+   },
+   "tokens": {
+    "in": 25387,
+    "out": 42388,
+    "cache_write": 0,
+    "cache_read": 120366,
+    "thinking": 35252
+   },
+   "cost_usd": 0.024936,
+   "seconds": 219.1,
+   "calls": 10,
+   "units_total": 7,
+   "units_verified": 7
+  },
+  {
+   "item": "jsonptr",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 141,
+    "of": 160
+   },
+   "tokens": {
+    "in": 21225,
+    "out": 37528,
+    "cache_write": 0,
+    "cache_read": 93618,
+    "thinking": 30961
+   },
+   "cost_usd": 0.021824,
+   "seconds": 181.4,
+   "calls": 8,
+   "units_total": 5,
+   "units_verified": 5
+  },
+  {
+   "item": "roman",
+   "run": 1,
+   "build_verdict": "plan_failed",
+   "audit": null,
+   "tokens": {
+    "in": 16363,
+    "out": 25226,
+    "cache_write": 13374,
+    "cache_read": 13374,
+    "thinking": 20230
+   },
+   "cost_usd": 0.016055,
+   "seconds": 115.7,
+   "calls": 4,
+   "units_total": 1,
+   "units_verified": 0
+  },
+  {
+   "item": "roman",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 439,
+    "of": 439
+   },
+   "tokens": {
+    "in": 18756,
+    "out": 30498,
+    "cache_write": 0,
+    "cache_read": 80244,
+    "thinking": 25032
+   },
+   "cost_usd": 0.017927,
+   "seconds": 150.4,
+   "calls": 7,
+   "units_total": 4,
+   "units_verified": 4
+  },
+  {
+   "item": "semver",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 490,
+    "of": 492
+   },
+   "tokens": {
+    "in": 47434,
+    "out": 65224,
+    "cache_write": 0,
+    "cache_read": 187236,
+    "thinking": 50101
+   },
+   "cost_usd": 0.039228,
+   "seconds": 299.5,
+   "calls": 15,
+   "units_total": 12,
+   "units_verified": 12
+  },
+  {
+   "item": "semver",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 492,
+    "of": 492
+   },
+   "tokens": {
+    "in": 74581,
+    "out": 73122,
+    "cache_write": 0,
+    "cache_read": 320976,
+    "thinking": 54716
+   },
+   "cost_usd": 0.04723,
+   "seconds": 392.6,
+   "calls": 25,
+   "units_total": 22,
+   "units_verified": 22
+  },
+  {
+   "item": "sortedmap",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 124,
+    "of": 124
+   },
+   "tokens": {
+    "in": 10367,
+    "out": 13475,
+    "cache_write": 0,
+    "cache_read": 80244,
+    "thinking": 8767
+   },
+   "cost_usd": 0.008577,
+   "seconds": 65.6,
+   "calls": 6,
+   "units_total": 5,
+   "units_verified": 5
+  },
+  {
+   "item": "sortedmap",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 124,
+    "of": 124
+   },
+   "tokens": {
+    "in": 17024,
+    "out": 27513,
+    "cache_write": 0,
+    "cache_read": 93618,
+    "thinking": 19126
+   },
+   "cost_usd": 0.016396,
+   "seconds": 133.8,
+   "calls": 7,
+   "units_total": 5,
+   "units_verified": 5
+  },
+  {
+   "item": "tokenbucket",
+   "run": 1,
+   "build_verdict": "provider_error",
+   "audit": {
+    "passed": 22,
+    "of": 46
+   },
+   "tokens": {
+    "in": 13705,
+    "out": 60280,
+    "cache_write": 0,
+    "cache_read": 80244,
+    "thinking": 55859
+   },
+   "cost_usd": 0.032314,
+   "seconds": 287.7,
+   "calls": 7,
+   "units_total": 3,
+   "units_verified": 2
+  },
+  {
+   "item": "tokenbucket",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 46,
+    "of": 46
+   },
+   "tokens": {
+    "in": 13319,
+    "out": 20423,
+    "cache_write": 0,
+    "cache_read": 66870,
+    "thinking": 15506
+   },
+   "cost_usd": 0.012212,
+   "seconds": 105.0,
+   "calls": 6,
+   "units_total": 4,
+   "units_verified": 4
+  }
+ ],
+ "round2": [
+  {
+   "item": "base64",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 329,
+    "of": 329
+   },
+   "tokens": {
+    "in": 18893,
+    "out": 28069,
+    "cache_write": 13374,
+    "cache_read": 66870,
+    "thinking": 19975
+   },
+   "cost_usd": 0.018263,
+   "seconds": 177.1,
+   "calls": 8,
+   "units_total": 5,
+   "units_verified": 5
+  },
+  {
+   "item": "base64",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 329,
+    "of": 329
+   },
+   "tokens": {
+    "in": 18631,
+    "out": 25478,
+    "cache_write": 0,
+    "cache_read": 120366,
+    "thinking": 17829
+   },
+   "cost_usd": 0.015805,
+   "seconds": 192.5,
+   "calls": 10,
+   "units_total": 8,
+   "units_verified": 8
+  },
+  {
+   "item": "basics",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 221,
+    "of": 221
+   },
+   "tokens": {
+    "in": 14007,
+    "out": 11032,
+    "cache_write": 0,
+    "cache_read": 93618,
+    "thinking": 6102
+   },
+   "cost_usd": 0.007853,
+   "seconds": 131.9,
+   "calls": 8,
+   "units_total": 6,
+   "units_verified": 6
+  },
+  {
+   "item": "basics",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 221,
+    "of": 221
+   },
+   "tokens": {
+    "in": 14219,
+    "out": 10423,
+    "cache_write": 0,
+    "cache_read": 106992,
+    "thinking": 5655
+   },
+   "cost_usd": 0.007703,
+   "seconds": 143.7,
+   "calls": 9,
+   "units_total": 7,
+   "units_verified": 7
+  },
+  {
+   "item": "csv",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 35,
+    "of": 50
+   },
+   "tokens": {
+    "in": 16531,
+    "out": 44249,
+    "cache_write": 0,
+    "cache_read": 66870,
+    "thinking": 38455
+   },
+   "cost_usd": 0.024446,
+   "seconds": 201.5,
+   "calls": 6,
+   "units_total": 3,
+   "units_verified": 3
+  },
+  {
+   "item": "csv",
+   "run": 2,
+   "build_verdict": "stuck",
+   "audit": {
+    "passed": 0,
+    "of": 50
+   },
+   "tokens": {
+    "in": 28032,
+    "out": 64863,
+    "cache_write": 0,
+    "cache_read": 133740,
+    "thinking": 56051
+   },
+   "cost_usd": 0.036573,
+   "seconds": 290.3,
+   "calls": 11,
+   "units_total": 6,
+   "units_verified": 5
+  },
+  {
+   "item": "duration",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 64,
+    "of": 64
+   },
+   "tokens": {
+    "in": 17004,
+    "out": 25633,
+    "cache_write": 13374,
+    "cache_read": 66870,
+    "thinking": 21392
+   },
+   "cost_usd": 0.016857,
+   "seconds": 164.4,
+   "calls": 7,
+   "units_total": 4,
+   "units_verified": 4
+  },
+  {
+   "item": "duration",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 64,
+    "of": 64
+   },
+   "tokens": {
+    "in": 17172,
+    "out": 32672,
+    "cache_write": 0,
+    "cache_read": 80244,
+    "thinking": 24694
+   },
+   "cost_usd": 0.018856,
+   "seconds": 172.5,
+   "calls": 7,
+   "units_total": 4,
+   "units_verified": 4
+  },
+  {
+   "item": "editdistance",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 45,
+    "of": 54
+   },
+   "tokens": {
+    "in": 20695,
+    "out": 34828,
+    "cache_write": 0,
+    "cache_read": 106992,
+    "thinking": 29924
+   },
+   "cost_usd": 0.020553,
+   "seconds": 252.7,
+   "calls": 9,
+   "units_total": 6,
+   "units_verified": 6
+  },
+  {
+   "item": "editdistance",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 45,
+    "of": 54
+   },
+   "tokens": {
+    "in": 23182,
+    "out": 35201,
+    "cache_write": 0,
+    "cache_read": 106992,
+    "thinking": 29839
+   },
+   "cost_usd": 0.020989,
+   "seconds": 209.9,
+   "calls": 9,
+   "units_total": 6,
+   "units_verified": 6
+  },
+  {
+   "item": "expr",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 385,
+    "of": 385
+   },
+   "tokens": {
+    "in": 25259,
+    "out": 50772,
+    "cache_write": 0,
+    "cache_read": 93618,
+    "thinking": 41912
+   },
+   "cost_usd": 0.028849,
+   "seconds": 235.2,
+   "calls": 9,
+   "units_total": 4,
+   "units_verified": 4
+  },
+  {
+   "item": "expr",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 383,
+    "of": 385
+   },
+   "tokens": {
+    "in": 30986,
+    "out": 55494,
+    "cache_write": 0,
+    "cache_read": 160488,
+    "thinking": 43181
+   },
+   "cost_usd": 0.032451,
+   "seconds": 269.1,
+   "calls": 14,
+   "units_total": 10,
+   "units_verified": 10
+  },
+  {
+   "item": "glob",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 87,
+    "of": 87
+   },
+   "tokens": {
+    "in": 38307,
+    "out": 56949,
+    "cache_write": 13374,
+    "cache_read": 133740,
+    "thinking": 47158
+   },
+   "cost_usd": 0.035315,
+   "seconds": 307.5,
+   "calls": 13,
+   "units_total": 8,
+   "units_verified": 8
+  },
+  {
+   "item": "glob",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 87,
+    "of": 87
+   },
+   "tokens": {
+    "in": 32823,
+    "out": 55200,
+    "cache_write": 0,
+    "cache_read": 133740,
+    "thinking": 46009
+   },
+   "cost_usd": 0.03222,
+   "seconds": 365.7,
+   "calls": 12,
+   "units_total": 7,
+   "units_verified": 7
+  },
+  {
+   "item": "ini",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 0,
+    "of": 76
+   },
+   "tokens": {
+    "in": 30864,
+    "out": 63136,
+    "cache_write": 0,
+    "cache_read": 160488,
+    "thinking": 52383
+   },
+   "cost_usd": 0.036258,
+   "seconds": 343.9,
+   "calls": 13,
+   "units_total": 10,
+   "units_verified": 10
+  },
+  {
+   "item": "ini",
+   "run": 2,
+   "build_verdict": "stuck",
+   "audit": {
+    "passed": 0,
+    "of": 76
+   },
+   "tokens": {
+    "in": 28978,
+    "out": 73295,
+    "cache_write": 0,
+    "cache_read": 120366,
+    "thinking": 60747
+   },
+   "cost_usd": 0.040748,
+   "seconds": 324.7,
+   "calls": 10,
+   "units_total": 5,
+   "units_verified": 4
+  },
+  {
+   "item": "jsonptr",
+   "run": 1,
+   "build_verdict": "stuck",
+   "audit": {
+    "passed": 90,
+    "of": 160
+   },
+   "tokens": {
+    "in": 29646,
+    "out": 46067,
+    "cache_write": 0,
+    "cache_read": 147114,
+    "thinking": 38231
+   },
+   "cost_usd": 0.027469,
+   "seconds": 211.6,
+   "calls": 12,
+   "units_total": 6,
+   "units_verified": 5
+  },
+  {
+   "item": "jsonptr",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 141,
+    "of": 160
+   },
+   "tokens": {
+    "in": 27073,
+    "out": 51039,
+    "cache_write": 0,
+    "cache_read": 120366,
+    "thinking": 42447
+   },
+   "cost_usd": 0.029432,
+   "seconds": 227.3,
+   "calls": 10,
+   "units_total": 7,
+   "units_verified": 7
+  },
+  {
+   "item": "roman",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 192,
+    "of": 439
+   },
+   "tokens": {
+    "in": 14932,
+    "out": 26369,
+    "cache_write": 13374,
+    "cache_read": 66870,
+    "thinking": 19716
+   },
+   "cost_usd": 0.017018,
+   "seconds": 181.1,
+   "calls": 7,
+   "units_total": 5,
+   "units_verified": 5
+  },
+  {
+   "item": "roman",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 439,
+    "of": 439
+   },
+   "tokens": {
+    "in": 14699,
+    "out": 20470,
+    "cache_write": 0,
+    "cache_read": 80244,
+    "thinking": 14560
+   },
+   "cost_usd": 0.012506,
+   "seconds": 107.9,
+   "calls": 7,
+   "units_total": 5,
+   "units_verified": 5
+  },
+  {
+   "item": "semver",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 492,
+    "of": 492
+   },
+   "tokens": {
+    "in": 41374,
+    "out": 85618,
+    "cache_write": 0,
+    "cache_read": 160488,
+    "thinking": 66337
+   },
+   "cost_usd": 0.048552,
+   "seconds": 460.8,
+   "calls": 13,
+   "units_total": 8,
+   "units_verified": 8
+  },
+  {
+   "item": "semver",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 492,
+    "of": 492
+   },
+   "tokens": {
+    "in": 58956,
+    "out": 68121,
+    "cache_write": 0,
+    "cache_read": 240732,
+    "thinking": 51720
+   },
+   "cost_usd": 0.042364,
+   "seconds": 365.8,
+   "calls": 19,
+   "units_total": 16,
+   "units_verified": 16
+  },
+  {
+   "item": "sortedmap",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 124,
+    "of": 124
+   },
+   "tokens": {
+    "in": 17069,
+    "out": 26470,
+    "cache_write": 0,
+    "cache_read": 93618,
+    "thinking": 15847
+   },
+   "cost_usd": 0.015878,
+   "seconds": 116.5,
+   "calls": 7,
+   "units_total": 5,
+   "units_verified": 5
+  },
+  {
+   "item": "sortedmap",
+   "run": 2,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 124,
+    "of": 124
+   },
+   "tokens": {
+    "in": 10652,
+    "out": 18080,
+    "cache_write": 0,
+    "cache_read": 80244,
+    "thinking": 13094
+   },
+   "cost_usd": 0.010908,
+   "seconds": 84.2,
+   "calls": 6,
+   "units_total": 5,
+   "units_verified": 5
+  },
+  {
+   "item": "tokenbucket",
+   "run": 1,
+   "build_verdict": "done",
+   "audit": {
+    "passed": 46,
+    "of": 46
+   },
+   "tokens": {
+    "in": 26863,
+    "out": 41599,
+    "cache_write": 0,
+    "cache_read": 80244,
+    "thinking": 32221
+   },
+   "cost_usd": 0.024289,
+   "seconds": 185.1,
+   "calls": 8,
+   "units_total": 4,
+   "units_verified": 4
+  },
+  {
+   "item": "tokenbucket",
+   "run": 2,
+   "build_verdict": "stuck",
+   "audit": {
+    "passed": 22,
+    "of": 46
+   },
+   "tokens": {
+    "in": 13848,
+    "out": 24475,
+    "cache_write": 0,
+    "cache_read": 66870,
+    "thinking": 19153
+   },
+   "cost_usd": 0.014291,
+   "seconds": 108.5,
+   "calls": 6,
+   "units_total": 3,
+   "units_verified": 2
+  }
+ ]
+}

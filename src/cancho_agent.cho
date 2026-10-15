@@ -28,7 +28,7 @@ edition 7;
 //   --tls           on | off                                     (on; ollama off)
 //   --num-ctx       ollama's context window in tokens            (8192)
 //   --num-predict   ollama's bound on one answer (= --max-tokens) (8192)
-//   --max-tokens    the bound on one answer                      (8192)
+//   --max-tokens    the bound on one answer                      (8192); a reply cut off by it is asked again with the bound doubled (at most 32000)
 //   --primer        a file with the language page, cached        (none)
 //   --thinking      adaptive | disabled                          (the model's own)
 //   --effort        low | medium | high | xhigh | max            (the model's own)
@@ -254,6 +254,53 @@ fn task_head[&t](task: &t [byte]) -> [] &t [byte] {
     return task[a..b];
 }
 
+fn cap_len(n: int, most: int) -> [] int {
+    if n > most {
+        return most;
+    }
+    return n;
+}
+
+// The `[REVIEW_ERROR]` lines of a review report, one per line (empty: none).
+fn error_lines[&h, &r](heap: &!h Heap, rep: &r [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 64);
+    var pos = 0;
+    while pos < len(rep) {
+        var e = pos;
+        while e < len(rep) && int_of(rep[e]) != 10 {
+            e = e + 1;
+        }
+        if bytes.starts_with(rep[pos..e], "[REVIEW_ERROR]") {
+            out = buffer.append(heap, out, rep[pos..e]);
+            out = buffer.push(heap, out, byte_of(10));
+        }
+        pos = e + 1;
+    }
+    return out;
+}
+
+// Is every `[REVIEW_ERROR]` of the report the verdict "the reviewer agreed with none of a unit's cases" (a judgement on the plan: the planner is
+// told), and not a malformed answer (a wrong number of answers, a missing unit, an answer of another shape: the reviewer's slip, not the plan's)?
+fn only_disagreement[&r](rep: &r [byte]) -> [] bool {
+    var pos = 0;
+    var any = false;
+    while pos < len(rep) {
+        var e = pos;
+        while e < len(rep) && int_of(rep[e]) != 10 {
+            e = e + 1;
+        }
+        let line = rep[pos..e];
+        if bytes.starts_with(line, "[REVIEW_ERROR]") {
+            any = true;
+            if bytes.find(line, "agreed with none of the") < 0 {
+                return false;
+            }
+        }
+        pos = e + 1;
+    }
+    return any;
+}
+
 // The blind review of a plan that has passed the check (docs/review-guide.md): the reviewer is shown the questions (signatures, descriptions, the
 // arguments of each case, never an expected value) and re-derives the results; `review.apply` keeps the cases it agrees with. Up to two tries to get a
 // usable answer. Answers (0, the plan as expanded again after the drops), (1, the report: the review refused the plan: a unit lost all its cases) or
@@ -277,15 +324,8 @@ fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, 
     }
     prompt_text = buffer.append(heap, prompt_text, "\n\nReply with the JSON object only.\n");
     buffer.drop(heap, questions);
-    var body = buffer.empty(heap, 16);
-    buffer.drop(heap, body);
-    borrow prompt_text as &pr in {
-        if local {
-            body = ollama.request_body(heap, model, num_ctx, max_tokens, "", buffer.bytes(pr));
-        } else {
-            body = anthropic.request_body(heap, model, max_tokens, "", buffer.bytes(pr), thinking, effort);
-        }
-    }
+    // what the last try got wrong (a malformed answer), told to the next try
+    var slip = buffer.empty(heap, 16);
     var tries = 0;
     var settled = false;
     var jrep = buffer.empty(heap, 16);
@@ -293,6 +333,26 @@ fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, 
     var jhave = false;
     while tries < 2 && settled == false {
         tries = tries + 1;
+        var body = buffer.empty(heap, 16);
+        buffer.drop(heap, body);
+        var asked = buffer.empty(heap, 4096);
+        borrow prompt_text as &pt in {
+            asked = buffer.append(heap, asked, buffer.bytes(pt));
+        }
+        borrow slip as &sl in {
+            if len(buffer.bytes(sl)) > 0 {
+                asked = buffer.append(heap, asked, "\n=== YOUR PREVIOUS ANSWER WAS UNUSABLE ===\n");
+                asked = buffer.append(heap, asked, buffer.bytes(sl)[0..cap_len(len(buffer.bytes(sl)), 1500)]);
+                asked = buffer.append(heap, asked, "\nAnswer again: one entry per unit given, with exactly as many answers as that unit has cases, in the same order; each answer is {\"expect\": ...} or {\"skip\": true}. Reply with the JSON object only.\n");
+            }
+        }
+        borrow asked as &pr in {
+            if local {
+                body = ollama.request_body(heap, model, num_ctx, max_tokens, "", buffer.bytes(pr));
+            } else {
+                body = anthropic.request_body(heap, model, max_tokens, "", buffer.bytes(pr), thinking, effort);
+            }
+        }
         let t0 = clock_ms(clock);
         var text = buffer.empty(heap, 16);
         var cut = false;
@@ -344,8 +404,31 @@ fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, 
                     jfail = rcode != 0;
                     jhave = true;
                 }
+                var judged = false;
                 if rcode != 0 {
-                    // the reviewer agreed with none of a unit's cases, or answered malformed: the planner is told
+                    borrow rrep as &rq in {
+                        judged = only_disagreement(buffer.bytes(rq));
+                    }
+                }
+                if rcode != 0 && judged == false {
+                    // a malformed answer (the wrong number of answers, a unit missing, an answer of another shape): the reviewer's slip, not
+                    // the plan's. The plan is not rejected for it: the review is tried once more, told what was wrong; if it fails again the
+                    // plan stands unreviewed, and says so (below, on stderr, in plan.log).
+                    var errs = buffer.empty(heap, 16);
+                    borrow rrep as &rq3 in {
+                        buffer.drop(heap, errs);
+                        errs = error_lines(heap, buffer.bytes(rq3));
+                    }
+                    io.error_all(io, "cancho-agent: the review answer was unusable:\n");
+                    borrow errs as &eq in {
+                        io.error_all(io, buffer.bytes(eq));
+                    }
+                    buffer.drop(heap, slip);
+                    slip = errs;
+                    buffer.drop(heap, rrep);
+                    buffer.drop(heap, filtered);
+                } else if rcode != 0 {
+                    // the reviewer agreed with none of a unit's cases: a judgement on the plan, the planner is told
                     buffer.drop(heap, result);
                     result = rrep;
                     buffer.drop(heap, filtered);
@@ -416,11 +499,15 @@ fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, 
         if status != 200 {
             rstop = "";
         }
-        borrow prompt_text as &ptj in {
+        borrow asked as &ptj in {
             borrow text as &txj in {
                 borrow result as &rsj in {
                     if bytes.equal(outcome, "review_rejected") {
                         calls.plan_call(heap, fs, clock, jdir, "review", attempt, tries, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, rstop, outcome, buffer.bytes(ptj), buffer.bytes(txj), buffer.bytes(rsj), false);
+                    } else if bytes.equal(outcome, "review_failed") && jhave {
+                        borrow slip as &slj in {
+                            calls.plan_call(heap, fs, clock, jdir, "review", attempt, tries, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, rstop, outcome, buffer.bytes(ptj), buffer.bytes(txj), buffer.bytes(slj), false);
+                        }
                     } else if bytes.equal(outcome, "review_failed") {
                         calls.plan_call(heap, fs, clock, jdir, "review", attempt, tries, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, rstop, outcome, buffer.bytes(ptj), buffer.bytes(txj), "the review gave no usable answer", false);
                     } else {
@@ -436,14 +523,29 @@ fn review_phase[&h, &f, &n, &c, &i, &r1, &r2, &r3, &r4, &r5, &r6, &e, &r7, &r8, 
             jhave = false;
         }
         buffer.drop(heap, text);
+        buffer.drop(heap, body);
+        buffer.drop(heap, asked);
     }
     buffer.drop(heap, jrep);
-    buffer.drop(heap, body);
     buffer.drop(heap, prompt_text);
+    buffer.drop(heap, slip);
     if settled == false {
+        // never silent: the plan is kept, its cases are NOT confirmed by a second reader, and the build records it (docs/build.md)
         io.error_all(io, "cancho-agent: the review gave no usable answer; the plan stands unreviewed\n");
     }
     return (verdict, result);
+}
+
+// The bound for the round after one that was cut off by it: doubled, at most 32000 (never lowered). A model that thinks first can use the whole bound
+// before its first byte of answer (a plan, a patch); asking again with the same bound only repeats that.
+fn grown_bound(bound: int) -> [] int {
+    if bound >= 32000 {
+        return bound;
+    }
+    if bound * 2 > 32000 {
+        return 32000;
+    }
+    return bound * 2;
 }
 
 // ---- the work ------------------------------------------------------------
@@ -705,6 +807,9 @@ fn make_body[&h, &m, &y, &s, &p, &g, &r, &k, &f](heap: &!h Heap, local: bool, pl
 // never written over the project.
 fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, args: &g Args, project: &p [byte], model: &m [byte], host: &o [byte], ip: &q [byte], port: int, secure: bool, local: bool, num_ctx: int, max_tokens: int, thinking: &y [byte], effort: &s [byte], plan_mode: bool, rounds: int, review_on: bool, patch_out: bool, key_raw: buffer.Buffer, roots: buffer.Buffer, primer: buffer.Buffer, guide: buffer.Buffer, rguide: buffer.Buffer, source: buffer.Buffer, task: buffer.Buffer, feedback0: buffer.Buffer) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write, args] int {
     var feedback = feedback0;
+    // The bound on one answer. A reply (a plan, a patch) cut off by it is asked again with the bound doubled (at most 32000): a model that thinks first can spend the
+    // whole bound before the first byte of the plan (the `semver` plan failed three rounds of three with 16000 tokens of thinking and no JSON).
+    var bound = max_tokens;
     let workspace = opt(args, "--workspace");
     let raw_path = opt(args, "--save-raw");
     var body = buffer.empty(heap, 16);
@@ -754,9 +859,9 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                             }
                             let te = task_effort(buffer.bytes(tr));
                             if len(te) > 0 {
-                                body = make_body(heap, local, plan_mode, patch_out, model, num_ctx, max_tokens, thinking, te, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                                body = make_body(heap, local, plan_mode, patch_out, model, num_ctx, bound, thinking, te, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
                             } else {
-                                body = make_body(heap, local, plan_mode, patch_out, model, num_ctx, max_tokens, thinking, effort, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                                body = make_body(heap, local, plan_mode, patch_out, model, num_ctx, bound, thinking, effort, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
                             }
                         }
                     }
@@ -950,8 +1055,22 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                             }
                                             if cut {
                                                 io.error_all(io, "cancho-agent: a sample was cut off by the bound (--max-tokens / --num-predict)\n");
+                                                if grown_bound(bound) > bound {
+                                                    bound = grown_bound(bound);
+                                                    var said = buffer.append(heap, buffer.empty(heap, 96), "cancho-agent: the bound for the next round is ");
+                                                    said = buffer.push_nat(heap, said, bound);
+                                                    said = buffer.push(heap, said, byte_of(10));
+                                                    borrow said as &sdq in {
+                                                        io.error_all(io, buffer.bytes(sdq));
+                                                    }
+                                                    buffer.drop(heap, said);
+                                                }
                                                 buffer.drop(heap, feedback);
-                                                feedback = buffer.append(heap, buffer.empty(heap, 256), "Your reply was cut off before the JSON object ended. Reply with a SHORTER plan: fewer units or shorter descriptions.");
+                                                if len(buffer.bytes(xr)) == 0 {
+                                                    feedback = buffer.append(heap, buffer.empty(heap, 256), "Your reply was cut off by the output limit before any text of it: your thinking used all of it. Think less and write the plan now: decide the units quickly, keep the descriptions short.");
+                                                } else {
+                                                    feedback = buffer.append(heap, buffer.empty(heap, 256), "Your reply was cut off before the JSON object ended. Reply with a SHORTER plan: fewer units or shorter descriptions.");
+                                                }
                                             } else if ja < 0 {
                                                 io.error_all(io, "cancho-agent: a sample has no JSON object in it\n");
                                                 buffer.drop(heap, feedback);
@@ -1077,6 +1196,16 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                         }
                                         if cut {
                                             io.error_all(io, "cancho-agent: a sample was cut off by the bound (--max-tokens / --num-predict)\n");
+                                            if grown_bound(bound) > bound {
+                                                bound = grown_bound(bound);
+                                                var said = buffer.append(heap, buffer.empty(heap, 96), "cancho-agent: the bound for the next round is ");
+                                                said = buffer.push_nat(heap, said, bound);
+                                                said = buffer.push(heap, said, byte_of(10));
+                                                borrow said as &sdq in {
+                                                    io.error_all(io, buffer.bytes(sdq));
+                                                }
+                                                buffer.drop(heap, said);
+                                            }
                                         } else if patch_out {
                                             if pa < 0 {
                                                 io.error_all(io, "cancho-agent: a sample has no code in it to add or change (reasoning, not a patch)\n");

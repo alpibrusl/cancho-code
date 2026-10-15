@@ -83,6 +83,8 @@ expect "sidecars: the tokens" "$(q "$wd" field a 1 tokens)" '{"cache_read": 9000
 expect "sidecars: the stop reason" "$(q "$wd" field a 1 stop)" end_turn
 expect "sidecars: the primer flag" "$(q "$wd" field a 1 primer)" true
 expect "sidecars: the agent's stderr" "$(q "$wd" blobtext a 1 stderr)" "agent says: unit a try 2"
+expect "sidecars: the stderr blob is exactly what the agent printed in that attempt, not the attempts before" "$(q "$wd" blobraw a 1 stderr)" "'agent says: unit a try 2\\n'"
+expect "sidecars: the project driver's own agent log is as it was" "$(grep -c '^=== attempt' "$wd/agent-a.log")" 2
 expect "sidecars: the agent's exit" "$(q "$wd" field a 1 exit)" 0
 expect "sidecars: the feedback the agent was shown (the acceptance failure)" "$(q "$wd" blobtext a 1 feedback | grep -c 'acceptance check failed')" 1
 expect "sidecars: the primer is stored once" "$(q "$wd" primer)" primer.txt

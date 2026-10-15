@@ -401,7 +401,7 @@ fn put_meta[&h, &z, &d](heap: &!h Heap, fs: &z Fs(""), w: json.Writer, call: &d 
 pub fn clear_call[&z, &f](fs: &z Fs(""), file: &f [byte]) -> [fs_write("")] int {
     region r {
         var names = 0;
-        while names < 4 {
+        while names < 3 {
             var p = alloc_slice[r](len(file) + 24, byte_of(0));
             var k = 0;
             while k < len(file) {
@@ -413,8 +413,6 @@ pub fn clear_call[&z, &f](fs: &z Fs(""), file: &f [byte]) -> [fs_write("")] int 
                 tail = ".call/reply.txt";
             } else if names == 2 {
                 tail = ".call/meta.json";
-            } else if names == 3 {
-                tail = ".call/stderr.txt";
             }
             var j = 0;
             while j < len(tail) {
@@ -426,22 +424,6 @@ pub fn clear_call[&z, &f](fs: &z Fs(""), file: &f [byte]) -> [fs_write("")] int 
         }
     }
     return 0;
-}
-
-// The agent command as the driver runs it for a journalled unit: the same command with its standard error going to `<file>.call/stderr.txt`
-// (the command is `-c` NUL `<shell command>` NUL; any other shape is left as it is, and its stderr is not kept).
-pub fn wrap_agent[&h, &a, &f](heap: &!h Heap, agent: &a [byte], file: &f [byte]) -> [heap] buffer.Buffer {
-    var b = buffer.empty(heap, len(agent) + len(file) + 48);
-    if len(agent) > 4 && int_of(agent[0]) == 45 && int_of(agent[1]) == 99 && int_of(agent[2]) == 0 && int_of(agent[len(agent) - 1]) == 0 {
-        b = buffer.append(heap, b, agent[0..len(agent) - 1]);
-        b = buffer.append(heap, b, " 2> ");
-        b = buffer.append(heap, b, file);
-        b = buffer.append(heap, b, ".call/stderr.txt");
-        b = buffer.push(heap, b, byte_of(0));
-    } else {
-        b = buffer.append(heap, b, agent);
-    }
-    return b;
 }
 
 // The directory the agent leaves its sidecars in: `<file>.call`.
@@ -535,7 +517,7 @@ fn journal_attempt_record[&h, &x, &c, &z, &d, &u, &f, &cl, &k, &a, &s, &t](heap:
     // the blobs the agent left, then the driver's own
     w = blob_field(heap, fs, dir, w, "prompt", unit, n, "prompt.txt", call, "prompt.txt");
     w = blob_field(heap, fs, dir, w, "reply", unit, n, "reply.txt", call, "reply.txt");
-    w = blob_field(heap, fs, dir, w, "stderr", unit, n, "stderr.txt", call, "stderr.txt");
+    w = blob_field(heap, fs, dir, w, "stderr", unit, n, "stderr.txt", file, ".agent.err");
     if blob_there(heap, fs, dir, "primer.txt") == false {
         let pp = path_under(heap, call, "primer.txt", "");
         borrow pp as &pq in {
