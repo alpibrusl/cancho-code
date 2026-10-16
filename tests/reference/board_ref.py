@@ -2,6 +2,12 @@
 """The oracle for src/board.cho (docs/dashboard.md): the same board.json, written independently, in Python.
 
     python3 tests/reference/board_ref.py <run dir> <prices.json | -> > board.json
+    python3 tests/reference/board_ref.py --layout <board.json> > layout.json
+
+`--layout` is the oracle for the page's graph and timeline logic (docs/board.html, the block between the graph-logic markers):
+the layers of the plan (a unit's layer is the longest chain of dependencies below it), the critical path, and the estimate from
+the journal, written independently here from a board.json; scripts/test-board.sh runs the page's own functions under node and
+compares.
 
 Kept as the oracle only, like the other files in tests/reference/: scripts/test-board.sh checks that it reproduces every
 committed tests/board/expected/*.json, and checks the cancho tool against the same files. The cost, token and efficiency
@@ -458,5 +464,121 @@ def main():
     print(json.dumps(board, indent=1))
 
 
+def _num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def unit_ms(u):
+    """The agent time of a unit in ms from its trail, or None when it is not recorded (a waiting unit has none to record: 0)."""
+    t = u.get("trail")
+    if isinstance(t, list) and t:
+        tot = 0
+        for row in t:
+            if not isinstance(row, dict) or not _num(row.get("agent_ms")):
+                return None
+            tot += row["agent_ms"]
+        return tot
+    return 0 if (u.get("column") == "waiting" or u.get("attempts") == 0) else None
+
+
+def layout(board):
+    """Layers and critical path of board.json's plan. Ties: the end of the path is the first unit (plan order) with the longest
+    chain, and each step back goes to the first dependency (as listed) with the longest chain."""
+    units, seen, order = board["units"], set(), []
+    dup = []
+    for u in units:
+        if u["id"] in seen:
+            dup.append(u["id"])
+        else:
+            seen.add(u["id"])
+            order.append(u)
+    deps, unknown = {}, []
+    for u in order:
+        ds = []
+        for d in (u.get("deps") or []):
+            if not isinstance(d, str):
+                continue
+            if d not in seen:
+                unknown.append([u["id"], d])
+            elif d not in ds:
+                ds.append(d)
+        deps[u["id"]] = ds
+    layer, busy = {}, set()
+
+    def lay(i):
+        if i in layer:
+            return layer[i]
+        if i in busy:
+            return None
+        busy.add(i)
+        best, ok = 0, True
+        for d in deps[i]:
+            v = lay(d)
+            if v is None:
+                ok = False
+            else:
+                best = max(best, v + 1)
+        busy.discard(i)
+        layer[i] = best if ok else None
+        return layer[i]
+
+    sys.setrecursionlimit(10000)
+    for u in order:
+        lay(u["id"])
+    unplaced = [u["id"] for u in order if layer[u["id"]] is None]
+    ok = not unknown and not dup and not unplaced
+    out = {"ok": ok, "layers": {i: v for i, v in layer.items() if v is not None}, "unplaced": unplaced, "unknown": unknown, "duplicates": dup}
+    out["critical"] = critical(order, deps, [unit_ms(u) for u in order]) if ok else None
+    j = board.get("journal")
+    out["estimate"] = None
+    if isinstance(j, dict) and isinstance(j.get("events"), list):
+        per, total, missing = {}, 0, False
+        for e in j["events"]:
+            if isinstance(e, dict) and e.get("kind") == "attempt" and isinstance(e.get("unit"), str):
+                if _num(e.get("ms")):
+                    per[e["unit"]] = per.get(e["unit"], 0) + e["ms"]
+                    total += e["ms"]
+                else:
+                    missing = True
+        est = {"agent_ms": None if missing else total, "critical_ms": None, "path": None}
+        nodeps = not units or all(u.get("deps") is None for u in units)
+        if not missing and ok and not nodeps:
+            c = critical(order, deps, [per.get(u["id"], 0) for u in order], force=True)
+            est["critical_ms"], est["path"] = c["total"], c["path"]
+        out["estimate"] = est
+    return out
+
+
+def critical(order, deps, ms, force=False):
+    use_time = force or (all(m is not None for m in ms) and sum(ms) > 0)
+    w = {u["id"]: (ms[k] if use_time else 1) for k, u in enumerate(order)}
+    memo = {}
+
+    def best(i):
+        if i not in memo:
+            memo[i] = w[i] + max([best(d) for d in deps[i]] or [0])
+        return memo[i]
+
+    if not order:
+        return {"basis": "units", "total": 0, "path": []}
+    end = max(order, key=lambda u: best(u["id"]))["id"]       # max() keeps the first of equals
+    for u in order:
+        if best(u["id"]) > best(end):
+            end = u["id"]
+    path = [end]
+    while deps[path[-1]]:
+        ds = deps[path[-1]]
+        nxt = ds[0]
+        for d in ds:
+            if best(d) > best(nxt):
+                nxt = d
+        path.append(nxt)
+    path.reverse()
+    return {"basis": "agent time" if use_time else "units", "total": best(end), "path": path}
+
+
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) == 3 and sys.argv[1] == "--layout":
+        print(json.dumps(layout(json.load(open(sys.argv[2]))), indent=1, sort_keys=True))
+    else:
+        main()

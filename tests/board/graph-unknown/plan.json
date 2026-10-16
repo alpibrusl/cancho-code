@@ -1,0 +1,28 @@
+{
+ "name": "graph-unknown",
+ "units": [
+  {
+   "id": "a",
+   "signature": "fn f_a[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "b",
+   "signature": "fn f_b[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": [
+    "a",
+    "ghost"
+   ]
+  },
+  {
+   "id": "c",
+   "signature": "fn f_c[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": [
+    "b"
+   ]
+  }
+ ]
+}

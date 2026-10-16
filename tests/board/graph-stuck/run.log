@@ -1,0 +1,14 @@
+[PLAN]	valid
+[UNIT]	a	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	a	verified
+[UNIT]	b	building
+[ISSUE_VERDICT]	failed	ceiling
+[UNIT]	b	failed
+[UNIT]	c	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	c	verified
+[UNIT]	d	skipped
+[PROJECT_VERDICT]	stuck

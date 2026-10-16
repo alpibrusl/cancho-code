@@ -1,0 +1,256 @@
+{
+ "schema": 1,
+ "run": {
+  "name": "graph-wide",
+  "brief": null,
+  "stage": null,
+  "plan_valid": null,
+  "provider": "anthropic",
+  "model": "claude-haiku-5-5",
+  "started_unix": null,
+  "seconds": 60.0,
+  "verdict": "stuck"
+ },
+ "files": {
+  "plan": true,
+  "run_log": true,
+  "state": true,
+  "usage": true,
+  "run_json": true,
+  "build_json": false,
+  "audit": false,
+  "prices": true
+ },
+ "metrics": {
+  "units_total": 8,
+  "units_verified": 5,
+  "columns": {
+   "waiting": 2,
+   "building": 0,
+   "verified": 5,
+   "stuck": 1,
+   "regressed": 0,
+   "unknown": 0
+  },
+  "calls": 7,
+  "tokens": {
+   "in": 2810,
+   "out": 5700,
+   "cache_write": 0,
+   "cache_read": 91000,
+   "thinking": null
+  },
+  "visible_out": null,
+  "thinking_share": null,
+  "cache_read_share": 0.97,
+  "efficiency": 0.0,
+  "efficiency_calls": 0.7018,
+  "efficiency_visible": null,
+  "cost_usd": 0.004041,
+  "cost_per_verified_unit": 0.000808,
+  "over_limit_calls": 0,
+  "audit": null
+ },
+ "truncated": false,
+ "units": [
+  {
+   "id": "w0",
+   "function": "f_w0",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1000,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "w1",
+   "function": "f_w1",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1100,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "w2",
+   "function": "f_w2",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1200,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "w3",
+   "function": "f_w3",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1300,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "w4",
+   "function": "f_w4",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1400,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "w5",
+   "function": "f_w5",
+   "column": "stuck",
+   "deps": [],
+   "attempts": 2,
+   "regressions": 0,
+   "calls": 2,
+   "tokens": {
+    "in": 810,
+    "out": 1700,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 26000
+   },
+   "cost_usd": 0.001191,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2000,
+     "outcome": "refused",
+     "sig": "E0: refused",
+     "decision": "retry"
+    },
+    {
+     "attempt": 1,
+     "agent_ms": 2100,
+     "outcome": "refused",
+     "sig": "E1: refused",
+     "decision": "retry"
+    }
+   ]
+  },
+  {
+   "id": "w6",
+   "function": "f_w6",
+   "column": "waiting",
+   "deps": [],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  },
+  {
+   "id": "w7",
+   "function": "f_w7",
+   "column": "waiting",
+   "deps": [],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  }
+ ]
+}

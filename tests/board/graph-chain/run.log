@@ -1,0 +1,15 @@
+[PLAN]	valid
+[UNIT]	u1	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	u1	verified
+[UNIT]	u2	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	u2	verified
+[UNIT]	u3	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	u3	verified
+[UNIT]	u4	building
+[PROJECT_VERDICT]	

@@ -1,0 +1,43 @@
+{
+ "name": "graph-cycle",
+ "units": [
+  {
+   "id": "a",
+   "signature": "fn f_a[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": [
+    "c"
+   ]
+  },
+  {
+   "id": "b",
+   "signature": "fn f_b[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": [
+    "a"
+   ]
+  },
+  {
+   "id": "c",
+   "signature": "fn f_c[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": [
+    "b"
+   ]
+  },
+  {
+   "id": "d",
+   "signature": "fn f_d[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": [
+    "c"
+   ]
+  },
+  {
+   "id": "e",
+   "signature": "fn f_e[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  }
+ ]
+}
