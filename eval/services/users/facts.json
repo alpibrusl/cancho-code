@@ -1,0 +1,31 @@
+{
+ "service": "users",
+ "attack_checks": 147,
+ "accept_checks": 33,
+ "reference_loc": 449,
+ "pure_functions": [
+  "json_type_ok",
+  "has_room"
+ ],
+ "libraries": {
+  "cancho-web": "eval/libs/cancho-web/src/web.cho",
+  "cancho-schema": "eval/libs/cancho-schema/src/schema.cho",
+  "record": "eval/libs/UPSTREAM.txt"
+ },
+ "differences_from_cancho_web_examples_users": [
+  "the application half only: cancho-web's example has its own server loop; here the loop is the shared skeleton and the example's `handle` becomes app_handle over `&!a App`",
+  "state is fixed (Box slices written in place, at most 200 users) instead of a growing buffer and Vec: a borrowed App cannot swap in a grown collection",
+  "no offset parameter, no email/role/tags fields, no /health, no filler routes; a body of exactly name (1-40 code points) and age (0-150)",
+  "two pure units (json_type_ok, has_room); the rest is the integration unit"
+ ],
+ "pitfalls": [
+  "web.respond_problem refers to #/components/responses/Problem, which the generated document contains only if a component named `Problem` is declared; without it the served OpenAPI document has a dangling $ref and nothing complains (found by writing the attack; the attack checks that every $ref resolves)",
+  "schema slots are numbered by add_field calls across the whole schema in call order: the fields of the request body must be added first, or the slot constants shift",
+  "web.default_int needs the Schema borrowed (`borrow s as &sr in { ... }`); without a declared default an absent limit reads as 0 and the page is empty",
+  "operation ids are the order of declaration (1, 2, ...); web.internal also takes an id; the handler compares dispatch's answer with them",
+  "a tape for a body is a box_slice, not a region (a region is one 64 KiB chunk)",
+  "schema.problem and web.dispatch write application/problem+json, but the 405 body of dispatch is {\"error\":\"method not allowed\"} with an Allow header (application/json); the brief says only 405 + Allow",
+  "the library accepts \\u0000 in a name unless schema.forbid_nul is called; the brief does not say, the attack does not test it",
+  "limit=007 and limit=%31 are accepted by dispatch (leading zeros, percent-decoding); not in the brief, not tested"
+ ]
+}

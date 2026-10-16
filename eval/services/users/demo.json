@@ -1,0 +1,53 @@
+{
+ "intro": "A small users API built with cancho-web and cancho-schema.",
+ "steps": [
+  {
+   "title": "create a user (201, Location)",
+   "method": "POST",
+   "path": "/users",
+   "body": {
+    "name": "Ada",
+    "age": 36
+   }
+  },
+  {
+   "title": "a body with two faults: both reported (422)",
+   "method": "POST",
+   "path": "/users",
+   "body": {
+    "name": "",
+    "age": 151
+   }
+  },
+  {
+   "title": "read it back",
+   "method": "GET",
+   "path": "/users/1"
+  },
+  {
+   "title": "list with a limit",
+   "method": "GET",
+   "path": "/users?limit=5"
+  },
+  {
+   "title": "a limit out of range (422)",
+   "method": "GET",
+   "path": "/users?limit=0"
+  },
+  {
+   "title": "delete it (204)",
+   "method": "DELETE",
+   "path": "/users/1"
+  },
+  {
+   "title": "it is gone (404)",
+   "method": "GET",
+   "path": "/users/1"
+  },
+  {
+   "title": "the OpenAPI document",
+   "method": "GET",
+   "path": "/openapi.json"
+  }
+ ]
+}

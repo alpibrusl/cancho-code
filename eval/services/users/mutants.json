@@ -1,0 +1,80 @@
+[
+ {
+  "name": "total-not-live",
+  "find": "meta[1] = meta[1] - 1;",
+  "replace": "meta[1] = meta[1];",
+  "caught_by": "the page skips the deleted user and the total went down"
+ },
+ {
+  "name": "id-reused",
+  "find": "render_user(heap, meta[0] + 1, body",
+  "replace": "render_user(heap, meta[1] + 1, body",
+  "caught_by": "a new user after a delete takes a new id"
+ },
+ {
+  "name": "problem-as-json",
+  "find": "answer = server.reply_as(heap, answer, 422, \"application/problem+json\"",
+  "replace": "answer = server.reply_as(heap, answer, 422, \"application/json\"",
+  "caught_by": "a 422 for a body is application/problem+json"
+ },
+ {
+  "name": "no-location",
+  "find": "answer = server.reply_as(heap, answer, 201, \"application/json\", json_bytes, keep, buffer.bytes(lb));",
+  "replace": "answer = server.reply_as(heap, answer, 201, \"application/json\", json_bytes, keep, \"\");",
+  "caught_by": "POST -> 201, Content-Type application/json, Location /users/1"
+ },
+ {
+  "name": "name-max-64",
+  "find": "schema.new_string(heap, s0, 1, 40)",
+  "replace": "schema.new_string(heap, s0, 1, 64)",
+  "caught_by": "name of 41 characters -> 422 max_length"
+ },
+ {
+  "name": "no-415",
+  "find": "if !json_type_ok(http.header",
+  "replace": "if false && !json_type_ok(http.header",
+  "caught_by": "Content-Type text/plain -> 415 problem document"
+ },
+ {
+  "name": "capacity-201",
+  "find": "count < 200 && used",
+  "replace": "count < 201 && used",
+  "caught_by": "the 201st POST -> 503 problem document"
+ },
+ {
+  "name": "no-default-limit",
+  "find": "    borrow s as &dsr in {\n        api = web.default_int(heap, api, dsr, list, \"limit\", 20);\n    }\n",
+  "replace": "",
+  "caught_by": "no limit -> the default of 20"
+ },
+ {
+  "name": "limit-ignored",
+  "find": "while id <= meta[0] && taken < limit {",
+  "replace": "while id <= meta[0] {",
+  "caught_by": "limit=1 -> the first user, total counts all of them"
+ },
+ {
+  "name": "delete-keeps-user",
+  "find": "index[2 * (id - 1) + 1] = 0 - 1;",
+  "replace": "index[2 * (id - 1) + 1] = index[2 * (id - 1) + 1];",
+  "caught_by": "GET of the deleted user -> 404"
+ },
+ {
+  "name": "dangling-problem-ref",
+  "find": "    api = web.component(heap, api, \"Problem\", problem);\n",
+  "replace": "",
+  "caught_by": "every $ref of the document resolves"
+ },
+ {
+  "name": "only-first-fault",
+  "find": "schema.errors_len(16)",
+  "replace": "schema.errors_len(1)",
+  "caught_by": "four faults in one body are four errors"
+ },
+ {
+  "name": "last-user-unreadable",
+  "find": "if id < 1 || id > count {\n        return false;",
+  "replace": "if id < 1 || id >= count {\n        return false;",
+  "caught_by": "GET -> 200 application/json with the user"
+ }
+]

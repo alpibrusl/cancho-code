@@ -1,0 +1,3 @@
+json_type_ok: json_type_ok
+has_room: has_room
+app: *

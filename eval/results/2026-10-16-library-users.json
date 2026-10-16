@@ -1,0 +1,1411 @@
+{
+ "item": "services/users",
+ "model": "claude-haiku-5-5",
+ "date": "2026-10-16",
+ "max_tokens": 48000,
+ "cancho_rev": "2e72479d42535fb8becd58e9ad29310ca1c91831",
+ "arms": {
+  "A": "language page + service guide; the brief names the libraries and their entry points (no signatures, no docs)",
+  "B": "A + eval/primer-libs.md (docs excerpt with a complete small example)",
+  "C": "A + public signatures of both libraries only (eval/libsigs.py), no prose",
+  "D": "B without the sentence on decoding a JSON string (control: that sentence is language knowledge, not library API)"
+ },
+ "main": {
+  "A": {
+   "summary": {
+    "runs": 4,
+    "done": 0,
+    "attack_scores": [
+     "0/1",
+     "0/1",
+     "0/1",
+     "0/1"
+    ],
+    "cost_usd_total": 0.0902,
+    "cost_usd_mean": 0.0225,
+    "out_tokens_mean": 30155,
+    "in_tokens_mean_incl_cache": 181682,
+    "calls_mean": 8.0,
+    "seconds_mean": 131
+   },
+   "runs": [
+    {
+     "run": "A-users-1",
+     "verdict": "stuck",
+     "units": "2/3",
+     "attack": "0/1",
+     "calls": 8,
+     "out_tokens": 47369,
+     "thinking_tokens": 32351,
+     "in_tokens": 192178,
+     "cost_usd": 0.033532,
+     "seconds": 196.6,
+     "app_replies": 1,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "type-mismatch:expected `&?r3 Buffer`, found `Buffer`"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`string_value` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_string` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`JSON_STRING_DECODE` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_string` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "type-mismatch:expected `[byte]`, found `Buffer`"
+      }
+     ],
+     "real_calls": {},
+     "invented_calls": {},
+     "last_reply_calls_dispatch": false,
+     "last_reply_calls_validate": false,
+     "last_reply_calls_openapi": false,
+     "any_reply_calls_dispatch": false,
+     "any_reply_calls_validate": false,
+     "any_reply_calls_openapi": false,
+     "any_reply_hand_written_openapi": true
+    },
+    {
+     "run": "A-users-2",
+     "verdict": "stuck",
+     "units": "2/3",
+     "attack": "0/1",
+     "calls": 8,
+     "out_tokens": 29103,
+     "thinking_tokens": 17258,
+     "in_tokens": 186038,
+     "cost_usd": 0.022003,
+     "seconds": 126.8,
+     "app_replies": 2,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "type-mismatch:expected `as`, found `.`"
+      },
+      {
+       "outcome": "refused",
+       "sig": "region-not-in-scope:`c` is not a region in scope; a region comes from a `[&c]` parameter or a `borrow` block"
+      },
+      {
+       "outcome": "refused",
+       "sig": "region-not-in-scope:`s` is not a region in scope; a region comes from a `[&s]` parameter or a `borrow` block"
+      },
+      {
+       "outcome": "refused",
+       "sig": "region-not-in-scope:`d` is not a region in scope; a region comes from a `[&d]` parameter or a `borrow` block"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`text` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`string_value` is not a function in this program"
+      }
+     ],
+     "real_calls": {},
+     "invented_calls": {},
+     "last_reply_calls_dispatch": false,
+     "last_reply_calls_validate": false,
+     "last_reply_calls_openapi": false,
+     "any_reply_calls_dispatch": false,
+     "any_reply_calls_validate": false,
+     "any_reply_calls_openapi": false,
+     "any_reply_hand_written_openapi": true
+    },
+    {
+     "run": "A-users-3",
+     "verdict": "stuck",
+     "units": "2/3",
+     "attack": "0/1",
+     "calls": 8,
+     "out_tokens": 16641,
+     "thinking_tokens": 10427,
+     "in_tokens": 171263,
+     "cost_usd": 0.014295,
+     "seconds": 82.3,
+     "app_replies": 1,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "region-not-in-scope:`t` is not a region in scope; a region comes from a `[&t]` parameter or a `borrow` block"
+      },
+      {
+       "outcome": "refused",
+       "sig": "region-not-in-scope:`n` is not a region in scope; a region comes from a `[&n]` parameter or a `borrow` block"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`text` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`string` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_string` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_text` is not a function in this program"
+      }
+     ],
+     "real_calls": {},
+     "invented_calls": {},
+     "last_reply_calls_dispatch": false,
+     "last_reply_calls_validate": false,
+     "last_reply_calls_openapi": false,
+     "any_reply_calls_dispatch": false,
+     "any_reply_calls_validate": false,
+     "any_reply_calls_openapi": false,
+     "any_reply_hand_written_openapi": false
+    },
+    {
+     "run": "A-users-4",
+     "verdict": "stuck",
+     "units": "2/3",
+     "attack": "0/1",
+     "calls": 8,
+     "out_tokens": 27508,
+     "thinking_tokens": 15834,
+     "in_tokens": 177250,
+     "cost_usd": 0.020327,
+     "seconds": 118.1,
+     "app_replies": 3,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "region-not-in-scope:`r` is not a region in scope; a region comes from a `[&r]` parameter or a `borrow` block"
+      },
+      {
+       "outcome": "refused",
+       "sig": "region-not-in-scope:`s` is not a region in scope; a region comes from a `[&s]` parameter or a `borrow` block"
+      },
+      {
+       "outcome": "refused",
+       "sig": "region-not-in-scope:`t` is not a region in scope; a region comes from a `[&t]` parameter or a `borrow` block"
+      },
+      {
+       "outcome": "refused",
+       "sig": "unknown-name:unknown type `Writer`"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-slice:`&a Box[[int]]` is not a slice, so it has no elements to index or take a range of"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_text` is not a function in this program"
+      }
+     ],
+     "real_calls": {},
+     "invented_calls": {},
+     "last_reply_calls_dispatch": false,
+     "last_reply_calls_validate": false,
+     "last_reply_calls_openapi": false,
+     "any_reply_calls_dispatch": false,
+     "any_reply_calls_validate": false,
+     "any_reply_calls_openapi": false,
+     "any_reply_hand_written_openapi": true
+    }
+   ]
+  },
+  "B": {
+   "summary": {
+    "runs": 4,
+    "done": 4,
+    "attack_scores": [
+     "147/147",
+     "147/147",
+     "147/147",
+     "147/147"
+    ],
+    "cost_usd_total": 0.076,
+    "cost_usd_mean": 0.019,
+    "out_tokens_mean": 31449,
+    "in_tokens_mean_incl_cache": 103667,
+    "calls_mean": 4.0,
+    "seconds_mean": 127
+   },
+   "runs": [
+    {
+     "run": "B-users-1",
+     "verdict": "done",
+     "units": "3/3",
+     "attack": "147/147",
+     "calls": 5,
+     "out_tokens": 32634,
+     "thinking_tokens": 23434,
+     "in_tokens": 136769,
+     "cost_usd": 0.02282,
+     "seconds": 130.6,
+     "app_replies": 2,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "region-not-in-scope:`r` is not a region in scope; a region comes from a `[&r]` parameter or a `borrow` block"
+      },
+      {
+       "outcome": "refused",
+       "sig": "unknown-name:`App` has no field `new_user`"
+      },
+      {
+       "outcome": "verified",
+       "sig": ""
+      }
+     ],
+     "real_calls": {
+      "schema.slot_count": 1,
+      "schema.errors_len": 1,
+      "schema.validate": 1,
+      "schema.problem": 1,
+      "schema.empty": 2,
+      "schema.new_string": 4,
+      "schema.new_int": 10,
+      "schema.new_object": 8,
+      "schema.add_field": 22,
+      "schema.int_max": 6,
+      "schema.new_array": 2,
+      "web.empty": 2,
+      "web.operation": 8,
+      "web.query_param": 2,
+      "web.respond": 6,
+      "web.respond_problem": 18,
+      "web.body": 2,
+      "web.response_header": 2,
+      "web.path_param": 4,
+      "web.respond_empty": 2,
+      "web.internal": 2,
+      "web.component": 6,
+      "web.default_int": 2,
+      "web.openapi": 2,
+      "web.most_params": 4,
+      "web.most_args": 2,
+      "web.slot": 6,
+      "web.dispatch": 1,
+      "web.answered": 1,
+      "web.int_arg": 3,
+      "schema.drop": 2,
+      "web.drop": 2
+     },
+     "invented_calls": {},
+     "last_reply_calls_dispatch": false,
+     "last_reply_calls_validate": false,
+     "last_reply_calls_openapi": true,
+     "any_reply_calls_dispatch": true,
+     "any_reply_calls_validate": true,
+     "any_reply_calls_openapi": true,
+     "any_reply_hand_written_openapi": false
+    },
+    {
+     "run": "B-users-2",
+     "verdict": "done",
+     "units": "3/3",
+     "attack": "147/147",
+     "calls": 3,
+     "out_tokens": 34139,
+     "thinking_tokens": 27477,
+     "in_tokens": 70913,
+     "cost_usd": 0.018378,
+     "seconds": 135.2,
+     "app_replies": 1,
+     "app_attempts": [
+      {
+       "outcome": "verified",
+       "sig": ""
+      }
+     ],
+     "real_calls": {
+      "schema.slot_count": 1,
+      "schema.errors_len": 1,
+      "schema.validate": 1,
+      "schema.problem": 1,
+      "web.int_arg": 3,
+      "web.dispatch": 1,
+      "web.answered": 1,
+      "schema.empty": 1,
+      "schema.new_string": 2,
+      "schema.new_int": 5,
+      "schema.new_object": 4,
+      "schema.add_field": 13,
+      "schema.int_max": 3,
+      "schema.new_array": 1,
+      "schema.new_any": 1,
+      "web.empty": 1,
+      "web.operation": 4,
+      "web.body": 1,
+      "web.respond": 3,
+      "web.response_header": 1,
+      "web.respond_problem": 9,
+      "web.query_param": 1,
+      "web.default_int": 1,
+      "web.path_param": 2,
+      "web.respond_empty": 1,
+      "web.internal": 1,
+      "web.component": 2,
+      "web.openapi": 1,
+      "web.most_params": 2,
+      "web.most_args": 1,
+      "web.slot": 3,
+      "schema.drop": 1,
+      "web.drop": 1
+     },
+     "invented_calls": {},
+     "last_reply_calls_dispatch": true,
+     "last_reply_calls_validate": true,
+     "last_reply_calls_openapi": true,
+     "any_reply_calls_dispatch": true,
+     "any_reply_calls_validate": true,
+     "any_reply_calls_openapi": true,
+     "any_reply_hand_written_openapi": false
+    },
+    {
+     "run": "B-users-3",
+     "verdict": "done",
+     "units": "3/3",
+     "attack": "147/147",
+     "calls": 4,
+     "out_tokens": 30943,
+     "thinking_tokens": 24172,
+     "in_tokens": 103549,
+     "cost_usd": 0.018116,
+     "seconds": 127.5,
+     "app_replies": 1,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "region-not-in-scope:`d` is not a region in scope; a region comes from a `[&d]` parameter or a `borrow` block"
+      },
+      {
+       "outcome": "verified",
+       "sig": ""
+      }
+     ],
+     "real_calls": {
+      "web.int_arg": 3,
+      "schema.to_int": 1,
+      "schema.slot_count": 1,
+      "schema.errors_len": 1,
+      "schema.validate": 1,
+      "schema.problem": 1,
+      "schema.empty": 1,
+      "schema.new_string": 2,
+      "schema.new_int": 5,
+      "schema.new_object": 4,
+      "schema.add_field": 11,
+      "schema.int_max": 3,
+      "schema.new_array": 1,
+      "web.empty": 1,
+      "web.operation": 4,
+      "web.query_param": 1,
+      "web.respond": 3,
+      "web.respond_problem": 9,
+      "web.body": 1,
+      "web.response_header": 1,
+      "web.path_param": 2,
+      "web.respond_empty": 1,
+      "web.internal": 1,
+      "web.component": 2,
+      "web.default_int": 1,
+      "web.openapi": 1,
+      "web.most_params": 1,
+      "web.most_args": 1,
+      "web.slot": 3,
+      "web.dispatch": 1,
+      "web.answered": 1,
+      "schema.drop": 1,
+      "web.drop": 1
+     },
+     "invented_calls": {},
+     "last_reply_calls_dispatch": true,
+     "last_reply_calls_validate": true,
+     "last_reply_calls_openapi": true,
+     "any_reply_calls_dispatch": true,
+     "any_reply_calls_validate": true,
+     "any_reply_calls_openapi": true,
+     "any_reply_hand_written_openapi": false
+    },
+    {
+     "run": "B-users-4",
+     "verdict": "done",
+     "units": "3/3",
+     "attack": "147/147",
+     "calls": 4,
+     "out_tokens": 28080,
+     "thinking_tokens": 21639,
+     "in_tokens": 103437,
+     "cost_usd": 0.016674,
+     "seconds": 115.4,
+     "app_replies": 1,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "region-not-in-scope:`h` is not a region in scope; a region comes from a `[&h]` parameter or a `borrow` block"
+      },
+      {
+       "outcome": "verified",
+       "sig": ""
+      }
+     ],
+     "real_calls": {
+      "schema.slot_count": 1,
+      "schema.errors_len": 1,
+      "schema.validate": 1,
+      "schema.problem": 1,
+      "schema.to_int": 1,
+      "schema.empty": 1,
+      "schema.new_string": 2,
+      "schema.new_int": 5,
+      "schema.new_object": 4,
+      "schema.add_field": 11,
+      "schema.int_max": 4,
+      "schema.new_array": 1,
+      "web.empty": 1,
+      "web.operation": 4,
+      "web.query_param": 1,
+      "web.respond": 3,
+      "web.respond_problem": 9,
+      "web.body": 1,
+      "web.response_header": 1,
+      "web.path_param": 2,
+      "web.respond_empty": 1,
+      "web.internal": 1,
+      "web.component": 3,
+      "web.default_int": 1,
+      "web.openapi": 1,
+      "web.most_params": 2,
+      "web.most_args": 1,
+      "web.slot": 2,
+      "web.dispatch": 1,
+      "web.answered": 1,
+      "web.int_arg": 3,
+      "schema.drop": 1,
+      "web.drop": 1
+     },
+     "invented_calls": {},
+     "last_reply_calls_dispatch": true,
+     "last_reply_calls_validate": true,
+     "last_reply_calls_openapi": true,
+     "any_reply_calls_dispatch": true,
+     "any_reply_calls_validate": true,
+     "any_reply_calls_openapi": true,
+     "any_reply_hand_written_openapi": false
+    }
+   ]
+  },
+  "C": {
+   "summary": {
+    "runs": 4,
+    "done": 0,
+    "attack_scores": [
+     "0/1",
+     "0/1",
+     "0/1",
+     "0/1"
+    ],
+    "cost_usd_total": 0.1182,
+    "cost_usd_mean": 0.0295,
+    "out_tokens_mean": 43988,
+    "in_tokens_mean_incl_cache": 200104,
+    "calls_mean": 7.2,
+    "seconds_mean": 182
+   },
+   "runs": [
+    {
+     "run": "C-users-1",
+     "verdict": "stuck",
+     "units": "2/3",
+     "attack": "0/1",
+     "calls": 4,
+     "out_tokens": 19306,
+     "thinking_tokens": 12445,
+     "in_tokens": 97046,
+     "cost_usd": 0.01446,
+     "seconds": 83.5,
+     "app_replies": 1,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "type-mismatch:expected `as`, found `.`"
+      },
+      {
+       "outcome": "refused",
+       "sig": "type-mismatch:expected `as`, found `.`"
+      }
+     ],
+     "real_calls": {
+      "schema.empty": 1,
+      "schema.new_string": 1,
+      "schema.new_int": 2,
+      "schema.new_object": 1,
+      "schema.add_field": 2,
+      "web.empty": 1,
+      "web.operation": 4,
+      "web.query_param": 1,
+      "web.default_int": 1,
+      "web.path_param": 2,
+      "web.most_params": 1,
+      "web.most_args": 1,
+      "schema.slot_count": 1,
+      "schema.errors_len": 1,
+      "schema.validate": 1,
+      "schema.error_count": 1,
+      "schema.problem": 1,
+      "schema.to_int": 1,
+      "web.int_arg": 2,
+      "web.openapi": 1,
+      "web.dispatch": 1,
+      "web.drop": 1,
+      "schema.drop": 1
+     },
+     "invented_calls": {},
+     "last_reply_calls_dispatch": true,
+     "last_reply_calls_validate": true,
+     "last_reply_calls_openapi": true,
+     "any_reply_calls_dispatch": true,
+     "any_reply_calls_validate": true,
+     "any_reply_calls_openapi": true,
+     "any_reply_hand_written_openapi": false
+    },
+    {
+     "run": "C-users-2",
+     "verdict": "stuck",
+     "units": "2/3",
+     "attack": "0/1",
+     "calls": 8,
+     "out_tokens": 54899,
+     "thinking_tokens": 43957,
+     "in_tokens": 225616,
+     "cost_usd": 0.035622,
+     "seconds": 231.0,
+     "app_replies": 3,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "type-mismatch:expected `[int]`, found `Box[[int]]`"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_text` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_string` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`decode` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`name_of` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`text` is not a function in this program"
+      }
+     ],
+     "real_calls": {
+      "web.int_arg": 3,
+      "web.slot": 3,
+      "schema.slot_count": 3,
+      "schema.errors_len": 3,
+      "schema.validate": 3,
+      "schema.error_count": 3,
+      "schema.problem": 3,
+      "schema.to_int": 3,
+      "schema.empty": 1,
+      "schema.new_string": 2,
+      "schema.new_int": 5,
+      "schema.new_object": 4,
+      "schema.add_field": 11,
+      "schema.int_max": 4,
+      "schema.new_array": 1,
+      "web.empty": 1,
+      "web.operation": 4,
+      "web.query_param": 1,
+      "web.default_int": 1,
+      "web.respond": 3,
+      "web.respond_problem": 9,
+      "web.body": 1,
+      "web.response_header": 1,
+      "web.path_param": 2,
+      "web.respond_empty": 1,
+      "web.openapi": 2,
+      "web.most_params": 2,
+      "web.most_args": 2,
+      "web.dispatch": 2,
+      "web.answered": 2,
+      "web.drop": 1,
+      "schema.drop": 1
+     },
+     "invented_calls": {},
+     "last_reply_calls_dispatch": false,
+     "last_reply_calls_validate": true,
+     "last_reply_calls_openapi": false,
+     "any_reply_calls_dispatch": true,
+     "any_reply_calls_validate": true,
+     "any_reply_calls_openapi": true,
+     "any_reply_hand_written_openapi": false
+    },
+    {
+     "run": "C-users-3",
+     "verdict": "stuck",
+     "units": "2/3",
+     "attack": "0/1",
+     "calls": 8,
+     "out_tokens": 49749,
+     "thinking_tokens": 31801,
+     "in_tokens": 223223,
+     "cost_usd": 0.032807,
+     "seconds": 201.3,
+     "app_replies": 2,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "type-mismatch:expected `as`, found `.`"
+      },
+      {
+       "outcome": "refused",
+       "sig": "type-mismatch:expected `&?r71 Schema`, found `Schema`"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`text` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_text` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_string` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_text` is not a function in this program"
+      }
+     ],
+     "real_calls": {
+      "schema.empty": 2,
+      "schema.new_string": 2,
+      "schema.new_int": 8,
+      "schema.int_max": 4,
+      "schema.new_object": 6,
+      "schema.add_field": 14,
+      "schema.new_array": 2,
+      "web.empty": 2,
+      "web.operation": 8,
+      "web.query_param": 2,
+      "web.default_int": 2,
+      "web.respond": 6,
+      "web.respond_problem": 18,
+      "web.body": 2,
+      "web.response_header": 2,
+      "web.path_param": 4,
+      "web.respond_empty": 2,
+      "web.drop": 2,
+      "schema.drop": 2,
+      "schema.slot_count": 2,
+      "schema.errors_len": 2,
+      "schema.validate": 2,
+      "schema.problem": 2,
+      "schema.to_int": 2,
+      "web.openapi": 2,
+      "web.dispatch": 2,
+      "web.answered": 4,
+      "web.slot": 4,
+      "web.int_arg": 4
+     },
+     "invented_calls": {},
+     "last_reply_calls_dispatch": true,
+     "last_reply_calls_validate": true,
+     "last_reply_calls_openapi": true,
+     "any_reply_calls_dispatch": true,
+     "any_reply_calls_validate": true,
+     "any_reply_calls_openapi": true,
+     "any_reply_hand_written_openapi": false
+    },
+    {
+     "run": "C-users-4",
+     "verdict": "stuck",
+     "units": "2/3",
+     "attack": "0/1",
+     "calls": 9,
+     "out_tokens": 51998,
+     "thinking_tokens": 35914,
+     "in_tokens": 254533,
+     "cost_usd": 0.035263,
+     "seconds": 214.0,
+     "app_replies": 4,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "type-mismatch:expected `as`, found `.`"
+      },
+      {
+       "outcome": "refused",
+       "sig": "region-not-in-scope:`a` is not a region in scope; a region comes from a `[&a]` parameter or a `borrow` block"
+      },
+      {
+       "outcome": "refused",
+       "sig": "type-mismatch:expected `[int]`, found `Box[[int]]`"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_text` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_string` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`unescape_into` is not a function in this program"
+      }
+     ],
+     "real_calls": {
+      "schema.empty": 1,
+      "schema.new_string": 1,
+      "schema.new_int": 4,
+      "schema.new_object": 3,
+      "schema.add_field": 7,
+      "schema.int_max": 2,
+      "schema.new_array": 1,
+      "web.empty": 1,
+      "web.operation": 4,
+      "web.query_param": 1,
+      "web.path_param": 2,
+      "web.internal": 1,
+      "web.body": 1,
+      "web.respond": 3,
+      "web.respond_problem": 9,
+      "web.response_header": 1,
+      "web.respond_empty": 1,
+      "web.default_int": 1,
+      "schema.drop": 1,
+      "web.drop": 1,
+      "schema.errors_len": 3,
+      "schema.slot_count": 3,
+      "schema.validate": 3,
+      "schema.error_count": 3,
+      "schema.problem": 3,
+      "web.openapi": 2,
+      "web.most_params": 3,
+      "web.most_args": 3,
+      "web.dispatch": 3,
+      "web.int_arg": 6,
+      "web.slot": 6
+     },
+     "invented_calls": {},
+     "last_reply_calls_dispatch": true,
+     "last_reply_calls_validate": true,
+     "last_reply_calls_openapi": false,
+     "any_reply_calls_dispatch": true,
+     "any_reply_calls_validate": true,
+     "any_reply_calls_openapi": true,
+     "any_reply_hand_written_openapi": false
+    }
+   ]
+  },
+  "D": {
+   "summary": {
+    "runs": 4,
+    "done": 3,
+    "attack_scores": [
+     "0/1",
+     "147/147",
+     "147/147",
+     "147/147"
+    ],
+    "cost_usd_total": 0.1052,
+    "cost_usd_mean": 0.0263,
+    "out_tokens_mean": 38603,
+    "in_tokens_mean_incl_cache": 193338,
+    "calls_mean": 6.8,
+    "seconds_mean": 160
+   },
+   "runs": [
+    {
+     "run": "D-users-1",
+     "verdict": "stuck",
+     "units": "2/3",
+     "attack": "0/1",
+     "calls": 8,
+     "out_tokens": 40189,
+     "thinking_tokens": 24419,
+     "in_tokens": 231725,
+     "cost_usd": 0.03037,
+     "seconds": 164.0,
+     "app_replies": 5,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "region-not-in-scope:`r` is not a region in scope; a region comes from a `[&r]` parameter or a `borrow` block"
+      },
+      {
+       "outcome": "refused",
+       "sig": "region-not-in-scope:`t` is not a region in scope; a region comes from a `[&t]` parameter or a `borrow` block"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_string` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_text` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_string` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "borrow-conflict:`errs` is uniquely borrowed here, so nothing else may read it; the reference is the only way t"
+      }
+     ],
+     "real_calls": {
+      "schema.empty": 1,
+      "schema.new_string": 2,
+      "schema.new_int": 5,
+      "schema.new_object": 4,
+      "schema.add_field": 11,
+      "schema.int_max": 4,
+      "schema.new_array": 1,
+      "web.empty": 1,
+      "web.operation": 4,
+      "web.query_param": 1,
+      "web.respond": 3,
+      "web.respond_problem": 9,
+      "web.body": 1,
+      "web.response_header": 1,
+      "web.path_param": 2,
+      "web.respond_empty": 1,
+      "web.internal": 1,
+      "web.component": 4,
+      "web.default_int": 1,
+      "web.openapi": 1,
+      "web.most_params": 2,
+      "web.most_args": 1,
+      "web.slot": 2,
+      "web.dispatch": 4,
+      "web.answered": 4,
+      "web.int_arg": 12,
+      "schema.slot_count": 4,
+      "schema.errors_len": 4,
+      "schema.validate": 4,
+      "schema.problem": 4,
+      "schema.drop": 1,
+      "web.drop": 1
+     },
+     "invented_calls": {},
+     "last_reply_calls_dispatch": true,
+     "last_reply_calls_validate": true,
+     "last_reply_calls_openapi": false,
+     "any_reply_calls_dispatch": true,
+     "any_reply_calls_validate": true,
+     "any_reply_calls_openapi": true,
+     "any_reply_hand_written_openapi": false
+    },
+    {
+     "run": "D-users-2",
+     "verdict": "done",
+     "units": "3/3",
+     "attack": "147/147",
+     "calls": 8,
+     "out_tokens": 47967,
+     "thinking_tokens": 31900,
+     "in_tokens": 235784,
+     "cost_usd": 0.032213,
+     "seconds": 199.4,
+     "app_replies": 2,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "region-not-in-scope:`t` is not a region in scope; a region comes from a `[&t]` parameter or a `borrow` block"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_string` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`string_bytes` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "acceptance:  - a name with a quote, an accent and an escape round-trips: body check failed - {\"id\":3,\"name\":\"Z"
+      },
+      {
+       "outcome": "refused",
+       "sig": "acceptance:  - a name with a quote, an accent and an escape round-trips: body check failed - {\"id\":3,\"name\":\"Z"
+      },
+      {
+       "outcome": "verified",
+       "sig": ""
+      }
+     ],
+     "real_calls": {
+      "schema.slot_count": 1,
+      "schema.errors_len": 1,
+      "schema.validate": 1,
+      "schema.problem": 1,
+      "schema.empty": 2,
+      "schema.new_string": 4,
+      "schema.new_int": 12,
+      "schema.new_object": 8,
+      "schema.add_field": 22,
+      "schema.int_max": 8,
+      "schema.new_array": 2,
+      "web.empty": 2,
+      "web.operation": 8,
+      "web.body": 2,
+      "web.respond": 6,
+      "web.response_header": 2,
+      "web.respond_problem": 18,
+      "web.query_param": 2,
+      "web.path_param": 4,
+      "web.respond_empty": 2,
+      "web.internal": 2,
+      "web.component": 8,
+      "web.default_int": 2,
+      "web.openapi": 2,
+      "web.most_params": 4,
+      "web.most_args": 4,
+      "web.slot": 4,
+      "web.dispatch": 2,
+      "web.answered": 2,
+      "web.int_arg": 6,
+      "schema.drop": 2,
+      "web.drop": 2
+     },
+     "invented_calls": {},
+     "last_reply_calls_dispatch": true,
+     "last_reply_calls_validate": false,
+     "last_reply_calls_openapi": true,
+     "any_reply_calls_dispatch": true,
+     "any_reply_calls_validate": true,
+     "any_reply_calls_openapi": true,
+     "any_reply_hand_written_openapi": false
+    },
+    {
+     "run": "D-users-3",
+     "verdict": "done",
+     "units": "3/3",
+     "attack": "147/147",
+     "calls": 6,
+     "out_tokens": 34708,
+     "thinking_tokens": 24409,
+     "in_tokens": 170801,
+     "cost_usd": 0.022922,
+     "seconds": 146.5,
+     "app_replies": 1,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_string` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "acceptance:  - a name with a quote, an accent and an escape round-trips: body check failed - {\"id\":3,\"name\":\"Z"
+      },
+      {
+       "outcome": "refused",
+       "sig": "type-mismatch:expected `&?r65 Buffer`, found `Buffer`"
+      },
+      {
+       "outcome": "verified",
+       "sig": ""
+      }
+     ],
+     "real_calls": {
+      "schema.to_int": 1,
+      "schema.slot_count": 1,
+      "schema.errors_len": 1,
+      "schema.validate": 1,
+      "schema.problem": 1,
+      "schema.empty": 1,
+      "schema.new_string": 2,
+      "schema.new_int": 5,
+      "schema.new_object": 4,
+      "schema.add_field": 10,
+      "schema.int_max": 3,
+      "schema.new_array": 1,
+      "web.empty": 1,
+      "web.operation": 4,
+      "web.query_param": 1,
+      "web.respond": 3,
+      "web.respond_problem": 9,
+      "web.body": 1,
+      "web.response_header": 1,
+      "web.path_param": 2,
+      "web.respond_empty": 1,
+      "web.internal": 1,
+      "web.component": 3,
+      "web.default_int": 1,
+      "web.openapi": 1,
+      "web.most_params": 2,
+      "web.most_args": 1,
+      "web.slot": 2,
+      "web.dispatch": 1,
+      "web.answered": 1,
+      "web.int_arg": 3,
+      "schema.drop": 1,
+      "web.drop": 1
+     },
+     "invented_calls": {},
+     "last_reply_calls_dispatch": true,
+     "last_reply_calls_validate": true,
+     "last_reply_calls_openapi": true,
+     "any_reply_calls_dispatch": true,
+     "any_reply_calls_validate": true,
+     "any_reply_calls_openapi": true,
+     "any_reply_hand_written_openapi": false
+    },
+    {
+     "run": "D-users-4",
+     "verdict": "done",
+     "units": "3/3",
+     "attack": "147/147",
+     "calls": 5,
+     "out_tokens": 31547,
+     "thinking_tokens": 21424,
+     "in_tokens": 135041,
+     "cost_usd": 0.019683,
+     "seconds": 129.8,
+     "app_replies": 3,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`decode_string` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`unescape_into` is not a function in this program"
+      },
+      {
+       "outcome": "verified",
+       "sig": ""
+      }
+     ],
+     "real_calls": {
+      "schema.empty": 1,
+      "schema.new_string": 2,
+      "schema.new_int": 5,
+      "schema.new_object": 4,
+      "schema.add_field": 9,
+      "schema.int_max": 3,
+      "schema.new_array": 1,
+      "web.empty": 1,
+      "web.operation": 4,
+      "web.body": 1,
+      "web.respond": 3,
+      "web.response_header": 1,
+      "web.respond_problem": 9,
+      "web.query_param": 1,
+      "web.default_int": 1,
+      "web.path_param": 2,
+      "web.respond_empty": 1,
+      "web.internal": 1,
+      "web.component": 2,
+      "web.openapi": 1,
+      "web.most_params": 2,
+      "web.most_args": 1,
+      "web.slot": 2,
+      "web.dispatch": 3,
+      "web.answered": 3,
+      "web.int_arg": 9,
+      "schema.slot_count": 3,
+      "schema.errors_len": 3,
+      "schema.validate": 3,
+      "schema.problem": 3,
+      "schema.drop": 2,
+      "web.drop": 2
+     },
+     "invented_calls": {},
+     "last_reply_calls_dispatch": true,
+     "last_reply_calls_validate": true,
+     "last_reply_calls_openapi": false,
+     "any_reply_calls_dispatch": true,
+     "any_reply_calls_validate": true,
+     "any_reply_calls_openapi": true,
+     "any_reply_hand_written_openapi": false
+    }
+   ]
+  }
+ },
+ "pilot_brief_v1": {
+  "A": {
+   "summary": {
+    "runs": 2,
+    "done": 0,
+    "attack_scores": [
+     "0/1",
+     "0/1"
+    ],
+    "cost_usd_total": 0.058,
+    "cost_usd_mean": 0.029,
+    "out_tokens_mean": 42054,
+    "in_tokens_mean_incl_cache": 182446,
+    "calls_mean": 8.0,
+    "seconds_mean": 172
+   },
+   "runs": [
+    {
+     "run": "A-users-1",
+     "verdict": "stuck",
+     "units": "2/3",
+     "attack": "0/1",
+     "calls": 8,
+     "out_tokens": 45853,
+     "thinking_tokens": 31734,
+     "in_tokens": 184561,
+     "cost_usd": 0.032012,
+     "seconds": 191.5,
+     "app_replies": 4,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "not-a-slice:`&a Box[[int]]` is not a slice, so it has no elements to index or take a range of"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-public:function `put_raw` is not `pub`, so it cannot be reached from another module"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`string_bytes` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`member_count` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`to_string` is not a function in this program"
+      },
+      {
+       "outcome": "refused",
+       "sig": "not-a-function:`text` is not a function in this program"
+      }
+     ],
+     "real_calls": {},
+     "invented_calls": {},
+     "last_reply_calls_dispatch": false,
+     "last_reply_calls_validate": false,
+     "last_reply_calls_openapi": false,
+     "any_reply_calls_dispatch": false,
+     "any_reply_calls_validate": false,
+     "any_reply_calls_openapi": false,
+     "any_reply_hand_written_openapi": true
+    },
+    {
+     "run": "A-users-2",
+     "verdict": "stuck",
+     "units": "2/3",
+     "attack": "0/1",
+     "calls": 8,
+     "out_tokens": 38256,
+     "thinking_tokens": 20046,
+     "in_tokens": 180330,
+     "cost_usd": 0.02601,
+     "seconds": 152.4,
+     "app_replies": 6,
+     "app_attempts": [
+      {
+       "outcome": "refused",
+       "sig": "unknown-name:unknown type `App`"
+      },
+      {
+       "outcome": "refused",
+       "sig": "arity-mismatch:`new_object` takes # arguments, but # were given"
+      },
+      {
+       "outcome": "refused",
+       "sig": "type-mismatch:expected `Schema`, found `int`"
+      },
+      {
+       "outcome": "refused",
+       "sig": "arity-mismatch:`empty` takes # argument, but # were given"
+      },
+      {
+       "outcome": "refused",
+       "sig": "arity-mismatch:`new_object` takes # arguments, but # were given"
+      },
+      {
+       "outcome": "refused",
+       "sig": "type-mismatch:expected `Schema`, found `(Schema, int)`"
+      }
+     ],
+     "real_calls": {
+      "schema.new_object": 5,
+      "schema.new_string": 5,
+      "schema.new_int": 5,
+      "schema.add_field": 10,
+      "web.empty": 6,
+      "web.openapi": 6,
+      "schema.validate": 6,
+      "schema.errors_len": 6,
+      "schema.problem": 6,
+      "schema.drop": 12,
+      "schema.empty": 3,
+      "web.drop": 3
+     },
+     "invented_calls": {},
+     "last_reply_calls_dispatch": false,
+     "last_reply_calls_validate": true,
+     "last_reply_calls_openapi": true,
+     "any_reply_calls_dispatch": false,
+     "any_reply_calls_validate": true,
+     "any_reply_calls_openapi": true,
+     "any_reply_hand_written_openapi": false
+    }
+   ]
+  },
+  "B": {
+   "summary": {
+    "runs": 2,
+    "done": 2,
+    "attack_scores": [
+     "141/146",
+     "139/146"
+    ],
+    "cost_usd_total": 0.0324,
+    "cost_usd_mean": 0.0162,
+    "out_tokens_mean": 27390,
+    "in_tokens_mean_incl_cache": 69827,
+    "calls_mean": 3.0,
+    "seconds_mean": 111
+   },
+   "runs": [
+    {
+     "run": "B-users-1",
+     "verdict": "done",
+     "units": "3/3",
+     "attack": "141/146",
+     "calls": 3,
+     "out_tokens": 27492,
+     "thinking_tokens": 21475,
+     "in_tokens": 69764,
+     "cost_usd": 0.017452,
+     "seconds": 111.6,
+     "app_replies": 1,
+     "app_attempts": [
+      {
+       "outcome": "verified",
+       "sig": ""
+      }
+     ],
+     "real_calls": {
+      "schema.empty": 1,
+      "schema.new_string": 1,
+      "schema.new_int": 3,
+      "schema.new_object": 1,
+      "schema.add_field": 2,
+      "schema.int_max": 1,
+      "web.empty": 1,
+      "web.operation": 4,
+      "web.query_param": 1,
+      "web.default_int": 1,
+      "web.respond_empty": 13,
+      "web.body": 1,
+      "web.path_param": 2,
+      "web.internal": 1,
+      "web.openapi": 1,
+      "web.most_params": 2,
+      "web.most_args": 1,
+      "web.slot": 2,
+      "schema.to_int": 1,
+      "schema.slot_count": 1,
+      "schema.errors_len": 1,
+      "schema.validate": 1,
+      "schema.problem": 1,
+      "web.dispatch": 1,
+      "web.answered": 1,
+      "web.int_arg": 2,
+      "schema.drop": 1,
+      "web.drop": 1
+     },
+     "invented_calls": {},
+     "last_reply_calls_dispatch": true,
+     "last_reply_calls_validate": true,
+     "last_reply_calls_openapi": true,
+     "any_reply_calls_dispatch": true,
+     "any_reply_calls_validate": true,
+     "any_reply_calls_openapi": true,
+     "any_reply_hand_written_openapi": false
+    },
+    {
+     "run": "B-users-2",
+     "verdict": "done",
+     "units": "3/3",
+     "attack": "139/146",
+     "calls": 3,
+     "out_tokens": 27287,
+     "thinking_tokens": 21584,
+     "in_tokens": 69890,
+     "cost_usd": 0.014935,
+     "seconds": 110.6,
+     "app_replies": 1,
+     "app_attempts": [
+      {
+       "outcome": "verified",
+       "sig": ""
+      }
+     ],
+     "real_calls": {
+      "schema.empty": 1,
+      "schema.new_string": 1,
+      "schema.new_int": 3,
+      "schema.new_object": 1,
+      "schema.add_field": 2,
+      "schema.int_max": 1,
+      "web.empty": 1,
+      "web.operation": 4,
+      "web.body": 1,
+      "web.respond_empty": 11,
+      "web.query_param": 1,
+      "web.default_int": 1,
+      "web.path_param": 2,
+      "web.internal": 1,
+      "web.openapi": 1,
+      "web.most_params": 2,
+      "web.most_args": 2,
+      "web.slot": 3,
+      "web.dispatch": 1,
+      "web.answered": 1,
+      "web.int_arg": 3,
+      "schema.slot_count": 1,
+      "schema.errors_len": 1,
+      "schema.validate": 1,
+      "schema.problem": 1,
+      "schema.to_int": 1,
+      "schema.drop": 1,
+      "web.drop": 1
+     },
+     "invented_calls": {},
+     "last_reply_calls_dispatch": true,
+     "last_reply_calls_validate": true,
+     "last_reply_calls_openapi": true,
+     "any_reply_calls_dispatch": true,
+     "any_reply_calls_validate": true,
+     "any_reply_calls_openapi": true,
+     "any_reply_hand_written_openapi": false
+    }
+   ]
+  }
+ }
+}
