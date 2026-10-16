@@ -17,8 +17,8 @@
 #   workspace the id is sent as anthropic-workspace-id only when named
 #   thinking  thinking and effort are sent only when named; a bad value is exit 2 and no request; an all-thinking reply says so
 #   cut off   a reply that stopped at max_tokens is retried, never written, and the next request has the bound doubled (at most 32000)
-#   no program three replies with no program in them: exit 1, the file untouched
-#   error     an HTTP error is exit 1 with the API's own message, one request, the file untouched
+#   no program three replies with no program in them: exit 11 (gave up); every sample cut off by the bound: exit 10; the file untouched
+#   error     an HTTP error is exit 1 (the provider failed, not "gave up") with the API's own message, one request, the file untouched
 #   required  no --provider, no --model: exit 2 before any request (there is no default)
 #   tls       the server is verified against --roots; a bundle without the CA, a certificate for another name, no server: refused, file untouched
 #   env       it works with no environment at all (env -i)
@@ -315,14 +315,14 @@ stop; start
 printf 'I think the problem is the return type; let me reason about it for a while.\n' > "$d/response.txt"
 broken; cp "$F" "$d/before.cho"
 agent >"$d/out.txt" 2>"$d/err.txt"; rc=$?
-expect "no program: exit 1" "$rc" 1
+expect "no program: exit 11 (gave up, no program)" "$rc" 11
 expect "no program: three samples" "$(count)" 3
 expect "no program: the file is untouched" "$(cat "$F")" "$(cat "$d/before.cho")"
 # an all-thinking reply (cut off, no text) is retried and written never
 stop; start
 rm -f "$d/response"*; : > "$d/response.txt"; printf 'max_tokens' > "$d/response.1.stop"; printf 'max_tokens' > "$d/response.2.stop"; printf 'max_tokens' > "$d/response.3.stop"
 broken; agent >"$d/out.txt" 2>"$d/err.txt"; rc=$?
-expect "all thinking: exit 1" "$rc" 1
+expect "all thinking: exit 10 (gave up, every sample cut off)" "$rc" 10
 expect "all thinking: the file is untouched" "$(cat "$F")" "$(cat "$d/before.cho")"
 rm -f "$d/response"*
 
@@ -418,6 +418,7 @@ expect "tls: the file is untouched" "$(cat "$F")" "$(cat "$d/before.cho")"
 stop
 agent >"$d/out.txt" 2>"$d/err.txt"; rc=$?
 [ "$rc" != 0 ] || { echo "FAIL: away: exit 0 with no server" >&2; fail=1; }
+expect "away: no server is exit 1, not a gave-up code" "$rc" 1
 expect "away: the file is untouched" "$(cat "$F")" "$(cat "$d/before.cho")"
 
 # the wrapper: it resolves the host and finds the roots, with no environment but PATH; a flag after its own wins

@@ -7,7 +7,7 @@ module trail;
 // checker said on each attempt, which signature the stop rule compared, or how
 // long the agent took. The trail is that record:
 //
-//     {"attempt":N,"agent_ms":M,"outcome":"verified|refused|outage|defect","sig":"...","decision":"..."}
+//     {"attempt":N,"agent_ms":M,"outcome":"verified|refused|gave_up|outage|defect","sig":"...","decision":"..."}
 //
 // `sig` is the failure signature the same-signature rule compares (empty when
 // the file checked), JSON-escaped; `decision` is what the loop decided after
@@ -484,7 +484,8 @@ fn journal_attempt_record[&h, &x, &c, &z, &d, &u, &f, &cl, &k, &a, &s, &t, &ht](
     var named = buffer.empty(heap, 24);
     borrow outcome as &oq in {
         borrow decision as &dq in {
-            if bytes.starts_with(buffer.bytes(dq), "agent_") {
+          borrow sig as &gq in {
+            if bytes.starts_with(buffer.bytes(dq), "agent_") || bytes.starts_with(buffer.bytes(gq), "agent:gave-up:") {
                 named = buffer.append(heap, named, "agent_failed");
             } else if human {
                 named = buffer.append(heap, named, "human_patch");
@@ -493,6 +494,7 @@ fn journal_attempt_record[&h, &x, &c, &z, &d, &u, &f, &cl, &k, &a, &s, &t, &ht](
             } else {
                 named = buffer.append(heap, named, buffer.bytes(oq));
             }
+          }
         }
     }
     var agent_failed = false;
@@ -756,6 +758,38 @@ pub fn attempts_so_far[&z, &p](fs: &z Fs(""), trail_path: &p [byte]) -> [fs_read
         }
     }
     return n;
+}
+
+// The failure signature of the last attempt of the unit's trail when it was the agent giving up (`agent:gave-up:<why>`, src/driver.cho `gave_up_sig`), else empty:
+// what `run.log` says about a unit that ended stuck for that reason.
+pub fn gave_up_why[&h, &z, &p](heap: &!h Heap, fs: &z Fs(""), trail_path: &p [byte]) -> [heap, fs_read("")] buffer.Buffer {
+    var out = buffer.empty(heap, 32);
+    region r {
+        let text = alloc_slice[r](65536, byte_of(0));
+        let got = fs_read(fs, trail_path, text);
+        let key = "\"sig\":\"agent:gave-up:";
+        var i = 0;
+        var found = 0 - 1;
+        var last = 0 - 1;
+        while got > 0 && i + len(key) <= got {
+            if bytes.starts_with(text[i..got], key) {
+                found = i + 7;
+            }
+            if int_of(text[i]) == 10 {
+                last = found;
+                found = 0 - 1;
+            }
+            i = i + 1;
+        }
+        if last >= 0 {
+            var e = last;
+            while e < got && int_of(text[e]) != 34 {
+                e = e + 1;
+            }
+            out = buffer.append(heap, out, text[last..e]);
+        }
+    }
+    return out;
 }
 
 // `unit_end`: `state` is verified, stuck or unavailable; the attempts are counted from the trail of the unit (`trail_path`).

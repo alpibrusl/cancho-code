@@ -5,6 +5,8 @@
 #   plan      a valid plan inside prose and a fence is written (the same plan as JSON, one newline after, units without `cases` untouched); one request; the prompt
 #             holds the guide, the task and the required signatures
 #   feedback  a rejected plan is not written; the NEXT request carries the plan check's own report and the rejected plan; a good second plan is written
+#   brief names  a function the brief names (`- name(...) : ...`) that round 1 renames is refused IN THE ROUND, every missing name at once, with the exact action
+#             (the text "declare fn <name> with exactly this name"); round 2 fixes it and is written; both rounds are in the journal
 #   cases     a unit's `cases` (data) are expanded into its `tests` by src/cases.cho before the plan check; an expansion error is fed back like a plan-check error; the plan written has tests and no cases
 #   fallback  a signature `cases` cannot express: the report says to delete the unit's cases and write tests (and which types cases can express); a plan that does is accepted; the guide's own tests example compiles, passes, and fails when a value is flipped
 #   ceiling   every round rejected: exit 1, nothing written, the file that was there is untouched, the last report is on stderr
@@ -99,6 +101,45 @@ for want in "REJECTED" "no-example" "$BAD" "Reply again with the corrected JSON 
     case "$P2" in *"$want"*) ;; *) echo "FAIL: feedback: the second prompt lacks '$want'" >&2; fail=1 ;; esac
 done
 expect "feedback: usage outcomes" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog')])")" "['rejected', 'written']"
+stop
+
+# brief names: the brief states the public function's name (`- name(...) : what it does`); round 1 renames it and the plan is otherwise valid, so only the
+# brief-name check can refuse it. The refusal is fed back IN THE ROUND (src/plan.cho `brief_report`, the same check `build` keeps as a backstop), naming
+# every missing name and the exact action; round 2 declares the name and is written; both rounds are in the journal
+RENAMED='{"name": "clampy", "units": [{"id": "clamp", "signature": "fn clamp_value(x: int, lo: int, hi: int) -> [] int", "description": "x limited to [lo, hi].", "examples": ["clamp_value(5, 1, 3) == 3"], "deps": []}, {"id": "mid", "signature": "fn middle(a: int, b: int) -> [] int", "description": "the midpoint.", "examples": ["middle(2, 4) == 3"], "deps": []}]}'
+GOOD2='{"name": "clampy", "units": [{"id": "clamp", "signature": "fn clampy(x: int, lo: int, hi: int) -> [] int", "description": "x limited to [lo, hi].", "examples": ["clampy(5, 1, 3) == 3"], "deps": []}, {"id": "mid", "signature": "fn middle(a: int, b: int) -> [] int", "description": "the midpoint.", "examples": ["middle(2, 4) == 3"], "deps": []}]}'
+printf 'Write two functions:\n- clampy(x, lo, hi) : limit x to [lo, hi]\n- middle(a, b) -> int : the midpoint of a and b\n- middle(a, b) : again, a name the brief repeats\n' > "$d/brief-names.txt"
+JB="$d/jb"; rm -rf "$JB"; mkdir -p "$JB/blobs"
+start; printf '%s' "$RENAMED" > "$d/response.1.txt"; printf 'Fixed:\n%s\n' "$GOOD2" > "$d/response.2.txt"; rm -f "$d/out/plan.json" "$d/ulog"
+plan --guide "$d/guide.md" --brief "$d/brief-names.txt" --usage-log "$d/ulog" --journal "$JB" >/dev/null 2>"$d/e"; rc=$?
+expect "brief names: exit code ($(head -c 200 "$d/e"))" "$rc" 0
+expect "brief names: two requests" "$(count)" 2
+expect "brief names: usage outcomes" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog')])")" "['rejected', 'written']"
+P2=$(prompt_of 2)
+for want in "REJECTED" "brief-name" "declare \`fn clampy\` with exactly this name" "the brief states it" "$RENAMED"; do
+    case "$P2" in *"$want"*) ;; *) echo "FAIL: brief names: the second prompt lacks '$want'" >&2; fail=1 ;; esac
+done
+case "$P2" in *"brief-name"*"middle"*) echo "FAIL: brief names: a name the plan declares was reported" >&2; fail=1 ;; esac
+python3 -c "import json,sys; sys.exit(0 if 'fn clampy(' in json.load(open('$d/out/plan.json'))['units'][0]['signature'] else 1)" || { echo "FAIL: brief names: the written plan lacks fn clampy" >&2; fail=1; }
+python3 -I - "$JB" <<'PY' || fail=1
+import json, sys
+ev = [json.loads(l) for l in open(sys.argv[1] + "/events.jsonl")]
+got = [(e["kind"], e["round"], e["outcome"]) for e in ev]
+bad = []
+if got != [("plan_call", 1, "rejected"), ("plan_call", 2, "written")]: bad.append("events %r" % got)
+elif not any("brief-name" in x and "clampy" in x for x in ev[0]["errors"]): bad.append("round 1 errors %r" % ev[0]["errors"])
+if bad: print("FAIL: brief names: journal: " + "; ".join(bad), file=sys.stderr); sys.exit(1)
+PY
+stop
+# every missing name is reported at once, not only the first
+TWO='{"name": "clampy", "units": [{"id": "clamp", "signature": "fn clamp_value(x: int, lo: int, hi: int) -> [] int", "description": "x limited to [lo, hi].", "examples": ["clamp_value(5, 1, 3) == 3"], "deps": []}, {"id": "mid", "signature": "fn mid(a: int, b: int) -> [] int", "description": "the midpoint.", "examples": ["mid(2, 4) == 3"], "deps": []}]}'
+start; printf '%s' "$TWO" > "$d/response.1.txt"; printf '%s' "$GOOD2" > "$d/response.2.txt"; rm -f "$d/out/plan.json"
+plan --guide "$d/guide.md" --brief "$d/brief-names.txt" >/dev/null 2>"$d/e"; rc=$?
+expect "brief names, both missing: exit code" "$rc" 0
+P2=$(prompt_of 2)
+for want in "declare \`fn clampy\` with exactly this name" "declare \`fn middle\` with exactly this name"; do
+    case "$P2" in *"$want"*) ;; *) echo "FAIL: brief names, both missing: the second prompt lacks '$want'" >&2; fail=1 ;; esac
+done
 stop
 
 # cases: the model writes DATA; the agent turns it into the unit's tests before the plan check, and writes the expanded plan

@@ -12,6 +12,7 @@
 #   resume      a run killed (SIGKILL) while building the third unit: build.json says stage build; the next run asks for no plan, keeps a and b
 #   review      a plan the agent's review could not confirm ("the plan stands unreviewed" in plan.log) is built, and run.log (`[PLAN_REVIEW]`) and build.json (`review`) say unreviewed; a reviewed one says reviewed; with no review, none
 #   provider    the unit agent fails: provider_error, exit 4, the state keeps what verified, build.json agrees; run.log names the unit's agent log (`[AGENT_LOG]`), which holds the turn's header and the agent's standard error
+#   gave up     the unit agent exits with a documented gave-up code (10): stuck, exit 1, not provider_error; run.log has `[UNIT_WHY]` and `[AGENT_LOG]`
 #   stuck       a unit never verifies: stuck, exit 1, build.json counts the verified ones
 #   names       the brief names its public functions (`- name(...) : ...`): a plan that does not declare one is refused (`brief-name`), plan_failed, exit 3; a plan that does is built; a valid plan.json that lacks one is not reused
 #   retry       `--retry <unit> --hint "..."` on a stuck run: the plan is not asked for again, only that unit and the ones that need it are worked
@@ -235,6 +236,20 @@ expect "provider: run.log verdict" "$(grep '^\[BUILD_VERDICT\]' "$wd/run.log" | 
 expect "provider: run.log says where the failed unit's agent log is" "$(grep '^\[AGENT_LOG\]' "$wd/run.log" | tr '\t' ':')" "[AGENT_LOG]:c:agent-c.log"
 grep -q '^=== attempt 1: exit 3 after [0-9]* ms$' "$wd/agent-c.log" 2>/dev/null || { echo "FAIL: provider: agent-c.log lacks the failed turn's header" >&2; fail=1; }
 grep -q 'stub-agent: unit c' "$wd/agent-c.log" 2>/dev/null || { echo "FAIL: provider: agent-c.log lacks the agent's stderr" >&2; fail=1; }
+rm -rf "$wd" "$rc"
+
+# gave up: c's agent reaches its model and has no usable answer (exit 10): the unit fails and the run is stuck (exit 1), not provider_error; run.log says why
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf 'echo "cancho-agent: a sample was cut off by the bound" >&2; exit 10\n' > "$rc/c.sh"
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "gave up: exit code" "$r" 1
+expect "gave up: verdict" "$(verdict "$out")" stuck
+expect "gave up: the state keeps a and b" "$(order "$wd/state.txt")" "verified a verified b"
+expect "gave up: build.json verdict" "$(jf "$wd" verdict)" stuck
+expect "gave up: run.log verdict" "$(grep '^\[BUILD_VERDICT\]' "$wd/run.log" | cut -f2)" stuck
+expect "gave up: run.log says why" "$(grep '^\[UNIT_WHY\]' "$wd/run.log" | tr '\t' ':')" "[UNIT_WHY]:c:agent:gave-up:cut-off"
+expect "gave up: run.log names the agent log" "$(grep '^\[AGENT_LOG\]' "$wd/run.log" | tr '\t' ':')" "[AGENT_LOG]:c:agent-c.log"
+grep -q 'cut off by the bound' "$wd/agent-c.log" 2>/dev/null || { echo "FAIL: gave up: agent-c.log lacks the agent's words" >&2; fail=1; }
 rm -rf "$wd" "$rc"
 
 # stuck: a is always wrong, b is independent, c depends on a
