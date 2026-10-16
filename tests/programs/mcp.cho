@@ -1,0 +1,48 @@
+edition 7;
+
+// `cancho-mcp` -- the MCP server of cancho-code (docs/mcp.md):
+//
+//     cancho-mcp --root DIR --build-bin P --board-bin P --prices P --checker P --agent-command CMD --provider P --model M [options]
+//
+// Standard input and output carry the protocol; standard error carries a refusal of the command line. Exit 0 when input ends, 2 for a usage error.
+
+import mcp;
+import std.io;
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(net);
+    release(signals);
+    var console = io;
+    var h = heap;
+    var status = 0;
+    borrow args as &g in {
+        let (config, why) = mcp.configure(g);
+        borrow mut console as &!i in {
+            if len(why) > 0 {
+                io.error_all(i, "mcp: ");
+                io.error_all(i, why);
+                io.error_all(i, "\n");
+                status = 2;
+            } else {
+                borrow exec as &x in {
+                    borrow clock as &c in {
+                        borrow fs as &z in {
+                            borrow mut h as &!hh in {
+                                status = mcp.serve(hh, x, c, z, i, config);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    release(exec);
+    release(clock);
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return status;
+}
