@@ -1,0 +1,286 @@
+{
+ "schema": 1,
+ "run": {
+  "name": "graph-resumed",
+  "brief": null,
+  "stage": null,
+  "plan_valid": null,
+  "provider": "anthropic",
+  "model": "claude-haiku-5-5",
+  "started_unix": null,
+  "seconds": 40.0,
+  "verdict": "done"
+ },
+ "files": {
+  "plan": true,
+  "run_log": true,
+  "state": true,
+  "usage": true,
+  "run_json": true,
+  "build_json": false,
+  "audit": false,
+  "prices": true
+ },
+ "metrics": {
+  "units_total": 3,
+  "units_verified": 3,
+  "columns": {
+   "waiting": 0,
+   "building": 0,
+   "verified": 3,
+   "stuck": 0,
+   "regressed": 0,
+   "unknown": 0
+  },
+  "calls": 4,
+  "tokens": {
+   "in": 1610,
+   "out": 3300,
+   "cache_write": 0,
+   "cache_read": 52000,
+   "thinking": null
+  },
+  "visible_out": null,
+  "thinking_share": null,
+  "cache_read_share": 0.97,
+  "efficiency": 0.0,
+  "efficiency_calls": 0.7576,
+  "efficiency_visible": null,
+  "cost_usd": 0.002331,
+  "cost_per_verified_unit": 0.000777,
+  "over_limit_calls": 0,
+  "audit": null
+ },
+ "truncated": false,
+ "units": [
+  {
+   "id": "a",
+   "function": "f_a",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 4000,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "b",
+   "function": "f_b",
+   "column": "verified",
+   "deps": [
+    "a"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 5000,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "c",
+   "function": "f_c",
+   "column": "verified",
+   "deps": [
+    "a",
+    "b"
+   ],
+   "attempts": 2,
+   "regressions": 0,
+   "calls": 2,
+   "tokens": {
+    "in": 810,
+    "out": 1700,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 26000
+   },
+   "cost_usd": 0.001191,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 3000,
+     "outcome": "acceptance_failed",
+     "sig": "E0: refused",
+     "decision": "retry"
+    },
+    {
+     "attempt": 1,
+     "agent_ms": 3500,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  }
+ ],
+ "journal": {
+  "events": [
+   {
+    "t_ms": 1790000000000,
+    "kind": "run_start",
+    "options": {}
+   },
+   {
+    "t_ms": 1790000016600,
+    "kind": "unit_start",
+    "unit": "a",
+    "function": "f_a",
+    "deps": []
+   },
+   {
+    "t_ms": 1790000020600,
+    "kind": "attempt",
+    "unit": "a",
+    "n": 0,
+    "ms": 4000,
+    "outcome": "verified",
+    "decision": "verified"
+   },
+   {
+    "t_ms": 1790000020610,
+    "kind": "unit_end",
+    "unit": "a",
+    "state": "verified",
+    "attempts": 1
+   },
+   {
+    "t_ms": 1790000026000,
+    "kind": "unit_start",
+    "unit": "b",
+    "function": "f_b",
+    "deps": [
+     "a"
+    ]
+   },
+   {
+    "t_ms": 1790000031000,
+    "kind": "attempt",
+    "unit": "b",
+    "n": 0,
+    "ms": 5000,
+    "outcome": "verified",
+    "decision": "verified"
+   },
+   {
+    "t_ms": 1790000031010,
+    "kind": "unit_end",
+    "unit": "b",
+    "state": "verified",
+    "attempts": 1
+   },
+   {
+    "t_ms": 1790003631010,
+    "kind": "run_start",
+    "options": {}
+   },
+   {
+    "t_ms": 1790003631500,
+    "kind": "sweep",
+    "after_unit": "",
+    "held": [
+     "a",
+     "b"
+    ],
+    "regressed": []
+   },
+   {
+    "t_ms": 1790003631600,
+    "kind": "unit_start",
+    "unit": "c",
+    "function": "f_c",
+    "deps": [
+     "a",
+     "b"
+    ]
+   },
+   {
+    "t_ms": 1790003634600,
+    "kind": "attempt",
+    "unit": "c",
+    "n": 0,
+    "ms": 3000,
+    "outcome": "acceptance_failed",
+    "decision": "retry"
+   },
+   {
+    "t_ms": 1790003638100,
+    "kind": "attempt",
+    "unit": "c",
+    "n": 1,
+    "ms": 3500,
+    "outcome": "verified",
+    "decision": "verified"
+   },
+   {
+    "t_ms": 1790003638110,
+    "kind": "unit_end",
+    "unit": "c",
+    "state": "verified",
+    "attempts": 2
+   },
+   {
+    "t_ms": 1790003638200,
+    "kind": "run_end",
+    "verdict": "done",
+    "exit": 0,
+    "seconds": 40.0
+   }
+  ],
+  "costs": [
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null,
+   null
+  ],
+  "blobs": {},
+  "skipped_lines": 0,
+  "partial_tail": false,
+  "events_dropped": 0,
+  "blobs_omitted": 0,
+  "limits": {
+   "blob_bytes": 32768,
+   "total_bytes": 2097152
+  }
+ }
+}

@@ -1,0 +1,43 @@
+{
+ "name": "graph-chain",
+ "units": [
+  {
+   "id": "u1",
+   "signature": "fn f_u1[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "u2",
+   "signature": "fn f_u2[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": [
+    "u1"
+   ]
+  },
+  {
+   "id": "u3",
+   "signature": "fn f_u3[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": [
+    "u2"
+   ]
+  },
+  {
+   "id": "u4",
+   "signature": "fn f_u4[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": [
+    "u3"
+   ]
+  },
+  {
+   "id": "u5",
+   "signature": "fn f_u5[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": [
+    "u4"
+   ]
+  }
+ ]
+}

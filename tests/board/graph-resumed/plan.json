@@ -1,0 +1,28 @@
+{
+ "name": "graph-resumed",
+ "units": [
+  {
+   "id": "a",
+   "signature": "fn f_a[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "b",
+   "signature": "fn f_b[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": [
+    "a"
+   ]
+  },
+  {
+   "id": "c",
+   "signature": "fn f_c[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": [
+    "a",
+    "b"
+   ]
+  }
+ ]
+}

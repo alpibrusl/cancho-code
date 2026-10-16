@@ -1,0 +1,187 @@
+{
+ "schema": 1,
+ "run": {
+  "name": "graph-chain",
+  "brief": null,
+  "stage": null,
+  "plan_valid": null,
+  "provider": "anthropic",
+  "model": "claude-haiku-5-5",
+  "started_unix": null,
+  "seconds": 60.0,
+  "verdict": null
+ },
+ "files": {
+  "plan": true,
+  "run_log": true,
+  "state": true,
+  "usage": true,
+  "run_json": true,
+  "build_json": false,
+  "audit": false,
+  "prices": true
+ },
+ "metrics": {
+  "units_total": 5,
+  "units_verified": 3,
+  "columns": {
+   "waiting": 1,
+   "building": 1,
+   "verified": 3,
+   "stuck": 0,
+   "regressed": 0,
+   "unknown": 0
+  },
+  "calls": 4,
+  "tokens": {
+   "in": 1600,
+   "out": 3200,
+   "cache_write": 0,
+   "cache_read": 52000,
+   "thinking": null
+  },
+  "visible_out": null,
+  "thinking_share": null,
+  "cache_read_share": 0.9701,
+  "efficiency": 0.0,
+  "efficiency_calls": 0.75,
+  "efficiency_visible": null,
+  "cost_usd": 0.00228,
+  "cost_per_verified_unit": 0.00076,
+  "over_limit_calls": 0,
+  "audit": null
+ },
+ "truncated": false,
+ "units": [
+  {
+   "id": "u1",
+   "function": "f_u1",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2000,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "u2",
+   "function": "f_u2",
+   "column": "verified",
+   "deps": [
+    "u1"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2200,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "u3",
+   "function": "f_u3",
+   "column": "verified",
+   "deps": [
+    "u2"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2400,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "u4",
+   "function": "f_u4",
+   "column": "building",
+   "deps": [
+    "u3"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 3000,
+     "outcome": "refused",
+     "sig": "E0: refused",
+     "decision": "retry"
+    }
+   ]
+  },
+  {
+   "id": "u5",
+   "function": "f_u5",
+   "column": "waiting",
+   "deps": [
+    "u4"
+   ],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  }
+ ]
+}

@@ -1,0 +1,961 @@
+{
+ "schema": 1,
+ "run": {
+  "name": "graph-big",
+  "brief": null,
+  "stage": null,
+  "plan_valid": null,
+  "provider": "anthropic",
+  "model": "claude-haiku-5-5",
+  "started_unix": null,
+  "seconds": 300.0,
+  "verdict": "stuck"
+ },
+ "files": {
+  "plan": true,
+  "run_log": true,
+  "state": true,
+  "usage": true,
+  "run_json": true,
+  "build_json": false,
+  "audit": false,
+  "prices": true
+ },
+ "metrics": {
+  "units_total": 34,
+  "units_verified": 24,
+  "columns": {
+   "waiting": 9,
+   "building": 0,
+   "verified": 24,
+   "stuck": 1,
+   "regressed": 0,
+   "unknown": 0
+  },
+  "calls": 26,
+  "tokens": {
+   "in": 10410,
+   "out": 20900,
+   "cache_write": 0,
+   "cache_read": 338000,
+   "thinking": null
+  },
+  "visible_out": null,
+  "thinking_share": null,
+  "cache_read_share": 0.9701,
+  "efficiency": 0.0,
+  "efficiency_calls": 0.9187,
+  "efficiency_visible": null,
+  "cost_usd": 0.014871,
+  "cost_per_verified_unit": 0.00062,
+  "over_limit_calls": 0,
+  "audit": null
+ },
+ "truncated": false,
+ "units": [
+  {
+   "id": "n00",
+   "function": "f_n00",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1500,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n01",
+   "function": "f_n01",
+   "column": "verified",
+   "deps": [
+    "n00"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1711,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n02",
+   "function": "f_n02",
+   "column": "verified",
+   "deps": [
+    "n00",
+    "n01"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1922,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n03",
+   "function": "f_n03",
+   "column": "verified",
+   "deps": [
+    "n00",
+    "n01",
+    "n02"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2133,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n04",
+   "function": "f_n04",
+   "column": "verified",
+   "deps": [
+    "n00",
+    "n01",
+    "n02"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2344,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n05",
+   "function": "f_n05",
+   "column": "verified",
+   "deps": [
+    "n00",
+    "n03"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2555,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n06",
+   "function": "f_n06",
+   "column": "verified",
+   "deps": [
+    "n00"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2766,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n07",
+   "function": "f_n07",
+   "column": "verified",
+   "deps": [
+    "n00",
+    "n03",
+    "n04"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1500,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n08",
+   "function": "f_n08",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1711,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n09",
+   "function": "f_n09",
+   "column": "verified",
+   "deps": [
+    "n00"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1922,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n10",
+   "function": "f_n10",
+   "column": "verified",
+   "deps": [
+    "n00",
+    "n06",
+    "n09"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2133,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n11",
+   "function": "f_n11",
+   "column": "verified",
+   "deps": [
+    "n00"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2344,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n12",
+   "function": "f_n12",
+   "column": "verified",
+   "deps": [
+    "n02",
+    "n04",
+    "n06"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2555,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n13",
+   "function": "f_n13",
+   "column": "verified",
+   "deps": [
+    "n08"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2766,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n14",
+   "function": "f_n14",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1500,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n15",
+   "function": "f_n15",
+   "column": "verified",
+   "deps": [
+    "n04",
+    "n08",
+    "n10"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1711,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n16",
+   "function": "f_n16",
+   "column": "verified",
+   "deps": [
+    "n03"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1922,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n17",
+   "function": "f_n17",
+   "column": "verified",
+   "deps": [
+    "n01",
+    "n06",
+    "n11"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2133,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n18",
+   "function": "f_n18",
+   "column": "verified",
+   "deps": [
+    "n01",
+    "n02",
+    "n06"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2344,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n19",
+   "function": "f_n19",
+   "column": "verified",
+   "deps": [
+    "n13",
+    "n17"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2555,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n20",
+   "function": "f_n20",
+   "column": "verified",
+   "deps": [
+    "n14"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2766,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n21",
+   "function": "f_n21",
+   "column": "verified",
+   "deps": [
+    "n09",
+    "n11",
+    "n14"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1500,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n22",
+   "function": "f_n22",
+   "column": "verified",
+   "deps": [
+    "n05"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1711,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n23",
+   "function": "f_n23",
+   "column": "verified",
+   "deps": [
+    "n02"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1922,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "n24",
+   "function": "f_n24",
+   "column": "stuck",
+   "deps": [
+    "n09",
+    "n15",
+    "n16"
+   ],
+   "attempts": 2,
+   "regressions": 0,
+   "calls": 2,
+   "tokens": {
+    "in": 810,
+    "out": 1700,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 26000
+   },
+   "cost_usd": 0.001191,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 3000,
+     "outcome": "refused",
+     "sig": "E0: refused",
+     "decision": "retry"
+    },
+    {
+     "attempt": 1,
+     "agent_ms": 3100,
+     "outcome": "refused",
+     "sig": "E1: refused",
+     "decision": "retry"
+    }
+   ]
+  },
+  {
+   "id": "n25",
+   "function": "f_n25",
+   "column": "waiting",
+   "deps": [
+    "n23"
+   ],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  },
+  {
+   "id": "n26",
+   "function": "f_n26",
+   "column": "waiting",
+   "deps": [
+    "n09",
+    "n19"
+   ],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  },
+  {
+   "id": "n27",
+   "function": "f_n27",
+   "column": "waiting",
+   "deps": [],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  },
+  {
+   "id": "n28",
+   "function": "f_n28",
+   "column": "waiting",
+   "deps": [],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  },
+  {
+   "id": "n29",
+   "function": "f_n29",
+   "column": "waiting",
+   "deps": [
+    "n05",
+    "n13",
+    "n24"
+   ],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  },
+  {
+   "id": "n30",
+   "function": "f_n30",
+   "column": "waiting",
+   "deps": [
+    "n04"
+   ],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  },
+  {
+   "id": "n31",
+   "function": "f_n31",
+   "column": "waiting",
+   "deps": [
+    "n01",
+    "n13"
+   ],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  },
+  {
+   "id": "n32",
+   "function": "f_n32",
+   "column": "waiting",
+   "deps": [],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  },
+  {
+   "id": "n33",
+   "function": "f_n33",
+   "column": "waiting",
+   "deps": [
+    "n20",
+    "n21",
+    "n22"
+   ],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  }
+ ]
+}

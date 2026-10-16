@@ -1,0 +1,2 @@
+{"attempt": 0, "agent_ms": 2000, "outcome": "refused", "sig": "E0: refused", "decision": "retry"}
+{"attempt": 1, "agent_ms": 2100, "outcome": "refused", "sig": "E1: refused", "decision": "retry"}

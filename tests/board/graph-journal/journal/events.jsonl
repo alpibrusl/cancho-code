@@ -1,0 +1,24 @@
+{"t_ms": 1790000000000, "kind": "run_start", "brief": "diamond demo", "provider": "anthropic", "model": "claude-haiku-5-5", "options": {"attempts": 2}}
+{"t_ms": 1790000009000, "kind": "plan_call", "round": 1, "sample": 1, "ms": 9000, "outcome": "rejected", "errors": ["unit c: no examples"]}
+{"t_ms": 1790000015000, "kind": "plan_call", "round": 2, "sample": 1, "ms": 5500, "outcome": "written", "errors": []}
+{"t_ms": 1790000016500, "kind": "plan_call", "round": 2, "sample": 1, "ms": 1400, "outcome": "reviewed"}
+{"t_ms": 1790000016501, "kind": "plan_review", "round": 2, "kept": 8, "of": 8, "dropped": []}
+{"t_ms": 1790000016502, "kind": "plan_final", "valid": true, "units": 4}
+{"t_ms": 1790000016600, "kind": "unit_start", "unit": "a", "function": "f_a", "deps": []}
+{"t_ms": 1790000020600, "kind": "attempt", "unit": "a", "n": 0, "ms": 4000, "outcome": "verified", "decision": "verified"}
+{"t_ms": 1790000020610, "kind": "unit_end", "unit": "a", "state": "verified", "attempts": 1}
+{"t_ms": 1790000021300, "kind": "sweep", "after_unit": "a", "held": ["a"], "regressed": []}
+{"t_ms": 1790000021310, "kind": "unit_start", "unit": "b", "function": "f_b", "deps": ["a"]}
+{"t_ms": 1790000026400, "kind": "attempt", "unit": "b", "n": 0, "ms": 5000, "outcome": "refused", "decision": "retry", "signature": "E0: refused"}
+{"t_ms": 1790000032500, "kind": "attempt", "unit": "b", "n": 1, "ms": 6000, "outcome": "verified", "decision": "verified"}
+{"t_ms": 1790000032510, "kind": "unit_end", "unit": "b", "state": "verified", "attempts": 2}
+{"t_ms": 1790000033900, "kind": "sweep", "after_unit": "b", "held": ["a", "b"], "regressed": []}
+{"t_ms": 1790000033910, "kind": "unit_start", "unit": "c", "function": "f_c", "deps": ["a"]}
+{"t_ms": 1790000037000, "kind": "attempt", "unit": "c", "n": 0, "ms": 3000, "outcome": "verified", "decision": "verified"}
+{"t_ms": 1790000037010, "kind": "unit_end", "unit": "c", "state": "verified", "attempts": 1}
+{"t_ms": 1790000037900, "kind": "sweep", "after_unit": "c", "held": ["a", "b", "c"], "regressed": []}
+{"t_ms": 1790000037910, "kind": "unit_start", "unit": "d", "function": "f_d", "deps": ["b", "c"]}
+{"t_ms": 1790000040500, "kind": "attempt", "unit": "d", "n": 0, "ms": 2500, "outcome": "refused", "decision": "retry", "signature": "E0: refused"}
+{"t_ms": 1790000043200, "kind": "attempt", "unit": "d", "n": 1, "ms": 2600, "outcome": "refused", "decision": "ceiling", "signature": "E1: refused"}
+{"t_ms": 1790000043210, "kind": "unit_end", "unit": "d", "state": "stuck", "attempts": 2}
+{"t_ms": 1790000043300, "kind": "run_end", "verdict": "stuck", "exit": 1, "seconds": 43.3}

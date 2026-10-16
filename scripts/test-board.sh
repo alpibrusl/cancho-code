@@ -3,10 +3,11 @@
 # into ONE json file, read-only; docs/board.html shows it.
 #
 #   scripts/test-board.sh             the gate
-#   scripts/test-board.sh --mutants   prove the gate can fail: seven broken copies of src/board.cho must each be RED
+#   scripts/test-board.sh --mutants   prove the gate can fail: broken copies of src/board.cho and of docs/board.html must each be RED
 #
 #   CANCHO     the compiler (default: cancho on PATH)
 #   BOARD_SRC  the source of the tool to judge (default: src/board.cho); how --mutants judges a broken copy
+#   BOARD_PAGE the page to judge (default: docs/board.html); the same, for the page's logic
 #
 # What it asserts (a stuck run whose unit failed because the agent gave up, `stuck-agent`, renders in the Stuck column with its `agent:gave-up:cut-off` trail; the journal: fixtures journal, journal-killed, journal-gaps, and a big one made here)
 #   - for each fixture run directory under tests/board/ (a done run, a stuck run with refusal history, a run mid-build,
@@ -21,6 +22,11 @@
 #     a person how to continue a stuck unit (docs/build.md): the note is shown for a stuck unit only, its text is built from board.json's run (brief,
 #     provider, model) with a placeholder for what the board cannot know, and a value that is not a plain word is never put in it (run under node
 #     when there is one); the board still runs nothing;
+#   - the graph and the timeline (docs/dashboard.md): the page's pure logic (the block between the graph-logic markers in
+#     docs/board.html: layers, critical path, node placement, timeline rows, the estimate) is run under node, without a browser, on the
+#     boards of every fixture, on plans of 1 to 256 units made here, and on odd plans (cycle, unknown dependency, duplicate ids), and
+#     compared with the oracle (tests/reference/board_ref.py --layout) and with hand-written expectations (tests/board/expected/
+#     page-logic.json); with no node the step is skipped and says so;
 #   - docs/board.html makes no request to another host, has no build step, no write path, reads board.json and offers a file picker.
 set -u
 
@@ -35,10 +41,12 @@ if [ "${1:-}" = "--mutants" ]; then
     fail=0
     # Each mutation is one edit of the source; the gate on the broken copy must fail. Every edit is anchored on a marker
     # comment in src/board.cho (`// MUTANT:<name>`) so that a refactor which loses the line is itself a red.
-    mutant() {
-        name=$1; from=$2; to=$3
-        grep -q "// MUTANT:$name" "$root/src/board.cho" || { echo "FAIL: no marker MUTANT:$name in src/board.cho" >&2; fail=1; return; }
-        python3 - "$root/src/board.cho" "$work/$name.cho" "$name" "$from" "$to" <<'PY' || { echo "FAIL: mutant $name: the marked line does not contain the text to change" >&2; fail=1; return; }
+    mutant() { mutate "$root/src/board.cho" "$work/$1.cho" BOARD_SRC "$@"; }
+    pmutant() { mutate "$root/docs/board.html" "$work/$1.html" BOARD_PAGE "$@"; }
+    mutate() {
+        file=$1; dst=$2; var=$3; name=$4; from=$5; to=$6
+        grep -q "// MUTANT:$name" "$file" || { echo "FAIL: no marker MUTANT:$name in $file" >&2; fail=1; return; }
+        python3 - "$file" "$dst" "$name" "$from" "$to" <<'PY' || { echo "FAIL: mutant $name: the marked line does not contain the text to change" >&2; fail=1; return; }
 import sys
 src, dst, name, a, b = sys.argv[1:6]
 out, hit = [], 0
@@ -50,8 +58,8 @@ for line in open(src).read().split("\n"):
     out.append(line)
 sys.exit(0 if hit == 1 and open(dst, "w").write("\n".join(out)) else 1)
 PY
-        if BOARD_SRC="$work/$name.cho" sh "$0" >"$work/$name.out" 2>&1; then
-            echo "FAIL: mutant $name survived: the gate passed on a broken tool" >&2; fail=1
+        if env "$var=$dst" sh "$0" >"$work/$name.out" 2>&1; then
+            echo "FAIL: mutant $name survived: the gate passed on a broken $var" >&2; fail=1
         else
             echo "ok: mutant $name is red ($(grep -c '^FAIL' "$work/$name.out") failures)" >&2
         fi
@@ -63,6 +71,18 @@ PY
     mutant order   'let ix = k;' 'let ix = n - 1 - k;'      # the journal's events come out last first
     mutant partial 'cells[j_partial()] = 1;' 'cells[j_skipped()] = cells[j_skipped()] + 1;'   # a half-written last line is counted as a bad line
     mutant traverse '|| bytes.find(name, "..") >= 0' '|| false'   # a blob name with .. is read
+    # the page's logic (node): each edit breaks one function of the block between the graph-logic markers
+    if command -v node >/dev/null 2>&1; then
+        pmutant layer    'layer[v] + 1' 'layer[v]'                          # a unit is put in the layer of its dependency, not after it
+        pmutant critical 'if (b > best)' 'if (b < best)'                    # the critical path is the shortest chain, not the longest
+        pmutant bar      'x0 = x - ms' 'x0 = x'                             # an attempt's bar starts where it ends: its time is lost
+        pmutant attemptno 'n: isNum(e.n) ? e.n : null' 'n: 0'               # every bar opens attempt 0
+        pmutant unknown  'if (ix[d] === undefined) {' 'if (false) {'       # an unknown dependency is no longer told apart
+        pmutant cycle    'unplaced: unplaced, ok: ok' 'unplaced: [], ok: true'   # a cycle is drawn as a plan
+        pmutant saved    'X - c.total' 'X + c.total'                        # the bound on what parallel units could save grows with the critical path
+    else
+        echo "note: no node on PATH: the page-logic mutants were not run" >&2
+    fi
     exit $fail
 fi
 
@@ -292,6 +312,73 @@ JS
     fi
     # it only reads: no way to send anything anywhere
     grep -nE "method: *['\"](POST|PUT|DELETE|PATCH)|XMLHttpRequest|sendBeacon|WebSocket|\.send\(|localStorage|sessionStorage|document\.cookie|<form" "$page" >"$work/write" && { bad "docs/board.html has a write path:"; head -5 "$work/write" >&2; }
+    # the graph and the timeline: two more views, each with its place in the page; the logic sits in ONE marked block of pure functions
+    grep -q 'id="view-graph"' "$page" || bad "docs/board.html has no Graph view"
+    grep -q 'id="view-timeline"' "$page" || bad "docs/board.html has no Timeline view"
+    grep -q 'id="tab-graph"' "$page" && grep -q 'id="tab-timeline"' "$page" || bad "docs/board.html: the Graph and Timeline views have no tab"
+    grep -q 'not a DAG' "$page" || bad "docs/board.html does not say when the dependencies are not a DAG"
+    grep -q 'setAttribute("tabindex", "0")' "$page" && grep -q 'setAttribute("role", "button")' "$page" || bad "docs/board.html: the graph's nodes are not keyboard accessible (tabindex, role=button)"
+    grep -q '"Enter"' "$page" || bad "docs/board.html: a graph node does not open on Enter"
+    grep -q 'marker-end' "$page" || bad "docs/board.html: the graph's edges have no arrowheads"
+    grep -qi 'Estimate' "$page" || bad "docs/board.html: the timeline has no estimate line"
+    expect "docs/board.html: one graph-logic block (begin)" "$(grep -c 'graph-logic:begin' "$page")" 1
+    expect "docs/board.html: one graph-logic block (end)" "$(grep -c 'graph-logic:end' "$page")" 1
+    gfirst=$(grep -n 'graph-logic:begin' "$page" | head -1 | cut -d: -f1); glast=$(grep -n 'graph-logic:end' "$page" | head -1 | cut -d: -f1)
+    [ -n "$gfirst" ] && [ -n "$glast" ] || { gfirst=0; glast=0; }
+    sed -n "$((gfirst + 1)),$((glast - 1))p" "$page" > "$work/graph-logic.js"
+    [ -s "$work/graph-logic.js" ] || bad "docs/board.html: the graph-logic block is empty"
+    # pure: nothing in it touches the page, the network or the clock
+    grep -nE 'document|window|location|fetch\(|\$\(|Date|Math\.random|innerHTML|setTimeout|setInterval' "$work/graph-logic.js" >"$work/impure" && { bad "docs/board.html: the graph-logic block is not pure:"; head -5 "$work/impure" >&2; }
+    # the Timeline is a drawing of the journal: no way to write it either way, and a 'parallel' flag is not offered (units run one after another today)
+    grep -nEi -- '--parallel|--jobs|--concurren' "$page" >"$work/par" && { bad "docs/board.html suggests a flag for parallel units:"; head -3 "$work/par" >&2; }
+    if command -v node >/dev/null 2>&1; then
+        mkdir -p "$work/pl"
+        for f in "$work"/graph-*.json "$work"/journal.json "$work"/stuck.json "$work"/done.json "$work"/continued.json "$work"/journal-gaps.json "$work"/journal-killed.json \
+                 "$work"/missing.json "$work"/regressed.json "$work"/building.json "$work"/nolog.json "$work"/big.json; do
+            [ -f "$f" ] || continue
+            n=$(basename "$f" .json)
+            cp "$f" "$work/pl/$n.json"
+            python3 "$root/tests/reference/board_ref.py" --layout "$f" > "$work/pl/$n.layout.json" || bad "$n: the oracle could not lay the board out"
+        done
+        # the boards on the landing page (made before the graph existed) lay out too
+        for f in "$root"/docs/demo/*.json; do
+            [ -f "$f" ] || continue
+            n="demo-$(basename "$f" .json)"
+            cp "$f" "$work/pl/$n.json"
+            python3 "$root/tests/reference/board_ref.py" --layout "$f" > "$work/pl/$n.layout.json" || bad "$n: the oracle could not lay the board out"
+        done
+        # plans of 1 to 256 units, made here: a chain, a wide one, a layered one, a diamond lattice; and 300 units (the tool keeps 256)
+        python3 - "$work" <<'PY'
+import json, os, random, sys
+w = sys.argv[1]
+def plan(name, n, deps):
+    d = os.path.join(w, "sz-" + name)
+    os.makedirs(d)
+    units = [{"id": "u%d" % i, "signature": "fn f%d[&r](x: &r [byte]) -> [] bool" % i, "examples": [], "deps": deps(i)} for i in range(n)]
+    open(os.path.join(d, "plan.json"), "w").write(json.dumps({"name": name, "units": units}))
+    log = ["[PLAN]\tvalid"]
+    for i in range(min(n, 40)):
+        log += ["[UNIT]\tu%d\tbuilding" % i, "[UNIT]\tu%d\tverified" % i]
+        open(os.path.join(d, "trail-u%d.jsonl" % i), "w").write(json.dumps({"attempt": 0, "agent_ms": 1000 + 37 * i, "outcome": "verified", "sig": "", "decision": "verified"}) + "\n")
+    open(os.path.join(d, "run.log"), "w").write("\n".join(log) + "\n")
+rnd = random.Random(3)
+plan("one", 1, lambda i: [])
+plan("chain", 256, lambda i: ["u%d" % (i - 1)] if i else [])
+plan("wide", 256, lambda i: [])
+plan("mesh", 256, lambda i: ["u%d" % (i - k) for k in (1, 2, 3, 7) if i - k >= 0])
+plan("rand", 256, lambda i: ["u%d" % j for j in sorted(rnd.sample(range(i), min(i, rnd.choice([0, 1, 2, 4]))))])
+plan("over", 300, lambda i: ["u%d" % (i - 1)] if i else [])
+PY
+        for d in "$work"/sz-*/; do
+            n=$(basename "$d")
+            "$exe" "$d" "$work/pl/$n.json" "$prices" >/dev/null 2>&1 || { bad "$n: the tool failed on a plan of this size"; continue; }
+            python3 "$root/tests/reference/board_ref.py" --layout "$work/pl/$n.json" > "$work/pl/$n.layout.json"
+        done
+        expect "300 units: the tool keeps 256" "$(python3 -c 'import json,sys; b=json.load(open(sys.argv[1])); print(len(b["units"]), b["truncated"])' "$work/pl/sz-over.json")" "256 True"
+        node "$root/tests/board/page-logic.test.js" "$work/graph-logic.js" "$work/pl" "$root/tests/board/expected/page-logic.json" || fail=1
+    else
+        echo "note: no node on PATH: the page's graph and timeline logic was not run (only its text was checked)" >&2
+    fi
     # one static file: no build step
     grep -qE 'require\(|import .* from |webpack|node_modules' "$page" && bad "docs/board.html needs a build step"
 fi
