@@ -1,0 +1,77 @@
+edition 7;
+
+// merge_gate BASE OURS THEIRS: src/splice.cho `merge3` (docs/parallel.md). Prints the merged file on stdout and the report on standard error; exit 0
+// (merged), 1 (a clash or an unparsable file: `ours` is printed unchanged), 2 (usage, or a file that cannot be read or is 1 MiB or more).
+
+import std.buffer;
+import std.io;
+import splice;
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(net);
+    release(clock);
+    release(signals);
+    release(exec);
+    var console = io;
+    var h = heap;
+    var p1 = "";
+    var p2 = "";
+    var p3 = "";
+    var given = 0;
+    var status = 2;
+    borrow args as &g in {
+        given = arg_count(g);
+        if given == 4 {
+            p1 = arg(g, 1);
+            p2 = arg(g, 2);
+            p3 = arg(g, 3);
+        }
+    }
+    if given == 4 {
+        borrow fs as &f in {
+            borrow mut console as &!i in {
+                borrow mut h as &!hh in {
+                    let r1 = box_slice(hh, 1048576, byte_of(0));
+                    let r2 = box_slice(hh, 1048576, byte_of(0));
+                    let r3 = box_slice(hh, 1048576, byte_of(0));
+                    borrow mut r1 as &!w1 in {
+                        borrow mut r2 as &!w2 in {
+                            borrow mut r3 as &!w3 in {
+                                let t1 = contents(w1);
+                                let t2 = contents(w2);
+                                let t3 = contents(w3);
+                                let n1 = fs_read(f, p1, t1);
+                                let n2 = fs_read(f, p2, t2);
+                                let n3 = fs_read(f, p3, t3);
+                                if n1 < 0 || n2 < 0 || n3 < 0 || n1 >= 1048576 || n2 >= 1048576 || n3 >= 1048576 {
+                                    io.error_all(i, "merge_gate: a file cannot be read, or is 1 MiB or more\n");
+                                } else {
+                                    let (file, report, code) = splice.merge3(hh, t1[0..n1], t2[0..n2], t3[0..n3]);
+                                    borrow file as &p in {
+                                        buffer.write(i, p);
+                                    }
+                                    buffer.drop(hh, file);
+                                    borrow report as &r in {
+                                        io.error_all(i, buffer.bytes(r));
+                                    }
+                                    buffer.drop(hh, report);
+                                    status = code;
+                                }
+                            }
+                        }
+                    }
+                    unbox_slice(hh, r3);
+                    unbox_slice(hh, r2);
+                    unbox_slice(hh, r1);
+                }
+            }
+        }
+    }
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return status;
+}

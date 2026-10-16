@@ -781,3 +781,139 @@ pub fn splice[&h, &s, &p](heap: &!h Heap, existing: &s [byte], patch: &p [byte])
     unbox_slice(heap, teb);
     return (out, rep, code);
 }
+
+// ---- merging what a unit built beside the file ---------------------------------------------------------------------------------
+//
+// The parallel project driver (docs/parallel.md) builds a unit in a private copy of the project file, `base` as it was when the unit started. When it
+// verifies, `theirs` is that copy as the unit left it and `ours` is the project file now, which other units may have changed since. `merge3` puts what the
+// unit changed (its new items, and the items of `base` it rewrote, by identity as `splice` has it) into `ours`:
+//
+//   - an item `theirs` has that `base` has with the same text is not the unit's: left alone;
+//   - an item the unit added or rewrote goes in, with `splice`'s rules (a replaced item keeps its place, a new one is appended, new imports go with
+//     the imports), when `ours` does not have it, or has it exactly as `base` had it (nobody else touched it), or already has the unit's own text;
+//   - otherwise it is a CLASH: the same name defined twice with different bodies, or one item changed by two units. Nothing is merged; the report has one
+//     `[INTEGRATE_CLASH]<TAB><identity><TAB><why>` line per clash.
+//
+// The answer is the merged file, the report, and 0 or 1 (1: `ours` is returned unchanged; the report says why). Like `splice`, pure.
+pub fn merge3[&h, &b, &o, &t](heap: &!h Heap, base: &b [byte], ours: &o [byte], theirs: &t [byte]) -> [heap] (buffer.Buffer, buffer.Buffer, int) {
+    var rep = buffer.empty(heap, 128);
+    var out = buffer.empty(heap, len(ours) + 64);
+    var code = 0;
+    let bb = box_slice(heap, 6 * (len(base) / 4 + 16), 0);
+    let ob = box_slice(heap, 6 * (len(ours) / 4 + 16), 0);
+    let tb = box_slice(heap, 6 * (len(theirs) / 4 + 16), 0);
+    borrow mut bb as &!bw in {
+        borrow mut ob as &!ow in {
+            borrow mut tb as &!tw in {
+                let tab_b = bw;
+                let tab_o = ow;
+                let tab_t = tw;
+                let (nb, sb, pb, lb) = parse_items(base, contents(tab_b));
+                let (no, so, po, lo) = parse_items(ours, contents(tab_o));
+                let (nt, st, pt, lt) = parse_items(theirs, contents(tab_t));
+                let eb = contents(tab_b);
+                let eo = contents(tab_o);
+                let et = contents(tab_t);
+                var bad = false;
+                if sb != 0 {
+                    rep = put_parse_error(heap, rep, "base", base, sb, pb);
+                    bad = true;
+                }
+                if so != 0 {
+                    rep = put_parse_error(heap, rep, "ours", ours, so, po);
+                    bad = true;
+                }
+                if st != 0 {
+                    rep = put_parse_error(heap, rep, "theirs", theirs, st, pt);
+                    bad = true;
+                }
+                var patch = buffer.empty(heap, 256);
+                var included = 0;
+                if bad == false {
+                    var k = 0;
+                    while k < nt {
+                        let kind = et[6 * k];
+                        if kind != 0 {
+                            var ib = 0 - 1;
+                            var ix = 0 - 1;
+                            var e = 0;
+                            while e < nb {
+                                if ib < 0 && same_ident(theirs, et, k, base, eb, e) {
+                                    ib = e;
+                                }
+                                e = e + 1;
+                            }
+                            e = 0;
+                            while e < no {
+                                if ix < 0 && same_ident(theirs, et, k, ours, eo, e) {
+                                    ix = e;
+                                }
+                                e = e + 1;
+                            }
+                            let text = theirs[et[6 * k + 1]..et[6 * k + 2]];
+                            if kind == 1 {
+                                if ix < 0 {
+                                    patch = buffer.append(heap, patch, text);
+                                    patch = buffer.append(heap, patch, "\n\n");
+                                    included = included + 1;
+                                }
+                            } else {
+                                var theirs_changed = true;
+                                if ib >= 0 {
+                                    theirs_changed = bytes.equal(base[eb[6 * ib + 1]..eb[6 * ib + 2]], text) == false;
+                                }
+                                if theirs_changed {
+                                    if ix < 0 {
+                                        patch = buffer.append(heap, patch, text);
+                                        patch = buffer.append(heap, patch, "\n\n");
+                                        included = included + 1;
+                                    } else if bytes.equal(ours[eo[6 * ix + 1]..eo[6 * ix + 2]], text) {
+                                        // the same text is there already
+                                    } else if ib >= 0 && bytes.equal(ours[eo[6 * ix + 1]..eo[6 * ix + 2]], base[eb[6 * ib + 1]..eb[6 * ib + 2]]) {
+                                        patch = buffer.append(heap, patch, text);
+                                        patch = buffer.append(heap, patch, "\n\n");
+                                        included = included + 1;
+                                    } else {
+                                        rep = buffer.append(heap, rep, "[INTEGRATE_CLASH]\t");
+                                        rep = put_ident(heap, rep, theirs, et, k);
+                                        if ib >= 0 {
+                                            rep = buffer.append(heap, rep, "\tchanged by this unit and by another unit that was integrated first\n");
+                                        } else {
+                                            rep = buffer.append(heap, rep, "\tdefined by this unit and, differently, by another unit that was integrated first\n");
+                                        }
+                                        bad = true;
+                                    }
+                                }
+                            }
+                        }
+                        k = k + 1;
+                    }
+                }
+                if bad {
+                    out = buffer.append(heap, out, ours);
+                    code = 1;
+                } else if included == 0 {
+                    out = buffer.append(heap, out, ours);
+                } else {
+                    borrow patch as &pq in {
+                        let (merged, report, scode) = splice(heap, ours, buffer.bytes(pq));
+                        buffer.drop(heap, out);
+                        out = merged;
+                        if scode != 0 {
+                            code = 1;
+                            borrow report as &rr in {
+                                rep = buffer.append(heap, rep, buffer.bytes(rr));
+                            }
+                        }
+                        buffer.drop(heap, report);
+                    }
+                }
+                buffer.drop(heap, patch);
+            }
+        }
+    }
+    unbox_slice(heap, tb);
+    unbox_slice(heap, ob);
+    unbox_slice(heap, bb);
+    return (out, rep, code);
+}

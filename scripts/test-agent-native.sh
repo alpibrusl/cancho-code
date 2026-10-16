@@ -18,7 +18,7 @@
 #   thinking  thinking and effort are sent only when named; a bad value is exit 2 and no request; an all-thinking reply says so
 #   cut off   a reply that stopped at max_tokens is retried, never written, and the next request has the bound doubled (at most 32000)
 #   no program three replies with no program in them: exit 11 (gave up); every sample cut off by the bound: exit 10; the file untouched
-#   error     an HTTP error is exit 1 (the provider failed, not "gave up") with the API's own message, one request, the file untouched
+#   error     an HTTP error (500; 429 and 529 are waited out, scripts/test-parallel.sh) is exit 1 (the provider failed, not "gave up") with the API's own message, one request, the file untouched
 #   required  no --provider, no --model: exit 2 before any request (there is no default)
 #   tls       the server is verified against --roots; a bundle without the CA, a certificate for another name, no server: refused, file untouched
 #   env       it works with no environment at all (env -i)
@@ -66,7 +66,7 @@ class H(http.server.BaseHTTPRequestHandler):
             self.send_response(401)
         elif os.path.exists(out + "/force-error"):
             data = json.dumps({"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}).encode()
-            self.send_response(529)
+            self.send_response(500)
         else:
             try: reply = open(out + "/response.%d.txt" % n_requests).read()
             except OSError:
@@ -361,7 +361,7 @@ agent --usage-log "$d/ulog.jsonl" >/dev/null 2>&1
 rm -f "$d/force-error"
 expect "usage log: an API error is one line with its outcome and status" "$(python3 -c "
 import json; rows = [json.loads(l) for l in open('$d/ulog.jsonl')]
-print(len(rows), rows[0].get('outcome'), rows[0].get('status'), rows[0].get('thinking'))" 2>&1)" "1 api_error 529 0"
+print(len(rows), rows[0].get('outcome'), rows[0].get('status'), rows[0].get('thinking'))" 2>&1)" "1 api_error 500 0"
 broken; agent >/dev/null 2>&1
 [ ! -e "$d/nolog.jsonl" ] || { echo "FAIL: usage log: a file nobody named exists" >&2; fail=1; }
 

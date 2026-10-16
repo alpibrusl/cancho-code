@@ -26,7 +26,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 SRC="${JOURNAL_SRC:-$root/src}"
 exe=$(mktemp -t cc-journal-XXXXXX)
 files=""
-for f in build project plan driver checker signature loop_check snapshot trail acceptance splice; do
+for f in build project plan driver checker signature loop_check snapshot trail acceptance splice pool parallel; do
     [ -f "$SRC/$f.cho" ] && files="$files $SRC/$f.cho"
 done
 "$CANCHO" build "$root/tests/programs/build.cho" $files --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
@@ -55,7 +55,7 @@ mk() {
 }
 run() { # wd recipes log [more options]
     w=$1; r=$2; l=$3; shift 3
-    "$exe" "$CANCHO" "$B/brief.txt" "$w" "sh $J/agent.sh $r $l" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 "$@" 2>&1
+    "$exe" "$CANCHO" "$B/brief.txt" "$w" "sh $J/agent.sh $r $l" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 --jobs 1 "$@" 2>&1
 }
 
 # happy, refusal, diff, sidecars
@@ -158,7 +158,7 @@ rm -rf "$wd" "$rc"
 # killed: SIGKILL the build while the agent is building c
 set -- $(mk); wd=$1; rc=$2; lg=$3
 printf 'echo $$ > "%s/c.pid"\nexec sleep 300\n' "$rc" > "$rc/c.sh"
-"$exe" "$CANCHO" "$B/brief.txt" "$wd" "sh $J/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 > "$wd.out" 2>&1 &
+"$exe" "$CANCHO" "$B/brief.txt" "$wd" "sh $J/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 --jobs 1 > "$wd.out" 2>&1 &
 bp=$!
 i=0
 while [ $i -lt 600 ] && [ ! -f "$rc/c.pid" ]; do sleep 0.1; i=$((i + 1)); done
