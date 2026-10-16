@@ -1,0 +1,14 @@
+{"t_ms": 1790000000000, "kind": "run_start", "options": {}}
+{"t_ms": 1790000016600, "kind": "unit_start", "unit": "a", "function": "f_a", "deps": []}
+{"t_ms": 1790000020600, "kind": "attempt", "unit": "a", "n": 0, "ms": 4000, "outcome": "verified", "decision": "verified"}
+{"t_ms": 1790000020610, "kind": "unit_end", "unit": "a", "state": "verified", "attempts": 1}
+{"t_ms": 1790000026000, "kind": "unit_start", "unit": "b", "function": "f_b", "deps": ["a"]}
+{"t_ms": 1790000031000, "kind": "attempt", "unit": "b", "n": 0, "ms": 5000, "outcome": "verified", "decision": "verified"}
+{"t_ms": 1790000031010, "kind": "unit_end", "unit": "b", "state": "verified", "attempts": 1}
+{"t_ms": 1790003631010, "kind": "run_start", "options": {}}
+{"t_ms": 1790003631500, "kind": "sweep", "after_unit": "", "held": ["a", "b"], "regressed": []}
+{"t_ms": 1790003631600, "kind": "unit_start", "unit": "c", "function": "f_c", "deps": ["a", "b"]}
+{"t_ms": 1790003634600, "kind": "attempt", "unit": "c", "n": 0, "ms": 3000, "outcome": "acceptance_failed", "decision": "retry"}
+{"t_ms": 1790003638100, "kind": "attempt", "unit": "c", "n": 1, "ms": 3500, "outcome": "verified", "decision": "verified"}
+{"t_ms": 1790003638110, "kind": "unit_end", "unit": "c", "state": "verified", "attempts": 2}
+{"t_ms": 1790003638200, "kind": "run_end", "verdict": "done", "exit": 0, "seconds": 40.0}

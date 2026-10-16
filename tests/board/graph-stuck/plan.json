@@ -1,0 +1,36 @@
+{
+ "name": "graph-stuck",
+ "units": [
+  {
+   "id": "a",
+   "signature": "fn f_a[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "b",
+   "signature": "fn f_b[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": [
+    "a"
+   ]
+  },
+  {
+   "id": "c",
+   "signature": "fn f_c[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": [
+    "a"
+   ]
+  },
+  {
+   "id": "d",
+   "signature": "fn f_d[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": [
+    "b",
+    "c"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,53 @@
+{
+ "name": "graph-wide",
+ "units": [
+  {
+   "id": "w0",
+   "signature": "fn f_w0[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "w1",
+   "signature": "fn f_w1[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "w2",
+   "signature": "fn f_w2[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "w3",
+   "signature": "fn f_w3[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "w4",
+   "signature": "fn f_w4[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "w5",
+   "signature": "fn f_w5[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "w6",
+   "signature": "fn f_w6[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "w7",
+   "signature": "fn f_w7[&r](x: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  }
+ ]
+}

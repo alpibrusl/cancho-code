@@ -1,0 +1,167 @@
+{
+ "schema": 1,
+ "run": {
+  "name": "graph-stuck",
+  "brief": null,
+  "stage": null,
+  "plan_valid": null,
+  "provider": "anthropic",
+  "model": "claude-haiku-5-5",
+  "started_unix": null,
+  "seconds": 60.0,
+  "verdict": "stuck"
+ },
+ "files": {
+  "plan": true,
+  "run_log": true,
+  "state": true,
+  "usage": true,
+  "run_json": true,
+  "build_json": false,
+  "audit": false,
+  "prices": true
+ },
+ "metrics": {
+  "units_total": 4,
+  "units_verified": 2,
+  "columns": {
+   "waiting": 1,
+   "building": 0,
+   "verified": 2,
+   "stuck": 1,
+   "regressed": 0,
+   "unknown": 0
+  },
+  "calls": 4,
+  "tokens": {
+   "in": 1610,
+   "out": 3300,
+   "cache_write": 0,
+   "cache_read": 52000,
+   "thinking": null
+  },
+  "visible_out": null,
+  "thinking_share": null,
+  "cache_read_share": 0.97,
+  "efficiency": 0.0,
+  "efficiency_calls": 0.4848,
+  "efficiency_visible": null,
+  "cost_usd": 0.002331,
+  "cost_per_verified_unit": 0.001166,
+  "over_limit_calls": 0,
+  "audit": null
+ },
+ "truncated": false,
+ "units": [
+  {
+   "id": "a",
+   "function": "f_a",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2000,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "b",
+   "function": "f_b",
+   "column": "stuck",
+   "deps": [
+    "a"
+   ],
+   "attempts": 2,
+   "regressions": 0,
+   "calls": 2,
+   "tokens": {
+    "in": 810,
+    "out": 1700,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 26000
+   },
+   "cost_usd": 0.001191,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 4000,
+     "outcome": "refused",
+     "sig": "E0: refused",
+     "decision": "retry"
+    },
+    {
+     "attempt": 1,
+     "agent_ms": 4500,
+     "outcome": "refused",
+     "sig": "E1: refused",
+     "decision": "retry"
+    }
+   ]
+  },
+  {
+   "id": "c",
+   "function": "f_c",
+   "column": "verified",
+   "deps": [
+    "a"
+   ],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 2500,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "d",
+   "function": "f_d",
+   "column": "waiting",
+   "deps": [
+    "b",
+    "c"
+   ],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  }
+ ]
+}

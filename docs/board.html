@@ -110,7 +110,9 @@
   /* tabs, the detail panel and the story */
   .tabs { display: flex; gap: 6px; margin: 0 0 12px; border-bottom: 1px solid var(--line); }
   .tabs[hidden] { display: none; }
-  .tabs button { border: 0; border-bottom: 3px solid transparent; border-radius: 8px 8px 0 0; background: none; padding: 6px 14px; color: var(--muted); font-weight: 600; }
+  .tabs { overflow-x: auto; }
+  .tabs button[hidden] { display: none; }
+  .tabs button { border: 0; flex: 0 0 auto; border-bottom: 3px solid transparent; border-radius: 8px 8px 0 0; background: none; padding: 6px 14px; color: var(--muted); font-weight: 600; }
   .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--building); }
   .view[hidden] { display: none; }
   .card .open { margin-top: 8px; font-size: 0.82rem; padding: 3px 10px; min-height: 30px; }
@@ -160,6 +162,61 @@
   .storyhead { margin-bottom: 12px; }
   .storyhead h2 { font-size: 1.05rem; margin-bottom: 4px; }
 
+
+  /* the graph and the timeline */
+  .gsum { margin: 0 0 8px; font-weight: 600; overflow-wrap: anywhere; }
+  .gsum.warn { color: var(--warn); border: 1px solid var(--warn); border-radius: 8px; padding: 8px 10px; background: var(--panel); }
+  .glegend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 10px; font-size: 0.84rem; align-items: center; }
+  .glegend .lg { display: inline-flex; gap: 6px; align-items: center; }
+  .crit-sw { display: inline-block; width: 26px; height: 0; border-top: 4px solid var(--ink); }
+  .gscroll, .tscroll { overflow: auto; max-width: 100%; max-height: 74vh; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; -webkit-overflow-scrolling: touch; }
+  .gscroll:focus-visible, .tscroll:focus-visible, .node:focus-visible { outline: 2px solid var(--building); outline-offset: 2px; }
+  svg.graph { display: block; }
+  svg.graph .edge { fill: none; stroke: var(--muted); stroke-width: 1.3; opacity: 0.75; }
+  svg.graph .edge.crit { stroke: var(--ink); stroke-width: 3.2; opacity: 1; }
+  svg.graph .edge.hl { stroke: var(--building); stroke-width: 2.4; opacity: 1; }
+  svg.graph .arrow { fill: var(--muted); } svg.graph .arrow.crit { fill: var(--ink); }
+  svg.graph .node { cursor: pointer; --c: var(--waiting); }
+  svg.graph .node.waiting { --c: var(--waiting); } svg.graph .node.building { --c: var(--building); } svg.graph .node.verified { --c: var(--verified); }
+  svg.graph .node.stuck { --c: var(--stuck); } svg.graph .node.regressed { --c: var(--regressed); } svg.graph .node.unknown { --c: var(--unknown); }
+  svg.graph .node:focus { outline: none; }
+  svg.graph .box { fill: var(--panel); stroke: var(--c); stroke-width: 2; }
+  svg.graph .node:hover .box { fill: var(--soft); }
+  svg.graph .node.crit .box { stroke-width: 3; }
+  svg.graph .ring { fill: none; stroke: transparent; stroke-width: 3; }
+  svg.graph .node.crit .ring { stroke: var(--ink); }
+  svg.graph .node:focus-visible .ring { stroke: var(--building); stroke-width: 3.5; stroke-dasharray: none; }
+  svg.graph .dotc { fill: var(--c); }
+  svg.graph text { fill: var(--ink); font-family: var(--sans); font-size: 12px; pointer-events: none; }
+  svg.graph .t-id { font-weight: 650; font-size: 13px; } svg.graph .t-rank { fill: var(--muted); font-size: 11px; }
+  svg.graph .t-fn { font-family: var(--mono); font-size: 11px; fill: var(--muted); } svg.graph .t-facts { font-size: 10.5px; fill: var(--muted); }
+  details.glist { margin-top: 10px; } details.glist summary { cursor: pointer; font-size: 0.86rem; color: var(--muted); }
+  details.glist ul { margin: 4px 0; padding-left: 20px; font-size: 0.86rem; overflow-wrap: anywhere; }
+
+  .tgrid { --tw: 700px; --lw: 104px; width: calc(var(--lw) + var(--tw) + 44px); padding-bottom: 6px; }
+  .trow { display: flex; align-items: stretch; min-height: 30px; border-bottom: 1px solid var(--line); }
+  .tlab { flex: 0 0 var(--lw); width: var(--lw); position: sticky; left: 0; z-index: 3; background: var(--panel); border-right: 1px solid var(--line); padding: 4px 8px;
+          font: 0.84rem/1.3 var(--sans); text-align: left; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  button.tlab { border: 0; border-right: 1px solid var(--line); border-radius: 0; min-height: 0; cursor: pointer; }
+  button.tlab:hover { background: var(--soft); }
+  .ttrack { position: relative; flex: 0 0 var(--tw); width: var(--tw); min-height: 30px; background-image: linear-gradient(to right, var(--line) 1px, transparent 1px); background-repeat: repeat-x; }
+  .taxis { position: sticky; top: 0; z-index: 4; background: var(--panel); } .taxis .ttrack { background-image: none; height: 38px; }
+  .tick { position: absolute; top: 4px; font-size: 0.74rem; color: var(--muted); font-variant-numeric: tabular-nums; padding-left: 3px; white-space: nowrap; }
+  .brk-l { position: absolute; top: 20px; font-size: 0.72rem; color: var(--warn); white-space: nowrap; padding-left: 3px; background: var(--panel); }
+  .brk { position: absolute; top: 0; bottom: 0; border-left: 2px dashed var(--warn); }
+  .tmiss { position: absolute; left: 8px; top: 5px; font-size: 0.8rem; color: var(--muted); }
+  .tb { position: absolute; border-radius: 4px; }
+  .tb.span { top: 3px; bottom: 3px; background: var(--soft); border: 1px solid var(--line); }
+  .tb.span.open { border-right-style: dashed; }
+  .tb.sweep { bottom: 3px; height: 6px; background: repeating-linear-gradient(135deg, var(--muted) 0 2px, transparent 2px 4px); opacity: 0.8; }
+  .tb.att { top: 6px; bottom: 6px; min-width: 4px; padding: 0; min-height: 0; border: 1px solid transparent; border-radius: 4px; cursor: pointer; background: var(--waiting); }
+  .tb.att.good { background: var(--verified); } .tb.att.bad { background: var(--stuck); }
+  .tb.att.bad, .tb-sw.bad { background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(255, 255, 255, 0.4) 4px 7px); }
+  .tb.att:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; z-index: 2; }
+  .tb-sw { display: inline-block; width: 22px; height: 12px; border-radius: 3px; background: var(--waiting); }
+  .tb-sw.good { background: var(--verified); } .tb-sw.bad { background-color: var(--stuck); }
+  .est { margin: 12px 0 4px; font-weight: 600; overflow-wrap: anywhere; }
+
   @media (max-width: 640px) {
     .phead, #pbody { padding-left: 12px; padding-right: 12px; }
     ol.tl button.row { grid-template-columns: 4.5em 1fr; }
@@ -196,14 +253,18 @@
   </header>
 
   <p id="notice" hidden></p>
-  <div id="tabs" class="tabs" role="tablist" aria-label="Views" hidden>
+  <div id="tabs" class="tabs" role="tablist" aria-label="Views">
     <button id="tab-board" type="button" role="tab" aria-selected="true" aria-controls="view-board">Board</button>
-    <button id="tab-story" type="button" role="tab" aria-selected="false" aria-controls="view-story" tabindex="-1">Story</button>
+    <button id="tab-graph" type="button" role="tab" aria-selected="false" aria-controls="view-graph" tabindex="-1">Graph</button>
+    <button id="tab-timeline" type="button" role="tab" aria-selected="false" aria-controls="view-timeline" tabindex="-1" hidden>Timeline</button>
+    <button id="tab-story" type="button" role="tab" aria-selected="false" aria-controls="view-story" tabindex="-1" hidden>Story</button>
   </div>
   <div id="view-board" class="view" role="tabpanel" aria-labelledby="tab-board">
     <section id="metrics" class="metrics" aria-label="Metrics"></section>
     <section id="board" class="board" aria-label="Units"></section>
   </div>
+  <div id="view-graph" class="view" role="tabpanel" aria-labelledby="tab-graph" hidden></div>
+  <div id="view-timeline" class="view" role="tabpanel" aria-labelledby="tab-timeline" hidden></div>
   <div id="view-story" class="view" role="tabpanel" aria-labelledby="tab-story" hidden></div>
   <footer id="foot"></footer>
 </main>
@@ -236,8 +297,6 @@ function el(tag, cls, text) {
   if (text !== undefined && text !== null) e.textContent = text;
   return e;
 }
-function isNum(v) { return typeof v === "number" && isFinite(v); }
-
 function fmtInt(v) { return isNum(v) ? Math.round(v).toLocaleString("en-US") : null; }
 function fmtPct(v) { return isNum(v) ? (v * 100).toFixed(1) + "%" : null; }
 function fmtUsd(v) {
@@ -252,6 +311,275 @@ function fmtSecs(v) {
   return m + " min " + s + " s";
 }
 function fmtMs(v) { return isNum(v) ? (Math.round(v / 100) / 10) + " s" : null; }
+
+// ---- the graph and the timeline: pure logic ---------------------------------------------------------------------------------
+// Everything between the markers is a function of plain data (board.json's units and journal events): no page, no clock, no
+// network. scripts/test-board.sh cuts this block out and runs it under node (tests/board/page-logic.test.js) against the fixtures
+// and against the oracle tests/reference/board_ref.py --layout; keep it free of the page.
+// graph-logic:begin
+function isNum(v) { return typeof v === "number" && isFinite(v); }
+function dict() { return Object.create(null); }
+function fmtS(ms) { return (Math.round(ms / 100) / 10) + " s"; }
+function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
+
+// The agent time of a unit in ms: the sum of its attempts' times in its trail. null when it is not recorded (a trail row with no
+// time, or no trail for a unit that was built); a unit nobody has built has none to record, so 0.
+function unitMs(u) {
+  if (!u) return null;
+  if (Array.isArray(u.trail) && u.trail.length) {
+    var s = 0;
+    for (var i = 0; i < u.trail.length; i++) {
+      var m = u.trail[i] && u.trail[i].agent_ms;
+      if (!isNum(m)) return null;
+      s += m;
+    }
+    return s;
+  }
+  return (u.column === "waiting" || u.attempts === 0) ? 0 : null;
+}
+
+// Layers of a plan: a unit's layer is the length of the longest chain of dependencies below it (a root is in layer 0). Kahn's
+// algorithm, so a cycle, a self-dependency or an unknown dependency never loops: what cannot be placed is `unplaced` and goes in
+// one last layer. `ok` is true only for a real DAG. Indices (into `ids`, the plan order without repeated ids) throughout.
+function dagLayout(units) {
+  var us = [], ids = [], ix = dict(), dups = [];
+  (Array.isArray(units) ? units : []).forEach(function (u) {
+    if (!u || typeof u.id !== "string") return;
+    if (ix[u.id] !== undefined) { dups.push(u.id); return; }
+    ix[u.id] = ids.length; ids.push(u.id); us.push(u);
+  });
+  var n = ids.length, deps = [], succ = [], unknown = [], i;
+  for (i = 0; i < n; i++) { deps.push([]); succ.push([]); }
+  us.forEach(function (u, k) {
+    var seen = dict();
+    (Array.isArray(u.deps) ? u.deps : []).forEach(function (d) {
+      if (typeof d !== "string" || seen[d]) return;
+      seen[d] = true;
+      if (ix[d] === undefined) { unknown.push({ unit: ids[k], dep: d }); return; } // MUTANT:unknown
+      deps[k].push(ix[d]); succ[ix[d]].push(k);
+    });
+  });
+  var left = [], layer = [], q = [], topo = [], head = 0;
+  for (i = 0; i < n; i++) { left.push(deps[i].length); layer.push(0); if (!left[i]) q.push(i); }
+  while (head < q.length) {
+    var v = q[head++];
+    topo.push(v);
+    succ[v].forEach(function (s) {
+      if (layer[v] + 1 > layer[s]) layer[s] = layer[v] + 1; // MUTANT:layer
+      left[s]--;
+      if (left[s] === 0) q.push(s);
+    });
+  }
+  var isPlaced = [], unplaced = [], stuck = [], layers = [];
+  topo.forEach(function (x) { isPlaced[x] = true; });
+  for (i = 0; i < n; i++) {
+    if (isPlaced[i]) { while (layers.length <= layer[i]) layers.push([]); layers[layer[i]].push(i); }
+    else { layer[i] = null; unplaced.push(ids[i]); stuck.push(i); }
+  }
+  // fewer crossings: reorder each layer by the mean position of its neighbours, forward and back (ties: plan order)
+  var pos = [];
+  function renumber() { layers.forEach(function (l) { l.forEach(function (x, p) { pos[x] = p; }); }); }
+  renumber();
+  for (var pass = 0; pass < 4; pass++) {
+    var fwd = pass % 2 === 0;
+    for (var step = 0; step < layers.length; step++) {
+      var l = fwd ? step : layers.length - 1 - step, ls = layers[l], key = {};
+      ls.forEach(function (x) {
+        var nb = fwd ? deps[x] : succ[x], t = 0, c = 0;
+        nb.forEach(function (y) { if (isPlaced[y]) { t += pos[y]; c++; } });
+        key[x] = c ? t / c : pos[x];
+      });
+      ls.sort(function (a, b) { return key[a] - key[b] || a - b; });
+      ls.forEach(function (x, p) { pos[x] = p; });
+    }
+  }
+  if (stuck.length) layers.push(stuck);
+  var ok = !unknown.length && !dups.length && !unplaced.length;
+  return { ids: ids, units: us, deps: deps, succ: succ, layer: layer, layers: layers, topo: topo, duplicates: dups, unknown: unknown, unplaced: unplaced, ok: ok }; // MUTANT:cycle
+}
+
+// The longest chain. `ms` (one number per unit, in `lay.ids` order) weighs a unit by its agent time; without it every unit weighs 1.
+// Ties: the end is the first unit (plan order) with the longest chain, and each step back goes to the first dependency, as listed,
+// with the longest chain. null for a plan that is not a DAG.
+function criticalPath(lay, ms) {
+  if (!lay.ok) return null;
+  var n = lay.ids.length, tot = [], pred = [], best = -1, end = -1;
+  lay.topo.forEach(function (v) {
+    var p = -1;
+    lay.deps[v].forEach(function (d) { if (p < 0 || tot[d] > tot[p]) p = d; });
+    pred[v] = p;
+    tot[v] = (ms ? ms[v] : 1) + (p < 0 ? 0 : tot[p]);
+  });
+  for (var i = 0; i < n; i++) { var b = tot[i]; if (b > best) { best = b; end = i; } } // MUTANT:critical
+  var path = [];
+  for (var c = end; c >= 0; c = pred[c]) path.push(lay.ids[c]);
+  path.reverse();
+  return { basis: ms ? "agent time" : "units", total: n ? best : 0, path: path };
+}
+
+// The graph of a board: layers, and the critical path by agent time when every unit has one recorded (else by number of units).
+function graphModel(units) {
+  var lay = dagLayout(units), ms = lay.units.map(unitMs), all = ms.length > 0, sum = 0;
+  ms.forEach(function (m) { if (m === null) all = false; else sum += m; });
+  var timed = all && sum > 0 ? ms : null;
+  var noPlan = lay.units.length > 0 && lay.units.every(function (u) { return u.deps === null || u.deps === undefined; });
+  return { lay: lay, ms: timed, crit: criticalPath(lay, timed), noPlan: noPlan };
+}
+
+function listIds(a, max) { return a.length > max ? a.slice(0, max).join(", ") + " and " + (a.length - max) + " more" : a.join(", "); }
+
+function graphProblems(lay) {
+  var p = [];
+  lay.unknown.slice(0, 3).forEach(function (u) { p.push("unit " + u.unit + " needs " + u.dep + ", which is not in the plan"); });
+  if (lay.unknown.length > 3) p.push((lay.unknown.length - 3) + " more dependencies are not in the plan");
+  if (lay.duplicates.length) p.push("the id " + listIds(lay.duplicates, 3) + " is used more than once");
+  if (lay.unplaced.length) p.push(listIds(lay.unplaced, 6) + (lay.unplaced.length === 1 ? " is in a cycle or depends on one" : " are in a cycle or depend on one"));
+  return p;
+}
+
+function graphSummary(m) {
+  var lay = m.lay;
+  if (!lay.ids.length) return "No units in this run.";
+  if (m.noPlan) return "Not recorded: this run has no plan.json, so there are no dependencies to draw.";
+  if (!lay.ok) return "The dependencies of this plan are not a DAG: " + graphProblems(lay).join("; ") + ".";
+  var widest = 0;
+  lay.layers.forEach(function (l) { if (l.length > widest) widest = l.length; });
+  var c = m.crit;
+  return plural(lay.ids.length, "unit", "units") + " in " + plural(lay.layers.length, "layer", "layers") + " (widest: " + widest + "). Critical path: " +
+    plural(c.path.length, "unit", "units") + (c.basis === "agent time"
+      ? ", " + fmtS(c.total) + " (longest chain by agent time from the trails)."
+      : " (longest chain by number of units: no per-unit agent times are recorded).");
+}
+
+// Where each node goes: a column per layer, left to right, the layers centred on each other. Pixels.
+function placeGraph(lay) {
+  var W = 190, H = 58, GX = 64, GY = 14, PAD = 16, nodes = {}, tall = 0;
+  lay.layers.forEach(function (l) { if (l.length > tall) tall = l.length; });
+  var colH = tall ? tall * (H + GY) - GY : 0;
+  lay.layers.forEach(function (l, c) {
+    var off = Math.round((colH - (l.length * (H + GY) - GY)) / 2);
+    l.forEach(function (x, r) { nodes[lay.ids[x]] = { x: PAD + c * (W + GX), y: PAD + off + r * (H + GY), layer: c }; });
+  });
+  var cols = Math.max(1, lay.layers.length);
+  return { nodes: nodes, nodeW: W, nodeH: H, width: 2 * PAD + cols * W + (cols - 1) * GX, height: 2 * PAD + colH };
+}
+
+// The order the units were handed to the agent, from the journal.
+function runOrder(events) {
+  var out = [], seen = dict();
+  (Array.isArray(events) ? events : []).forEach(function (e) {
+    if (e && (e.kind === "unit_start" || e.kind === "attempt") && typeof e.unit === "string" && !seen[e.unit]) { seen[e.unit] = true; out.push(e.unit); }
+  });
+  return out;
+}
+
+var PLAN_GOOD = { written: 1, reviewed: 1, accepted: 1 };
+var ATTEMPT_GOOD = { verified: 1, accepted: 1 };
+var AXIS_STEPS = [100, 200, 500, 1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000, 300000, 600000, 1800000, 3600000];
+var KIND_RANK = { span: 0, attempt: 1, call: 1, sweep: 2 };
+
+// The journal as rows of bars. `t_ms` is when an event was written, after the call it describes, so an attempt that took `ms`
+// ran from t_ms - ms to t_ms. x is milliseconds since the first event; a pause of more than two minutes between runs (a run
+// resumed later: its run_start comes after the last event of the one before) is taken out of the axis and listed in `breaks`.
+function timelineModel(events, units) {
+  var evs = Array.isArray(events) ? events : [], xs = [], base = null, prev = null, shift = 0, breaks = [];
+  evs.forEach(function (e, i) {
+    xs[i] = null;
+    if (!e || typeof e !== "object" || !isNum(e.t_ms)) return;
+    if (base === null) base = e.t_ms;
+    if (e.kind === "run_start" && prev !== null && e.t_ms - prev > 120000) {
+      breaks.push({ x: Math.max(0, prev - base - shift), gap_ms: e.t_ms - prev });
+      shift += e.t_ms - prev;
+    }
+    xs[i] = Math.max(0, e.t_ms - base - shift);
+    if (prev === null || e.t_ms > prev) prev = e.t_ms;
+  });
+  var rows = [], byKey = dict(), order = [], total = 0, lastRunStart = 0, endOf = dict();
+  var plan = { key: "plan", label: "plan", kind: "plan", missing: true, bars: [], spans: [] };
+  rows.push(plan); byKey.plan = plan;
+  function rowOf(key, label, kind) {
+    if (!byKey[key]) { byKey[key] = { key: key, label: label, kind: kind, missing: false, bars: [], spans: [] }; rows.push(byKey[key]); }
+    return byKey[key];
+  }
+  evs.forEach(function (e, i) {
+    var x = xs[i];
+    if (x === null) return;
+    if (x > total) total = x;
+    var unit = typeof e.unit === "string" ? e.unit : null, r;
+    if (e.kind === "run_start") lastRunStart = x;
+    else if (e.kind === "plan_call") {
+      plan.missing = false;
+      var pm = isNum(e.ms) ? e.ms : 0, px0 = x - pm;
+      plan.bars.push({ kind: "call", good: e.outcome ? !!PLAN_GOOD[e.outcome] : null, x0: Math.max(0, px0), x1: x, ev: i, round: isNum(e.round) ? e.round : null, outcome: e.outcome || null, ms: isNum(e.ms) ? e.ms : null });
+    } else if (e.kind === "unit_start" && unit !== null) {
+      r = rowOf(unit, unit, "unit");
+      if (order.indexOf(unit) < 0) order.push(unit);
+      r.spans.push({ x0: x, x1: null });
+    } else if (e.kind === "attempt" && unit !== null) {
+      r = rowOf(unit, unit, "unit");
+      if (order.indexOf(unit) < 0) order.push(unit);
+      var ms = isNum(e.ms) ? e.ms : 0;
+      var x0 = x - ms; // MUTANT:bar
+      r.bars.push({ kind: "attempt", good: e.outcome ? !!ATTEMPT_GOOD[e.outcome] : null, x0: Math.max(0, x0), x1: x, ev: i, unit: unit,
+                    n: isNum(e.n) ? e.n : null, outcome: e.outcome || null, ms: isNum(e.ms) ? e.ms : null }); // MUTANT:attemptno
+    } else if (e.kind === "unit_end" && unit !== null) {
+      r = rowOf(unit, unit, "unit");
+      var open = r.spans.filter(function (s) { return s.x1 === null; });
+      if (open.length) open[open.length - 1].x1 = x;
+      else r.spans.push({ x0: x, x1: x });
+      endOf[unit] = x;
+    } else if (e.kind === "sweep") {
+      var after = typeof e.after_unit === "string" && e.after_unit ? e.after_unit : null;
+      var from = after !== null && endOf[after] !== undefined && endOf[after] <= x ? endOf[after] : (after === null ? lastRunStart : x);
+      r = after !== null ? rowOf(after, after, "unit") : rowOf("resume", "resume", "resume");
+      if (after !== null && order.indexOf(after) < 0) order.push(after);
+      r.bars.push({ kind: "sweep", good: null, x0: from, x1: x, ev: i, unit: after });
+    }
+  });
+  rows.forEach(function (r) {
+    r.spans.forEach(function (s) {
+      var open = s.x1 === null;
+      r.bars.push({ kind: "span", good: null, x0: s.x0, x1: open ? total : s.x1, open: open });
+    });
+    r.bars.sort(function (a, b) { return a.x0 - b.x0 || KIND_RANK[a.kind] - KIND_RANK[b.kind] || a.x1 - b.x1; });
+    r.bars.forEach(function (b) { if (b.x1 > total) total = b.x1; });
+  });
+  var step = AXIS_STEPS[AXIS_STEPS.length - 1], ticks = [], t;
+  for (var k = 0; k < AXIS_STEPS.length; k++) if (total / AXIS_STEPS[k] <= 12) { step = AXIS_STEPS[k]; break; }
+  for (t = 0; t <= total; t += step) ticks.push(t);
+  var ran = dict();
+  rows.forEach(function (r) { if (r.kind === "unit") ran[r.key] = true; });
+  var notRun = [];
+  (Array.isArray(units) ? units : []).forEach(function (u) { if (u && typeof u.id === "string" && !ran[u.id] && notRun.indexOf(u.id) < 0) notRun.push(u.id); });
+  var first = null, last = null;
+  rows.forEach(function (r) { r.spans.forEach(function (s) { if (first === null || s.x0 < first) first = s.x0; if (s.x1 !== null && (last === null || s.x1 > last)) last = s.x1; }); });
+  return { rows: rows, total: total, step: step, ticks: ticks, breaks: breaks, notRun: notRun, order: order, unitsWall: first !== null && last !== null ? last - first : null };
+}
+
+// What running independent units together could save, at most: the agent time of all attempts (X) less the longest chain of the
+// plan weighed by each unit's agent time (Y). A bound from the journal's own per-attempt times and the plan's dependencies, not a
+// promise: the checks, the sweeps and any wait are not in it. Says "not recorded" when what it needs is missing.
+function estimateOf(events, units) {
+  var per = dict(), X = 0, lacking = false, seen = 0;
+  (Array.isArray(events) ? events : []).forEach(function (e) {
+    if (!e || e.kind !== "attempt" || typeof e.unit !== "string") return;
+    seen++;
+    if (isNum(e.ms)) { per[e.unit] = (per[e.unit] || 0) + e.ms; X += e.ms; } else lacking = true;
+  });
+  var out = { agent_ms: null, critical_ms: null, saved_ms: null, path: null, text: "" };
+  if (!seen) { out.text = "Estimate: not recorded (the journal has no attempts)."; return out; }
+  if (lacking) { out.text = "Estimate: not recorded (an attempt in the journal has no time)."; return out; }
+  out.agent_ms = X;
+  var m = graphModel(units);
+  if (!m.lay.ids.length || m.noPlan) { out.text = "Estimate: not recorded (this run has no plan.json, so no dependencies)."; return out; }
+  if (!m.lay.ok) { out.text = "Estimate: agent time total " + fmtS(X) + "; no critical path (the dependencies of this plan are not a DAG)."; return out; }
+  var c = criticalPath(m.lay, m.lay.ids.map(function (id) { return per[id] || 0; }));
+  out.critical_ms = c.total; out.path = c.path; out.saved_ms = X - c.total; // MUTANT:saved
+  var shown = c.path.length > 6 ? c.path.slice(0, 4).join(", ") + " ... " + c.path[c.path.length - 1] + ", " + c.path.length + " units" : c.path.join(", ");
+  out.text = "Estimate: agent time total " + fmtS(X) + "; critical path " + fmtS(c.total) + " (" + shown + "); units run one after another today, so parallel units could save at most " + fmtS(out.saved_ms) + " here.";
+  return out;
+}
+// graph-logic:end
 
 // ---- loading -------------------------------------------------------------------------------------------------------------
 
@@ -530,9 +858,12 @@ function render(d) {
   renderMetrics(d);
   renderBoard(d);
   renderStory(d);
+  renderGraph(d);
+  renderTimeline(d);
   renderFoot(d);
-  $("tabs").hidden = !J;
-  showView(J ? state.view : "board");
+  $("tab-timeline").hidden = !J;
+  $("tab-story").hidden = !J;
+  showView(state.view);
   if (panelState.open && panelState.build) panelState.build();
 }
 
@@ -1075,23 +1406,272 @@ function renderStory(d) {
   box.appendChild(tl);
 }
 
+// ---- the graph ---------------------------------------------------------------------------------------------------------------
+// The plan's units as a layered DAG (layers from graphModel above), drawn as SVG built with createElementNS and textContent only.
+
+// The SVG namespace is read from the HTML parser (a constant markup string), not written out: it names the element type, nothing is fetched.
+var SVGNS = (function () { var h = document.createElement("div"); h.innerHTML = "<svg></svg>"; return h.firstChild.namespaceURI; })();
+function sv(tag, attrs, text) {
+  var e = document.createElementNS(SVGNS, tag);
+  if (attrs) Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+  if (text !== undefined && text !== null) e.textContent = text;
+  return e;
+}
+function clip(s, n) { s = String(s); return s.length > n ? s.slice(0, n - 1) + "\u2026" : s; }
+function nodeUsd(v) { return isNum(v) ? "$" + (v < 0.01 ? v.toFixed(4) : v.toFixed(2)) : null; }
+function colName(id) { for (var i = 0; i < COLS.length; i++) if (COLS[i][0] === id) return COLS[i][1].toLowerCase(); return String(id); }
+
+function nodeFacts(u, ms) {
+  var att = u.attempts === null || u.attempts === undefined ? null : u.attempts;
+  return { att: att, cost: nodeUsd(u.cost_usd), secs: isNum(ms) && ms > 0 ? fmtS(ms) : null };
+}
+
+function renderGraph(d) {
+  var box = $("view-graph");
+  var oldScroll = box.querySelector(".gscroll");
+  var keep = oldScroll ? [oldScroll.scrollLeft, oldScroll.scrollTop] : null;
+  var focused = document.activeElement && box.contains(document.activeElement) && document.activeElement.getAttribute ? document.activeElement.getAttribute("data-unit") : null;
+  box.textContent = "";
+  var m = graphModel(d.units), lay = m.lay, summary = graphSummary(m);
+  box.appendChild(el("p", "gsum" + (lay.ok || m.noPlan || !lay.ids.length ? "" : " warn"), summary));
+  if (!lay.ids.length || m.noPlan) return;
+
+  var order = J ? runOrder(J.j.events) : null, rank = {};
+  if (order) order.forEach(function (id, i) { rank[id] = i + 1; });
+  if (order && order.length) box.appendChild(el("p", "note", "Units are built one at a time, in plan order among the units whose dependencies are verified. Order in this run (journal): " + (order.length > 14 ? order.slice(0, 14).join(", ") + " \u2026" : order.join(", ")) + "."));
+  else if (J) box.appendChild(el("p", "note", "Run order: not recorded (the journal has no unit starts)."));
+
+  var crit = m.crit, onCrit = {}, critEdge = {};
+  if (crit) {
+    crit.path.forEach(function (id, i) { onCrit[id] = true; if (i) critEdge[crit.path[i - 1] + "\u0000" + id] = true; });
+  }
+  var legend = el("div", "glegend");
+  COLS.forEach(function (c) {
+    if (c[0] === "unknown" && !(d.metrics.columns && d.metrics.columns.unknown)) return;
+    var it = el("span", "lg");
+    it.appendChild(el("span", "dot " + c[0]));
+    it.appendChild(document.createTextNode(c[1]));
+    legend.appendChild(it);
+  });
+  if (crit) {
+    var cl = el("span", "lg");
+    var sw = el("span", "crit-sw");
+    cl.appendChild(sw);
+    cl.appendChild(document.createTextNode("Critical path: the longest chain, by " + (crit.basis === "agent time" ? "agent time" : "number of units") +
+      (crit.basis === "agent time" ? " (" + fmtS(crit.total) + ")" : " (" + crit.path.length + ")")));
+    legend.appendChild(cl);
+  }
+  legend.appendChild(el("span", "lg muted", "An arrow from A to B means B needs A."));
+  box.appendChild(legend);
+
+  var g = placeGraph(lay), byId = {};
+  d.units.forEach(function (u) { if (!byId[u.id]) byId[u.id] = u; });
+  var wrap = el("div", "gscroll");
+  wrap.tabIndex = 0;
+  wrap.setAttribute("role", "region");
+  wrap.setAttribute("aria-label", "Dependency graph of the plan; it scrolls inside this frame");
+  var svg = sv("svg", { "class": "graph", width: g.width, height: g.height, viewBox: "0 0 " + g.width + " " + g.height, role: "group", "aria-label": "Units and their dependencies" });
+  var defs = sv("defs");
+  [["g-arrow", "arrow"], ["g-arrowc", "arrow crit"]].forEach(function (p) {
+    var mk = sv("marker", { id: p[0], viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "9", markerHeight: "9", markerUnits: "userSpaceOnUse", orient: "auto" });
+    mk.appendChild(sv("path", { d: "M0,0 L10,5 L0,10 z", "class": p[1] }));
+    defs.appendChild(mk);
+  });
+  svg.appendChild(defs);
+
+  var edgesOf = {}, plain = sv("g"), hot = sv("g");
+  lay.ids.forEach(function (id, v) {
+    lay.deps[v].forEach(function (s) {
+      var a = g.nodes[lay.ids[s]], b = g.nodes[id];
+      var x1 = a.x + g.nodeW, y1 = a.y + g.nodeH / 2, x2 = b.x - 1, y2 = b.y + g.nodeH / 2;
+      var dx = Math.max(30, Math.abs(x2 - x1) / 2);
+      var isCrit = !!critEdge[lay.ids[s] + "\u0000" + id];
+      var p = sv("path", { d: "M" + x1 + "," + y1 + " C" + (x1 + dx) + "," + y1 + " " + (x2 - dx) + "," + y2 + " " + x2 + "," + y2,
+                           "class": "edge" + (isCrit ? " crit" : ""), "marker-end": "url(#" + (isCrit ? "g-arrowc" : "g-arrow") + ")" });
+      p.appendChild(sv("title", null, id + " needs " + lay.ids[s]));
+      (isCrit ? hot : plain).appendChild(p);
+      (edgesOf[id] = edgesOf[id] || []).push(p);
+      (edgesOf[lay.ids[s]] = edgesOf[lay.ids[s]] || []).push(p);
+    });
+  });
+  svg.appendChild(plain);
+  svg.appendChild(hot);
+
+  lay.ids.forEach(function (id, v) {
+    var u = byId[id], pos = g.nodes[id], ms = m.lay.units[v] ? unitMs(m.lay.units[v]) : null;
+    var f = nodeFacts(u, ms);
+    var node = sv("g", { "class": "node " + u.column + (onCrit[id] ? " crit" : ""), transform: "translate(" + pos.x + "," + pos.y + ")", "data-unit": id });
+    node.setAttribute("tabindex", "0");
+    node.setAttribute("role", "button");
+    var needs = Array.isArray(u.deps) && u.deps.length ? ", needs " + u.deps.join(", ") : ", needs nothing";
+    node.setAttribute("aria-label", "Unit " + id + (u.function ? ", function " + u.function : "") + ", " + colName(u.column) + ", " +
+      (f.att === null ? "attempts not recorded" : plural(f.att, "attempt", "attempts")) + ", cost " + (f.cost || "not recorded") +
+      (f.secs ? ", agent time " + f.secs : "") + needs + (onCrit[id] ? ", on the critical path" : "") + (rank[id] ? ", built number " + rank[id] : "") + ". Press Enter for details.");
+    node.appendChild(sv("title", null, id + (u.function ? " (" + u.function + ")" : "") + ": " + colName(u.column) + (onCrit[id] ? ", on the critical path" : "")));
+    node.appendChild(sv("rect", { "class": "ring", x: -4, y: -4, width: g.nodeW + 8, height: g.nodeH + 8, rx: 12 }));
+    node.appendChild(sv("rect", { "class": "box", width: g.nodeW, height: g.nodeH, rx: 8 }));
+    node.appendChild(sv("circle", { "class": "dotc", cx: 14, cy: 18, r: 5 }));
+    node.appendChild(sv("text", { "class": "t-id", x: 26, y: 23 }, clip(id, 18)));
+    if (rank[id]) node.appendChild(sv("text", { "class": "t-rank", x: g.nodeW - 8, y: 22, "text-anchor": "end" }, "#" + rank[id]));
+    node.appendChild(sv("text", { "class": "t-fn", x: 12, y: 38 }, u.function ? clip(u.function, 30) : "function: not recorded"));
+    node.appendChild(sv("text", { "class": "t-facts", x: 12, y: 52 }, clip([colName(u.column), f.att === null ? "? att" : f.att + " att", f.cost || "$ ?", f.secs].filter(Boolean).join(" \u00b7 "), 36)));
+    function open() { openUnit(u, null, node); }
+    node.addEventListener("click", open);
+    node.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+    function lit(on) { (edgesOf[id] || []).forEach(function (p) { p.classList.toggle("hl", on); }); }
+    node.addEventListener("mouseenter", function () { lit(true); });
+    node.addEventListener("mouseleave", function () { lit(false); });
+    node.addEventListener("focus", function () { lit(true); });
+    node.addEventListener("blur", function () { lit(false); });
+    svg.appendChild(node);
+  });
+  wrap.appendChild(svg);
+  box.appendChild(wrap);
+  if (keep) { wrap.scrollLeft = keep[0]; wrap.scrollTop = keep[1]; }
+  if (focused) { var back = svg.querySelector('[data-unit="' + focused.replace(/["\\]/g, "") + '"]'); if (back) back.focus({ preventScroll: true }); }
+
+  // the same graph as text, for a screen reader or a keyboard: a nested list, layer by layer
+  var det = el("details", "glist");
+  det.appendChild(el("summary", "", "The graph as a list (each unit and what it depends on)"));
+  var ul = el("ul");
+  lay.layers.forEach(function (l, c) {
+    var li = el("li", "", c === lay.layers.length - 1 && lay.unplaced.length ? "Not placed (in a cycle or behind one)" : "Layer " + (c + 1) + (c === 0 && lay.ok ? " (no dependencies)" : ""));
+    var inner = el("ul");
+    l.forEach(function (v) {
+      var id = lay.ids[v], u = byId[id], deps = Array.isArray(u.deps) ? u.deps : [];
+      inner.appendChild(el("li", "", id + ": depends on " + (deps.length ? deps.map(function (x) { return lay.units.some(function (w) { return w.id === x; }) ? x : x + " (not in the plan)"; }).join(", ") : "nothing") +
+        " (" + colName(u.column) + (onCrit[id] ? ", critical path" : "") + ")"));
+    });
+    li.appendChild(inner);
+    ul.appendChild(li);
+  });
+  det.appendChild(ul);
+  box.appendChild(det);
+}
+
+// ---- the timeline ------------------------------------------------------------------------------------------------------------
+
+function fmtTick(ms) {
+  if (ms < 60000) return (ms / 1000) + " s";
+  var m = Math.floor(ms / 60000), s = (ms - m * 60000) / 1000;
+  return m + ":" + (s < 10 ? "0" : "") + s;
+}
+
+function renderTimeline(d) {
+  var box = $("view-timeline");
+  var oldScroll = box.querySelector(".tscroll");
+  var keep = oldScroll ? [oldScroll.scrollLeft, oldScroll.scrollTop] : null;
+  box.textContent = "";
+  if (!J) { box.appendChild(el("p", "note", "Not recorded: this run has no journal.")); return; }
+  var evs = J.j.events, t = timelineModel(evs, d.units), est = estimateOf(evs, d.units);
+  box.appendChild(el("p", "note", "One row per unit, in the order they ran. A bar is one model call (plan) or one attempt, from when it began to when it was recorded; the pale band is the unit from its start to its end; the hatched strip is the sweep that re-checked the earlier units. Empty track is time spent on something else: checks, the tool, waiting."));
+  var legend = el("div", "glegend");
+  [["good", "verified / written"], ["bad", "refused or failed"], ["unk", "outcome not recorded"]].forEach(function (p) {
+    var it = el("span", "lg"); it.appendChild(el("span", "tb-sw " + p[0])); it.appendChild(document.createTextNode(p[1])); legend.appendChild(it);
+  });
+  box.appendChild(legend);
+  if (!(t.total > 0)) { box.appendChild(el("p", "note", "Not recorded: the journal has no timed events.")); }
+  else {
+    var tw = Math.max(560, Math.min(5000, Math.round(t.total / 1000 * 8)));
+    var wrap = el("div", "tscroll");
+    wrap.tabIndex = 0;
+    wrap.setAttribute("role", "region");
+    wrap.setAttribute("aria-label", "Timeline of the run; it scrolls inside this frame");
+    var grid = el("div", "tgrid");
+    grid.style.setProperty("--tw", tw + "px");
+    var tickPct = (t.step / t.total * 100) + "% 100%";
+    var ax = el("div", "trow taxis");
+    ax.appendChild(el("div", "tlab", "time"));
+    var at = el("div", "ttrack");
+    t.ticks.forEach(function (x) { var s = el("span", "tick", fmtTick(x)); s.style.left = (x / t.total * 100) + "%"; at.appendChild(s); });
+    t.breaks.forEach(function (b) {
+      var s = el("span", "brk-l", "\u2026 " + fmtSecs(b.gap_ms / 1000) + " pause, not drawn");
+      s.style.left = (b.x / t.total * 100) + "%"; at.appendChild(s);
+    });
+    ax.appendChild(at);
+    grid.appendChild(ax);
+    var byId = {};
+    d.units.forEach(function (u) { if (!byId[u.id]) byId[u.id] = u; });
+    var n = 0;
+    t.rows.forEach(function (r) {
+      var row = el("div", "trow");
+      var lab;
+      if (r.kind === "unit" && byId[r.key]) {
+        lab = el("button", "tlab");
+        lab.type = "button";
+        n++;
+        lab.appendChild(el("span", "muted", n + " "));
+        lab.appendChild(document.createTextNode(r.label));
+        lab.title = "Details of unit " + r.label;
+        lab.setAttribute("aria-label", "Details of unit " + r.label);
+        lab.addEventListener("click", function () { openUnit(byId[r.key], null, lab); });
+      } else {
+        lab = el("div", "tlab", r.kind === "unit" ? (n++, n + " " + r.label) : r.label);
+      }
+      row.appendChild(lab);
+      var tr = el("div", "ttrack");
+      tr.style.backgroundSize = tickPct;
+      t.breaks.forEach(function (b) { var s = el("span", "brk"); s.style.left = (b.x / t.total * 100) + "%"; tr.appendChild(s); });
+      if (r.missing) tr.appendChild(el("span", "tmiss", "Not recorded: the journal has no plan stage"));
+      r.bars.forEach(function (b) {
+        var left = (b.x0 / t.total * 100) + "%", width = Math.max(0, (b.x1 - b.x0) / t.total * 100) + "%";
+        var e = evs[b.ev] || {}, node;
+        if (b.kind === "span") {
+          node = el("div", "tb span" + (b.open ? " open" : ""));
+          node.title = r.label + (b.open ? ": started, no end recorded" : ": from its start to its end, " + fmtMs(b.x1 - b.x0));
+        } else if (b.kind === "sweep") {
+          node = el("div", "tb sweep");
+          node.title = "Sweep after " + (b.unit || "the resume") + ": " + sweepText(e) + " " + fmtMs(b.x1 - b.x0);
+        } else {
+          node = el("button", "tb att " + (b.good === true ? "good" : b.good === false ? "bad" : "unk"));
+          node.type = "button";
+          var what = b.kind === "call" ? "Plan call" + (b.round !== null ? ", round " + b.round : "") : "Unit " + r.label + ", attempt " + (b.n === null ? "?" : b.n);
+          var text = what + ": " + (b.outcome || "outcome not recorded") + ", " + (b.ms === null ? "time not recorded" : fmtMs(b.ms)) + ", at " + fmtMs(b.x1);
+          node.title = text;
+          node.setAttribute("aria-label", text + ". Press Enter for details.");
+          node.addEventListener("click", function () { openEvent({ ev: evs[b.ev], i: b.ev }, node); });
+        }
+        node.style.left = left;
+        node.style.width = width;
+        tr.appendChild(node);
+      });
+      row.appendChild(tr);
+      grid.appendChild(row);
+    });
+    wrap.appendChild(grid);
+    box.appendChild(wrap);
+    if (keep) { wrap.scrollLeft = keep[0]; wrap.scrollTop = keep[1]; }
+  }
+  var p = el("p", "est", est.text);
+  p.setAttribute("role", "status");
+  box.appendChild(p);
+  box.appendChild(el("p", "note", "This is an estimate and an upper bound, not a promise: the agent's time per attempt from the journal, set against the plan's dependencies. Checks, sweeps and any waiting between units are not in it, and what parallel work would cost is not either. Units are built one at a time today."));
+  if (est.agent_ms !== null && t.unitsWall !== null)
+    box.appendChild(el("p", "note", "From the first unit start to the last unit end: " + fmtMs(t.unitsWall) + " of wall time, of which the agent's turns add up to " + fmtMs(est.agent_ms) + "."));
+  if (t.notRun.length) box.appendChild(el("p", "note", "Not started in this run: " + (t.notRun.length > 20 ? t.notRun.slice(0, 20).join(", ") + " and " + (t.notRun.length - 20) + " more" : t.notRun.join(", ")) + "."));
+}
+
 // ---- tabs ----------------------------------------------------------------------------------------------------------------------
 
+var VIEWS = ["board", "graph", "timeline", "story"];
+function viewAvailable(v) { return v === "board" || v === "graph" || !!J; }
 function showView(name) {
-  var story = name === "story" && !!J;
-  $("view-board").hidden = story;
-  $("view-story").hidden = !story;
-  $("tab-board").setAttribute("aria-selected", story ? "false" : "true");
-  $("tab-story").setAttribute("aria-selected", story ? "true" : "false");
-  $("tab-board").tabIndex = story ? -1 : 0;
-  $("tab-story").tabIndex = story ? 0 : -1;
-  state.view = story ? "story" : "board";
+  if (VIEWS.indexOf(name) < 0 || !viewAvailable(name)) name = "board";
+  VIEWS.forEach(function (v) {
+    var on = v === name;
+    $("view-" + v).hidden = !on;
+    $("tab-" + v).setAttribute("aria-selected", on ? "true" : "false");
+    $("tab-" + v).tabIndex = on ? 0 : -1;
+  });
+  state.view = name;
 }
-$("tab-board").addEventListener("click", function () { showView("board"); });
-$("tab-story").addEventListener("click", function () { showView("story"); });
+VIEWS.forEach(function (v) { $("tab-" + v).addEventListener("click", function () { showView(v); }); });
 $("tabs").addEventListener("keydown", function (e) {
-  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-  var to = e.key === "ArrowRight" ? "story" : "board";
+  var keys = { ArrowLeft: -1, ArrowRight: 1, Home: -100, End: 100 };
+  if (!(e.key in keys)) return;
+  var avail = VIEWS.filter(viewAvailable), at = avail.indexOf(state.view), k = keys[e.key], to;
+  to = Math.abs(k) === 1 ? avail[(at + k + avail.length) % avail.length] : (k < 0 ? avail[0] : avail[avail.length - 1]);
+  e.preventDefault();
   showView(to);
   $("tab-" + to).focus();
 });
