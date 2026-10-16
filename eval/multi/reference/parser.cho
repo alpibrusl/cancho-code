@@ -1,0 +1,135 @@
+edition 7;
+
+module parser;
+
+import tokens;
+
+pub fn ps_fits_add(a: int, b: int) -> [] bool {
+    if b > 0 {
+        return a <= 9223372036854775807 - b;
+    }
+    return a >= (0 - 9223372036854775807 - 1) - b;
+}
+
+pub fn ps_fits_sub(a: int, b: int) -> [] bool {
+    if b > 0 {
+        return a >= (0 - 9223372036854775807 - 1) + b;
+    }
+    return a <= 9223372036854775807 + b;
+}
+
+pub fn ps_fits_mul(a: int, b: int) -> [] bool {
+    if a == 0 || b == 0 {
+        return true;
+    }
+    if a == 0 - 1 {
+        return b != (0 - 9223372036854775807 - 1);
+    }
+    if b == 0 - 1 {
+        return a != (0 - 9223372036854775807 - 1);
+    }
+    let p = wrapping_mul(a, b);
+    return p / b == a;
+}
+
+// st[0] is the next token, st[1] the problem met so far: 0 none, 1 not an expression, 2 an operation does not fit.
+
+fn ps_factor[&t, &q](toks: &t [int], n: int, st: &!q [int]) -> [] int {
+    if st[1] != 0 {
+        return 0;
+    }
+    if st[0] >= n {
+        st[1] = 1;
+        return 0;
+    }
+    let k = tokens.tk_kind(toks, st[0]);
+    if k == 1 {
+        let v = tokens.tk_value(toks, st[0]);
+        st[0] = st[0] + 1;
+        return v;
+    }
+    if k == 3 {
+        st[0] = st[0] + 1;
+        let v = ps_factor(toks, n, st);
+        if st[1] != 0 {
+            return 0;
+        }
+        if v == (0 - 9223372036854775807 - 1) {
+            st[1] = 2;
+            return 0;
+        }
+        return 0 - v;
+    }
+    if k == 5 {
+        st[0] = st[0] + 1;
+        let v = ps_expr(toks, n, st);
+        if st[1] != 0 {
+            return 0;
+        }
+        if st[0] >= n || tokens.tk_kind(toks, st[0]) != 6 {
+            st[1] = 1;
+            return 0;
+        }
+        st[0] = st[0] + 1;
+        return v;
+    }
+    st[1] = 1;
+    return 0;
+}
+
+fn ps_term[&t, &q](toks: &t [int], n: int, st: &!q [int]) -> [] int {
+    var v = ps_factor(toks, n, st);
+    while st[1] == 0 && st[0] < n && tokens.tk_kind(toks, st[0]) == 4 {
+        st[0] = st[0] + 1;
+        let w = ps_factor(toks, n, st);
+        if st[1] == 0 {
+            if ps_fits_mul(v, w) {
+                v = v * w;
+            } else {
+                st[1] = 2;
+            }
+        }
+    }
+    return v;
+}
+
+fn ps_expr[&t, &q](toks: &t [int], n: int, st: &!q [int]) -> [] int {
+    var v = ps_term(toks, n, st);
+    while st[1] == 0 && st[0] < n && (tokens.tk_kind(toks, st[0]) == 2 || tokens.tk_kind(toks, st[0]) == 3) {
+        let plus = tokens.tk_kind(toks, st[0]) == 2;
+        st[0] = st[0] + 1;
+        let w = ps_term(toks, n, st);
+        if st[1] == 0 {
+            if plus {
+                if ps_fits_add(v, w) {
+                    v = v + w;
+                } else {
+                    st[1] = 2;
+                }
+            } else {
+                if ps_fits_sub(v, w) {
+                    v = v - w;
+                } else {
+                    st[1] = 2;
+                }
+            }
+        }
+    }
+    return v;
+}
+
+pub fn ps_eval[&t, &o](toks: &t [int], n: int, out: &!o [int]) -> [] int {
+    var code = 1;
+    region r {
+        let st = alloc_slice[r](2, 0);
+        let v = ps_expr(toks, n, st);
+        if st[1] == 0 && st[0] != n {
+            st[1] = 1;
+        }
+        if st[1] == 0 {
+            out[0] = v;
+        }
+        code = st[1];
+    }
+    return code;
+}

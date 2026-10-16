@@ -115,6 +115,53 @@ for which in reference mutated; do
     fi
     rm -rf "$wd" "$rcp"
 done
+# multi (docs/multi-file.md): a small library in three modules; the audit calls only the public functions across them
+mul="python3 $root/eval/audit_multi.py"
+out=$($mul "$root/eval/multi/reference/project.cho" 2>&1); rc=$?
+expect "multi: the reference holds (exit)" "$rc" 0
+expect "multi: the reference scores" "$(printf '%s\n' "$out" | grep TOTAL)" "  TOTAL 102/102"
+python3 "$root/eval/multi/oracle.py" --self || { echo "FAIL: multi: the oracle disagrees with itself" >&2; fail=1; }
+grep -nE 'tk_punct|ps_factor|ps_term|ps_expr' "$root/eval/audit_multi.py" > "$d/private.txt" && { echo "FAIL: multi: the audit names a private function of the reference" >&2; fail=1; }
+nm=$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))))" "$root/eval/multi/mutants.json")
+[ "$nm" -ge 6 ] || { echo "FAIL: multi: fewer than six mutants" >&2; fail=1; }
+python3 - "$root" "$CANCHO" <<'PYEOF' || fail=1
+import json, os, shutil, subprocess, sys, tempfile
+root, cancho = sys.argv[1], sys.argv[2]
+bad = 0
+for m in json.load(open(os.path.join(root, "eval", "multi", "mutants.json"))):
+    d = tempfile.mkdtemp()
+    for f in ("tokens.cho", "parser.cho", "calc.cho"):
+        shutil.copy(os.path.join(root, "eval", "multi", "reference", f), d)
+    p = os.path.join(d, m["file"])
+    s = open(p).read()
+    if s.count(m["from"]) != 1:
+        print("FAIL: multi mutant %s: the text to change is not in %s exactly once" % (m["name"], m["file"]), file=sys.stderr); bad = 1; continue
+    open(p, "w").write(s.replace(m["from"], m["to"]))
+    r = subprocess.run([sys.executable, os.path.join(root, "eval", "audit_multi.py"), os.path.join(d, "project.cho")], capture_output=True, text=True, env=dict(os.environ, CANCHO=cancho))
+    line = [l for l in r.stdout.splitlines() if m["group"] + ":" in l]
+    full = line and line[0].split(":")[1].split()[0].split("/")[0] == line[0].split(":")[1].split()[0].split("/")[1]
+    if r.returncode == 0 or not line or full:
+        print("FAIL: multi mutant %s survived: %s" % (m["name"], line[:1]), file=sys.stderr); bad = 1
+    shutil.rmtree(d)
+sys.exit(bad)
+PYEOF
+# the hand plan: the reference passes its own tests through the whole driver (a stand-in agent writes each unit's own functions into its file), one unit at a time and four at once
+for j in 1 4; do
+    wd=$(mktemp -d -t cc-eval-wd-XXXXXX); rcp=$(mktemp -d -t cc-eval-rc-XXXXXX); : > "$wd/agent.log"
+    python3 - "$root" "$rcp" <<'PYEOF'
+import json, os, re, sys
+root, rc = sys.argv[1], sys.argv[2]
+helpers = {"scan": ["tk_punct"], "eval": ["ps_factor", "ps_term", "ps_expr"]}
+for u in json.load(open(os.path.join(root, "eval", "multi", "plan.json")))["units"]:
+    names = helpers.get(u["id"], []) + [re.match(r"fn (\w+)", u["signature"]).group(1)]
+    open(os.path.join(rc, u["id"] + ".sh"), "w").write('sh "%s/eval/multi/extract.sh" "%s/eval/multi/reference/%s" %s >> "$1"\n' % (root, root, u["file"], " ".join(names)))
+PYEOF
+    out=$("$pexe" "$CANCHO" "$root/eval/multi/plan.json" "$wd" "sh $root/tests/multifile/agent.sh $rcp $wd/agent.log" 2 60 --jobs "$j" 2>&1); rc=$?
+    expect "multi plan (--jobs $j): the reference passes its own tests (exit)" "$rc" 0
+    expect "multi plan (--jobs $j): verdict" "$(printf '%s\n' "$out" | grep PROJECT_VERDICT | cut -f2)" done
+    expect "multi plan (--jobs $j): the built project scores" "$($mul "$wd/project.cho" 2>&1 | grep TOTAL)" "  TOTAL 102/102"
+    rm -rf "$wd" "$rcp"
+done
 rm -f "$pexe"
 
 rm -rf "$d"

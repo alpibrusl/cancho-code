@@ -1,0 +1,26 @@
+Build a small cancho library "calc" that reads and evaluates integer arithmetic written as text. It lives in THREE source files, each its own module, and the modules use each other:
+
+- tokens.cho, `module tokens`: turns text into tokens.
+- parser.cho, `module parser`: evaluates a list of tokens. It uses tokens.
+- calc.cho, `module calc`: reads text, evaluates it and keeps a running total. It uses tokens and parser.
+
+A function of one module is called from another with the module's name in front (`tokens.tk_scan(...)`), and only a `pub fn` can be called that way. Every function below is `pub fn`, has an empty effect row, takes no heap and does no I/O, and none may panic or trap on valid input. The library never allocates: every array it works with is a slice of int that the caller owns and passes in (`&k [int]` to read it, `&!k [int]` to change it).
+
+The language. An expression has numbers, the operators + - * and parentheses. A number is one or more digits 0-9, at most 18 digits (leading zeros count); "007" is 7. Operators + and - bind less tightly than *, and operators of the same strength group from the left: "10-4-3" is 3, "100-10*10" is 0. A minus in front of a number or of a parenthesised expression is a sign and may be repeated: "-3", "--3" is 3, "2*-3" is -6, "-(2+3)*2" is -10. There is no plus sign: "+1" is not an expression. A space or a tab may stand between any two tokens, at either end, and nowhere inside a number. The empty text, "()", "1+", "*2", "(1", "1)", "1 2" and "(1)(2)" are not expressions.
+
+Arithmetic is exact 64-bit signed integer arithmetic. Every single operation (each +, - and *, and each sign) must give a result that fits in an int, and the read is left to right: operations are done as soon as both of their operands are known. An expression that is a well-formed expression but has an operation that does not fit is an overflow ("999999999999999999*10" is one). Texts that are both malformed and overflowing are never asked about.
+
+File tokens.cho. A token list is a slice of int holding pairs: token i has its kind at 2*i and its value at 2*i+1. Kinds: 1 number (the value is the number), 2 plus, 3 minus, 4 star, 5 open parenthesis, 6 close parenthesis (the value of every kind other than 1 is 0).
+- tk_scan(text, toks) -> int : reads the bytes of text (`&s [byte]`) into toks. Returns the number of tokens (0 for an empty or blank text) and fills toks[0 .. 2*count). The capacity is len(toks) / 2 tokens. Failures, the first one met reading from the left deciding: -1 a byte that is not a digit, an operator, a parenthesis, a space or a tab; -2 a number of more than 18 digits; -3 a token that does not fit in the capacity. After a failure what toks holds is unspecified.
+- tk_kind(toks, i) -> int : the kind of token i. tk_value(toks, i) -> int : the value of token i. (i is a valid index: the caller checks.)
+
+File parser.cho.
+- ps_fits_add(a, b) -> bool, ps_fits_sub(a, b) -> bool, ps_fits_mul(a, b) -> bool : true when a + b, a - b, a * b is in the int range (without computing it in a way that itself overflows).
+- ps_eval(toks, n, out) -> int : evaluates the first n tokens of toks as one expression and writes the value to out[0] (out has at least one element). Returns 0 when it is an expression whose operations all fit; 1 when the n tokens are not an expression (n may be 0); 2 when it is an expression and some operation does not fit. out is left alone unless the answer is 0.
+
+File calc.cho.
+- calc_eval(text, toks, out) -> int : reads text with the scanner, evaluates it with the parser, using toks as the token list and out[0] for the value. Returns 0 on success; 1 not an expression; 2 an operation does not fit; 3 a byte that is not part of an expression; 4 a number of more than 18 digits; 5 more tokens than toks has room for.
+- calc_record(text, toks, out, store) -> int : the same evaluation; the store (a slice of int with two elements, store[0] a sum and store[1] a count, both 0 at the start) keeps what was recorded. On success the value is added to store[0] and store[1] goes up by one, and 0 is returned. If the sum would not fit in an int the answer is 2 and the store is left as it was. Any other failure returns the code calc_eval gives and leaves the store as it was.
+- calc_total(store) -> int : the sum recorded so far. calc_count(store) -> int : how many were recorded.
+
+Examples. calc_eval("1 + 2 * 3", ..) gives 0 and out[0] is 7; calc_eval("(1+", ..) is 1; calc_eval("1 + a", ..) is 3; with room for 3 tokens calc_eval("1+2+3", ..) is 5. tk_scan("1+2", toks) is 3 with the pairs (1,1) (2,0) (1,2). After calc_record("5", ..) and calc_record("-2+10", ..) calc_total is 13 and calc_count is 2; a calc_record("oops", ..) in between returns 3 and changes neither.

@@ -27,6 +27,8 @@
 #     boards of every fixture, on plans of 1 to 256 units made here, and on odd plans (cycle, unknown dependency, duplicate ids), and
 #     compared with the oracle (tests/reference/board_ref.py --layout) and with hand-written expectations (tests/board/expected/
 #     page-logic.json); with no node the step is skipped and says so;
+#   - a run of a plan with files (fixture multi-file): each unit's `file` is in board.json (only for a plan that has files, so every other board is as it was),
+#     the unit being built is read from `<file>.trail.jsonl`; the card, the node and the drawer of the page show it;
 #   - docs/board.html makes no request to another host, has no build step, no write path, reads board.json and offers a file picker.
 set -u
 
@@ -71,6 +73,7 @@ PY
     mutant order   'let ix = k;' 'let ix = n - 1 - k;'      # the journal's events come out last first
     mutant partial 'cells[j_partial()] = 1;' 'cells[j_skipped()] = cells[j_skipped()] + 1;'   # a half-written last line is counted as a bad line
     mutant traverse '|| bytes.find(name, "..") >= 0' '|| false'   # a blob name with .. is read
+    mutant ufile   'b = key(heap, b, "file");' 'b = key(heap, b, "files");'   # the unit's module file is under another name: the page and the fixture lose it
     # the page's logic (node): each edit breaks one function of the block between the graph-logic markers
     if command -v node >/dev/null 2>&1; then
         pmutant layer    'layer[v] + 1' 'layer[v]'                          # a unit is put in the layer of its dependency, not after it
@@ -329,6 +332,10 @@ JS
     [ -s "$work/graph-logic.js" ] || bad "docs/board.html: the graph-logic block is empty"
     # pure: nothing in it touches the page, the network or the clock
     grep -nE 'document|window|location|fetch\(|\$\(|Date|Math\.random|innerHTML|setTimeout|setInterval' "$work/graph-logic.js" >"$work/impure" && { bad "docs/board.html: the graph-logic block is not pure:"; head -5 "$work/impure" >&2; }
+    # the module file of a unit (docs/multi-file.md) is on its card, in its drawer and on its graph node
+    grep -q 'el("span", "chip file", u.file)' "$page" || bad "docs/board.html: a card does not show the unit's file"
+    grep -q 'chip("file", u.file)' "$page" || bad "docs/board.html: the unit panel does not show the unit's file"
+    grep -q '" in " + u.file' "$page" && grep -q 'u.function + (u.file' "$page" || bad "docs/board.html: a graph node does not show the unit's file"
     # the Timeline is a drawing of the journal: no way to write it either way, and a 'parallel' flag is not offered (units run one after another today)
     grep -nEi -- '--parallel|--jobs|--concurren' "$page" >"$work/par" && { bad "docs/board.html suggests a flag for parallel units:"; head -3 "$work/par" >&2; }
     if command -v node >/dev/null 2>&1; then

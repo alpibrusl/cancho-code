@@ -1,0 +1,110 @@
+{
+ "files": {
+  "audit": false,
+  "build_json": false,
+  "plan": true,
+  "prices": false,
+  "run_json": false,
+  "run_log": true,
+  "state": true,
+  "usage": false
+ },
+ "metrics": {
+  "audit": null,
+  "cache_read_share": null,
+  "calls": null,
+  "columns": {
+   "building": 1,
+   "regressed": 0,
+   "stuck": 0,
+   "unknown": 0,
+   "verified": 1,
+   "waiting": 1
+  },
+  "cost_per_verified_unit": null,
+  "cost_usd": null,
+  "efficiency": null,
+  "efficiency_calls": null,
+  "efficiency_visible": null,
+  "over_limit_calls": null,
+  "thinking_share": null,
+  "tokens": null,
+  "units_total": 3,
+  "units_verified": 1,
+  "visible_out": null
+ },
+ "run": {
+  "brief": null,
+  "model": null,
+  "name": "widths",
+  "plan_valid": null,
+  "provider": null,
+  "seconds": null,
+  "stage": null,
+  "started_unix": null,
+  "verdict": null
+ },
+ "schema": 1,
+ "truncated": false,
+ "units": [
+  {
+   "attempts": 1,
+   "calls": null,
+   "column": "verified",
+   "cost_usd": null,
+   "deps": [],
+   "file": "tokens.cho",
+   "function": "tok_digits",
+   "id": "digits",
+   "regressions": 0,
+   "tokens": null,
+   "trail": [
+    {
+     "agent_ms": 1200,
+     "attempt": 0,
+     "decision": "verified",
+     "outcome": "verified",
+     "sig": ""
+    }
+   ]
+  },
+  {
+   "attempts": 1,
+   "calls": null,
+   "column": "building",
+   "cost_usd": null,
+   "deps": [
+    "digits"
+   ],
+   "file": "parser.cho",
+   "function": "parse_width",
+   "id": "width",
+   "regressions": 0,
+   "tokens": null,
+   "trail": [
+    {
+     "agent_ms": 2100,
+     "attempt": 0,
+     "decision": "retry",
+     "outcome": "refused",
+     "sig": "unknown-name:`tok_digits` is not defined"
+    }
+   ]
+  },
+  {
+   "attempts": null,
+   "calls": null,
+   "column": "waiting",
+   "cost_usd": null,
+   "deps": [
+    "width"
+   ],
+   "file": "project.cho",
+   "function": "app_total",
+   "id": "total",
+   "regressions": 0,
+   "tokens": null,
+   "trail": null
+  }
+ ]
+}

@@ -1,0 +1,194 @@
+{
+ "name": "calc",
+ "files": [
+  {
+   "file": "tokens.cho",
+   "module": "tokens"
+  },
+  {
+   "file": "parser.cho",
+   "module": "parser",
+   "imports": [
+    "tokens"
+   ]
+  },
+  {
+   "file": "calc.cho",
+   "module": "calc",
+   "imports": [
+    "tokens",
+    "parser"
+   ]
+  }
+ ],
+ "units": [
+  {
+   "id": "kind",
+   "file": "tokens.cho",
+   "signature": "fn tk_kind[&t](toks: &t [int], i: int) -> [] int",
+   "description": "The kind of token i of the caller's token list: a slice of int of pairs, token i has its kind at 2*i and its value at 2*i+1 (kinds: 1 number, 2 plus, 3 minus, 4 star, 5 open parenthesis, 6 close parenthesis; the value of every kind other than a number is 0): toks[2 * i]. i is a valid index.",
+   "examples": [
+    "tk_kind(toks, 1) == 2"
+   ],
+   "tests": [
+    "pub fn test_kind_1() -> [] int { region r { let toks = alloc_slice[r](6, 0); toks[0] = 1; toks[1] = 42; toks[2] = 2; toks[3] = 0; toks[4] = 6; toks[5] = 0; test.assert_eq(tk_kind(toks, 0), 1); test.assert_eq(tk_kind(toks, 1), 2); test.assert_eq(tk_kind(toks, 2), 6); } return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "value",
+   "file": "tokens.cho",
+   "signature": "fn tk_value[&t](toks: &t [int], i: int) -> [] int",
+   "description": "The value of token i of the caller's token list: a slice of int of pairs, token i has its kind at 2*i and its value at 2*i+1 (kinds: 1 number, 2 plus, 3 minus, 4 star, 5 open parenthesis, 6 close parenthesis; the value of every kind other than a number is 0): toks[2 * i + 1]. i is a valid index.",
+   "examples": [
+    "tk_value(toks, 0) == 42"
+   ],
+   "tests": [
+    "pub fn test_value_1() -> [] int { region r { let toks = alloc_slice[r](6, 0); toks[0] = 1; toks[1] = 42; toks[2] = 2; toks[3] = 0; toks[4] = 1; toks[5] = 7; test.assert_eq(tk_value(toks, 0), 42); test.assert_eq(tk_value(toks, 1), 0); test.assert_eq(tk_value(toks, 2), 7); } return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "scan",
+   "file": "tokens.cho",
+   "signature": "fn tk_scan[&s, &o](text: &s [byte], toks: &!o [int]) -> [] int",
+   "description": "Reads the bytes of text into toks, the caller's token list: a slice of int of pairs, token i has its kind at 2*i and its value at 2*i+1 (kinds: 1 number, 2 plus, 3 minus, 4 star, 5 open parenthesis, 6 close parenthesis; the value of every kind other than a number is 0). Returns the number of tokens (0 for an empty or blank text) and fills toks[0 .. 2*count). The capacity is len(toks) / 2 tokens. A number is one or more digits 0-9 (at most 18; leading zeros count, \"007\" is 7); the other tokens are the single bytes + - * ( ). A space (byte 32) or a tab (byte 9) may stand anywhere between tokens and is skipped. Failures, the first one met reading from the left deciding: -1 a byte that is not a digit, an operator, a parenthesis, a space or a tab; -2 a number of more than 18 digits; -3 a token that does not fit in the capacity. After a failure what toks holds is unspecified. It does not allocate and never reads past the end of text or writes past the end of toks.",
+   "examples": [
+    "tk_scan(\"1+2\", toks) == 3",
+    "tk_scan(\"1 + a\", toks) == -1"
+   ],
+   "tests": [
+    "fn sc_pair[&o](toks: &o [int], i: int, k: int, v: int) -> [] bool { return toks[2 * i] == k && toks[2 * i + 1] == v; }",
+    "pub fn test_scan_1() -> [] int { region r { let toks = alloc_slice[r](16, 0 - 7); test.assert_eq(tk_scan(\"1+2\", toks), 3); test.assert(sc_pair(toks, 0, 1, 1)); test.assert(sc_pair(toks, 1, 2, 0)); test.assert(sc_pair(toks, 2, 1, 2)); } return 0; }",
+    "pub fn test_scan_2() -> [] int { region r { let toks = alloc_slice[r](16, 0 - 7); test.assert_eq(tk_scan(\"\", toks), 0); test.assert_eq(tk_scan(\"  \\t \", toks), 0); test.assert_eq(tk_scan(\" 007 *\\t(\", toks), 3); test.assert(sc_pair(toks, 0, 1, 7)); test.assert(sc_pair(toks, 1, 4, 0)); test.assert(sc_pair(toks, 2, 5, 0)); test.assert_eq(tk_scan(\"-)\", toks), 2); test.assert(sc_pair(toks, 0, 3, 0)); test.assert(sc_pair(toks, 1, 6, 0)); } return 0; }",
+    "pub fn test_scan_3() -> [] int { region r { let toks = alloc_slice[r](16, 0 - 7); test.assert_eq(tk_scan(\"1 + a\", toks), 0 - 1); test.assert_eq(tk_scan(\"1.5\", toks), 0 - 1); test.assert_eq(tk_scan(\"1234567890123456789\", toks), 0 - 2); test.assert_eq(tk_scan(\"123456789012345678\", toks), 1); test.assert(sc_pair(toks, 0, 1, 123456789012345678)); } return 0; }",
+    "pub fn test_scan_4() -> [] int { region r { let toks = alloc_slice[r](4, 0 - 7); test.assert_eq(tk_scan(\"1+2\", toks), 0 - 3); test.assert_eq(tk_scan(\"1+\", toks), 2); test.assert_eq(tk_scan(\"7\", alloc_slice[r](0, 0)), 0 - 3); } return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "fits_add",
+   "file": "parser.cho",
+   "signature": "fn ps_fits_add(a: int, b: int) -> [] bool",
+   "description": "True when a + b is in the int range -9223372036854775808 .. 9223372036854775807, false when it is not. It must decide WITHOUT computing the result in a way that itself overflows (an overflow is an error in cancho, not a wrap); a or b may be any int, the smallest one included.",
+   "examples": [
+    "ps_fits_add(1, 2) == true",
+    "ps_fits_add(9223372036854775807, 1) == false",
+    "ps_fits_add(0 - 9223372036854775807 - 1, 0 - 1) == false",
+    "ps_fits_add(9223372036854775807, 0 - 1) == true"
+   ],
+   "deps": []
+  },
+  {
+   "id": "fits_sub",
+   "file": "parser.cho",
+   "signature": "fn ps_fits_sub(a: int, b: int) -> [] bool",
+   "description": "True when a - b is in the int range -9223372036854775808 .. 9223372036854775807, false when it is not. It must decide WITHOUT computing the result in a way that itself overflows (an overflow is an error in cancho, not a wrap); a or b may be any int, the smallest one included.",
+   "examples": [
+    "ps_fits_sub(5, 7) == true",
+    "ps_fits_sub(0 - 9223372036854775807 - 1, 1) == false",
+    "ps_fits_sub(0, 0 - 9223372036854775807 - 1) == false",
+    "ps_fits_sub(0 - 1, 0 - 9223372036854775807 - 1) == true"
+   ],
+   "deps": []
+  },
+  {
+   "id": "fits_mul",
+   "file": "parser.cho",
+   "signature": "fn ps_fits_mul(a: int, b: int) -> [] bool",
+   "description": "True when a * b is in the int range -9223372036854775808 .. 9223372036854775807, false when it is not. It must decide WITHOUT computing the result in a way that itself overflows (an overflow is an error in cancho, not a wrap); a or b may be any int, the smallest one included.",
+   "examples": [
+    "ps_fits_mul(3037000499, 3037000499) == true",
+    "ps_fits_mul(3037000500, 3037000500) == false",
+    "ps_fits_mul(0 - 9223372036854775807 - 1, 0 - 1) == false",
+    "ps_fits_mul(0, 0 - 9223372036854775807 - 1) == true"
+   ],
+   "deps": []
+  },
+  {
+   "id": "eval",
+   "file": "parser.cho",
+   "signature": "fn ps_eval[&t, &o](toks: &t [int], n: int, out: &!o [int]) -> [] int",
+   "description": "Evaluates the first n tokens of toks (the caller's token list: a slice of int of pairs, token i has its kind at 2*i and its value at 2*i+1 (kinds: 1 number, 2 plus, 3 minus, 4 star, 5 open parenthesis, 6 close parenthesis; the value of every kind other than a number is 0)) as one expression and writes its value to out[0] (out has at least one element). Grammar: an expression is terms joined by + or -, a term is factors joined by *, a factor is a number, a parenthesised expression, or a minus followed by a factor (the minus may be repeated: tokens for -3, --3, 2*-3). + - and * group from the left; * binds tighter than + and -. Reads left to right, doing each operation as soon as both operands are known; use tokens.tk_kind and tokens.tk_value to read a token (the tokens module is imported here). Returns 0 when the n tokens are an expression and every operation (each +, -, *, and each sign) fits in an int; 1 when they are not an expression at all (n may be 0, nothing may be left over after a complete expression, parentheses must match); 2 when they are an expression and some operation does not fit (use ps_fits_add, ps_fits_sub, ps_fits_mul; a sign overflows only on the smallest int). out is written only when the answer is 0. Recursive descent is the simplest way.",
+   "examples": [
+    "ps_eval(toks, 3, out) == 0"
+   ],
+   "tests": [
+    "fn pe_set[&o](toks: &!o [int], i: int, k: int, v: int) -> [] int { toks[2 * i] = k; toks[2 * i + 1] = v; return 0; }",
+    "pub fn test_eval_1() -> [] int { region r { let toks = alloc_slice[r](16, 0); let out = alloc_slice[r](1, 0 - 5); pe_set(toks, 0, 1, 1); pe_set(toks, 1, 2, 0); pe_set(toks, 2, 1, 2); pe_set(toks, 3, 4, 0); pe_set(toks, 4, 1, 3); test.assert_eq(ps_eval(toks, 5, out), 0); test.assert_eq(out[0], 7); pe_set(toks, 0, 5, 0); pe_set(toks, 1, 1, 1); pe_set(toks, 2, 2, 0); pe_set(toks, 3, 1, 2); pe_set(toks, 4, 6, 0); pe_set(toks, 5, 4, 0); pe_set(toks, 6, 1, 3); test.assert_eq(ps_eval(toks, 7, out), 0); test.assert_eq(out[0], 9); } return 0; }",
+    "pub fn test_eval_2() -> [] int { region r { let toks = alloc_slice[r](16, 0); let out = alloc_slice[r](1, 0 - 5); pe_set(toks, 0, 3, 0); pe_set(toks, 1, 3, 0); pe_set(toks, 2, 1, 3); test.assert_eq(ps_eval(toks, 3, out), 0); test.assert_eq(out[0], 3); pe_set(toks, 0, 1, 10); pe_set(toks, 1, 3, 0); pe_set(toks, 2, 1, 4); pe_set(toks, 3, 3, 0); pe_set(toks, 4, 1, 3); test.assert_eq(ps_eval(toks, 5, out), 0); test.assert_eq(out[0], 3); pe_set(toks, 0, 1, 2); pe_set(toks, 1, 4, 0); pe_set(toks, 2, 3, 0); pe_set(toks, 3, 1, 3); test.assert_eq(ps_eval(toks, 4, out), 0); test.assert_eq(out[0], 0 - 6); } return 0; }",
+    "pub fn test_eval_3() -> [] int { region r { let toks = alloc_slice[r](16, 0); let out = alloc_slice[r](1, 0 - 5); test.assert_eq(ps_eval(toks, 0, out), 1); pe_set(toks, 0, 1, 1); pe_set(toks, 1, 2, 0); test.assert_eq(ps_eval(toks, 2, out), 1); pe_set(toks, 2, 1, 2); test.assert_eq(ps_eval(toks, 3, out), 0); pe_set(toks, 0, 5, 0); pe_set(toks, 1, 1, 1); test.assert_eq(ps_eval(toks, 2, out), 1); pe_set(toks, 0, 1, 1); pe_set(toks, 1, 1, 2); test.assert_eq(ps_eval(toks, 2, out), 1); pe_set(toks, 0, 1, 1); pe_set(toks, 1, 6, 0); test.assert_eq(ps_eval(toks, 2, out), 1); pe_set(toks, 0, 2, 0); pe_set(toks, 1, 1, 1); test.assert_eq(ps_eval(toks, 2, out), 1); test.assert_eq(out[0], 3); } return 0; }",
+    "pub fn test_eval_4() -> [] int { region r { let toks = alloc_slice[r](16, 0); let out = alloc_slice[r](1, 0 - 5); pe_set(toks, 0, 1, 999999999999999999); pe_set(toks, 1, 4, 0); pe_set(toks, 2, 1, 10); test.assert_eq(ps_eval(toks, 3, out), 2); test.assert_eq(out[0], 0 - 5); pe_set(toks, 1, 4, 0); pe_set(toks, 2, 1, 9); test.assert_eq(ps_eval(toks, 3, out), 0); test.assert_eq(out[0], 8999999999999999991); } return 0; }"
+   ],
+   "deps": [
+    "kind",
+    "value",
+    "fits_add",
+    "fits_sub",
+    "fits_mul"
+   ]
+  },
+  {
+   "id": "calc_eval",
+   "file": "calc.cho",
+   "signature": "fn calc_eval[&s, &o, &p](text: &s [byte], toks: &!o [int], out: &!p [int]) -> [] int",
+   "description": "Reads text with tokens.tk_scan, evaluates the tokens with parser.ps_eval (both modules are imported here, call them with the module name in front), using toks as the token list and out[0] for the value (out has at least one element). Returns 0 on success (the value is in out[0]); 1 the text is not an expression (an empty or blank text included); 2 the text is an expression but an operation does not fit in an int; and the scanner's failures: 3 a byte that is not part of an expression (scan answer -1), 4 a number of more than 18 digits (-2), 5 more tokens than toks has room for (-3). out is written only when the answer is 0.",
+   "examples": [
+    "calc_eval(\"1 + 2 * 3\", toks, out) == 0",
+    "calc_eval(\"(1+\", toks, out) == 1"
+   ],
+   "tests": [
+    "pub fn test_calc_1() -> [] int { region r { let toks = alloc_slice[r](40, 0 - 7); let out = alloc_slice[r](1, 0 - 5); test.assert_eq(calc_eval(\"1 + 2 * 3\", toks, out), 0); test.assert_eq(out[0], 7); test.assert_eq(calc_eval(\"-(2+3)*2\", toks, out), 0); test.assert_eq(out[0], 0 - 10); test.assert_eq(calc_eval(\" 7\\t\", toks, out), 0); test.assert_eq(out[0], 7); } return 0; }",
+    "pub fn test_calc_2() -> [] int { region r { let toks = alloc_slice[r](40, 0 - 7); let out = alloc_slice[r](1, 0 - 5); test.assert_eq(calc_eval(\"(1+\", toks, out), 1); test.assert_eq(calc_eval(\"\", toks, out), 1); test.assert_eq(calc_eval(\"()\", toks, out), 1); test.assert_eq(calc_eval(\"1 2\", toks, out), 1); test.assert_eq(calc_eval(\"1 + a\", toks, out), 3); test.assert_eq(calc_eval(\"999999999999999999*10\", toks, out), 2); test.assert_eq(calc_eval(\"1234567890123456789\", toks, out), 4); test.assert_eq(out[0], 0 - 5); } return 0; }",
+    "pub fn test_calc_3() -> [] int { region r { let toks = alloc_slice[r](12, 0 - 7); let out = alloc_slice[r](1, 0 - 5); test.assert_eq(calc_eval(\"1+2+3\", toks, out), 0); test.assert_eq(out[0], 6); test.assert_eq(calc_eval(\"1+2+3+4\", toks, out), 5); } return 0; }"
+   ],
+   "deps": [
+    "scan",
+    "eval"
+   ]
+  },
+  {
+   "id": "record",
+   "file": "calc.cho",
+   "signature": "fn calc_record[&s, &o, &p, &m](text: &s [byte], toks: &!o [int], out: &!p [int], store: &!m [int]) -> [] int",
+   "description": "Evaluates text like calc_eval (call calc_eval) and keeps what was recorded in store, a slice of int with two elements, store[0] the sum of the values recorded and store[1] how many, both 0 at the start. On success the value is added to store[0], store[1] goes up by one, and 0 is returned. If the new sum would not fit in an int (decide with parser.ps_fits_add) the answer is 2 and the store is left exactly as it was. Any other failure returns the code calc_eval gives and leaves the store as it was.",
+   "examples": [
+    "calc_record(\"5\", toks, out, store) == 0"
+   ],
+   "tests": [
+    "pub fn test_record_1() -> [] int { region r { let toks = alloc_slice[r](40, 0 - 7); let out = alloc_slice[r](1, 0); let store = alloc_slice[r](2, 0); test.assert_eq(calc_record(\"5\", toks, out, store), 0); test.assert_eq(calc_record(\"oops\", toks, out, store), 3); test.assert_eq(calc_record(\"-2+10\", toks, out, store), 0); test.assert_eq(store[0], 13); test.assert_eq(store[1], 2); test.assert_eq(calc_record(\"1+\", toks, out, store), 1); test.assert_eq(store[1], 2); } return 0; }",
+    "pub fn test_record_2() -> [] int { region r { let toks = alloc_slice[r](40, 0 - 7); let out = alloc_slice[r](1, 0); let store = alloc_slice[r](2, 0); test.assert_eq(calc_record(\"999999999999999999*9\", toks, out, store), 0); test.assert_eq(calc_record(\"999999999999999999*9\", toks, out, store), 2); test.assert_eq(store[0], 8999999999999999991); test.assert_eq(store[1], 1); test.assert_eq(calc_record(\"-999999999999999999*9\", toks, out, store), 0); test.assert_eq(store[0], 0); test.assert_eq(store[1], 2); } return 0; }"
+   ],
+   "deps": [
+    "calc_eval",
+    "fits_add"
+   ]
+  },
+  {
+   "id": "total",
+   "file": "calc.cho",
+   "signature": "fn calc_total[&m](store: &m [int]) -> [] int",
+   "description": "The sum recorded so far: store[0] of the store described for calc_record (a slice of int with two elements).",
+   "examples": [
+    "calc_total(store) == 13"
+   ],
+   "tests": [
+    "pub fn test_total_1() -> [] int { region r { let store = alloc_slice[r](2, 0); store[0] = 13; store[1] = 2; test.assert_eq(calc_total(store), 13); store[0] = 0 - 9; test.assert_eq(calc_total(store), 0 - 9); } return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "count",
+   "file": "calc.cho",
+   "signature": "fn calc_count[&m](store: &m [int]) -> [] int",
+   "description": "How many values were recorded: store[1] of the store described for calc_record (a slice of int with two elements).",
+   "examples": [
+    "calc_count(store) == 2"
+   ],
+   "tests": [
+    "pub fn test_count_1() -> [] int { region r { let store = alloc_slice[r](2, 0); store[0] = 13; store[1] = 2; test.assert_eq(calc_count(store), 2); store[1] = 40; test.assert_eq(calc_count(store), 40); } return 0; }"
+   ],
+   "deps": []
+  }
+ ]
+}

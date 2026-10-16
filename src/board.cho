@@ -98,6 +98,7 @@ fn u_kept_out() -> [] int { return 20; }
 fn u_kept_think() -> [] int { return 21; }
 fn u_kept_chars() -> [] int { return 22; }
 fn u_has_kept() -> [] int { return 23; }
+fn u_file() -> [] int { return 24; }     // the module file of the unit (docs/multi-file.md), offset -1 when the plan names none
 
 fn col_waiting() -> [] int { return 0; }
 fn col_building() -> [] int { return 1; }
@@ -257,6 +258,7 @@ fn register[&s, &n, &x](st: &!s [int], names: &!n [byte], text: &x [byte], raw: 
     uset(st, u, u_id() + 1, l);
     uset(st, u, u_fn(), 0 - 1);
     uset(st, u, u_deps(), 0 - 1);
+    uset(st, u, u_file(), 0 - 1);
     uset(st, u, u_ord(), 0 - 1);
     return u;
 }
@@ -434,6 +436,15 @@ fn plan_unit[&s, &n, &x, &t](st: &!s [int], names: &!n [byte], src: &x [byte], t
                 uset(st, u, u_fn(), off);
                 uset(st, u, u_fn() + 1, e - a);
             }
+        }
+    }
+    // the file of a plan that has files (a unit without `file` is in project.cho); a plan without files has none to show
+    let fl = json.get(src, tape, j, "file");
+    if (fl >= 0 && json.is_string(tape, fl) && json.string_plain(tape, fl)) || plan.files_declared(src, tape) > 0 {
+        let off = put_name(st, names, plan.unit_file(src, tape, j));
+        if off >= 0 {
+            uset(st, u, u_file(), off);
+            uset(st, u, u_file() + 1, len(plan.unit_file(src, tape, j)));
         }
     }
     let dp = json.get(src, tape, j, "deps");
@@ -1194,7 +1205,27 @@ fn emit_unit[&h, &z, &w, &s, &n, &o, &t](heap: &!h Heap, fs: &z Fs(""), wd: &w [
     let col = column_of(st, u, tbad);
     if col == col_building() {
         // the unit being built: the loop writes its attempts so far to project.cho.trail.jsonl
-        let (j, c, bd) = read_trail(heap, fs, wd, "project.cho.trail.jsonl", text, tape);
+        var live = buffer.empty(heap, 32);
+        if uget(st, u, u_file()) >= 0 {
+            live = buffer.append(heap, live, names[uget(st, u, u_file())..uget(st, u, u_file()) + uget(st, u, u_file() + 1)]);
+        } else {
+            live = buffer.append(heap, live, "project.cho");
+        }
+        live = buffer.append(heap, live, ".trail.jsonl");
+        var lj = buffer.empty(heap, 16);
+        var lc = 0 - 1;
+        var lbad = 0;
+        borrow live as &lvq in {
+            let (j9, c9, bd9) = read_trail(heap, fs, wd, buffer.bytes(lvq), text, tape);
+            buffer.drop(heap, lj);
+            lj = j9;
+            lc = c9;
+            lbad = bd9;
+        }
+        buffer.drop(heap, live);
+        let j = lj;
+        let c = lc;
+        let bd = lbad;
         if c >= 0 {
             buffer.drop(heap, tj);
             tj = j;
@@ -1212,6 +1243,11 @@ fn emit_unit[&h, &z, &w, &s, &n, &o, &t](heap: &!h Heap, fs: &z Fs(""), wd: &w [
         b = quoted(heap, b, names[uget(st, u, u_fn())..uget(st, u, u_fn()) + uget(st, u, u_fn() + 1)]);
     } else {
         b = lit(heap, b, "null");
+    }
+    // the module file (docs/multi-file.md): only for a plan that has files or a unit that names one, so a board of a single-file run is as it was
+    if uget(st, u, u_file()) >= 0 {
+        b = key(heap, b, "file"); // MUTANT:ufile
+        b = quoted(heap, b, names[uget(st, u, u_file())..uget(st, u, u_file()) + uget(st, u, u_file() + 1)]);
     }
     b = key(heap, b, "column");
     b = quoted(heap, b, col_name(col));

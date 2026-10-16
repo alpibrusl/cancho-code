@@ -1,0 +1,45 @@
+edition 7;
+
+module calc;
+
+import tokens;
+import parser;
+
+// 0 the value is in out[0]; 1 not an expression; 2 an operation does not fit; 3 a byte that is not part of an expression; 4 a number of more than 18 digits;
+// 5 more tokens than toks has room for.
+pub fn calc_eval[&s, &o, &p](text: &s [byte], toks: &!o [int], out: &!p [int]) -> [] int {
+    let n = tokens.tk_scan(text, toks);
+    if n == 0 - 1 {
+        return 3;
+    }
+    if n == 0 - 2 {
+        return 4;
+    }
+    if n == 0 - 3 {
+        return 5;
+    }
+    return parser.ps_eval(toks, n, out);
+}
+
+// store[0] is the sum of the values recorded so far, store[1] how many were recorded.
+pub fn calc_record[&s, &o, &p, &m](text: &s [byte], toks: &!o [int], out: &!p [int], store: &!m [int]) -> [] int {
+    let code = calc_eval(text, toks, out);
+    if code != 0 {
+        return code;
+    }
+    let v = out[0];
+    if parser.ps_fits_add(store[0], v) == false {
+        return 2;
+    }
+    store[0] = store[0] + v;
+    store[1] = store[1] + 1;
+    return 0;
+}
+
+pub fn calc_total[&m](store: &m [int]) -> [] int {
+    return store[0];
+}
+
+pub fn calc_count[&m](store: &m [int]) -> [] int {
+    return store[1];
+}

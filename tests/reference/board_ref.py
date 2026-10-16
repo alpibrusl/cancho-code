@@ -239,7 +239,7 @@ def main():
             index[id_esc] = len(units)
             units.append({"id": id_esc, "function": None, "deps": None, "ev": 0, "mv": 0, "reg": 0, "ord": -1, "sver": 0, "sbld": 0,
                           "calls": 0, "in": 0, "out": 0, "cw": 0, "cr": 0, "think": 0, "pico": 0, "over": 0,
-                          "kept": None})
+                          "kept": None, "file": None})
         return units[index[id_esc]]
 
     if plan:
@@ -252,6 +252,12 @@ def main():
                 m = re.match(r"fn\s+([A-Za-z_][A-Za-z_0-9]*)", sig)
                 if m:
                     d["function"] = m.group(1)
+            # the module file (docs/multi-file.md): the unit's `file`, else project.cho when the plan declares files; none for a single-file plan
+            fl = u.get("file")
+            if isinstance(fl, str):
+                d["file"] = fl
+            elif isinstance(plan.get("files"), list) and len(plan["files"]) > 0:
+                d["file"] = "project.cho"
             deps = u.get("deps")
             if isinstance(deps, list) and all(isinstance(x, str) for x in deps):
                 d["deps"] = [json.dumps(x, ensure_ascii=False)[1:-1] for x in deps]
@@ -397,7 +403,7 @@ def main():
     for d in cards:
         trail = trail_of("trail-" + d["id"] + ".jsonl") if safe_id(d["id"]) else None
         c = col(d, trail)
-        if c == "building" and (lt := trail_of("project.cho.trail.jsonl")) is not None:
+        if c == "building" and (lt := trail_of((d["file"] or "project.cho") + ".trail.jsonl")) is not None:
             trail = lt
         counts[c] += 1
         known_t = have_usage and rows > 0 and known
@@ -410,6 +416,8 @@ def main():
             "cost_usd": fixed(d["micro"], 6) if have_usage and price else None,
             "trail": trail,
         })
+        if d["file"] is not None:
+            ucards[-1]["file"] = d["file"]
 
     nverified = counts["verified"]
     known_t = have_usage and rows > 0 and known

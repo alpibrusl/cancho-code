@@ -1,0 +1,15 @@
+UNIT: cost
+FUNCTION: store_cost
+SIGNATURE: fn store_cost(n: int) -> [] int
+DESCRIPTION: Twice the width of n.
+FILE: store.cho
+MODULE: store
+IMPORTS ALREADY AT THE TOP OF store.cho: parser
+OTHER FILE parser.cho (module parser; read only, you do not write it; call its public items with the module name in front, as parser.NAME(...)); its public items now:
+pub fn parse_width(n: int) -> [] int
+
+NOT IMPORTED BY store.cho (do not use): tokens.cho
+EXAMPLES:
+store_cost(12) == 6
+store_cost(7) == 4
+INSTRUCTIONS: Add this function to store.cho, keeping every other function as it is. The file is the module `store`: its `module` line and its imports are already there, and you write only this one file. Declare the function `pub fn`: another module can call a function only when it is `pub`, and the unit is refused otherwise. Call another module's function with the module name in front (`tokens.tok_next(...)`), only for a module this file imports. The file has no main. Do not write tests or examples of your own: the examples above are run for you.
