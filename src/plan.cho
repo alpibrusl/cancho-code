@@ -5,7 +5,7 @@ module plan;
 // The plan check (docs/plan.md): a JSON plan is parsed onto a tape and every
 // rule is reported, one `[PLAN_ERROR]` line each, then the verdict. No model.
 //
-// `info` holds 11 ints per unit (see the field names below); it is filled in
+// `info` holds 12 ints per unit (see the field names below); it is filled in
 // one pass, the cycles are marked in a second, and the third reports.
 
 import std.buffer;
@@ -23,7 +23,8 @@ fn f_ok() -> [] int { return 7; }
 fn f_cur() -> [] int { return 8; }
 fn f_col() -> [] int { return 9; }
 fn f_cyc() -> [] int { return 10; }
-fn stride() -> [] int { return 11; }
+fn f_file() -> [] int { return 11; }
+fn stride() -> [] int { return 12; }
 
 fn byte_at[&t](t: &t [byte], i: int) -> [] int {
     if i < 0 || i >= len(t) {
@@ -215,6 +216,7 @@ fn collect[&s, &t, &i](src: &s [byte], tape: &t [int], info: &!i [int], units: i
         var ds = 0 - 1;
         var ts = 0 - 1;
         var ef = 0 - 1;
+        var fl = 0 - 1;
         if isobj {
             idn = json.get(src, tape, j, "id");
             sg = json.get(src, tape, j, "signature");
@@ -223,12 +225,13 @@ fn collect[&s, &t, &i](src: &s [byte], tape: &t [int], info: &!i [int], units: i
             ds = json.get(src, tape, j, "description");
             ts = json.get(src, tape, j, "tests");
             ef = json.get(src, tape, j, "effort");
+            fl = json.get(src, tape, j, "file");
         }
         if idn >= 0 && json.is_string(tape, idn) {
             set_f(info, u, f_id(), idn);
         }
         var ok = 0;
-        if isobj && get_f(info, u, f_id()) >= 0 && sg >= 0 && json.is_string(tape, sg) && all_strings(tape, ex) && all_strings(tape, dp) && (ds < 0 || json.is_string(tape, ds)) && (ts < 0 || all_strings(tape, ts)) && (ef < 0 || effort_level(src, tape, ef)) {
+        if isobj && get_f(info, u, f_id()) >= 0 && sg >= 0 && json.is_string(tape, sg) && all_strings(tape, ex) && all_strings(tape, dp) && (ds < 0 || json.is_string(tape, ds)) && (ts < 0 || all_strings(tape, ts)) && (ef < 0 || effort_level(src, tape, ef)) && (fl < 0 || json.is_string(tape, fl)) {
             ok = 1;
         }
         set_f(info, u, f_ok(), ok);
@@ -342,6 +345,10 @@ fn field_problems[&h, &s, &t](heap: &!h Heap, src: &s [byte], tape: &t [int], no
     if ef >= 0 && !effort_level(src, tape, ef) {
         b = buffer.append(heap, b, "`effort` is not one of low, medium, high, xhigh, max; ");
     }
+    let fl = json.get(src, tape, node, "file");
+    if fl >= 0 && !json.is_string(tape, fl) {
+        b = buffer.append(heap, b, "`file` is not a string (the name of the module file this unit belongs to, such as \"store.cho\"; leave it out for project.cho); ");
+    }
     return b;
 }
 
@@ -434,8 +441,25 @@ fn report_unit[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte
     let ns = get_f(info, u, f_ns());
     if ns < 0 {
         b = emit(heap, b, "bad-signature", who, "the signature must be `fn NAME(...) -> [effect row] TYPE`; a function's effect row is required, write `-> [] int` for the pure form");
-    } else if find_fn(src, tape, info, n, fn_name(src, tape, info, u)) != u {
-        b = emit(heap, b, "duplicate-function", who, "this function is already declared by an earlier unit; a function is declared by exactly one unit");
+    } else {
+        let dv = find_fn(src, tape, info, n, fn_name(src, tape, info, u));
+        if dv != u {
+            if get_f(info, dv, f_file()) == get_f(info, u, f_file()) {
+                b = emit(heap, b, "duplicate-function", who, "this function is already declared by an earlier unit; a function is declared by exactly one unit");
+            } else {
+                var msg = buffer.append(heap, buffer.empty(heap, 192), "this unit declares `");
+                msg = buffer.append(heap, msg, fn_name(src, tape, info, u));
+                msg = buffer.append(heap, msg, "`, which the unit `");
+                msg = buffer.append(heap, msg, label(src, tape, info, dv));
+                msg = buffer.append(heap, msg, "` already declares in `");
+                msg = buffer.append(heap, msg, unit_file_text(src, tape, info, dv));
+                msg = buffer.append(heap, msg, "`: a function is declared by exactly one unit, in one file (the same name in two files is refused); give this one another name");
+                borrow msg as &mr in {
+                    b = emit(heap, b, "file-duplicate", who, buffer.bytes(mr));
+                }
+                buffer.drop(heap, msg);
+            }
+        }
     }
     let ex = get_f(info, u, f_ex());
     let m = json.count(tape, ex);
@@ -678,6 +702,507 @@ fn integration_rules[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s
     return b;
 }
 
+// ---- files (docs/plan.md, "Files") ------------------------------------------------------------------------------------------------------
+//
+// A unit may name the module file it belongs to (`file`), and the plan may declare the files (`files`: each with its `module` and the `imports` it
+// needs). A file is a slot: 0..F-1 are the entries of `files`, F is `project.cho` when `files` does not list it (the root file, which has no module
+// and cannot be imported). A unit without `file` is in the slot of `project.cho`. Slots of units that cannot be placed: -1 (the unit is not usable),
+// -2 (its file is not declared), -3 (its file name is not a file name).
+
+// A file name the driver can use: letters, digits, `_`, `.` and `-`, ending in `.cho`, no `..`, and none of the driver's own files.
+fn file_name_ok[&t](t: &t [byte]) -> [] bool {
+    let n = len(t);
+    if n < 5 || n > 64 || !bytes.ends_with(t, ".cho") || bytes.find(t, "..") >= 0 {
+        return false;
+    }
+    var i = 0;
+    while i < n {
+        let c = int_of(t[i]);
+        if !(bytes.is_alpha(c) || bytes.is_digit(c) || c == 95 || c == 46 || c == 45) {
+            return false;
+        }
+        i = i + 1;
+    }
+    if bytes.equal(t, "main.cho") || bytes.starts_with(t, "tests-") {
+        return false;
+    }
+    return true;
+}
+
+// A module name: one identifier, and not one the driver's own files bind (`std`, `test`).
+fn module_name_ok[&t](t: &t [byte]) -> [] bool {
+    if len(t) == 0 || ident_end(t, 0) != len(t) {
+        return false;
+    }
+    return !(bytes.equal(t, "std") || bytes.equal(t, "test"));
+}
+
+// `std.NAME` (more dotted segments allowed).
+fn std_import_ok[&t](t: &t [byte]) -> [] bool {
+    if !bytes.starts_with(t, "std.") || len(t) < 5 {
+        return false;
+    }
+    var i = 4;
+    while i < len(t) {
+        let c = int_of(t[i]);
+        if !(is_part(c) || c == 46) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return !bytes.equal(t, "std.test");
+}
+
+fn files_count[&s, &t](src: &s [byte], tape: &t [int]) -> [] int {
+    let files = json.get(src, tape, 0, "files");
+    if files < 0 || !json.is_array(tape, files) {
+        return 0;
+    }
+    return json.count(tape, files);
+}
+
+// The text of entry `k`'s string field `key` of `files`, or "" (the entry is not an object, or the field is missing or not a string).
+fn entry_text[&s, &t, &k](src: &s [byte], tape: &t [int], k: int, key: &k [byte]) -> [] &s [byte] {
+    let files = json.get(src, tape, 0, "files");
+    if files < 0 || !json.is_array(tape, files) || k < 0 || k >= json.count(tape, files) {
+        return "";
+    }
+    let e = json.at(tape, files, k);
+    if !json.is_object(tape, e) {
+        return "";
+    }
+    let f = json.get(src, tape, e, key);
+    if f < 0 || !json.is_string(tape, f) {
+        return "";
+    }
+    return json.string_view(src, tape, f);
+}
+
+// The entry of `files` whose `file` is `name`, or -1.
+fn find_entry[&s, &t, &x](src: &s [byte], tape: &t [int], name: &x [byte]) -> [] int {
+    let fc = files_count(src, tape);
+    var k = 0;
+    while k < fc {
+        let nm = entry_text(src, tape, k, "file");
+        if len(nm) > 0 && bytes.equal(nm, name) {
+            return k;
+        }
+        k = k + 1;
+    }
+    return 0 - 1;
+}
+
+// The slot of `project.cho`: its entry when `files` lists it, else the one after the last entry.
+fn root_slot[&s, &t](src: &s [byte], tape: &t [int]) -> [] int {
+    let k = find_entry(src, tape, "project.cho");
+    if k >= 0 {
+        return k;
+    }
+    return files_count(src, tape);
+}
+
+// The slot whose module is `name`, or -1.
+fn slot_of_module[&s, &t, &x](src: &s [byte], tape: &t [int], name: &x [byte]) -> [] int {
+    let fc = files_count(src, tape);
+    var k = 0;
+    while k < fc {
+        let m = entry_text(src, tape, k, "module");
+        if len(m) > 0 && bytes.equal(m, name) {
+            return k;
+        }
+        k = k + 1;
+    }
+    return 0 - 1;
+}
+
+// The name of the file in slot `k`.
+fn slot_name[&s, &t](src: &s [byte], tape: &t [int], k: int) -> [] &s [byte] {
+    if k == files_count(src, tape) {
+        return "project.cho";
+    }
+    return entry_text(src, tape, k, "file");
+}
+
+// Is `name` one of the imports of the entry `k`?
+fn entry_imports[&s, &t, &x](src: &s [byte], tape: &t [int], k: int, name: &x [byte]) -> [] bool {
+    let files = json.get(src, tape, 0, "files");
+    if files < 0 || !json.is_array(tape, files) || k < 0 || k >= json.count(tape, files) {
+        return false;
+    }
+    let e = json.at(tape, files, k);
+    if !json.is_object(tape, e) {
+        return false;
+    }
+    let im = json.get(src, tape, e, "imports");
+    if im < 0 || !all_strings(tape, im) {
+        return false;
+    }
+    var q = 0;
+    while q < json.count(tape, im) {
+        if json.string_equals(src, tape, json.at(tape, im, q), name) {
+            return true;
+        }
+        q = q + 1;
+    }
+    return false;
+}
+
+// The file a unit names, as written, or `project.cho`.
+fn unit_file_text[&s, &t, &i](src: &s [byte], tape: &t [int], info: &!i [int], u: int) -> [] &s [byte] {
+    let fl = json.get(src, tape, get_f(info, u, f_node()), "file");
+    if fl < 0 || !json.is_string(tape, fl) {
+        return "project.cho";
+    }
+    return json.string_view(src, tape, fl);
+}
+
+fn assign_files[&s, &t, &i](src: &s [byte], tape: &t [int], info: &!i [int], n: int) -> [] int {
+    let root = root_slot(src, tape);
+    var u = 0;
+    while u < n {
+        var slot = 0 - 1;
+        if get_f(info, u, f_ok()) == 1 {
+            let fl = json.get(src, tape, get_f(info, u, f_node()), "file");
+            if fl < 0 {
+                slot = root;
+            } else {
+                let nm = json.string_view(src, tape, fl);
+                if bytes.equal(nm, "project.cho") {
+                    slot = root;
+                } else if !file_name_ok(nm) {
+                    slot = 0 - 3;
+                } else {
+                    let k = find_entry(src, tape, nm);
+                    if k < 0 {
+                        slot = 0 - 2;
+                    } else {
+                        slot = k;
+                    }
+                }
+            }
+        }
+        set_f(info, u, f_file(), slot);
+        u = u + 1;
+    }
+    return 0;
+}
+
+// The checks of one entry of `files`: its shape, its names, its imports.
+fn entry_rules[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], k: int) -> [heap] buffer.Buffer {
+    var b = out;
+    let files = json.get(src, tape, 0, "files");
+    let e = json.at(tape, files, k);
+    let shape = "an entry of `files` is {\"file\": \"store.cho\", \"module\": \"store\", \"imports\": [\"std.buffer\", \"tokens\"]}";
+    if !json.is_object(tape, e) {
+        return emit(heap, b, "files-field", "-", shape);
+    }
+    let fnode = json.get(src, tape, e, "file");
+    if fnode < 0 || !json.is_string(tape, fnode) {
+        return emit(heap, b, "files-field", "-", shape);
+    }
+    let nm = json.string_view(src, tape, fnode);
+    if !file_name_ok(nm) && !bytes.equal(nm, "project.cho") {
+        var msg = buffer.append(heap, buffer.empty(heap, 160), "`");
+        msg = buffer.append(heap, msg, nm);
+        msg = buffer.append(heap, msg, "` is not a file name: letters, digits, `_`, `.` and `-` only, no `/` and no `..`, ending in `.cho`, and not `main.cho` or `tests-...` (the driver's own)");
+        borrow msg as &mr in {
+            b = emit(heap, b, "file-name", "-", buffer.bytes(mr));
+        }
+        buffer.drop(heap, msg);
+        return b;
+    }
+    if find_entry(src, tape, nm) != k {
+        var msg = buffer.append(heap, buffer.empty(heap, 96), "`");
+        msg = buffer.append(heap, msg, nm);
+        msg = buffer.append(heap, msg, "` is declared twice in `files`");
+        borrow msg as &mr in {
+            b = emit(heap, b, "files-field", "-", buffer.bytes(mr));
+        }
+        buffer.drop(heap, msg);
+    }
+    let mnode = json.get(src, tape, e, "module");
+    if bytes.equal(nm, "project.cho") {
+        if mnode >= 0 {
+            b = emit(heap, b, "files-field", "-", "`project.cho` is the root file: it has no `module` and no other file can import it");
+        }
+    } else if mnode < 0 || !json.is_string(tape, mnode) || !module_name_ok(json.string_view(src, tape, mnode)) {
+        var msg = buffer.append(heap, buffer.empty(heap, 160), "`");
+        msg = buffer.append(heap, msg, nm);
+        msg = buffer.append(heap, msg, "` needs a `module`: one identifier (letters, digits, `_`), not `std` or `test`; it is the name the other files import");
+        borrow msg as &mr in {
+            b = emit(heap, b, "files-field", "-", buffer.bytes(mr));
+        }
+        buffer.drop(heap, msg);
+    } else if slot_of_module(src, tape, json.string_view(src, tape, mnode)) != k {
+        var msg = buffer.append(heap, buffer.empty(heap, 96), "the module `");
+        msg = buffer.append(heap, msg, json.string_view(src, tape, mnode));
+        msg = buffer.append(heap, msg, "` is declared by two files");
+        borrow msg as &mr in {
+            b = emit(heap, b, "files-field", "-", buffer.bytes(mr));
+        }
+        buffer.drop(heap, msg);
+    }
+    let im = json.get(src, tape, e, "imports");
+    if im >= 0 && !all_strings(tape, im) {
+        var msg = buffer.append(heap, buffer.empty(heap, 96), "`imports` of `");
+        msg = buffer.append(heap, msg, nm);
+        msg = buffer.append(heap, msg, "` is not an array of strings (`std.NAME` or the module of another file)");
+        borrow msg as &mr in {
+            b = emit(heap, b, "files-field", "-", buffer.bytes(mr));
+        }
+        buffer.drop(heap, msg);
+    } else if im >= 0 {
+        var q = 0;
+        while q < json.count(tape, im) {
+            let inode = json.at(tape, im, q);
+            let it = json.string_view(src, tape, inode);
+            var bad = false;
+            var why = "";
+            if q > 0 {
+                var r = 0;
+                while r < q {
+                    if json.string_equals(src, tape, json.at(tape, im, r), it) {
+                        bad = true;
+                        why = "is listed twice (an import twice is refused by the compiler)";
+                    }
+                    r = r + 1;
+                }
+            }
+            if !bad {
+                if bytes.starts_with(it, "std.") {
+                    if !std_import_ok(it) {
+                        bad = true;
+                        why = "is not a std module the driver allows (`std.test` is imported by the unit tests themselves)";
+                    }
+                } else {
+                    let ms = slot_of_module(src, tape, it);
+                    if ms < 0 {
+                        bad = true;
+                        why = "is neither a `std.` module nor the `module` of a file in `files`";
+                    } else if ms == k {
+                        bad = true;
+                        why = "is the file's own module";
+                    }
+                }
+            }
+            if bad {
+                var msg = buffer.append(heap, buffer.empty(heap, 160), "in `imports` of `");
+                msg = buffer.append(heap, msg, nm);
+                msg = buffer.append(heap, msg, "`: `");
+                msg = buffer.append(heap, msg, it);
+                msg = buffer.append(heap, msg, "` ");
+                msg = buffer.append(heap, msg, why);
+                borrow msg as &mr in {
+                    b = emit(heap, b, "files-field", "-", buffer.bytes(mr));
+                }
+                buffer.drop(heap, msg);
+            }
+            q = q + 1;
+        }
+    }
+    return b;
+}
+
+// The plan-level and the unit-level rules of files, after the rules of each unit: the entries of `files`, a unit whose file is not declared or not a file
+// name, a unit that depends on a unit of another file that its file does not import, a cycle between files, a file without a unit.
+fn file_rules[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], info: &!i [int], n: int) -> [heap] buffer.Buffer {
+    var b = out;
+    let files = json.get(src, tape, 0, "files");
+    if files >= 0 && !json.is_array(tape, files) {
+        return emit(heap, b, "files-field", "-", "`files` must be an array of entries {\"file\": \"store.cho\", \"module\": \"store\", \"imports\": [...]}");
+    }
+    let fc = files_count(src, tape);
+    var k = 0;
+    while k < fc {
+        b = entry_rules(heap, b, src, tape, k);
+        k = k + 1;
+    }
+    let slots = fc + 1;
+    let root = root_slot(src, tape);
+    let eb = box_slice(heap, slots * slots + 1, 0);
+    let ab = box_slice(heap, slots + 1, 0);
+    let ub = box_slice(heap, slots + 1, 0);
+    borrow mut eb as &!ew in {
+    borrow mut ab as &!aw in {
+    borrow mut ub as &!uw in {
+        let edge = contents(ew);
+        let alive = contents(aw);
+        let used = contents(uw);
+        // the units: placed, and what they need
+        var u = 0;
+        while u < n {
+            let su = get_f(info, u, f_file());
+            if su == 0 - 1 && json.is_object(tape, get_f(info, u, f_node())) {
+                // a unit that cannot be read still stands in its file (the file is not reported empty because of it)
+                let rf = json.get(src, tape, get_f(info, u, f_node()), "file");
+                if rf >= 0 && json.is_string(tape, rf) {
+                    let rk = find_entry(src, tape, json.string_view(src, tape, rf));
+                    if rk >= 0 {
+                        used[rk] = used[rk] + 1;
+                    }
+                }
+            }
+            if su == 0 - 3 {
+                var msg = buffer.append(heap, buffer.empty(heap, 192), "the file `");
+                msg = buffer.append(heap, msg, unit_file_text(src, tape, info, u));
+                msg = buffer.append(heap, msg, "` is not a file name: letters, digits, `_`, `.` and `-` only, no `/` and no `..`, ending in `.cho`, and not `main.cho` or `tests-...`");
+                borrow msg as &mr in {
+                    b = emit(heap, b, "file-name", label(src, tape, info, u), buffer.bytes(mr));
+                }
+                buffer.drop(heap, msg);
+            } else if su == 0 - 2 {
+                var msg = buffer.append(heap, buffer.empty(heap, 192), "the unit is in `");
+                msg = buffer.append(heap, msg, unit_file_text(src, tape, info, u));
+                msg = buffer.append(heap, msg, "`, which `files` does not declare: add {\"file\": \"");
+                msg = buffer.append(heap, msg, unit_file_text(src, tape, info, u));
+                msg = buffer.append(heap, msg, "\", \"module\": ..., \"imports\": [...]} to `files`, or put the unit in a declared file");
+                borrow msg as &mr in {
+                    b = emit(heap, b, "unknown-file", label(src, tape, info, u), buffer.bytes(mr));
+                }
+                buffer.drop(heap, msg);
+            } else if su >= 0 {
+                used[su] = used[su] + 1;
+                let deps = get_f(info, u, f_dep());
+                var q = 0;
+                while q < json.count(tape, deps) {
+                    let v = find_id(src, tape, info, n, node_text(src, tape, json.at(tape, deps, q)));
+                    if v >= 0 {
+                        let sv = get_f(info, v, f_file());
+                        if sv >= 0 && sv != su {
+                            if sv == root {
+                                var msg = buffer.append(heap, buffer.empty(heap, 192), "this unit (in `");
+                                msg = buffer.append(heap, msg, slot_name(src, tape, su));
+                                msg = buffer.append(heap, msg, "`) depends on the unit `");
+                                msg = buffer.append(heap, msg, label(src, tape, info, v));
+                                msg = buffer.append(heap, msg, "`, which is in `project.cho`, the root file: no other file can import it; move that unit into a module file, or this one into `project.cho`");
+                                borrow msg as &mr in {
+                                    b = emit(heap, b, "file-import", label(src, tape, info, u), buffer.bytes(mr));
+                                }
+                                buffer.drop(heap, msg);
+                            } else {
+                                edge[su * slots + sv] = 1;
+                                if !entry_imports(src, tape, su, entry_text(src, tape, sv, "module")) {
+                                    var msg = buffer.append(heap, buffer.empty(heap, 192), "this unit (in `");
+                                    msg = buffer.append(heap, msg, slot_name(src, tape, su));
+                                    msg = buffer.append(heap, msg, "`) depends on the unit `");
+                                    msg = buffer.append(heap, msg, label(src, tape, info, v));
+                                    msg = buffer.append(heap, msg, "` of `");
+                                    msg = buffer.append(heap, msg, slot_name(src, tape, sv));
+                                    msg = buffer.append(heap, msg, "`: add \"");
+                                    msg = buffer.append(heap, msg, entry_text(src, tape, sv, "module"));
+                                    msg = buffer.append(heap, msg, "\" to the `imports` of `");
+                                    msg = buffer.append(heap, msg, slot_name(src, tape, su));
+                                    msg = buffer.append(heap, msg, "` in `files`");
+                                    borrow msg as &mr in {
+                                        b = emit(heap, b, "file-import", label(src, tape, info, u), buffer.bytes(mr));
+                                    }
+                                    buffer.drop(heap, msg);
+                                }
+                            }
+                        }
+                    }
+                    q = q + 1;
+                }
+            }
+            u = u + 1;
+        }
+        // a file without a unit
+        k = 0;
+        while k < fc {
+            if k != root && used[k] == 0 && file_name_ok(entry_text(src, tape, k, "file")) {
+                var msg = buffer.append(heap, buffer.empty(heap, 128), "`");
+                msg = buffer.append(heap, msg, entry_text(src, tape, k, "file"));
+                msg = buffer.append(heap, msg, "` has no unit: every file in `files` holds at least one unit (give a unit `\"file\": \"");
+                msg = buffer.append(heap, msg, entry_text(src, tape, k, "file"));
+                msg = buffer.append(heap, msg, "\"`, or take the entry out)");
+                borrow msg as &mr in {
+                    b = emit(heap, b, "empty-file", "-", buffer.bytes(mr));
+                }
+                buffer.drop(heap, msg);
+            }
+            k = k + 1;
+        }
+        // the graph of files: a declared import, or a unit that needs a unit of the other file
+        k = 0;
+        while k < fc {
+            var m = 0;
+            while m < fc {
+                let mod_m = entry_text(src, tape, m, "module");
+                if m != k && len(mod_m) > 0 && entry_imports(src, tape, k, mod_m) {
+                    edge[k * slots + m] = 1;
+                }
+                m = m + 1;
+            }
+            k = k + 1;
+        }
+        var a = 0;
+        while a < slots {
+            alive[a] = 1;
+            a = a + 1;
+        }
+        var round = 0;
+        while round <= slots {
+            a = 0;
+            while a < slots {
+                if alive[a] == 1 {
+                    var out_edge = false;
+                    var in_edge = false;
+                    var c = 0;
+                    while c < slots {
+                        if alive[c] == 1 && c != a {
+                            if edge[a * slots + c] == 1 {
+                                out_edge = true;
+                            }
+                            if edge[c * slots + a] == 1 {
+                                in_edge = true;
+                            }
+                        }
+                        c = c + 1;
+                    }
+                    if !out_edge || !in_edge {
+                        alive[a] = 0;
+                    }
+                }
+                a = a + 1;
+            }
+            round = round + 1;
+        }
+        var listed = buffer.empty(heap, 64);
+        var nlisted = 0;
+        a = 0;
+        while a < slots {
+            if alive[a] == 1 {
+                nlisted = nlisted + 1;
+                if nlisted > 1 {
+                    listed = buffer.append(heap, listed, ", ");
+                }
+                listed = buffer.push(heap, listed, byte_of(96));
+                listed = buffer.append(heap, listed, slot_name(src, tape, a));
+                listed = buffer.push(heap, listed, byte_of(96));
+            }
+            a = a + 1;
+        }
+        if nlisted > 0 {
+            var msg = buffer.append(heap, buffer.empty(heap, 160), "these files need each other, directly or through others, in a cycle: ");
+            borrow listed as &lq in {
+                msg = buffer.append(heap, msg, buffer.bytes(lq));
+            }
+            msg = buffer.append(heap, msg, ". The edges are the declared `imports` and a unit depending on a unit of another file; make them all point one way (move a unit, or take an import out)");
+            borrow msg as &mr in {
+                b = emit(heap, b, "file-cycle", "-", buffer.bytes(mr));
+            }
+            buffer.drop(heap, msg);
+        }
+        buffer.drop(heap, listed);
+    }
+    }
+    }
+    unbox_slice(heap, ub);
+    unbox_slice(heap, ab);
+    unbox_slice(heap, eb);
+    return b;
+}
+
 fn check_units[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], units: int) -> [heap] buffer.Buffer {
     var b = out;
     let n = json.count(tape, units);
@@ -695,6 +1220,7 @@ fn check_units[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], t
                 u = u + 1;
             }
             collect(src, tape, info, units, n);
+            assign_files(src, tape, info, n);
             cycles(src, tape, info, stack, n);
             b = integration_rules(heap, b, src, tape, info, n);
             let integ = integration_unit(src, tape, info, n);
@@ -703,6 +1229,7 @@ fn check_units[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], t
                 b = report_unit(heap, b, src, tape, info, n, u, integ);
                 u = u + 1;
             }
+            b = file_rules(heap, b, src, tape, info, n);
         }
     }
     unbox_slice(heap, sb);

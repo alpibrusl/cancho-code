@@ -46,3 +46,17 @@ valid-test-multiline  0
 bad-test-discard  1  bad-test:a
 valid-test-bind  0
 valid-test-othercall  0
+valid-files  0
+valid-files-root  0
+unknown-file  1  unknown-file:p
+unknown-file-no-list  1  unknown-file:p
+file-name  1  file-name:p
+file-name-ext  1  file-name:-
+file-not-string  1  unit-field:u
+file-duplicate  1  file-duplicate:p
+file-cycle  1  file-cycle:-
+file-import  1  file-import:p
+file-import-root  1  file-import:t
+empty-file  1  empty-file:-
+files-field  1  files-field:-
+files-import-unknown  1  files-field:-

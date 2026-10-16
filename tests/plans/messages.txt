@@ -12,3 +12,10 @@ example-callee	an example calls `ghost`, which no unit declares
 bad-test-newline	string literal in one of the tests has a line break inside it
 bad-test-newline	Write `\\n` in the JSON so that the cancho source holds `\n`
 bad-test-discard	the payload owns memory (a buffer, a Box, a list) and the compiler refuses to discard it
+unknown-file	`ghost.cho`, which `files` does not declare
+file-name	letters, digits, `_`, `.` and `-`
+file-duplicate	`tok_width`, which the unit `t` already declares in `tokens.cho`
+file-cycle	`tokens.cho`
+file-import	add "tokens" to the `imports` of `parser.cho`
+empty-file	`parser.cho` has no unit
+files-field	`module`
