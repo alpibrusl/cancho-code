@@ -17,6 +17,8 @@ build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m>
 | `--rounds N` | the plan agent's own retry rounds (3). A round whose reply was cut off by the output bound (a model that thinks first can use all of it before the first byte) is asked again with the bound doubled, at most 32000, and told which case it was; the unit agent does the same for a patch cut off (`agent-<id>.log` shows `a sample was cut off` and `the bound for the next round is N`) |
 | `--attempts N`, `--agent-seconds N` | per unit: the attempt ceiling (4) and the cap on one agent turn (30) |
 | `--plan-seconds N` | the cap on the whole plan call (900) |
+| `--memory <dir>` | an absolute directory with `lessons.jsonl` (mined from past journals by `scripts/cancho-lessons.sh`) and/or `facts.txt`; the unit agent adds what it knows about the refusal a unit just got, and your facts, to its prompt, and the journal records it ([memory.md](memory.md)). Without it the agent is exactly as before |
+| `--remember <text>` | with `--memory`: one line of your own (at most 160 bytes, no newline) appended to `<dir>/facts.txt` before the run; ten facts are the most a prompt carries. Nothing is written by the model |
 
 Paths, provider and model go into shell command lines, so they may hold only letters, digits and `. _ / + : = @ % , -`. A path with `..` in it is refused (the file capability traps on it).
 

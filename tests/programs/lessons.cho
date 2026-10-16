@@ -1,0 +1,34 @@
+edition 7;
+
+// lessons --memory <dir> (--run <run dir> | --trail <file>)...   mine the journals of past runs into <dir>/lessons.jsonl
+// lessons --memory <dir> --promote                              print the lessons worth a hint upstream
+// Exit 0 done, 1 the file cannot be written, 2 usage (docs/memory.md).
+
+import lessons;
+import std.io;
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(net);
+    release(clock);
+    release(signals);
+    release(exec);
+    var console = io;
+    var h = heap;
+    var status = 2;
+    borrow fs as &fz in {
+        borrow mut console as &!i in {
+            borrow mut h as &!hh in {
+                borrow args as &g in {
+                    status = lessons.run(hh, fz, i, g);
+                }
+            }
+        }
+    }
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return status;
+}

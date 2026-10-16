@@ -8,6 +8,8 @@
 #   refusal     the checker blob of a refused attempt is the compiler's WHOLE answer for the code of that attempt (the compiler is run again to compare)
 #   diff        an attempt's diff turns the previous attempt's code (the file before the unit for the first) into this attempt's code (patch rebuilds it)
 #   sidecars    the prompt, reply, tokens, stop, stderr the agent left reach the attempt; the primer is stored once; the agent's stderr is kept
+#   memory      the lessons and facts the agent's memory added (`memory.json`, docs/memory.md) reach the attempt as its `memory` field; a file that is not
+#               a JSON array is left out; a turn that leaves none has none (the driver clears the sidecar before each turn)
 #   nosidecar   an agent that leaves nothing: the attempt still has code, checker, acceptance, diff, stderr; the missing fields are absent
 #   cap         a 300 kB reply is cut to 262144 bytes with a visible marker; no blob is over the cap
 #   stuck       a unit that never verifies: its attempts, `stuck`, the run's verdict
@@ -93,6 +95,17 @@ expect "sidecars: the primer is stored once" "$(q "$wd" primer)" primer.txt
 expect "sidecars: one attempt event per attempt" "$(q "$wd" count attempt)" 5
 expect "sidecars: the project files are as they were (state)" "$(tr '\n' ' ' < "$wd/state.txt" | sed 's/ $//')" "verified a verified b verified c"
 expect "sidecars: the trail is as it was" "$(wc -l < "$wd/trail-a.jsonl" | tr -d ' ')" 2
+rm -rf "$wd" "$rc"
+
+# memory
+set -- $(mk); wd=$1; rc=$2; lg=$3
+: > "$rc/sidecars"; : > "$rc/memory"
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "memory: exit code" "$r" 0
+expect "memory: the field on the attempt that had it" "$(q "$wd" field a 0 memory)" '[{"id": "L864bef6c", "text": "a lesson text"}, {"id": "F1", "text": "no network"}]'
+expect "memory: not on the next attempt of the unit (the sidecar is cleared)" "$(q "$wd" field a 1 memory)" "<absent>"
+expect "memory: a file that is not an array is left out" "$(q "$wd" field b 0 memory)" "<absent>"
+expect "memory: every other event is as it was" "$(q "$wd" kinds)" "run_start plan_final unit_start attempt attempt unit_end unit_start attempt attempt unit_end sweep unit_start attempt unit_end sweep run_end"
 rm -rf "$wd" "$rc"
 
 # nosidecar

@@ -1,0 +1,2 @@
+{"attempt": 0, "agent_ms": 10, "outcome": "refused", "sig": "not-a-function:`err` is not a function in this program", "decision": "retry"}
+{"attempt": 1, "agent_ms": 10, "outcome": "verified", "sig": "", "decision": "verified"}

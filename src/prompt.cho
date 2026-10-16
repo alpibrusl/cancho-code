@@ -12,6 +12,7 @@ module prompt;
 // gate (scripts/test-prompt.sh) holds the two to the same bytes.
 
 import std.buffer;
+import std.bytes;
 import std.json;
 
 fn is_space(c: int) -> [] bool {
@@ -156,10 +157,10 @@ pub fn feedback_text[&h, &s, &f](heap: &!h Heap, source: &s [byte], feedback: &f
     return out;
 }
 
-// The task without its `HINT: ` lines, and the hint: those lines' text after the prefix, one per line (a person's words about the unit, written
-// by the project driver when a unit is re-opened with `--retry <unit> --hint "..."`, docs/build.md). A task with no such line comes back as it
-// was, byte for byte.
-fn split_hint[&h, &t](heap: &!h Heap, task: &t [byte]) -> [heap] (buffer.Buffer, buffer.Buffer) {
+// The task without its lines that start with `prefix`, and those lines' text after the prefix, one per line. The `HINT: ` lines are a person's words
+// about the unit, written by the project driver when a unit is re-opened with `--retry <unit> --hint "..."` (docs/build.md); the `MEMORY: ` and `FACT: `
+// lines, each after a NUL byte, are what the agent's memory adds in its own copy of the task (docs/memory.md). A task with no such line comes back as it was, byte for byte.
+fn split_prefix[&h, &t, &x](heap: &!h Heap, task: &t [byte], prefix: &x [byte]) -> [heap] (buffer.Buffer, buffer.Buffer) {
     var rest = buffer.empty(heap, len(task) + 8);
     var hint = buffer.empty(heap, 64);
     var have = false;
@@ -170,12 +171,12 @@ fn split_hint[&h, &t](heap: &!h Heap, task: &t [byte]) -> [heap] (buffer.Buffer,
             e = e + 1;
         }
         let line = task[i..e];
-        if len(line) >= 6 && int_of(line[0]) == 72 && int_of(line[1]) == 73 && int_of(line[2]) == 78 && int_of(line[3]) == 84 && int_of(line[4]) == 58 && int_of(line[5]) == 32 {
+        if len(line) >= len(prefix) && bytes.starts_with(line, prefix) {
             if have {
                 hint = buffer.push(heap, hint, byte_of(10));
             }
             have = true;
-            hint = buffer.append(heap, hint, line[6..len(line)]);
+            hint = buffer.append(heap, hint, line[len(prefix)..len(line)]);
         } else {
             rest = buffer.append(heap, rest, line);
             if e < len(task) {
@@ -187,11 +188,52 @@ fn split_hint[&h, &t](heap: &!h Heap, task: &t [byte]) -> [heap] (buffer.Buffer,
     return (rest, hint);
 }
 
+fn split_hint[&h, &t](heap: &!h Heap, task: &t [byte]) -> [heap] (buffer.Buffer, buffer.Buffer) {
+    return split_prefix(heap, task, "HINT: ");
+}
+
+// `text`'s lines, each after `lead`.
+fn lead_lines[&h, &t](heap: &!h Heap, out: buffer.Buffer, text: &t [byte], lead: &static [byte]) -> [heap] buffer.Buffer {
+    var o = out;
+    var i = 0;
+    while i < len(text) {
+        var e = i;
+        while e < len(text) && int_of(text[e]) != 10 {
+            e = e + 1;
+        }
+        o = buffer.append(heap, o, lead);
+        o = buffer.append(heap, o, text[i..e]);
+        o = buffer.push(heap, o, byte_of(10));
+        i = e + 1;
+    }
+    return o;
+}
+
 // The prompt: the task (or the instruction to fix), the checker's current
 // output, then the file between rules.
 fn compose[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte], patch: bool) -> [heap] buffer.Buffer {
     var p = buffer.empty(heap, 4096);
-    let (rest, hint) = split_hint(heap, task);
+    let (rest0, memo) = split_prefix(heap, task, "\0MEMORY: ");
+    var rest1 = buffer.empty(heap, 8);
+    var facts = buffer.empty(heap, 8);
+    borrow rest0 as &r0 in {
+        buffer.drop(heap, rest1);
+        buffer.drop(heap, facts);
+        let (a, b) = split_prefix(heap, buffer.bytes(r0), "\0FACT: ");
+        rest1 = a;
+        facts = b;
+    }
+    buffer.drop(heap, rest0);
+    var rest = buffer.empty(heap, 8);
+    var hint = buffer.empty(heap, 8);
+    borrow rest1 as &r1 in {
+        buffer.drop(heap, rest);
+        buffer.drop(heap, hint);
+        let (a, b) = split_hint(heap, buffer.bytes(r1));
+        rest = a;
+        hint = b;
+    }
+    buffer.drop(heap, rest1);
     borrow rest as &rq in {
     borrow hint as &hq in {
         let job = trimmed(buffer.bytes(rq));
@@ -227,6 +269,21 @@ fn compose[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], f
         }
     }
     buffer.drop(heap, fb);
+    borrow memo as &mq in {
+        if len(buffer.bytes(mq)) > 0 {
+            p = buffer.append(heap, p, "Known pitfalls, found in the journals of earlier runs (they came back more than once; none is certain to apply to this unit, and the compiler and the tests still decide):\n");
+            p = buffer.append(heap, p, buffer.bytes(mq));
+            p = buffer.push(heap, p, byte_of(10));
+        }
+    }
+    borrow facts as &fq in {
+        if len(buffer.bytes(fq)) > 0 {
+            p = buffer.append(heap, p, "What the person who runs this build says holds for every unit:\n");
+            p = lead_lines(heap, p, buffer.bytes(fq), "- ");
+        }
+    }
+    buffer.drop(heap, memo);
+    buffer.drop(heap, facts);
     p = buffer.append(heap, p, "---\n");
     p = buffer.append(heap, p, source);
     p = buffer.append(heap, p, "---\n");
