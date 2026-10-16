@@ -13,8 +13,15 @@ import os, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 LIMIT = 3500
 
-def service_files(cancho, project, bare=False):
-    """What a service is built from: the project's application, the fixed skeleton (the server loop and `main`), and the http-server package.
+def service_libs(service):
+    """The library source files a service is built with, beside http-server: the lines of eval/services/<service>/libs.txt (paths relative to the
+    repository root), absolute. A service with no libs.txt has none."""
+    p = os.path.join(HERE, "services", service or "", "libs.txt")
+    if not service or not os.path.exists(p): return []
+    return [os.path.join(os.path.dirname(HERE), l.strip()) for l in open(p) if l.strip() and not l.startswith("#")]
+
+def service_files(cancho, project, bare=False, service=None):
+    """What a service is built from: the project's application, the fixed skeleton (the server loop and `main`), and the http-server package and the service's libraries (its libs.txt).
     `bare`: the project imports what it uses (a decomposed service, docs/project.md), so the skeleton is main_bare.cho, main.cho without its imports."""
     pk = os.environ.get("CANCHO_PACKAGES", "")
     if not os.path.isdir(pk):
@@ -22,7 +29,7 @@ def service_files(cancho, project, bare=False):
         for up in (2, 3):
             cand = os.path.join(os.path.dirname(os.path.realpath(bin_)), *([".."] * up), "packages")
             if os.path.isdir(cand): pk = os.path.normpath(cand); break
-    return [project, os.path.join(HERE, "services", "skeleton", "main_bare.cho" if bare else "main.cho"), os.path.join(pk, "http-server", "server.cho")]
+    return [project, os.path.join(HERE, "services", "skeleton", "main_bare.cho" if bare else "main.cho"), os.path.join(pk, "http-server", "server.cho")] + service_libs(service)
 
 def main():
     argv = [a for a in sys.argv[1:] if a != "--bare"]
@@ -36,7 +43,7 @@ def main():
         sys.exit("service_run: no %s" % script)
     out = tempfile.mkdtemp(prefix="svcbuild-")
     binary = os.path.join(out, "service")
-    files = service_files(cancho, project, bare)
+    files = service_files(cancho, project, bare, service)
     b = subprocess.run([cancho, "build", "--std", "--backend", "cranelift"] + files + ["-o", binary], capture_output=True, text=True)
     if b.returncode != 0:
         first = next((l for l in b.stderr.splitlines() if "error" in l), b.stderr.strip()[-300:])

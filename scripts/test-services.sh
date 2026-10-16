@@ -18,7 +18,7 @@ fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }
 run() { python3 "$root/eval/service_run.py" "$@" 2>&1; }
 
-for s in jobs invoices webhooks kvstore; do
+for s in jobs invoices webhooks kvstore users; do
     ref="$root/eval/services/$s/reference/project.cho"
     for mode in accept attack; do
         out=$(run $mode $s "$ref"); rc=$?

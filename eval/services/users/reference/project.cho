@@ -1,0 +1,449 @@
+edition 7;
+
+// users: a small JSON API for user records, built with the cancho-web and cancho-schema libraries (modules `web` and `schema`). The
+// application half of the service (the skeleton is the other). Adapted from cancho-web's examples/users.
+//
+// The API is declared once (`setup`): the schema nodes for the body and the answers, then each operation. `web.dispatch` routes a request and
+// judges its path and query parameters before the handler runs; `schema.validate` and `schema.problem` judge the body of a POST and write every
+// error at once; `web.openapi` writes the document served at /openapi.json from the same nodes.
+//
+// State is fixed in size, allocated once in `app_new`: a row arena (each user is kept as the JSON it is answered with), an index of
+// (start, length) per user (length -1: deleted), and three counters.
+
+import schema;
+import web;
+
+struct App {
+    sc: schema.Schema,
+    api: web.Api,
+    doc: buffer.Buffer,
+    new_user: int,
+    limit_slot: int,
+    id_slot: int,
+    params: Box[[int]],
+    args: Box[[int]],
+    scratch: Box[[byte]],
+    rows: Box[[byte]],
+    index: Box[[int]],
+    meta: Box[[int]],
+}
+
+fn max_users() -> [] int {
+    return 200;
+}
+
+fn arena_bytes() -> [] int {
+    return 65536;
+}
+
+// ---------------------------------------------------------------------
+// Pure logic
+// ---------------------------------------------------------------------
+
+// Is a Content-Type value `application/json`, in any case, alone or followed by ";" or a space and parameters?
+fn json_type_ok[&c](value: &c [byte]) -> [] bool {
+    let want = "application/json";
+    if len(value) < len(want) {
+        return false;
+    }
+    var i = 0;
+    while i < len(want) {
+        var c = int_of(value[i]);
+        if c >= 65 && c <= 90 {
+            c = c + 32;
+        }
+        if c != int_of(want[i]) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return len(value) == len(want) || int_of(value[len(want)]) == 59 || int_of(value[len(want)]) == 32;
+}
+
+// Is there room for one more user? `count` users have been stored (deleted ones included), `used` bytes of the arena are taken, the new row
+// is `add` bytes. At most 200 users ever, and the rows must fit 65536 bytes.
+fn has_room(count: int, used: int, add: int) -> [] bool {
+    return count < 200 && used + add <= 65536;
+}
+
+// ---------------------------------------------------------------------
+// The store
+// ---------------------------------------------------------------------
+
+// meta[0] users ever stored, meta[1] users alive, meta[2] bytes of the arena in use.
+fn row_alive[&i](index: &i [int], id: int, count: int) -> [] bool {
+    if id < 1 || id > count {
+        return false;
+    }
+    return index[2 * (id - 1) + 1] >= 0;
+}
+
+// ---------------------------------------------------------------------
+// The schemas and the API, declared once
+// ---------------------------------------------------------------------
+
+fn slot_name() -> [] int {
+    return 0;
+}
+
+fn slot_age() -> [] int {
+    return 1;
+}
+
+fn op_list() -> [] int {
+    return 1;
+}
+
+fn op_create() -> [] int {
+    return 2;
+}
+
+fn op_get() -> [] int {
+    return 3;
+}
+
+fn op_delete() -> [] int {
+    return 4;
+}
+
+fn op_doc() -> [] int {
+    return 5;
+}
+
+fn setup[&h](heap: &!h Heap) -> [heap] (schema.Schema, int, web.Api, buffer.Buffer) {
+    let s0 = schema.empty(heap);
+    let (s1, name) = schema.new_string(heap, s0, 1, 40);
+    let (s2, age) = schema.new_int(heap, s1, 0, 150);
+    let (s3, new_user) = schema.new_object(heap, s2, true);
+    var s = schema.add_field(heap, s3, new_user, "name", name, true);
+    s = schema.add_field(heap, s, new_user, "age", age, true);
+
+    let (s4, id) = schema.new_int(heap, s, 1, schema.int_max());
+    let (s5, user) = schema.new_object(heap, s4, true);
+    s = schema.add_field(heap, s5, user, "id", id, true);
+    s = schema.add_field(heap, s, user, "name", name, true);
+    s = schema.add_field(heap, s, user, "age", age, true);
+
+    let (s6, total) = schema.new_int(heap, s, 0, schema.int_max());
+    let (s7, items) = schema.new_array(heap, s6, user, 0, schema.int_max());
+    let (s8, page) = schema.new_object(heap, s7, true);
+    s = schema.add_field(heap, s8, page, "total", total, true);
+    s = schema.add_field(heap, s, page, "items", items, true);
+
+    let (s9, limit) = schema.new_int(heap, s, 1, 100);
+
+    // The shared problem document, named `Problem` below: `web.respond_problem` points at it, so without it the served document has a dangling $ref.
+    let (s10, text) = schema.new_string(heap, s9, 0, schema.int_max());
+    let (s11, status) = schema.new_int(heap, s10, 100, 599);
+    let (s12, count) = schema.new_int(heap, s11, 0, schema.int_max());
+    let (s13, one) = schema.new_object(heap, s12, true);
+    s = schema.add_field(heap, s13, one, "pointer", text, true);
+    s = schema.add_field(heap, s, one, "code", text, true);
+    s = schema.add_field(heap, s, one, "detail", text, true);
+    let (s14, errors) = schema.new_array(heap, s, one, 0, schema.int_max());
+    let (s15, problem) = schema.new_object(heap, s14, true);
+    s = schema.add_field(heap, s15, problem, "type", text, true);
+    s = schema.add_field(heap, s, problem, "title", text, true);
+    s = schema.add_field(heap, s, problem, "status", status, true);
+    s = schema.add_field(heap, s, problem, "detail", text, false);
+    s = schema.add_field(heap, s, problem, "count", count, false);
+    s = schema.add_field(heap, s, problem, "errors", errors, false);
+
+    var api = web.empty(heap);
+    let (a1, list) = web.operation(heap, api, "GET", "/users", "listUsers");
+    api = web.query_param(heap, a1, list, "limit", limit, false);
+    borrow s as &dsr in {
+        api = web.default_int(heap, api, dsr, list, "limit", 20);
+    }
+    api = web.respond(heap, api, list, 200, "a page of users", page);
+    api = web.respond_problem(heap, api, list, 422);
+
+    let (a2, create) = web.operation(heap, api, "POST", "/users", "createUser");
+    api = web.body(heap, a2, create, new_user);
+    api = web.respond(heap, api, create, 201, "the user created", user);
+    api = web.response_header(heap, api, create, "Location");
+    api = web.respond_problem(heap, api, create, 400);
+    api = web.respond_problem(heap, api, create, 415);
+    api = web.respond_problem(heap, api, create, 422);
+    api = web.respond_problem(heap, api, create, 503);
+
+    let (a3, get) = web.operation(heap, api, "GET", "/users/:id", "getUser");
+    api = web.path_param(heap, a3, get, "id", id);
+    api = web.respond(heap, api, get, 200, "the user", user);
+    api = web.respond_problem(heap, api, get, 404);
+    api = web.respond_problem(heap, api, get, 422);
+
+    let (a4, remove) = web.operation(heap, api, "DELETE", "/users/:id", "deleteUser");
+    api = web.path_param(heap, a4, remove, "id", id);
+    api = web.respond_empty(heap, api, remove, 204, "deleted");
+    api = web.respond_problem(heap, api, remove, 404);
+    api = web.respond_problem(heap, api, remove, 422);
+
+    let (a5, doc_op) = web.internal(heap, api, "GET", "/openapi.json");
+    api = a5;
+    api = web.component(heap, api, "NewUser", new_user);
+    api = web.component(heap, api, "User", user);
+    api = web.component(heap, api, "Page", page);
+    api = web.component(heap, api, "Problem", problem);
+
+    var doc = buffer.empty(heap, 16);
+    borrow api as &ar in {
+        borrow s as &sr in {
+            buffer.drop(heap, doc);
+            doc = web.openapi(heap, ar, sr, "Users API", "1.0.0");
+        }
+    }
+    return (s, new_user, api, doc);
+}
+
+// ---------------------------------------------------------------------
+// Answers
+// ---------------------------------------------------------------------
+
+// `application/problem+json` (RFC 9457) with a `detail` and no error list.
+fn problem[&h, &t, &d](heap: &!h Heap, out: buffer.Buffer, status: int, title: &t [byte], detail: &d [byte], keep: bool) -> [heap] buffer.Buffer {
+    var w = json.writer(heap, 128);
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "type");
+    w = json.put_string(heap, w, "about:blank");
+    w = json.put_key(heap, w, "title");
+    w = json.put_string(heap, w, title);
+    w = json.put_key(heap, w, "status");
+    w = json.put_int(heap, w, status);
+    w = json.put_key(heap, w, "detail");
+    w = json.put_string(heap, w, detail);
+    w = json.end_object(heap, w);
+    let body = json.finish(w);
+    var answer = out;
+    borrow body as &bb in {
+        answer = server.reply_as(heap, answer, status, "application/problem+json", buffer.bytes(bb), keep, "");
+    }
+    buffer.drop(heap, body);
+    return answer;
+}
+
+// A string value of the request, decoded, into the writer.
+fn put_text[&h, &b, &t](heap: &!h Heap, w: json.Writer, body: &b [byte], tape: &t [int], node: int) -> [heap] json.Writer {
+    let n = json.string_length(body, tape, node);
+    if n <= 0 {
+        return json.put_string(heap, w, "");
+    }
+    var o = w;
+    let raw = box_slice(heap, n, byte_of(0));
+    borrow mut raw as &!rw in {
+        let d = contents(rw);
+        json.string_into(body, tape, node, d);
+        o = json.put_string(heap, o, d);
+    }
+    unbox_slice(heap, raw);
+    return o;
+}
+
+// The user as it is stored and answered: `id`, `name`, `age`, as compact JSON.
+fn render_user[&h, &b, &t, &u](heap: &!h Heap, id: int, body: &b [byte], tape: &t [int], slots: &u [int]) -> [heap] buffer.Buffer {
+    var w = json.writer(heap, 128);
+    w = json.begin_object(heap, w);
+    w = json.put_key(heap, w, "id");
+    w = json.put_int(heap, w, id);
+    w = json.put_key(heap, w, "name");
+    w = put_text(heap, w, body, tape, slots[slot_name()]);
+    w = json.put_key(heap, w, "age");
+    w = json.put_int(heap, w, schema.to_int(body, tape, slots[slot_age()]));
+    w = json.end_object(heap, w);
+    return json.finish(w);
+}
+
+// ---------------------------------------------------------------------
+// The handlers
+// ---------------------------------------------------------------------
+
+// Validate, store, answer.
+fn create[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], out: buffer.Buffer, keep: bool) -> [heap] buffer.Buffer {
+    if !json_type_ok(http.header(request, table, "content-type")) {
+        return problem(heap, out, 415, "Unsupported Media Type", "send Content-Type: application/json", keep);
+    }
+    let tape = box_slice(heap, json.tape_len(body), 0);
+    var answer = out;
+    borrow mut tape as &!tw in {
+        let tp = contents(tw);
+        let nodes = json.parse(body, tp);
+        if nodes < 0 {
+            var detail = buffer.append(heap, buffer.empty(heap, 64), json.error_message(json.error_code(nodes)));
+            detail = buffer.append(heap, detail, " at byte ");
+            detail = buffer.push_nat(heap, detail, json.error_position(nodes));
+            borrow detail as &db in {
+                answer = problem(heap, answer, 400, "Bad Request", buffer.bytes(db), keep);
+            }
+            buffer.drop(heap, detail);
+        } else {
+            let slots = box_slice(heap, schema.slot_count(app.sc), 0);
+            let errs = box_slice(heap, schema.errors_len(16), 0);
+            borrow mut slots as &!sw in {
+                borrow mut errs as &!ew in {
+                    let sl = contents(sw);
+                    let es = contents(ew);
+                    if schema.validate(app.sc, app.new_user, body, tp, sl, es) > 0 {
+                        let p = schema.problem(heap, app.sc, body, tp, es, 422, "Unprocessable Content");
+                        borrow p as &pb in {
+                            answer = server.reply_as(heap, answer, 422, "application/problem+json", buffer.bytes(pb), keep, "");
+                        }
+                        buffer.drop(heap, p);
+                    } else {
+                        let meta = contents(app.meta);
+                        let user = render_user(heap, meta[0] + 1, body, tp, sl);
+                        borrow user as &ub in {
+                            let json_bytes = buffer.bytes(ub);
+                            if !has_room(meta[0], meta[2], len(json_bytes)) {
+                                answer = problem(heap, answer, 503, "Service Unavailable", "the store is full", keep);
+                            } else {
+                                let rows = contents(app.rows);
+                                let index = contents(app.index);
+                                var k = 0;
+                                while k < len(json_bytes) {
+                                    rows[meta[2] + k] = json_bytes[k];
+                                    k = k + 1;
+                                }
+                                index[2 * meta[0]] = meta[2];
+                                index[2 * meta[0] + 1] = len(json_bytes);
+                                meta[0] = meta[0] + 1;
+                                meta[1] = meta[1] + 1;
+                                meta[2] = meta[2] + len(json_bytes);
+                                var location = buffer.append(heap, buffer.empty(heap, 32), "Location: /users/");
+                                location = buffer.push_nat(heap, location, meta[0]);
+                                location = buffer.append(heap, location, "\r\n");
+                                borrow location as &lb in {
+                                    answer = server.reply_as(heap, answer, 201, "application/json", json_bytes, keep, buffer.bytes(lb));
+                                }
+                                buffer.drop(heap, location);
+                            }
+                        }
+                        buffer.drop(heap, user);
+                    }
+                }
+            }
+            unbox_slice(heap, errs);
+            unbox_slice(heap, slots);
+        }
+    }
+    unbox_slice(heap, tape);
+    return answer;
+}
+
+// A page of at most `limit` live users, oldest first.
+fn list[&h, &a](heap: &!h Heap, app: &!a App, limit: int, out: buffer.Buffer, keep: bool) -> [heap] buffer.Buffer {
+    let meta = contents(app.meta);
+    let rows = contents(app.rows);
+    let index = contents(app.index);
+    var page = buffer.append(heap, buffer.empty(heap, 2048), "{\"total\":");
+    page = buffer.push_nat(heap, page, meta[1]);
+    page = buffer.append(heap, page, ",\"items\":[");
+    var taken = 0;
+    var id = 1;
+    while id <= meta[0] && taken < limit {
+        if row_alive(index, id, meta[0]) {
+            if taken > 0 {
+                page = buffer.append(heap, page, ",");
+            }
+            let at = index[2 * (id - 1)];
+            page = buffer.append(heap, page, rows[at..at + index[2 * (id - 1) + 1]]);
+            taken = taken + 1;
+        }
+        id = id + 1;
+    }
+    page = buffer.append(heap, page, "]}");
+    var answer = out;
+    borrow page as &pb in {
+        answer = server.reply(heap, answer, 200, buffer.bytes(pb), keep);
+    }
+    buffer.drop(heap, page);
+    return answer;
+}
+
+// Answer or delete user `id` (already known to be 1 or more).
+fn one[&h, &a](heap: &!h Heap, app: &!a App, id: int, remove: bool, out: buffer.Buffer, keep: bool) -> [heap] buffer.Buffer {
+    let meta = contents(app.meta);
+    let index = contents(app.index);
+    if !row_alive(index, id, meta[0]) {
+        return problem(heap, out, 404, "Not Found", "no such user", keep);
+    }
+    if remove {
+        index[2 * (id - 1) + 1] = 0 - 1;
+        meta[1] = meta[1] - 1;
+        return server.reply_empty(heap, out, 204, keep, "");
+    }
+    let rows = contents(app.rows);
+    let at = index[2 * (id - 1)];
+    return server.reply(heap, out, 200, rows[at..at + index[2 * (id - 1) + 1]], keep);
+}
+
+// ---------------------------------------------------------------------
+// The application interface
+// ---------------------------------------------------------------------
+
+fn app_new[&h, &c](heap: &!h Heap, config: &c [byte]) -> [heap] App {
+    let (sc, new_user, api, doc) = setup(heap);
+    var widest = 1;
+    var wide = 2;
+    var limit_slot = 0;
+    var id_slot = 0;
+    borrow api as &ar in {
+        if web.most_params(ar) > 1 {
+            widest = web.most_params(ar);
+        }
+        wide = web.most_args(ar);
+        limit_slot = web.slot(ar, op_list(), "limit");
+        id_slot = web.slot(ar, op_get(), "id");
+    }
+    return App {
+        sc: sc,
+        api: api,
+        doc: doc,
+        new_user: new_user,
+        limit_slot: limit_slot,
+        id_slot: id_slot,
+        params: box_slice(heap, 2 * widest, 0),
+        args: box_slice(heap, wide, 0),
+        scratch: box_slice(heap, 256, byte_of(0)),
+        rows: box_slice(heap, arena_bytes(), byte_of(0)),
+        index: box_slice(heap, 2 * max_users(), 0),
+        meta: box_slice(heap, 3, 0),
+    };
+}
+
+fn app_handle[&h, &a, &q, &t, &b](heap: &!h Heap, app: &!a App, request: &q [byte], table: &t [int], body: &b [byte], now_ms: int, out: buffer.Buffer) -> [heap] buffer.Buffer {
+    let keep = http.keeps_alive(table);
+    let (routed, op) = web.dispatch(heap, app.api, app.sc, request, table, contents(app.params), contents(app.args), contents(app.scratch), out, keep);
+    if op == web.answered() {
+        return routed;
+    }
+    if op == op_create() {
+        return create(heap, app, request, table, body, routed, keep);
+    }
+    if op == op_list() {
+        return list(heap, app, web.int_arg(contents(app.args), app.limit_slot), routed, keep);
+    }
+    if op == op_get() {
+        return one(heap, app, web.int_arg(contents(app.args), app.id_slot), false, routed, keep);
+    }
+    if op == op_delete() {
+        return one(heap, app, web.int_arg(contents(app.args), app.id_slot), true, routed, keep);
+    }
+    if op == op_doc() {
+        return server.reply(heap, routed, 200, buffer.bytes(app.doc), keep);
+    }
+    return problem(heap, routed, 404, "Not Found", "no handler for this route", keep);
+}
+
+fn app_drop[&h](heap: &!h Heap, app: App) -> [heap] int {
+    let App { sc, api, doc, new_user, limit_slot, id_slot, params, args, scratch, rows, index, meta } = app;
+    schema.drop(heap, sc);
+    web.drop(heap, api);
+    buffer.drop(heap, doc);
+    unbox_slice(heap, params);
+    unbox_slice(heap, args);
+    unbox_slice(heap, scratch);
+    unbox_slice(heap, rows);
+    unbox_slice(heap, index);
+    unbox_slice(heap, meta);
+    return 0;
+}

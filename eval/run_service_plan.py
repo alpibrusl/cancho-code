@@ -13,7 +13,7 @@ raw.txt, usage.jsonl, run.log, accept.log of the last acceptance (the driver's f
 import argparse, json, os, re, shutil, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
-import metrics
+import metrics, service_run
 
 def main():
     ap = argparse.ArgumentParser()
@@ -54,7 +54,7 @@ def main():
         accept = "CANCHO=%s CANCHO_PACKAGES=%s PATH=/usr/local/bin:/usr/bin:/bin python3 %s accept --bare %s" % (cancho, pk, os.path.join(HERE, "service_run.py"), a.service)
         started = time.time()
         try:
-            p = subprocess.run([os.path.join(a.tools, "project"), cancho, plan_path, wd, " ".join(agent), a.attempts, a.agent_seconds, accept, os.path.join(pk, "http-server", "server.cho")],
+            p = subprocess.run([os.path.join(a.tools, "project"), cancho, plan_path, wd, " ".join(agent), a.attempts, a.agent_seconds, accept, " ".join([os.path.join(pk, "http-server", "server.cho")] + service_run.service_libs(a.service))],
                                capture_output=True, text=True, timeout=a.timeout)
             out, rc = p.stdout, p.returncode
         except subprocess.TimeoutExpired as e:
