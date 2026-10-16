@@ -15,6 +15,7 @@ The other files of a run (`state.txt`, `trail-<id>.jsonl`, `usage.jsonl`, `raw.t
 ## Rules
 
 - **Append-only, whole lines.** An event is added by writing the file to a temporary name and renaming it over `events.jsonl`, so a run killed at any moment leaves the journal as of the last whole line. The file stops growing at 2 MiB (the events are a few hundred bytes; the bulk is in the blobs); a run that fills it keeps running unrecorded.
+- **Units built side by side** ([parallel.md](parallel.md)): a unit's `attempt` events carry its `lane` and are put into the file, in `t_ms` order, when the unit ends; the file still never goes back in time.
 - **Every event has `t_ms`** (Unix milliseconds) **and `kind`.** Events are in the order they happened and `t_ms` never goes back.
 - **A missing field means "not recorded", never an error.** An agent that leaves no prompt, a unit without a diff: the field is not there. Readers treat every field but `t_ms` and `kind` as optional.
 - **Blobs are file names under `journal/blobs/`**, none over 256 KiB; a longer text is cut and ends with `[... cut here: a journal blob holds at most 262144 bytes ...]`.
@@ -29,9 +30,10 @@ The other files of a run (`state.txt`, `trail-<id>.jsonl`, `usage.jsonl`, `raw.t
 | `plan_call` | each model call of the plan stage: the plan's, and the review's (its blobs are `review-r<round>-s<sample>-*`, and it carries no primer) | `round`, `sample` (1; the review's retry is 2), `tokens` {`in`, `out`, `thinking`, `cache_write`, `cache_read`}, `ms`, `stop`, `outcome` (`written`, `rejected`, `cut_off`, `no_plan`, `needs_input`; the review's: `reviewed`, `review_rejected`, `review_failed`; `unreachable`, `api_error`), `prompt`, `reply` (blobs), `primer`, `errors` (what the plan check or the cases refused, one string per line, to be fed back next round) |
 | `plan_review` | after a review answered | `round`, `kept` and `of` (cases), `dropped` [{`unit`, `case`, `reason`}] (`reason` is "planner X reviewer Y"), `error` (the refusal, when the review refused the plan), `blob` (the review's whole report) |
 | `plan_final` | the plan the build goes on with is known | `valid`, `units`, `plan` (blob; a plan reused from an earlier run is recorded too) |
-| `unit_start` | a unit is handed to the agent | `unit`, `function`, `deps`, `retry` (true when the person re-opened it with `--retry`), `patch` (true when the person applied code with `--patch`) |
+| `unit_start` | a unit is handed to the agent | `unit`, `function`, `lane` (with `--jobs` above 1: 0 to jobs-1, the lowest free one), `deps`, `retry` (true when the person re-opened it with `--retry`), `patch` (true when the person applied code with `--patch`) |
 | `attempt` | each attempt of a unit, after its check | `unit`, `n` (0-based), `outcome`, `decision`, `signature`, `ms`, `hint`, `exit`, `tokens`, `stop`, `samples`, `primer`, and blobs: `prompt`, `reply`, `stderr`, `feedback`, `code`, `checker`, `acceptance`, `diff` |
-| `unit_end` | the unit is done with | `unit`, `state` (`verified`, `stuck`, `unavailable`), `attempts` |
+| `unit_end` | the unit is done with | `unit`, `state` (`verified`, `stuck`, `unavailable`; `requeued` when its work did not fit the project file and it will be built again), `attempts`; with `--jobs` above 1 also `lane`, `ms` (dispatch to end) |
+| `integrate` | (`--jobs` above 1) a unit that verified in its own workspace was put into `project.cho` | `unit`, `mode` (`fast`: the file had not changed since the unit started; `merge`: its items were merged into a file others had changed), `ok`, `order` (1, 2, ... in the run), `why` (the first line of what went wrong, when not `ok`) |
 | `sweep` | after a unit verified (or at the start of a resumed run), the earlier verified units were re-checked | `after_unit` (empty at a resume), `held` [unit...], `regressed` [unit...] |
 | `run_end` | the run ends | `verdict` (the word of `build.md`), `exit`, `seconds` |
 
