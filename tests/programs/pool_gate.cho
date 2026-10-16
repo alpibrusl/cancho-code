@@ -1,0 +1,114 @@
+edition 7;
+
+// The gate program of scripts/test-parallel.sh for src/pool.cho: it starts shell children at once, waits for them in one loop, and says what it
+// saw, one line each. Run with no arguments it starts four `sleep 1; echo hello N` (tags 10..13), an `exit 7` (tag 14), a child that writes
+// 200000 bytes (tag 15) and a `sleep 30` (tag 16) it closes the pool on.
+//
+//   ended <tag> code <code> bytes <n> at <ms>      a child ended: how, how much it wrote, and when (ms since the start)
+//   live <n>                                       how many were running right after the starts
+//   closed <n>                                     how many `close` had to kill
+//   wall <ms>                                      the whole run
+
+import pool;
+import std.buffer;
+import std.io;
+import std.option;
+
+fn start_one[&h, &x, &c, &a](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, p: pool.Pool, tag: int, script: &a [byte]) -> [heap, exec(""), poll, clock] pool.Pool {
+    var args = buffer.append(heap, buffer.empty(heap, 64), "-c\0");
+    args = buffer.append(heap, args, script);
+    args = buffer.push(heap, args, byte_of(0));
+    var made = p;
+    borrow args as &ab in {
+        let (next, e) = pool.start(heap, exec, clock, made, tag, "/bin/sh", buffer.bytes(ab), "PATH=/usr/local/bin:/usr/bin:/bin\0");
+        made = next;
+    }
+    buffer.drop(heap, args);
+    return made;
+}
+
+fn run[&h, &x, &c, &i](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io) -> [heap, exec(""), clock, poll, io_write, pipe_read, child_signal] int {
+    let t0 = clock_ms(clock);
+    match pool.new() {
+        pool.Made::Failed(e) => {
+            return 1;
+        }
+        pool.Made::Ok(p0) => {
+            var p = p0;
+            p = start_one(heap, exec, clock, p, 10, "sleep 1; echo hello 10");
+            p = start_one(heap, exec, clock, p, 11, "sleep 1; echo hello 11");
+            p = start_one(heap, exec, clock, p, 12, "sleep 1; echo hello 12");
+            p = start_one(heap, exec, clock, p, 13, "sleep 1; echo hello 13");
+            p = start_one(heap, exec, clock, p, 14, "exit 7");
+            p = start_one(heap, exec, clock, p, 15, "head -c 200000 /dev/zero | tr '\\0' x");
+            p = start_one(heap, exec, clock, p, 16, "sleep 30");
+            io.write_all(io, "live ");
+            borrow p as &pr in {
+                io.print_int(io, pool.live(pr));
+            }
+            io.newline(io);
+            var left = 6;
+            let deadline = t0 + 8000;
+            while left > 0 && clock_ms(clock) < deadline {
+                match pool.wait(heap, clock, p, 200) {
+                    pool.Taken::Nothing(q) => {
+                        p = q;
+                    }
+                    pool.Taken::Ended(q, d) => {
+                        p = q;
+                        io.write_all(io, "ended ");
+                        borrow d as &dr in {
+                            io.print_int(io, pool.tag_of(dr));
+                            io.write_all(io, " code ");
+                            io.print_int(io, pool.code_of(dr));
+                            io.write_all(io, " bytes ");
+                            io.print_int(io, len(pool.said(dr)));
+                        }
+                        io.write_all(io, " at ");
+                        io.print_int(io, clock_ms(clock) - t0);
+                        io.newline(io);
+                        pool.drop_left(heap, d);
+                        left = left - 1;
+                    }
+                }
+            }
+            let t1 = clock_ms(clock);
+            let killed = pool.close(heap, p);
+            io.write_all(io, "closed ");
+            io.print_int(io, killed);
+            io.write_all(io, " in ");
+            io.print_int(io, clock_ms(clock) - t1);
+            io.newline(io);
+        }
+    }
+    io.write_all(io, "wall ");
+    io.print_int(io, clock_ms(clock) - t0);
+    io.newline(io);
+    return 0;
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(fs);
+    release(net);
+    release(signals);
+    release(args);
+    var console = io;
+    var h = heap;
+    var rc = 1;
+    borrow exec as &x in {
+        borrow clock as &c in {
+            borrow mut console as &!ci in {
+                borrow mut h as &!hh in {
+                    rc = run(hh, x, c, ci);
+                }
+            }
+        }
+    }
+    release(exec);
+    release(clock);
+    release(console);
+    release(h);
+    return rc;
+}

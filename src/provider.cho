@@ -159,6 +159,125 @@ pub fn exchange[&h, &n, &c, &i, &t, &p, &x, &b, &r, &a, &e](heap: &!h Heap, net:
     }
 }
 
+// ---- waiting when the API says "not now" ------------------------------------------------------------------------------------------------
+//
+// Several units asked for at once (docs/parallel.md) can pass the API's rate limit, and a busy API says so: 429 (too many requests) or 529 (overloaded).
+// That is a wait, not an attempt: `exchange_waiting` asks again after a pause, at most `max_waits()` times, the pauses `first_ms`, twice that, four
+// times, ... at most 60 seconds each (the same every time: nothing random, so a run can be replayed and a gate can count them), and says so on the
+// standard error. After the last wait the answer is whatever the API said, 429 included, and the caller treats it as it always has (an error: the agent
+// gives up and the unit is "unavailable").
+
+// Do these statuses mean "ask again later" rather than "this request is wrong"?
+pub fn busy(status: int) -> [] bool {
+    return status == 429 || status == 529;
+}
+
+// How many times a busy answer is waited out.
+pub fn max_waits() -> [] int {
+    return 6;
+}
+
+// The pause before wait `k` (1 is the first): `first_ms` doubled `k - 1` times, at most 60000.
+pub fn delay_ms(first_ms: int, k: int) -> [] int {
+    var d = first_ms;
+    var i = 1;
+    while i < k && d < 60000 {
+        d = d * 2;
+        i = i + 1;
+    }
+    if d > 60000 {
+        d = 60000;
+    }
+    return d;
+}
+
+// Sleep `ms` milliseconds on a poller with nothing on it.
+fn nap[&h, &c](heap: &!h Heap, clock: &c Clock, ms: int) -> [heap, poll, clock] int {
+    match poller_new() {
+        Polling::Failed(e) => {
+            return e;
+        }
+        Polling::Ok(p) => {
+            var poller = p;
+            let events = box_slice(heap, 4, 0);
+            let until = clock_ms(clock) + ms;
+            while clock_ms(clock) < until {
+                borrow mut events as &!ew in {
+                    borrow mut poller as &!ph in {
+                        poller_wait(ph, contents(ew), until - clock_ms(clock));
+                    }
+                }
+            }
+            unbox_slice(heap, events);
+            poller_close(poller);
+            return 0;
+        }
+    }
+}
+
+fn status_of[&a](answer: &a Answered) -> [] int {
+    match answer {
+        Answered::Ok(st, o) => {
+            return *st;
+        }
+        Answered::Failed(tag) => {
+            return 0;
+        }
+    }
+}
+
+fn drop_answer[&h](heap: &!h Heap, answer: Answered) -> [heap] int {
+    match answer {
+        Answered::Ok(st, o) => {
+            buffer.drop(heap, o);
+            return st;
+        }
+        Answered::Failed(tag) => {
+            return 0 - tag;
+        }
+    }
+}
+
+// `exchange`, waiting out 429 and 529: the answer, how many waits there were, how long they were together (ms) and the first busy status.
+pub fn exchange_waiting[&h, &n, &c, &i, &t, &p, &x, &b, &r, &a, &e](heap: &!h Heap, net: &n Net(""), clock: &c Clock, io: &!i Io, host: &t [byte], port: int, secure: bool, path: &p [byte], headers: &x [byte], body: &b [byte], roots: &r [byte], ip: &a [byte], entropy: &e [byte], most: int, wait_ms: int, first_ms: int) -> [heap, net_out(""), conn_read, conn_write, poll, clock, err_write] (Answered, int, int, int) {
+    var waits = 0;
+    var waited = 0;
+    var first_status = 0;
+    var answer = exchange(heap, net, clock, io, host, port, secure, path, headers, body, roots, ip, entropy, most, wait_ms);
+    var going = true;
+    while going {
+        var status = 0;
+        borrow answer as &ar in {
+            status = status_of(ar);
+        }
+        if busy(status) && waits < max_waits() {
+            waits = waits + 1;
+            if first_status == 0 {
+                first_status = status;
+            }
+            let pause = delay_ms(first_ms, waits);
+            var msg = buffer.append(heap, buffer.empty(heap, 128), "cancho-agent: the API answered ");
+            msg = buffer.push_nat(heap, msg, status);
+            msg = buffer.append(heap, msg, " (busy); waiting ");
+            msg = buffer.push_nat(heap, msg, pause);
+            msg = buffer.append(heap, msg, " ms before try ");
+            msg = buffer.push_nat(heap, msg, waits + 1);
+            msg = buffer.append(heap, msg, "\n");
+            borrow msg as &mb in {
+                io.error_all(io, buffer.bytes(mb));
+            }
+            buffer.drop(heap, msg);
+            nap(heap, clock, pause);
+            waited = waited + pause;
+            drop_answer(heap, answer);
+            answer = exchange(heap, net, clock, io, host, port, secure, path, headers, body, roots, ip, entropy, most, wait_ms);
+        } else {
+            going = false;
+        }
+    }
+    return (answer, waits, waited, first_status);
+}
+
 // The request, the send, and the read, until Done or the deadline. No
 // hang: `wait_ms` is the whole attempt's ceiling, and every stop is
 // named.

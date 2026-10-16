@@ -333,7 +333,7 @@ fn finish[&h, &i, &z, &l, &w, &b, &p, &m, &rt, &pt](heap: &!h Heap, io: &!i Io, 
 
 // Build `brief` in `wd`: 0 done, 1 stuck or the final gate failed, 2 usage, 3 plan_failed, 4 provider_error. `guide` and `review_guide`
 // are the plan agent's (empty: none); an empty `contract` is none. With a valid plan.json already in `wd` the plan agent is not asked.
-pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q, &rt, &ht, &pt, &pf](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), checker: &k [byte], brief: &b [byte], wd: &w [byte], agent: &a [byte], provider: &p [byte], model: &m [byte], guide: &g [byte], review_guide: &r [byte], contract: &q [byte], review: bool, rounds: int, attempts: int, agent_ms: int, plan_ms: int, retry: &rt [byte], hint: &ht [byte], patch: &pt [byte], pfile: &pf [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write, err_write] int {
+pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q, &rt, &ht, &pt, &pf, &av](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), checker: &k [byte], brief: &b [byte], wd: &w [byte], agent: &a [byte], provider: &p [byte], model: &m [byte], guide: &g [byte], review_guide: &r [byte], contract: &q [byte], review: bool, rounds: int, attempts: int, agent_ms: int, plan_ms: int, retry: &rt [byte], hint: &ht [byte], patch: &pt [byte], pfile: &pf [byte], jobs: int, argv0: &av [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write, err_write, pipe_read, child_signal] int {
     let started = clock_unix_ms(clock);
     let logp = project.in_wd(heap, wd, "run.log", "", "");
     let planp = project.in_wd(heap, wd, "plan.json", "", "");
@@ -452,7 +452,7 @@ pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q, &rt, &ht, &pt
                             let unit_agent = unit_command(heap, agent, provider, model, wd);
                             var code = 2;
                             borrow unit_agent as &ua in {
-                                code = project.run_logged(heap, exec, clock, io, fs, src, checker, wd, buffer.bytes(ua), attempts, agent_ms, lg, "", "", retry, hint, patch, pfile);
+                                code = project.run_logged(heap, exec, clock, io, fs, src, checker, wd, buffer.bytes(ua), attempts, agent_ms, lg, "", "", retry, hint, patch, pfile, project.Par { jobs: jobs, settle: 300, warm: asked }, argv0);
                             }
                             buffer.drop(heap, unit_agent);
                             if code == 0 {

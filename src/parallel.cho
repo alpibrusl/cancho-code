@@ -1,0 +1,262 @@
+edition 7;
+
+module parallel;
+
+// `parallel` -- the files and the journal of units built side by side (docs/parallel.md). The project driver (src/project.cho) is the only writer of the
+// project file, `state.txt`, the trail, `run.log` and the journal; a unit that is built concurrently works in a workspace of its own,
+// `<workdir>/units/<unit>/`, and this module is what moves its results into the driver's files when it is done:
+//
+//   merge_events    the workspace's journal events into the run's `events.jsonl`, in `t_ms` order, each with the `lane` the unit ran in
+//   copy_blobs      the workspace's blobs into the run's (a name that is there is kept)
+//   self_path       the absolute path of the running program, to start it again as a unit worker
+//   exists          is there a readable file
+//   unit_end_event  `unit_end` with the unit's `lane` and `ms`
+//   integrate_event `integrate`: the unit's work was put into the project file, or was not, and why
+
+import std.buffer;
+import std.bytes;
+import std.json;
+import acceptance;
+import trail;
+
+// The most `events.jsonl` holds (src/trail.cho `journal_emit`).
+fn room() -> [] int {
+    return 2097152;
+}
+
+// The `t_ms` of a journal line: the digits after `"t_ms":` within its first 48 bytes (a line from a workspace has `"lane":N,` before it), else -1.
+fn t_ms_of[&l](line: &l [byte]) -> [] int {
+    let key = "\"t_ms\":";
+    var at = 0 - 1;
+    var j = 0;
+    while at < 0 && j + len(key) <= len(line) && j < 48 {
+        var k = 0;
+        var same = true;
+        while k < len(key) && same {
+            if int_of(line[j + k]) != int_of(key[k]) {
+                same = false;
+            }
+            k = k + 1;
+        }
+        if same {
+            at = j + len(key);
+        }
+        j = j + 1;
+    }
+    if at < 0 {
+        return 0 - 1;
+    }
+    var n = 0;
+    var seen = false;
+    var i = at;
+    while i < len(line) && int_of(line[i]) >= 48 && int_of(line[i]) <= 57 {
+        n = n * 10 + int_of(line[i]) - 48;
+        seen = true;
+        i = i + 1;
+    }
+    if seen {
+        return n;
+    }
+    return 0 - 1;
+}
+
+// Where the line that starts at `from` ends (the index of its newline, or the end of the text).
+fn line_end[&t](text: &t [byte], from: int, to: int) -> [] int {
+    var e = from;
+    while e < to && int_of(text[e]) != 10 {
+        e = e + 1;
+    }
+    return e;
+}
+
+// Put every line of `mine[mi..mn]` whose `t_ms` is not after `upto` into `out`; the cursor goes on.
+fn flush_to[&h, &m](heap: &!h Heap, out: buffer.Buffer, mine: &m [byte], mn: int, at: int, upto: int, last: int) -> [heap] (buffer.Buffer, int, int) {
+    var b = out;
+    var i = at;
+    var seen = last;
+    var going = true;
+    while going && i < mn {
+        let e = line_end(mine, i, mn);
+        let t = t_ms_of(mine[i..e]);
+        var stamp = t;
+        if stamp < 0 {
+            stamp = seen;
+        }
+        if upto >= 0 && stamp > upto {
+            going = false;
+        } else {
+            b = buffer.append(heap, b, mine[i..e]);
+            b = buffer.push(heap, b, byte_of(10));
+            seen = stamp;
+            i = e + 1;
+        }
+    }
+    return (b, i, seen);
+}
+
+// The events of a unit's workspace journal (`ws_dir/events.jsonl`) into the run's (`dir/events.jsonl`): lines in the order of their `t_ms`, the run's
+// own first when two have the same one, so the file never goes back in time; every line from the workspace gets `"lane":N`. The file is written to a
+// temporary name and renamed over the old one, as `trail.journal_emit` does, so a run killed at any moment leaves whole lines. 0, or -1 when the
+// merged file would pass the cap (the run's file is then left as it was).
+pub fn merge_events[&h, &z, &d, &w](heap: &!h Heap, fs: &z Fs(""), dir: &d [byte], ws_dir: &w [byte], lane: int) -> [heap, fs_read(""), fs_write("")] int {
+    let ep = trail.path_under(heap, dir, "events.jsonl", "");
+    let tp = trail.path_under(heap, dir, "events.jsonl.tmp", "");
+    let wp = trail.path_under(heap, ws_dir, "events.jsonl", "");
+    let mine_box = box_slice(heap, room(), byte_of(0));
+    let theirs_box = box_slice(heap, room(), byte_of(0));
+    var mn = 0;
+    var tn = 0;
+    borrow mut mine_box as &!mw in {
+        borrow ep as &eq in {
+            mn = fs_read(fs, buffer.bytes(eq), contents(mw));
+        }
+    }
+    borrow mut theirs_box as &!tw in {
+        borrow wp as &wq in {
+            tn = fs_read(fs, buffer.bytes(wq), contents(tw));
+        }
+    }
+    if mn < 0 {
+        mn = 0;
+    }
+    var r = -1;
+    if tn <= 0 {
+        r = 0;
+    } else if mn + tn + 64 * 64 < room() && tn < room() {
+        var out = buffer.empty(heap, mn + tn + 4096);
+        borrow mine_box as &mr in {
+            borrow theirs_box as &tr in {
+                let mine = contents(mr);
+                let theirs = contents(tr);
+                var at = 0;
+                var seen = 0;
+                var i = 0;
+                while i < tn {
+                    let e = line_end(theirs, i, tn);
+                    if e > i {
+                        let t = t_ms_of(theirs[i..e]);
+                        let (grown, next_at, next_seen) = flush_to(heap, out, mine, mn, at, t, seen);
+                        out = grown;
+                        at = next_at;
+                        seen = next_seen;
+                        out = buffer.append(heap, out, "{\"lane\":");
+                        out = buffer.push_nat(heap, out, lane);
+                        out = buffer.push(heap, out, byte_of(44));
+                        out = buffer.append(heap, out, theirs[i + 1..e]);
+                        out = buffer.push(heap, out, byte_of(10));
+                    }
+                    i = e + 1;
+                }
+                let (rest, next_at, next_seen) = flush_to(heap, out, mine, mn, at, 0 - 1, seen);
+                out = rest;
+            }
+        }
+        var fits = false;
+        borrow out as &sz in {
+            fits = buffer.size(sz) < room();
+        }
+        if fits {
+            borrow out as &ob in {
+                borrow tp as &tq in {
+                    borrow ep as &eq2 in {
+                        let all = buffer.bytes(ob);
+                        if fs_write(fs, buffer.bytes(tq), all) == len(all) {
+                            match fs_rename(fs, buffer.bytes(tq), buffer.bytes(eq2)) {
+                                Done::Ok(k) => { r = 0; }
+                                Done::Failed(e) => { }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        buffer.drop(heap, out);
+    }
+    unbox_slice(heap, theirs_box);
+    unbox_slice(heap, mine_box);
+    buffer.drop(heap, ep);
+    buffer.drop(heap, tp);
+    buffer.drop(heap, wp);
+    return r;
+}
+
+// The blobs of a workspace's journal into the run's: a name that is already there (the primer) is kept, the others are copied.
+pub fn copy_blobs[&h, &x, &c, &d, &w](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, dir: &d [byte], ws_dir: &w [byte]) -> [heap, exec(""), clock, poll] int {
+    var cmd = buffer.append(heap, buffer.empty(heap, 256), "for f in ");
+    cmd = buffer.append(heap, cmd, ws_dir);
+    cmd = buffer.append(heap, cmd, "/blobs/*; do [ -f \"$f\" ] || continue; [ -e ");
+    cmd = buffer.append(heap, cmd, dir);
+    cmd = buffer.append(heap, cmd, "/blobs/\"${f##*/}\" ] || cp \"$f\" ");
+    cmd = buffer.append(heap, cmd, dir);
+    cmd = buffer.append(heap, cmd, "/blobs/; done #");
+    var r = 2;
+    borrow cmd as &cb in {
+        r = trail.journal_sh(heap, exec, clock, buffer.bytes(cb));
+    }
+    buffer.drop(heap, cmd);
+    return r;
+}
+
+// The absolute path of the running program, from its `argv[0]`: as it is when it is absolute, relative to the working directory when it has a
+// slash, else where the shell finds it on `PATH`. Empty when it cannot be told.
+pub fn self_path[&h, &x, &c, &a](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, argv0: &a [byte]) -> [heap, exec(""), clock, poll] buffer.Buffer {
+    var cmd = buffer.append(heap, buffer.empty(heap, 256), "case '");
+    cmd = buffer.append(heap, cmd, argv0);
+    cmd = buffer.append(heap, cmd, "' in /*) printf %s '");
+    cmd = buffer.append(heap, cmd, argv0);
+    cmd = buffer.append(heap, cmd, "' ;; */*) printf %s \"$PWD/");
+    cmd = buffer.append(heap, cmd, argv0);
+    cmd = buffer.append(heap, cmd, "\" ;; *) command -v '");
+    cmd = buffer.append(heap, cmd, argv0);
+    cmd = buffer.append(heap, cmd, "' ;; esac #");
+    var path = buffer.empty(heap, 16);
+    borrow cmd as &cb in {
+        let r = acceptance.run(heap, exec, clock, buffer.bytes(cb), "", 1024, 10000);
+        let acceptance.Result { held, why, said } = r;
+        buffer.drop(heap, why);
+        buffer.drop(heap, path);
+        path = said;
+        if held != 0 {
+            buffer.drop(heap, path);
+            path = buffer.empty(heap, 16);
+        }
+    }
+    buffer.drop(heap, cmd);
+    return path;
+}
+
+// Is `path` a file that can be read?
+pub fn exists[&z, &p](fs: &z Fs(""), path: &p [byte]) -> [fs_read("")] bool {
+    var n = 0 - 1;
+    region g {
+        let probe = alloc_slice[g](16, byte_of(0));
+        n = fs_read(fs, path, probe);
+    }
+    return n >= 0;
+}
+
+// `unit_end` of a unit that was built in a workspace: as src/trail.cho's, with the lane it ran in and the wall time from its start to its end.
+pub fn unit_end_event[&h, &c, &z, &d, &u, &p](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), dir: &d [byte], unit: &u [byte], state: &static [byte], trail_path: &p [byte], lane: int, ms: int) -> [heap, clock, fs_read(""), fs_write("")] int {
+    var w = trail.begin_event(heap, clock_unix_ms(clock), "unit_end");
+    w = trail.put_str(heap, w, "unit", unit);
+    w = trail.put_str(heap, w, "state", state);
+    w = trail.put_num(heap, w, "attempts", trail.attempts_so_far(fs, trail_path));
+    w = trail.put_num(heap, w, "lane", lane);
+    w = trail.put_num(heap, w, "ms", ms);
+    return trail.end_event(heap, fs, dir, w);
+}
+
+// `integrate`: the unit's work was put into the project file (`ok`) or not; `mode` is `fast` (the project file had not changed since the unit started: its
+// file was copied over) or `merge` (its items were merged into a file others had changed); `order` counts the integrations of the run from 1; `why` is
+// the first line of what went wrong.
+pub fn integrate_event[&h, &c, &z, &d, &u, &w](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), dir: &d [byte], unit: &u [byte], mode: &static [byte], ok: bool, order: int, why: &w [byte]) -> [heap, clock, fs_read(""), fs_write("")] int {
+    var j = trail.begin_event(heap, clock_unix_ms(clock), "integrate");
+    j = trail.put_str(heap, j, "unit", unit);
+    j = trail.put_str(heap, j, "mode", mode);
+    j = trail.put_flag(heap, j, "ok", ok);
+    j = trail.put_num(heap, j, "order", order);
+    if len(why) > 0 {
+        j = trail.put_str(heap, j, "why", why);
+    }
+    return trail.end_event(heap, fs, dir, j);
+}

@@ -20,7 +20,7 @@ def main():
     ap.add_argument("--contract", action="store_true", help="give the planner the required public signatures (what plan_item.py does)")
     ap.add_argument("--review", default="on"); ap.add_argument("--runs", type=int, default=1); ap.add_argument("--first", type=int, default=1)
     ap.add_argument("--label", default="build"); ap.add_argument("--out", required=True)
-    ap.add_argument("--attempts", default="6"); ap.add_argument("--agent-seconds", default="300"); ap.add_argument("--timeout", type=int, default=3600)
+    ap.add_argument("--plan", help="a valid plan.json to start the work directory with (the planner is not asked)"); ap.add_argument("--jobs", default="1", help="units built at once (docs/parallel.md)"); ap.add_argument("--attempts", default="6"); ap.add_argument("--agent-seconds", default="300"); ap.add_argument("--timeout", type=int, default=3600)
     a = ap.parse_args()
     cancho = os.environ.get("CANCHO") or sys.exit("run_build: set CANCHO")
     exe = os.path.join(ROOT, "build", "cancho-build"); audit = os.path.join(HERE, "audit_%s.py" % a.item); brief = os.path.join(HERE, a.item, "brief.txt")
@@ -29,12 +29,13 @@ def main():
     for i in range(a.first, a.first + a.runs):
         wd = os.path.abspath(os.path.join(a.out, "%s-%s-%d" % (a.label, a.item, i)))
         shutil.rmtree(wd, ignore_errors=True); os.makedirs(wd)
+        if a.plan: shutil.copy(a.plan, os.path.join(wd, "plan.json"))
         agent = [os.path.join(ROOT, "scripts", "cancho-agent.sh"), "--max-tokens", a.max_tokens, "--save-raw", os.path.join(wd, "raw.txt"), "--output", "patch"]
         if a.key_file: agent += ["--key-file", os.path.expanduser(a.key_file)]
         if a.workspace: agent += ["--workspace", a.workspace]
         if a.primer: agent += ["--primer", os.path.abspath(a.primer)]
         cmd = [exe, cancho, brief, wd, " ".join(agent), "--provider", a.provider, "--model", a.model, "--guide", os.path.join(ROOT, "docs", "plan-guide.md"),
-               "--attempts", a.attempts, "--agent-seconds", a.agent_seconds]
+               "--attempts", a.attempts, "--agent-seconds", a.agent_seconds, "--jobs", a.jobs]
         if a.review == "on": cmd += ["--review", "on", "--review-guide", os.path.join(ROOT, "docs", "review-guide.md")]
         if a.memory: cmd += ["--memory", os.path.abspath(a.memory)]
         if a.contract:

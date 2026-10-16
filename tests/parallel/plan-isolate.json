@@ -1,0 +1,6 @@
+{"name":"isolate","units":[
+ {"id":"a","signature":"fn double(x: int) -> [] int","examples":["double(2) == 4"],"deps":[]},
+ {"id":"x","signature":"fn is_big(x: int) -> [] bool","examples":["is_big(11) == true","is_big(3) == false"],"deps":[]},
+ {"id":"b","signature":"fn triple(x: int) -> [] int","examples":["triple(2) == 6"],"deps":[]},
+ {"id":"c","signature":"fn nine(x: int) -> [] int","examples":["nine(1) == 9"],"deps":["x"]}
+]}

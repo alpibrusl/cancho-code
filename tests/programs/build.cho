@@ -4,6 +4,9 @@ edition 7;
 //
 //     build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [options]
 //
+// `--jobs N` (default 4) builds up to N units at once (docs/parallel.md; 1 is one at a time). Started again as `build --unit-worker ...` it is one such
+// unit's worker, which the driver itself starts (not for people).
+//
 // Exit codes: 0 done, 1 stuck or the final gate failed, 2 usage, 3 plan_failed, 4 provider_error.
 
 import build;
@@ -70,7 +73,7 @@ fn known[&a](name: &a [byte]) -> [] bool {
     return bytes.equal(name, "--provider") || bytes.equal(name, "--model") || bytes.equal(name, "--guide") || bytes.equal(name, "--review-guide")
         || bytes.equal(name, "--review") || bytes.equal(name, "--contract") || bytes.equal(name, "--rounds") || bytes.equal(name, "--attempts")
         || bytes.equal(name, "--agent-seconds") || bytes.equal(name, "--plan-seconds")
-        || bytes.equal(name, "--retry") || bytes.equal(name, "--hint") || bytes.equal(name, "--patch")
+        || bytes.equal(name, "--retry") || bytes.equal(name, "--hint") || bytes.equal(name, "--patch") || bytes.equal(name, "--jobs")
         || bytes.equal(name, "--memory") || bytes.equal(name, "--remember");
 }
 
@@ -167,15 +170,26 @@ fn main(world: World) -> [] int {
     var hint = "";
     var patch = "";
     var pfile = "";
+    var jobs = 4;
+    var argv0 = "";
+    var worker = false;
     var memory = "";
     var fact = "";
     var given = false;
+    borrow args as &g0 in {
+        if arg_count(g0) >= 2 && bytes.equal(arg(g0, 1), "--unit-worker") {
+            worker = true;
+        }
+    }
     borrow mut console as &!ci in {
         borrow args as &g in {
-            if arg_count(g) < 5 {
-                io.error_all(ci, "usage: build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [--guide <file>] [--review on --review-guide <file>] [--contract <file>] [--rounds N] [--attempts N] [--agent-seconds N] [--plan-seconds N] [--retry <unit> [--hint <text>]] [--patch <unit> <file>] [--memory <dir> [--remember <text>]]\n");
+            if worker {
+                given = false;
+            } else if arg_count(g) < 5 {
+                io.error_all(ci, "usage: build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [--guide <file>] [--review on --review-guide <file>] [--contract <file>] [--rounds N] [--attempts N] [--agent-seconds N] [--plan-seconds N] [--retry <unit> [--hint <text>]] [--patch <unit> <file>] [--memory <dir> [--remember <text>]] [--jobs N]\n");
             } else {
                 given = true;
+                argv0 = arg(g, 0);
                 checker = arg(g, 1);
                 brief = arg(g, 2);
                 wd = arg(g, 3);
@@ -273,6 +287,14 @@ fn main(world: World) -> [] int {
                 if len(n_agent) > 0 {
                     agent_seconds = digits_of(n_agent);
                 }
+                let n_jobs = opt(g, "--jobs");
+                if given_opt(g, "--jobs") {
+                    jobs = digits_of(n_jobs);
+                    if jobs < 1 || jobs > 64 {
+                        io.error_all(ci, "build: --jobs needs a number from 1 to 64\n");
+                        given = false;
+                    }
+                }
                 let n_plan = opt(g, "--plan-seconds");
                 if len(n_plan) > 0 {
                     plan_seconds = digits_of(n_plan);
@@ -310,11 +332,26 @@ fn main(world: World) -> [] int {
                                     agent2 = buffer.append(hh, agent2, memory);
                                 }
                                 borrow agent2 as &a2 in {
-                                status = build.run(hh, x, c, i, fz, checker, brief, wd, buffer.bytes(a2), provider, model, guide, review_guide, contract, review, rounds, attempts, agent_seconds * 1000, plan_seconds * 1000, retry, hint, patch, pfile);
+                                status = build.run(hh, x, c, i, fz, checker, brief, wd, buffer.bytes(a2), provider, model, guide, review_guide, contract, review, rounds, attempts, agent_seconds * 1000, plan_seconds * 1000, retry, hint, patch, pfile, jobs, argv0);
                                 }
                                 buffer.drop(hh, agent2);
                             } else if remembered {
                                 io.error_all(i, "build: the brief cannot be read\n");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if worker {
+        borrow fs as &fz in {
+            borrow exec as &x in {
+                borrow clock as &c in {
+                    borrow mut console as &!i in {
+                        borrow mut h as &!hh in {
+                            borrow args as &g in {
+                                status = project.unit_worker(hh, x, c, i, fz, g);
                             }
                         }
                     }

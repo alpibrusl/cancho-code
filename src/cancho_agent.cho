@@ -48,6 +48,8 @@ edition 7;
 //                   description only) and a case survives only if the reviewer agrees (src/review.cho); needs --review-guide <file>
 //   --usage-log     a file that gets one JSON line per API call: tokens in, out,
 //                   cache write, cache read, stop reason, outcome, sizes, ms (none)
+//   --backoff-ms    the first pause (ms) when the API answers 429 or 529; doubled each time, at most 60000, six times (2000); each is a line of
+//                   the usage log (outcome rate_limited) and a line on the standard error
 //
 // Exit 0: the project file is the model's program. Exit 1: it was not
 // changed (the model was unreachable, refused, or never produced a program).
@@ -820,6 +822,10 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
     // The bound on one answer. A reply (a plan, a patch) cut off by it is asked again with the bound doubled (at most 32000): a model that thinks first can spend the
     // whole bound before the first byte of the plan (the `semver` plan failed three rounds of three with 16000 tokens of thinking and no JSON).
     var bound = max_tokens;
+    var backoff_ms = 2000;
+    if len(opt(args, "--backoff-ms")) > 0 {
+        backoff_ms = number(opt(args, "--backoff-ms"));
+    }
     let workspace = opt(args, "--workspace");
     let raw_path = opt(args, "--save-raw");
     var body = buffer.empty(heap, 16);
@@ -885,7 +891,16 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
               borrow roots as &rr in {
                 borrow mut entropy as &!ew in {
                     let t0 = clock_ms(clock);
-                    match provider.exchange(heap, net, clock, io, host, port, secure, path, buffer.bytes(hr), buffer.bytes(br), buffer.bytes(rr), ip, contents(ew), 33554432, 1800000) {
+                    // a 429 or 529 is waited out (src/provider.cho, docs/parallel.md): `--backoff-ms` is the first pause, doubled each time
+                    let (ans, nwaits, waited_ms, busy_status) = provider.exchange_waiting(heap, net, clock, io, host, port, secure, path, buffer.bytes(hr), buffer.bytes(br), buffer.bytes(rr), ip, contents(ew), 33554432, 1800000, backoff_ms);
+                    var wk = 1;
+                    while wk <= nwaits {
+                        borrow task as &lw in {
+                            log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lw)), attempt, 0, 0, 0, 0, 0, "", "rate_limited", busy_status, 0, 0, provider.delay_ms(backoff_ms, wk));
+                        }
+                        wk = wk + 1;
+                    }
+                    match ans {
                         provider.Answered::Failed(tag) => {
                             borrow task as &lt in {
                                 log_call(heap, fs, usage_path, provider_label, model, task_head(buffer.bytes(lt)), attempt, 0, 0, 0, 0, 0, "", "unreachable", 0, 0, 0, clock_ms(clock) - t0);

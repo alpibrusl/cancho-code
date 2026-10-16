@@ -27,7 +27,7 @@ def main():
     ap.add_argument("--label", required=True); ap.add_argument("--out", required=True)
     ap.add_argument("--plan", help="a plan to build instead of eval/services/<service>/plan.json")
     ap.add_argument("--tools", default="/tmp/evaltools")
-    ap.add_argument("--timeout", type=int, default=5400)
+    ap.add_argument("--timeout", type=int, default=5400); ap.add_argument("--jobs", default="1", help="units built at once (docs/parallel.md)")
     a = ap.parse_args()
     cancho = os.environ.get("CANCHO") or sys.exit("run_service_plan: set CANCHO")
     pk = os.environ.get("CANCHO_PACKAGES") or os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(cancho)), "..", "..", "packages"))
@@ -54,7 +54,7 @@ def main():
         accept = "CANCHO=%s CANCHO_PACKAGES=%s PATH=/usr/local/bin:/usr/bin:/bin python3 %s accept --bare %s" % (cancho, pk, os.path.join(HERE, "service_run.py"), a.service)
         started = time.time()
         try:
-            p = subprocess.run([os.path.join(a.tools, "project"), cancho, plan_path, wd, " ".join(agent), a.attempts, a.agent_seconds, accept, " ".join([os.path.join(pk, "http-server", "server.cho")] + service_run.service_libs(a.service))],
+            p = subprocess.run([os.path.join(a.tools, "project"), cancho, plan_path, wd, " ".join(agent), a.attempts, a.agent_seconds, accept, " ".join([os.path.join(pk, "http-server", "server.cho")] + service_run.service_libs(a.service)), "--jobs", a.jobs],
                                capture_output=True, text=True, timeout=a.timeout)
             out, rc = p.stdout, p.returncode
         except subprocess.TimeoutExpired as e:
@@ -62,7 +62,7 @@ def main():
         seconds = round(time.time() - started, 1)
         open(os.path.join(wd, "run.log"), "w").write(out)
         json.dump({"item": a.service, "label": a.label, "run": i, "provider": a.provider, "model": a.model, "scaffold_chars": len(header), "seconds": seconds, "exit": rc,
-                   "cancho": cancho, "primer": a.primer, "max_tokens": a.max_tokens, "thinking": a.thinking, "effort": a.effort, "plan": plan_path, "patch": True},
+                   "cancho": cancho, "primer": a.primer, "max_tokens": a.max_tokens, "thinking": a.thinking, "effort": a.effort, "plan": plan_path, "patch": True, "jobs": a.jobs},
                   open(os.path.join(wd, "run.json"), "w"), indent=1)
         env = dict(os.environ, CANCHO=cancho, CANCHO_PACKAGES=pk)
         at = subprocess.run([sys.executable, os.path.join(HERE, "service_run.py"), "attack", "--bare", a.service, os.path.join(wd, "project.cho")], capture_output=True, text=True, env=env, timeout=600)

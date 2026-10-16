@@ -2,7 +2,10 @@ edition 7;
 
 // `project` -- build a plan (docs/plan.md) unit by unit (docs/project.md):
 //
-//     project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds [acceptance-command [lib-files]]]] [--retry <unit> [--hint <text>]] [--patch <unit> <file>]
+//     project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds [acceptance-command [lib-files]]]] [--retry <unit> [--hint <text>]] [--patch <unit> <file>] [--jobs N] [--settle MS]
+//
+// `--jobs N` builds up to N units at once (docs/parallel.md; default 1: one at a time). Started again as `project --unit-worker ...` it is one such unit's
+// worker, which the driver itself starts (not for people).
 //
 // Exit codes: 0 done, 1 stuck or the final gate failed, 2 usage, 3 the plan is invalid, 4 the agent or the checker is away.
 
@@ -22,6 +25,22 @@ fn digits_of[&a](text: &a [byte]) -> [] int {
         i = i + 1;
     }
     return n;
+}
+
+// Is `text` a non-empty run of digits?
+fn all_digits[&a](text: &a [byte]) -> [] bool {
+    if len(text) == 0 {
+        return false;
+    }
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if c < 48 || c > 57 {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
 }
 
 fn main(world: World) -> [] int {
@@ -44,13 +63,25 @@ fn main(world: World) -> [] int {
     var hint_given = false;
     var patch = "";
     var pfile = "";
+    var jobs = 1;
+    var settle = 300;
+    var argv0 = "";
+    var worker = false;
     var given = false;
+    borrow args as &g0 in {
+        if arg_count(g0) >= 2 && bytes.equal(arg(g0, 1), "--unit-worker") {
+            worker = true;
+        }
+    }
     borrow mut console as &!ci in {
         borrow args as &g in {
-            if arg_count(g) < 5 {
-                io.error_all(ci, "usage: project <checker> <plan.json> <workdir> <agent-cmd> [attempts [agent-seconds [acceptance-cmd [lib-files]]]] [--retry <unit> [--hint <text>]] [--patch <unit> <file>]\n");
+            if worker {
+                given = false;
+            } else if arg_count(g) < 5 {
+                io.error_all(ci, "usage: project <checker> <plan.json> <workdir> <agent-cmd> [attempts [agent-seconds [acceptance-cmd [lib-files]]]] [--retry <unit> [--hint <text>]] [--patch <unit> <file>] [--jobs N] [--settle MS]\n");
             } else {
                 given = true;
+                argv0 = arg(g, 0);
                 checker = arg(g, 1);
                 plan_path = arg(g, 2);
                 wd = arg(g, 3);
@@ -92,6 +123,20 @@ fn main(world: World) -> [] int {
                             given = false;
                         }
                         i = i + 3;
+                    } else if bytes.equal(a, "--jobs") && i + 1 < arg_count(g) {
+                        jobs = digits_of(arg(g, i + 1));
+                        if all_digits(arg(g, i + 1)) == false || jobs < 1 || jobs > 64 {
+                            io.error_all(ci, "project: --jobs needs a number from 1 to 64\n");
+                            given = false;
+                        }
+                        i = i + 2;
+                    } else if bytes.equal(a, "--settle") && i + 1 < arg_count(g) {
+                        settle = digits_of(arg(g, i + 1));
+                        if all_digits(arg(g, i + 1)) == false || settle > 60000 {
+                            io.error_all(ci, "project: --settle needs a number of milliseconds, at most 60000\n");
+                            given = false;
+                        }
+                        i = i + 2;
                     } else if len(a) >= 2 && int_of(a[0]) == 45 && int_of(a[1]) == 45 {
                         io.error_all(ci, "project: an option it does not know, or without its value: ");
                         io.error_all(ci, a);
@@ -132,12 +177,27 @@ fn main(world: World) -> [] int {
                                 if n >= 1048576 {
                                     io.error_all(i, "project: the plan is too large (1 MiB or more)\n");
                                 } else if n >= 0 {
-                                    status = project.run(hh, x, c, i, fz, text[0..n], checker, wd, agent, attempts, seconds * 1000, accept, libs, retry, hint, patch, pfile);
+                                    status = project.run(hh, x, c, i, fz, text[0..n], checker, wd, agent, attempts, seconds * 1000, accept, libs, retry, hint, patch, pfile, project.Par { jobs: jobs, settle: settle, warm: false }, argv0);
                                 } else {
                                     io.error_all(i, "project: the plan cannot be read\n");
                                 }
                             }
                             unbox_slice(hh, room);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if worker {
+        borrow fs as &fz in {
+            borrow exec as &x in {
+                borrow clock as &c in {
+                    borrow mut console as &!i in {
+                        borrow mut h as &!hh in {
+                            borrow args as &g in {
+                                status = project.unit_worker(hh, x, c, i, fz, g);
+                            }
                         }
                     }
                 }

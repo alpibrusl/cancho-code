@@ -49,6 +49,8 @@ real API, the checker still the oracle.
 
 `build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [options]` goes from a brief to a verified build in one command: the agent writes the plan, the plan is checked, the project is built, and the run ends `[BUILD_VERDICT] done|stuck|gate_failed|plan_failed|provider_error` (exit 0, 1, 1, 3, 4), resuming from `plan.json` and `state.txt`, with `build.json` for dashboards. Spec: [docs/build.md](build.md); gate: `scripts/test-build.sh` (a stand-in agent, no model). A stuck unit is continued with `--retry <unit> [--hint "..."]` (one more try, with your words in the prompt) or `--patch <unit> <file>` (your own code, checked like a model's, no model call): [Continuing a stuck unit](build.md#continuing-a-stuck-unit).
 
+`--jobs N` (`build`: 4 by default, `project`: 1) builds the units whose dependencies are verified at the same time, each in a private workspace, integrated into `project.cho` by the one driver and rebuilt when they clash; the agent waits out HTTP 429 and 529. Spec: [docs/parallel.md](parallel.md); gate: `scripts/test-parallel.sh`.
+
 Every run of `build` and `project` also leaves a **journal** in `<workdir>/journal/`: the events in order (`events.jsonl`) and the texts they name (`blobs/`): each model call's prompt and reply, each attempt's code, the compiler's whole refusal, the acceptance output and the diff against the attempt before, the review's dropped cases, the sweeps and the verdict, so the full story of a run can be shown. Spec: [docs/journal.md](journal.md); gate: `scripts/test-journal.sh`.
 
 ## A Claude agent

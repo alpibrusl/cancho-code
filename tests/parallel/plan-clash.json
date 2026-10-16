@@ -1,0 +1,5 @@
+{"name":"clash","units":[
+ {"id":"a","signature":"fn dbl1(x: int) -> [] int","examples":["dbl1(3) == 7"],"deps":[]},
+ {"id":"b","signature":"fn tri1(x: int) -> [] int","examples":["tri1(3) == 10"],"deps":[]},
+ {"id":"c","signature":"fn both(x: int) -> [] int","examples":["both(3) == 17"],"deps":["a","b"]}
+]}

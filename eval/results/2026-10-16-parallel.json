@@ -1,0 +1,153 @@
+{
+ "services": {
+  "j1-kvstore-1": {
+   "wall_s": 246.2,
+   "agent_sum_s": 196.3,
+   "critical_path_s": 150.7,
+   "cost_usd": 0.028305,
+   "calls": 12,
+   "out_tok": 45625,
+   "attack": {
+    "passed": 224,
+    "of": 225
+   },
+   "verdict": "done",
+   "requeues": 0,
+   "rate_limit_waits": 0
+  },
+  "j1-kvstore-2": {
+   "wall_s": 262.9,
+   "agent_sum_s": 239.0,
+   "critical_path_s": 191.7,
+   "cost_usd": 0.035606,
+   "calls": 13,
+   "out_tok": 56528,
+   "attack": {
+    "passed": 224,
+    "of": 225
+   },
+   "verdict": "done",
+   "requeues": 0,
+   "rate_limit_waits": 0
+  },
+  "j1-webhooks-1": {
+   "wall_s": 171.5,
+   "agent_sum_s": 140.3,
+   "critical_path_s": 111.3,
+   "cost_usd": 0.021855,
+   "calls": 14,
+   "out_tok": 32075,
+   "attack": {
+    "passed": 129,
+    "of": 129
+   },
+   "verdict": "done",
+   "requeues": 0,
+   "rate_limit_waits": 0
+  },
+  "j1-webhooks-2": {
+   "wall_s": 168.9,
+   "agent_sum_s": 138.3,
+   "critical_path_s": 114.9,
+   "cost_usd": 0.022844,
+   "calls": 15,
+   "out_tok": 31725,
+   "attack": {
+    "passed": 129,
+    "of": 129
+   },
+   "verdict": "done",
+   "requeues": 0,
+   "rate_limit_waits": 0
+  },
+  "j4-kvstore-1": {
+   "wall_s": 203.6,
+   "agent_sum_s": 220.1,
+   "critical_path_s": 171.6,
+   "cost_usd": 0.032618,
+   "calls": 14,
+   "out_tok": 51417,
+   "attack": {
+    "passed": 225,
+    "of": 225
+   },
+   "verdict": "done",
+   "requeues": 0,
+   "rate_limit_waits": 0
+  },
+  "j4-kvstore-2": {
+   "wall_s": 194.9,
+   "agent_sum_s": 215.7,
+   "critical_path_s": 170.4,
+   "cost_usd": 0.031507,
+   "calls": 13,
+   "out_tok": 50446,
+   "attack": {
+    "passed": 224,
+    "of": 225
+   },
+   "verdict": "done",
+   "requeues": 0,
+   "rate_limit_waits": 0
+  },
+  "j4-webhooks-1": {
+   "wall_s": 131.7,
+   "agent_sum_s": 141.7,
+   "critical_path_s": 115.8,
+   "cost_usd": 0.023169,
+   "calls": 15,
+   "out_tok": 33474,
+   "attack": {
+    "passed": 129,
+    "of": 129
+   },
+   "verdict": "done",
+   "requeues": 0,
+   "rate_limit_waits": 0
+  },
+  "j4-webhooks-2": {
+   "wall_s": 149.4,
+   "agent_sum_s": 167.8,
+   "critical_path_s": 136.1,
+   "cost_usd": 0.025735,
+   "calls": 15,
+   "out_tok": 38978,
+   "attack": {
+    "passed": 129,
+    "of": 129
+   },
+   "verdict": "done",
+   "requeues": 0,
+   "rate_limit_waits": 0
+  }
+ },
+ "first_version_webhooks": {
+  "note": "before the additions-only shortcut: every merge ran all verified units' tests",
+  "jobs1_wall_s": 206.1,
+  "jobs4_wall_s": 242.4
+ },
+ "library_ini": {
+  "jobs1": {
+   "unit_phase_wall_s": 173.0,
+   "agent_sum_s": 154.2,
+   "critical_path_s": 125.7,
+   "cost_usd": 0.056301,
+   "note": "cost and run seconds include the planner"
+  },
+  "jobs4": {
+   "unit_phase_wall_s": 175.7,
+   "agent_sum_s": 170.9,
+   "critical_path_s": 145.4,
+   "cost_usd": 0.023471,
+   "note": "plan.json of the jobs 1 run reused: no planner call"
+  },
+  "plan_layers": [
+   3,
+   1,
+   2,
+   2,
+   2,
+   2
+  ]
+ }
+}

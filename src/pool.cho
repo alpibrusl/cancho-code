@@ -1,0 +1,380 @@
+edition 7;
+
+module pool;
+
+// `pool` -- several children at once, on one poller (docs/parallel.md). The project driver spawns one worker process per unit that is built
+// concurrently and waits for any of them: this is the part of that which is about processes and nothing else. tests/programs/pool_probe.cho
+// is the probe that showed the primitives allow it (a list of `res` values, one poller, a pidfd or kevent per child).
+//
+//   new()                          an empty pool, or the errno of the poller that could not be made
+//   start(pool, tag, path, args, env)   start the program `path` with `args` (a `\0`-separated list), its standard output captured; `tag` is the caller's name for it
+//   wait(pool, ms)                 wait at most `ms` for a child to end: the pool and, when one ended, what it left (`Left`)
+//   live(pool)                     how many children are running (or ended and not yet taken by `wait`)
+//   close(pool)                    kill what is still running (SIGKILL), reap it, close the poller
+//
+// A child that ended is taken one at a time, the lowest `tag` first, so what a caller does with several that ended together does not depend on the order
+// the kernel reported them in. What a child wrote to its standard output is kept up to `output_cap()` bytes; the rest is read and dropped, so a chatty
+// child is never blocked on a full channel. Its standard input and error are the null device.
+
+import std.buffer;
+import std.list;
+import std.option;
+
+res struct Slot {
+    child: Child,
+    out: Pipe,
+    tag: int,
+    id: int,
+    got: buffer.Buffer,
+    since: int,
+    gone: bool,
+}
+
+pub res struct Pool {
+    poller: Poller,
+    slots: list.List[Slot],
+    serial: int,
+    count: int,
+}
+
+// What a child left: its tag, how it ended (`code`: its exit code, 1000 + the signal's bit when a signal ended it, 2000 + errno when it could not be
+// waited for), what it wrote, and how long it ran in milliseconds.
+pub res struct Left {
+    tag: int,
+    code: int,
+    said: buffer.Buffer,
+    ms: int,
+}
+
+pub enum Made {
+    Ok(Pool),
+    Failed(int),
+}
+
+pub enum Taken {
+    Nothing(Pool),
+    Ended(Pool, Left),
+}
+
+// The most a child's output is kept at.
+pub fn output_cap() -> [] int {
+    return 65536;
+}
+
+pub fn new() -> [] Made {
+    match poller_new() {
+        Polling::Failed(e) => {
+            return Made::Failed(e);
+        }
+        Polling::Ok(p) => {
+            return Made::Ok(Pool { poller: p, slots: list.List::Empty, serial: 1, count: 0 });
+        }
+    }
+}
+
+pub fn live[&p](pool: &p Pool) -> [] int {
+    return pool.count;
+}
+
+fn tok_out(id: int) -> [] int {
+    return id * 4 + 1;
+}
+
+fn tok_exit(id: int) -> [] int {
+    return id * 4 + 3;
+}
+
+fn seen[&e](events: &e [int], n: int, token: int) -> [] bool {
+    var k = 0;
+    while k < n {
+        if events[2 * k] == token {
+            return true;
+        }
+        k = k + 1;
+    }
+    return false;
+}
+
+// Read what is there, without waiting; what does not fit under the cap is read and dropped.
+fn drain[&h, &p, &s](heap: &!h Heap, out: &!p Pipe, scratch: &!s [byte], got: buffer.Buffer) -> [heap, pipe_read] buffer.Buffer {
+    var b = got;
+    var going = true;
+    while going {
+        match pipe_read(out, scratch) {
+            Received::Data(n) => {
+                var room = 0;
+                borrow b as &bq in {
+                    room = output_cap() - buffer.size(bq);
+                }
+                if room > n {
+                    room = n;
+                }
+                if room > 0 {
+                    b = buffer.append(heap, b, scratch[0..room]);
+                }
+            }
+            Received::End => {
+                going = false;
+            }
+            Received::Again => {
+                going = false;
+            }
+            Received::Failed(e) => {
+                going = false;
+            }
+        }
+    }
+    return b;
+}
+
+// Start `path args` with `env`. 0, or the errno. The new child is on the poller before this returns.
+pub fn start[&h, &x, &c, &p, &a, &v](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, pool: Pool, tag: int, path: &p [byte], args: &a [byte], env: &v [byte]) -> [heap, exec(""), poll, clock] (Pool, int) {
+    let Pool { poller, slots, serial, count } = pool;
+    var ph = poller;
+    var held = slots;
+    var next = serial;
+    var live_now = count;
+    var answer = 0;
+    match pipe_open() {
+        Piped::Failed(e) => {
+            answer = e;
+        }
+        Piped::Ok(from, child_end) => {
+            var reader = from;
+            match exec_spawn(exec, path, args, env, Stdio::Null, Stdio::Pipe(child_end), Stdio::Null) {
+                Spawned::Failed(e) => {
+                    pipe_close(reader);
+                    answer = e;
+                }
+                Spawned::Ok(child) => {
+                    borrow mut reader as &!rm in {
+                        pipe_nonblocking(rm);
+                    }
+                    let id = next;
+                    next = next + 1;
+                    borrow mut ph as &!pp in {
+                        borrow child as &ch in {
+                            poller_add_child(pp, ch, tok_exit(id));
+                        }
+                        borrow reader as &rp in {
+                            poller_add_pipe(pp, rp, tok_out(id), 1);
+                        }
+                    }
+                    held = list.push(heap, held, Slot { child: child, out: reader, tag: tag, id: id, got: buffer.empty(heap, 256), since: clock_ms(clock), gone: false });
+                    live_now = live_now + 1;
+                }
+            }
+        }
+    }
+    return (Pool { poller: ph, slots: held, serial: next, count: live_now }, answer);
+}
+
+// One slot after a wake-up: read its output when the poller named it, and note that it ended when the poller said so.
+fn service[&h, &e, &s](heap: &!h Heap, slot: Slot, events: &e [int], n: int, scratch: &!s [byte], alive: list.List[Slot]) -> [heap, pipe_read] list.List[Slot] {
+    let Slot { child, out, tag, id, got, since, gone } = slot;
+    var pipe = out;
+    var text = got;
+    var ended = gone;
+    let exit_seen = seen(events, n, tok_exit(id));
+    if exit_seen || seen(events, n, tok_out(id)) {
+        borrow mut pipe as &!pp in {
+            text = drain(heap, pp, scratch, text);
+        }
+    }
+    if exit_seen {
+        ended = true;
+    }
+    return list.push(heap, alive, Slot { child: child, out: pipe, tag: tag, id: id, got: text, since: since, gone: ended });
+}
+
+fn walk[&h, &e, &s](heap: &!h Heap, rest: list.List[Slot], events: &e [int], n: int, scratch: &!s [byte], alive: list.List[Slot]) -> [heap, pipe_read] list.List[Slot] {
+    match list.pop(heap, rest) {
+        option.Option::None => {
+            return alive;
+        }
+        option.Option::Some(pair) => {
+            let (slot, tail) = pair;
+            let kept = service(heap, slot, events, n, scratch, alive);
+            return walk(heap, tail, events, n, scratch, kept);
+        }
+    }
+}
+
+// The lowest tag among the slots that ended, or -1.
+fn lowest_ended[&l](slots: &l list.List[Slot]) -> [] int {
+    match slots {
+        list.List::Empty => {
+            return 0 - 1;
+        }
+        list.List::Cons(s, rest) => {
+            let below = lowest_ended(contents(rest));
+            if s.gone && (below < 0 || s.tag < below) {
+                return s.tag;
+            }
+            return below;
+        }
+    }
+}
+
+// What `take` builds: the slots that stay, and what the one taken left.
+res struct Took {
+    alive: list.List[Slot],
+    found: option.Option[Left],
+}
+
+// Take the slot tagged `want` out of the list: reap it (everything it wrote is read first) and answer what it left; the others go to `acc.alive`.
+fn take[&h, &c, &s](heap: &!h Heap, clock: &c Clock, rest: list.List[Slot], want: int, scratch: &!s [byte], acc: Took) -> [heap, clock, pipe_read] Took {
+    match list.pop(heap, rest) {
+        option.Option::None => {
+            return acc;
+        }
+        option.Option::Some(pair) => {
+            let (slot, tail) = pair;
+            let Slot { child, out, tag, id, got, since, gone } = slot;
+            let Took { alive, found } = acc;
+            if tag == want && gone {
+                var pipe = out;
+                var text = got;
+                borrow mut pipe as &!pp in {
+                    text = drain(heap, pp, scratch, text);
+                }
+                pipe_close(pipe);
+                var code = 0 - 1;
+                match child_wait(child) {
+                    Exited::Code(k) => {
+                        code = k;
+                    }
+                    Exited::Signaled(sg) => {
+                        code = 1000 + sg;
+                    }
+                    Exited::Failed(f) => {
+                        code = 2000 + f;
+                    }
+                }
+                let ms = clock_ms(clock) - since;
+                match found {
+                    option.Option::Some(old) => {
+                        // cannot happen (one tag is taken at a time)
+                        drop_left(heap, old);
+                    }
+                    option.Option::None => {
+                    }
+                }
+                return take(heap, clock, tail, want, scratch, Took { alive: alive, found: option.Option::Some(Left { tag: tag, code: code, said: text, ms: ms }) });
+            }
+            let kept = list.push(heap, alive, Slot { child: child, out: out, tag: tag, id: id, got: got, since: since, gone: gone });
+            return take(heap, clock, tail, want, scratch, Took { alive: kept, found: found });
+        }
+    }
+}
+
+// If a child has ended, reap the one with the lowest tag.
+fn reap[&h, &c](heap: &!h Heap, clock: &c Clock, pool: Pool) -> [heap, clock, pipe_read] Taken {
+    let Pool { poller, slots, serial, count } = pool;
+    var which = 0 - 1;
+    borrow slots as &sl in {
+        which = lowest_ended(sl);
+    }
+    if which < 0 {
+        return Taken::Nothing(Pool { poller: poller, slots: slots, serial: serial, count: count });
+    }
+    let scratch = box_slice(heap, 4096, byte_of(0));
+    var took = Took { alive: list.List::Empty, found: option.Option::None };
+    borrow mut scratch as &!sw in {
+        took = take(heap, clock, slots, which, contents(sw), took);
+    }
+    unbox_slice(heap, scratch);
+    let Took { alive, found } = took;
+    match found {
+        option.Option::Some(d) => {
+            return Taken::Ended(Pool { poller: poller, slots: alive, serial: serial, count: count - 1 }, d);
+        }
+        option.Option::None => {
+            return Taken::Nothing(Pool { poller: poller, slots: alive, serial: serial, count: count });
+        }
+    }
+}
+
+// Wait at most `ms` for a child to end. A child that ended before this call (the poller said so on an earlier one) is answered at once.
+pub fn wait[&h, &c](heap: &!h Heap, clock: &c Clock, pool: Pool, ms: int) -> [heap, clock, poll, pipe_read] Taken {
+    match reap(heap, clock, pool) {
+        Taken::Ended(p, d) => {
+            return Taken::Ended(p, d);
+        }
+        Taken::Nothing(p) => {
+            let Pool { poller, slots, serial, count } = p;
+            var ph = poller;
+            var held = slots;
+            if count > 0 {
+                let events = box_slice(heap, 32, 0);
+                let scratch = box_slice(heap, 4096, byte_of(0));
+                var n = 0;
+                borrow mut events as &!ew in {
+                    borrow mut ph as &!pp in {
+                        n = poller_wait(pp, contents(ew), ms);
+                    }
+                }
+                if n > 0 {
+                    borrow events as &er in {
+                        borrow mut scratch as &!sw in {
+                            held = walk(heap, held, contents(er), n, contents(sw), list.List::Empty);
+                        }
+                    }
+                }
+                unbox_slice(heap, events);
+                unbox_slice(heap, scratch);
+            }
+            return reap(heap, clock, Pool { poller: ph, slots: held, serial: serial, count: count });
+        }
+    }
+}
+
+fn kill_all[&h](heap: &!h Heap, rest: list.List[Slot]) -> [heap, child_signal] int {
+    match list.pop(heap, rest) {
+        option.Option::None => {
+            return 0;
+        }
+        option.Option::Some(pair) => {
+            let (slot, tail) = pair;
+            let Slot { child, out, tag, id, got, since, gone } = slot;
+            borrow child as &ch in {
+                child_kill(ch, 256);
+            }
+            child_wait(child);
+            pipe_close(out);
+            buffer.drop(heap, got);
+            return 1 + kill_all(heap, tail);
+        }
+    }
+}
+
+// End the pool: what still runs is killed and reaped. How many that was.
+pub fn close[&h](heap: &!h Heap, pool: Pool) -> [heap, child_signal] int {
+    let Pool { poller, slots, serial, count } = pool;
+    let killed = kill_all(heap, slots);
+    poller_close(poller);
+    return killed;
+}
+
+pub fn drop_left[&h](heap: &!h Heap, d: Left) -> [heap] int {
+    let Left { tag, code, said, ms } = d;
+    buffer.drop(heap, said);
+    return tag;
+}
+
+// What a child wrote, by reference.
+pub fn said[&d](d: &d Left) -> [] &d [byte] {
+    return buffer.bytes(d.said);
+}
+
+pub fn tag_of[&d](d: &d Left) -> [] int {
+    return d.tag;
+}
+
+pub fn code_of[&d](d: &d Left) -> [] int {
+    return d.code;
+}
+
+pub fn ms_of[&d](d: &d Left) -> [] int {
+    return d.ms;
+}

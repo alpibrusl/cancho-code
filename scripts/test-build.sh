@@ -35,7 +35,7 @@ SRC="${BUILD_SRC:-$root/src}"
 exe=$(mktemp -t cc-build-XXXXXX)
 "$CANCHO" build "$root/tests/programs/build.cho" "$SRC/build.cho" "$SRC/project.cho" "$SRC/plan.cho" "$SRC/driver.cho" \
     "$SRC/checker.cho" "$SRC/signature.cho" "$SRC/loop_check.cho" "$SRC/snapshot.cho" "$SRC/trail.cho" \
-    "$SRC/acceptance.cho" "$SRC/splice.cho" --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
+    "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }
@@ -57,7 +57,7 @@ mk() {
 # run <workdir> <recipes> <log> [more options]
 run() {
     w=$1; r=$2; l=$3; shift 3
-    "$exe" "$CANCHO" "$B/brief.txt" "$w" "sh $B/agent.sh $r $l" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 "$@" 2>&1
+    "$exe" "$CANCHO" "$B/brief.txt" "$w" "sh $B/agent.sh $r $l" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 --jobs 1 "$@" 2>&1
 }
 
 # happy
@@ -178,7 +178,7 @@ rm -rf "$wd" "$rc"
 # resume: SIGKILL the build while the agent is building c
 set -- $(mk); wd=$1; rc=$2; lg=$3
 printf 'echo $$ > "%s/c.pid"\nexec sleep 300\n' "$rc" > "$rc/c.sh"
-"$exe" "$CANCHO" "$B/brief.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 > "$wd.out" 2>&1 &
+"$exe" "$CANCHO" "$B/brief.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 --jobs 1 > "$wd.out" 2>&1 &
 bp=$!
 i=0
 while [ $i -lt 600 ] && [ ! -f "$rc/c.pid" ]; do sleep 0.1; i=$((i + 1)); done
@@ -403,13 +403,13 @@ rm -rf "$wd" "$rc"
 
 # names: what the brief calls its functions are the plan's names
 set -- $(mk); wd=$1; rc=$2; lg=$3
-out=$("$exe" "$CANCHO" "$B/brief-names.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 2>&1); r=$?
+out=$("$exe" "$CANCHO" "$B/brief-names.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 --jobs 1 2>&1); r=$?
 expect "names held: exit code" "$r" 0
 expect "names held: verdict" "$(verdict "$out")" done
 printf '%s\n' "$out" | grep -q 'brief-name' && { echo "FAIL: names held: a brief-name error" >&2; fail=1; }
 rm -rf "$wd" "$rc"
 set -- $(mk); wd=$1; rc=$2; lg=$3
-out=$("$exe" "$CANCHO" "$B/brief-renamed.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 2>&1); r=$?
+out=$("$exe" "$CANCHO" "$B/brief-renamed.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 --jobs 1 2>&1); r=$?
 expect "names missing: exit code" "$r" 3
 expect "names missing: verdict" "$(verdict "$out")" plan_failed
 expect "names missing: the missing name" "$(printf '%s\n' "$out" | grep '^\[PLAN_ERROR\]' | cut -f2,3 | tr '\t' ':')" "brief-name:is_huge"
@@ -419,13 +419,13 @@ rm -rf "$wd" "$rc"
 # a valid plan.json from an earlier run that lacks a required name is asked for again, not reused
 set -- $(mk); wd=$1; rc=$2; lg=$3
 cp "$P/plan.json" "$wd/plan.json"
-out=$("$exe" "$CANCHO" "$B/brief-renamed.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 2>&1); r=$?
+out=$("$exe" "$CANCHO" "$B/brief-renamed.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 --jobs 1 2>&1); r=$?
 expect "names reuse: the plan was asked for again" "$(order "$lg")" PLAN
 rm -rf "$wd" "$rc"
 
 # a name that is only the start of a declared name is not declared (`doub` against `fn double`)
 set -- $(mk); wd=$1; rc=$2; lg=$3
-out=$("$exe" "$CANCHO" "$B/brief-prefix.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 2>&1); r=$?
+out=$("$exe" "$CANCHO" "$B/brief-prefix.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 --jobs 1 2>&1); r=$?
 expect "names prefix: exit code" "$r" 3
 expect "names prefix: the missing name" "$(printf '%s\n' "$out" | grep '^\[PLAN_ERROR\]' | cut -f2,3 | tr '\t' ':')" "brief-name:doub"
 rm -rf "$wd" "$rc"
