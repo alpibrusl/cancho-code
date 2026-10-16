@@ -1,0 +1,555 @@
+{
+ "arm": "brief only",
+ "model": "claude-haiku-5-5",
+ "runs_per_item": 2,
+ "label": "ae-brief",
+ "branch": "agent-exit-brief-names",
+ "totals": {
+  "runs": 26,
+  "done": 21,
+  "fully_right": 16,
+  "plan_failed": 0,
+  "stuck": 5,
+  "provider_error": 0,
+  "out_tokens": 1108415,
+  "cost_usd": 0.6593
+ },
+ "previous_round2": {
+  "done": 22,
+  "fully_right": 15,
+  "plan_failed": 0,
+  "stuck": 4,
+  "provider_error": 0,
+  "out_tokens": 1075602,
+  "cost_usd": 0.636
+ },
+ "brief_name_inside_a_round": {
+  "runs": 1,
+  "which": "tokenbucket-2",
+  "recovered": true
+ },
+ "agent_gave_up_cases": 0,
+ "unit_agent_turns_with_nonzero_exit": 0,
+ "rows": [
+  {
+   "run": "base64-1",
+   "verdict": "done",
+   "units": [
+    5,
+    5
+   ],
+   "audit": [
+    329,
+    329
+   ],
+   "plan_calls": 2,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 20174,
+   "cost": 0.013922,
+   "seconds": 88.9
+  },
+  {
+   "run": "base64-2",
+   "verdict": "done",
+   "units": [
+    4,
+    4
+   ],
+   "audit": [
+    329,
+    329
+   ],
+   "plan_calls": 3,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 32948,
+   "cost": 0.019215,
+   "seconds": 144.7
+  },
+  {
+   "run": "basics-1",
+   "verdict": "done",
+   "units": [
+    7,
+    7
+   ],
+   "audit": [
+    221,
+    221
+   ],
+   "plan_calls": 2,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 10680,
+   "cost": 0.009415,
+   "seconds": 57.8
+  },
+  {
+   "run": "basics-2",
+   "verdict": "done",
+   "units": [
+    8,
+    8
+   ],
+   "audit": [
+    221,
+    221
+   ],
+   "plan_calls": 3,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 14001,
+   "cost": 0.010035,
+   "seconds": 77.5
+  },
+  {
+   "run": "csv-1",
+   "verdict": "done",
+   "units": [
+    5,
+    5
+   ],
+   "audit": [
+    35,
+    50
+   ],
+   "plan_calls": 3,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 50065,
+   "cost": 0.029724,
+   "seconds": 221.0
+  },
+  {
+   "run": "csv-2",
+   "verdict": "done",
+   "units": [
+    3,
+    3
+   ],
+   "audit": [
+    35,
+    50
+   ],
+   "plan_calls": 4,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 79611,
+   "cost": 0.042911,
+   "seconds": 336.6
+  },
+  {
+   "run": "duration-1",
+   "verdict": "done",
+   "units": [
+    6,
+    6
+   ],
+   "audit": [
+    64,
+    64
+   ],
+   "plan_calls": 2,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 21690,
+   "cost": 0.013267,
+   "seconds": 104.8
+  },
+  {
+   "run": "duration-2",
+   "verdict": "done",
+   "units": [
+    6,
+    6
+   ],
+   "audit": [
+    64,
+    64
+   ],
+   "plan_calls": 2,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 19232,
+   "cost": 0.012042,
+   "seconds": 95.6
+  },
+  {
+   "run": "editdistance-1",
+   "verdict": "done",
+   "units": [
+    5,
+    5
+   ],
+   "audit": [
+    0,
+    54
+   ],
+   "plan_calls": 2,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 27430,
+   "cost": 0.016612,
+   "seconds": 128.1
+  },
+  {
+   "run": "editdistance-2",
+   "verdict": "stuck",
+   "units": [
+    3,
+    4
+   ],
+   "audit": [
+    0,
+    54
+   ],
+   "plan_calls": 2,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 27013,
+   "cost": 0.016391,
+   "seconds": 119.5
+  },
+  {
+   "run": "expr-1",
+   "verdict": "done",
+   "units": [
+    8,
+    8
+   ],
+   "audit": [
+    385,
+    385
+   ],
+   "plan_calls": 4,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 43601,
+   "cost": 0.026201,
+   "seconds": 205.9
+  },
+  {
+   "run": "expr-2",
+   "verdict": "done",
+   "units": [
+    4,
+    4
+   ],
+   "audit": [
+    385,
+    385
+   ],
+   "plan_calls": 5,
+   "plan_rejected": 1,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 58808,
+   "cost": 0.033794,
+   "seconds": 256.4
+  },
+  {
+   "run": "glob-1",
+   "verdict": "done",
+   "units": [
+    9,
+    9
+   ],
+   "audit": [
+    87,
+    87
+   ],
+   "plan_calls": 3,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 50850,
+   "cost": 0.030734,
+   "seconds": 247.3
+  },
+  {
+   "run": "glob-2",
+   "verdict": "done",
+   "units": [
+    8,
+    8
+   ],
+   "audit": [
+    87,
+    87
+   ],
+   "plan_calls": 3,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 45157,
+   "cost": 0.026658,
+   "seconds": 225.1
+  },
+  {
+   "run": "ini-1",
+   "verdict": "stuck",
+   "units": [
+    6,
+    7
+   ],
+   "audit": [
+    0,
+    76
+   ],
+   "plan_calls": 4,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 108211,
+   "cost": 0.060154,
+   "seconds": 471.6
+  },
+  {
+   "run": "ini-2",
+   "verdict": "done",
+   "units": [
+    7,
+    7
+   ],
+   "audit": [
+    0,
+    76
+   ],
+   "plan_calls": 4,
+   "plan_rejected": 1,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 97847,
+   "cost": 0.054725,
+   "seconds": 430.1
+  },
+  {
+   "run": "jsonptr-1",
+   "verdict": "done",
+   "units": [
+    7,
+    7
+   ],
+   "audit": [
+    141,
+    160
+   ],
+   "plan_calls": 3,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 54454,
+   "cost": 0.031822,
+   "seconds": 240.4
+  },
+  {
+   "run": "jsonptr-2",
+   "verdict": "stuck",
+   "units": [
+    5,
+    7
+   ],
+   "audit": [
+    79,
+    160
+   ],
+   "plan_calls": 3,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 58355,
+   "cost": 0.033759,
+   "seconds": 262.0
+  },
+  {
+   "run": "roman-1",
+   "verdict": "done",
+   "units": [
+    6,
+    6
+   ],
+   "audit": [
+    439,
+    439
+   ],
+   "plan_calls": 3,
+   "plan_rejected": 1,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 29653,
+   "cost": 0.018613,
+   "seconds": 132.4
+  },
+  {
+   "run": "roman-2",
+   "verdict": "done",
+   "units": [
+    3,
+    3
+   ],
+   "audit": [
+    439,
+    439
+   ],
+   "plan_calls": 2,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 19586,
+   "cost": 0.011433,
+   "seconds": 91.6
+  },
+  {
+   "run": "semver-1",
+   "verdict": "done",
+   "units": [
+    13,
+    13
+   ],
+   "audit": [
+    492,
+    492
+   ],
+   "plan_calls": 3,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 60046,
+   "cost": 0.036895,
+   "seconds": 279.4
+  },
+  {
+   "run": "semver-2",
+   "verdict": "done",
+   "units": [
+    14,
+    14
+   ],
+   "audit": [
+    492,
+    492
+   ],
+   "plan_calls": 4,
+   "plan_rejected": 1,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 75856,
+   "cost": 0.047206,
+   "seconds": 343.9
+  },
+  {
+   "run": "sortedmap-1",
+   "verdict": "stuck",
+   "units": [
+    3,
+    5
+   ],
+   "audit": [
+    75,
+    124
+   ],
+   "plan_calls": 2,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 35892,
+   "cost": 0.021795,
+   "seconds": 157.1
+  },
+  {
+   "run": "sortedmap-2",
+   "verdict": "stuck",
+   "units": [
+    4,
+    5
+   ],
+   "audit": [
+    99,
+    124
+   ],
+   "plan_calls": 2,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 27145,
+   "cost": 0.016459,
+   "seconds": 114.6
+  },
+  {
+   "run": "tokenbucket-1",
+   "verdict": "done",
+   "units": [
+    4,
+    4
+   ],
+   "audit": [
+    46,
+    46
+   ],
+   "plan_calls": 2,
+   "plan_rejected": 0,
+   "brief_name_rounds": 0,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 15381,
+   "cost": 0.009728,
+   "seconds": 71.0
+  },
+  {
+   "run": "tokenbucket-2",
+   "verdict": "done",
+   "units": [
+    5,
+    5
+   ],
+   "audit": [
+    46,
+    46
+   ],
+   "plan_calls": 3,
+   "plan_rejected": 1,
+   "brief_name_rounds": 1,
+   "gave_up_attempts": 0,
+   "agent_failed": 0,
+   "out_tok": 24729,
+   "cost": 0.015747,
+   "seconds": 110.1
+  }
+ ]
+}
