@@ -1,0 +1,5 @@
+  ini_parse: 0/40 does not build: line 304:11: error: `ini_parse` is not a function in this program
+  ini_get: 0/9 does not build: line 304:11: error: `ini_parse` is not a function in this program
+  ini_errline: 0/15 does not build: line 304:11: error: `ini_parse` is not a function in this program
+  ini_extra: 0/12 does not build: line 304:11: error: `ini_parse` is not a function in this program
+  TOTAL 0/76

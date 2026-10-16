@@ -38,70 +38,6 @@ fn slurp[&h, &f, &p](heap: &!h Heap, fs: &f Fs(""), path: &p [byte], cap: int) -
     return (out, ok);
 }
 
-// The function names the brief requires: a bullet `- name(...) : what it does` (or `... ) -> Type : ...`) names a public function, and the
-// plan must declare it as `fn name`. Answers "\nname\nname2\n" for the ones no unit declares (empty: none). A brief with no such bullet
-// requires nothing.
-fn is_name_byte(c: int) -> [] bool {
-    return (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95;
-}
-
-fn brief_gaps[&h, &b, &s](heap: &!h Heap, brief: &b [byte], plan: &s [byte]) -> [heap] buffer.Buffer {
-    var gaps = buffer.append(heap, buffer.empty(heap, 16), "\n");
-    var pos = 0;
-    while pos < len(brief) {
-        var e = pos;
-        while e < len(brief) && int_of(brief[e]) != 10 {
-            e = e + 1;
-        }
-        let line = brief[pos..e];
-        if len(line) > 3 && int_of(line[0]) == 45 && int_of(line[1]) == 32 && int_of(line[2]) >= 97 && int_of(line[2]) <= 122 {
-            var j = 2;
-            while j < len(line) && is_name_byte(int_of(line[j])) {
-                j = j + 1;
-            }
-            if j < len(line) && int_of(line[j]) == 40 && (bytes.find(line, ") :") >= 0 || bytes.find(line, ") ->") >= 0) {
-                let name = line[2..j];
-                // `fn name` must end at the name: the next byte is `(` or `[`.
-                var exact = false;
-                var rest = plan;
-                var look = true;
-                while look {
-                    let k = bytes.find(rest, "fn ");
-                    if k < 0 {
-                        look = false;
-                    } else {
-                        let from = k + 3;
-                        if from + len(name) < len(rest) && bytes.equal(rest[from..from + len(name)], name) && (int_of(rest[from + len(name)]) == 40 || int_of(rest[from + len(name)]) == 91) {
-                            exact = true;
-                            look = false;
-                        } else {
-                            rest = rest[from..len(rest)];
-                        }
-                    }
-                }
-                if !exact {
-                    var seen = false;
-                    borrow gaps as &gb in {
-                        var probe = buffer.append(heap, buffer.empty(heap, 32), "\n");
-                        probe = buffer.append(heap, probe, name);
-                        probe = buffer.append(heap, probe, "\n");
-                        borrow probe as &pb in {
-                            seen = bytes.find(buffer.bytes(gb), buffer.bytes(pb)) >= 0;
-                        }
-                        buffer.drop(heap, probe);
-                    }
-                    if !seen {
-                        gaps = buffer.append(heap, gaps, name);
-                        gaps = buffer.append(heap, gaps, "\n");
-                    }
-                }
-            }
-        }
-        pos = e + 1;
-    }
-    return gaps;
-}
-
 // How the plan in `src` stands: -1 when the plan check refuses it, else the number of units. With `show`, the check's report
 // (its `[PLAN_ERROR]` lines and `[PLAN]` line) goes to the console and the log.
 fn judge[&h, &i, &z, &l, &s, &b](heap: &!h Heap, io: &!i Io, fs: &z Fs(""), log: &l [byte], src: &s [byte], brief: &b [byte], show: bool) -> [heap, io_write, fs_read(""), fs_write("")] int {
@@ -115,33 +51,16 @@ fn judge[&h, &i, &z, &l, &s, &b](heap: &!h Heap, io: &!i Io, fs: &z Fs(""), log:
     if code != 0 {
         return 0 - 1;
     }
-    // The names the brief states must be the plan's: a plan that renames them builds a different API than the one asked for.
-    let gaps = brief_gaps(heap, brief, src);
-    var missing = false;
-    borrow gaps as &gb in {
-        let g = buffer.bytes(gb);
-        missing = len(g) > 1;
-        if missing && show {
-            var at = 1;
-            while at < len(g) {
-                var e = at;
-                while int_of(g[e]) != 10 {
-                    e = e + 1;
-                }
-                var line = buffer.append(heap, buffer.empty(heap, 96), "[PLAN_ERROR]\tbrief-name\t");
-                line = buffer.append(heap, line, g[at..e]);
-                line = buffer.append(heap, line, "\tthe brief names this function and no unit declares it\n");
-                borrow line as &lb in {
-                    project.tell(heap, io, fs, log, buffer.bytes(lb));
-                }
-                buffer.drop(heap, line);
-                at = e + 1;
-            }
-            project.tell(heap, io, fs, log, "[PLAN]\tinvalid\n");
+    // The names the brief states must be the plan's: a plan that renames them builds a different API than the one asked for. The plan agent runs the
+    // same check in each of its rounds (src/cancho_agent.cho); this one is the backstop for a plan.json that was not written by this run.
+    let (brep, missing_count) = plan.brief_report(heap, brief, src);
+    if missing_count > 0 && show {
+        borrow brep as &bq in {
+            project.tell(heap, io, fs, log, buffer.bytes(bq));
         }
     }
-    buffer.drop(heap, gaps);
-    if missing {
+    buffer.drop(heap, brep);
+    if missing_count > 0 {
         return 0 - 1;
     }
     var units = 0;

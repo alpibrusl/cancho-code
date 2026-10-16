@@ -8,6 +8,8 @@
 #   regression  building b breaks a: after b verifies the sweep finds it (`a regressed`), a is rebuilt, the project ends done
 #   resume      the agent fails on c: provider_error, exit 4, the state keeps a and b; a second run keeps them (no rebuild) and builds c
 #   stuck       a never verifies: it fails, an independent unit (b) is still built, its dependent (c) is skipped; stuck, exit 1
+#   gave up     a unit agent that exits with a documented gave-up code (10) fails the UNIT, not the run: stuck, exit 1, the same-signature stop, the trail's
+#               signature `agent:gave-up:cut-off`, a `[UNIT_WHY]` line; a plain failure (exit 3) is still provider_error, exit 4
 #   agent log   the agent's standard error is kept per unit, per attempt (`agent-<id>.log`, header `=== attempt N: <how>`), bounded to the last 4096
 #               bytes of a turn, also for a unit whose agent failed (the provider error's cause is there); run.log-style `[AGENT_LOG]` line for a unit that did not verify
 #   option      a unit whose examples are Option results: run as a match; a wrong Some value is refused, the right answer accepted
@@ -124,6 +126,29 @@ expect "stuck: unit lines" "$(units "$out")" "a:building a:failed b:building b:v
 expect "stuck: agent order (b was still built)" "$(order "$lg")" "a a b"
 expect "stuck: the state has b only" "$(order "$wd/state.txt")" "verified b"
 expect "stuck: the failed unit's trail was kept (two records)" "$(wc -l < "$wd/trail-a.jsonl" 2>/dev/null | tr -d ' ')" 2
+rm -rf "$wd" "$rc"
+
+# gave up: the unit's agent reaches its model and has no usable answer (exit 10, every sample cut off; docs/project.md "The agent's exit codes"): the
+# unit FAILS (stuck, exit 1, the same-signature stop after two turns), it is not the provider (no provider_error, exit 4); an independent unit is still
+# built, its dependent skipped, the run says why; the trail names the signature and the file is as it was
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf 'exit 10\n' > "$rc/a.sh"
+out=$(run "$T/plan-failing.json" "$wd" "$rc" "$lg"); r=$?
+expect "gave up: exit code" "$r" 1
+expect "gave up: verdict" "$(verdict "$out")" stuck
+expect "gave up: unit lines" "$(units "$out")" "a:building a:failed b:building b:verified c:skipped"
+expect "gave up: agent order (a twice, then the signature stop)" "$(order "$lg")" "a a b"
+expect "gave up: the run says why" "$(printf '%s\n' "$out" | grep '^\[UNIT_WHY\]' | tr '\t' ':')" "[UNIT_WHY]:a:agent:gave-up:cut-off"
+expect "gave up: the trail's signatures" "$(sed -n 's/.*"sig":"\([^"]*\)".*/\1/p' "$wd/trail-a.jsonl" | tr '\n' ' ')" "agent:gave-up:cut-off agent:gave-up:cut-off "
+expect "gave up: the trail's decisions" "$(sed -n 's/.*"decision":"\([^"]*\)".*/\1/p' "$wd/trail-a.jsonl" | tr '\n' ' ')" "retry signature "
+rm -rf "$wd" "$rc"
+# the same agent exiting 3 (no recipe, a plain failure) is still the provider's wait: unchanged, no [UNIT_WHY]
+set -- $(mk); wd=$1; rc=$2; lg=$3
+rm -f "$rc/a.sh"
+out=$(run "$T/plan-failing.json" "$wd" "$rc" "$lg"); r=$?
+expect "plain failure: exit code" "$r" 4
+expect "plain failure: verdict" "$(verdict "$out")" provider_error
+expect "plain failure: no why line" "$(printf '%s\n' "$out" | grep -c '^\[UNIT_WHY\]')" 0
 rm -rf "$wd" "$rc"
 
 # agent log: the agent's standard error is kept, per unit, per attempt, whatever the outcome (a provider error had no recorded cause)

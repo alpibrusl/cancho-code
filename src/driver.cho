@@ -56,6 +56,21 @@ fn outcome_name(o: loop_check.Outcome) -> [] &static [byte] {
     }
 }
 
+// The agent exit codes that mean "reached the model, no usable answer" (docs/project.md, "The agent's exit codes"), as the failure signature the unit is
+// retried under; "" for every other code. Only a documented code means gave up: a plain non-zero exit stays "the agent is away".
+pub fn gave_up_sig(code: int) -> [] &static [byte] {
+    if code == 10 {
+        return "agent:gave-up:cut-off";
+    }
+    if code == 11 {
+        return "agent:gave-up:no-program";
+    }
+    if code == 12 {
+        return "agent:gave-up:splice";
+    }
+    return "";
+}
+
 // One record of the trail (parity P0), on the file the run drives.
 fn note[&h, &z, &t, &o, &s, &d](heap: &!h Heap, fs: &z Fs(""), tpath: &t buffer.Buffer, attempt: int, ms: int, outcome: &o [byte], sig: &s [byte], decision: &d [byte]) -> [heap, fs_read(""), fs_write("")] int {
     return trail.record(heap, fs, buffer.bytes(tpath), attempt, ms, outcome, sig, decision, 65536);
@@ -260,7 +275,8 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u, &ht](heap: &!h Heap,
                         match agent_ran {
                             process.Ran::Code(n) => {
                                 jexit = n;
-                                if n != 0 {
+                                let gave = gave_up_sig(n);
+                                if n != 0 && len(gave) == 0 {
                                     // The agent itself failed (a script that could not run
                                     // its model, a missing tool): named in its own verdict
                                     // and in the trail, not read as a looping model.
@@ -271,13 +287,19 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u, &ht](heap: &!h Heap,
                                     ended = Ended::Unavailable;
                                     going = false;
                                 } else {
-                                // The agent answered; the check is the oracle.
-                                let (answer, said_by_checker) = checker.run_said(heap, exec, clock, file, check_cmd, 4096, 30000);
-                                buffer.drop(heap, jchk);
-                                jchk = said_by_checker;
-                                let checker.Answer { outcome, sig } = answer;
-                                var oc = outcome;
-                                var sg = sig;
+                                // The agent answered (the check is the oracle), or gave up with a documented code: the unit failed this attempt, under a named
+                                // signature, and the file is as it was (docs/project.md, "The agent's exit codes").
+                                var oc = loop_check.Outcome::Retryable;
+                                var sg = buffer.append(heap, buffer.empty(heap, 64), gave);
+                                if n == 0 {
+                                    let (answer, said_by_checker) = checker.run_said(heap, exec, clock, file, check_cmd, 4096, 30000);
+                                    buffer.drop(heap, jchk);
+                                    jchk = said_by_checker;
+                                    let checker.Answer { outcome, sig } = answer;
+                                    oc = outcome;
+                                    buffer.drop(heap, sg);
+                                    sg = sig;
+                                }
                                 var checked = false;
                                 match oc {
                                     loop_check.Outcome::Verified => { checked = true; }
@@ -314,7 +336,10 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u, &ht](heap: &!h Heap,
                                     io.write_all(io, "[ACCEPTANCE]\tnone\n");
                                 }
                                 var this_sig = sg;
-                                let oname = outcome_name(oc);
+                                var oname = outcome_name(oc);
+                                if n != 0 {
+                                    oname = "gave_up";
+                                }
                                 // Compare against the last attempt's signature
                                 // before it becomes the last.
                                 var same = false;
