@@ -14,6 +14,8 @@
 #               on the project file as it is then, and verifies; one `shared` is in the file
 #   combined    two units whose items merge cleanly but do not compile together (two modules under one alias): the combined check refuses, the unit is requeued
 #               with the compiler's words as feedback
+#   memory      `--memory <dir>` in the agent command reaches a unit built beside others, and what the memory added is on its attempt event
+#   retry/patch `--retry U --hint` and `--patch U file` with --jobs 4: only U and what needs it are worked on, the hint reaches the worker's task, a patch needs no model
 #   rewrite     a unit that changes what was there makes the units that had verified run again; one that only added does not
 #   order       units that end together are integrated in plan order, whatever the order they ended in (`--settle`); the journal says so
 #   isolation   one unit's agent fails (exit 3) while others are running: they finish and are kept, nothing new is started, provider_error; the rerun builds the rest
@@ -229,6 +231,48 @@ expect "combined: the journal's integrations (the merge was refused by the compi
 expect "combined: both aliases are in the file" "$(grep -c '^import std.\(option as m\|bytes as bb\);' "$wd/project.cho")" 2
 rm -rf "$wd" "$rc"
 
+# ---- memory: a unit built beside others gets the agent's --memory and journals what the memory added ---------------------------------------------------
+set -- $(mk); wd=$1; rc=$2; lg=$3
+mm=$(mktemp -d -t cc-parallel-mem-XXXXXX); echo "no network" > "$mm/facts.txt"
+rec "$rc/a.sh" 0.3 0.5 "$F_A"; rec "$rc/b.sh" 0.2 0.5 "$F_C"
+out=$("$exe" "$CANCHO" "$T/plan-order.json" "$wd" "sh $T/agent.sh $rc $lg --memory $mm" 4 60 --jobs 2 2>&1); r=$?
+expect "memory: exit code" "$r" 0
+expect "memory: both units' attempts carry what the memory added" "$(grep '"kind":"attempt"' "$wd/journal/events.jsonl" | grep -c '"memory":\[{"id":"fact-1","text":"no network"}\]')" 2
+expect "memory: ... and ran beside each other" "$($J "$wd" maxconc)" 2
+rm -rf "$wd" "$rc" "$mm"
+
+# ---- retry and patch with --jobs: only the unit and what needs it; a patch needs no model -------------------------------------------------------------
+WRONG_A='sed -i.bak "/^fn double/d" "$1"; printf "\n%s\n" "fn double(x: int) -> [] int { return x + 3; }" >> "$1"'
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf '%s\n' "$WRONG_A" > "$rc/a.sh"; rec_quiet "$rc/b.sh" 0.1 "$F_B"
+rec_quiet "$rc/c.sh" 0.1 'fn big_double(x: int) -> [] bool { return is_big(double(x)); }'
+out=$(runp "$root/tests/project/plan.json" "$wd" "$rc" "$lg" 4); r=$?
+expect "retry: the first run is stuck" "$(verdict "$out")" stuck
+expect "retry: ... and kept b" "$(order "$wd/state.txt")" "verified b"
+cat > "$rc/a.sh" <<'EOF'
+grep -q '^HINT: multiply, do not add$' "$1.task" || exit 4
+sed -i.bak '/^fn double/d' "$1"; printf '\n%s\n' 'fn double(x: int) -> [] int { return x * 2; }' >> "$1"
+EOF
+: > "$lg"
+out=$(runp "$root/tests/project/plan.json" "$wd" "$rc" "$lg" 4 --retry a --hint "multiply, do not add"); r=$?
+expect "retry --jobs 4: exit code" "$r" 0
+expect "retry --jobs 4: only a and c were asked (b is kept)" "$(order "$lg")" "a c"
+expect "retry --jobs 4: unit lines" "$(units "$out")" "b:kept a:building a:verified c:building c:verified"
+expect "retry --jobs 4: the unit's trail goes on from its earlier attempts" "$(wc -l < "$wd/trail-a.jsonl" | tr -d ' ')" 3
+expect "retry --jobs 4: the journal marks the retry" "$(grep '"kind":"unit_start","unit":"a"' "$wd/journal/events.jsonl" | grep -c '"retry":true')" 1
+rm -rf "$wd" "$rc"
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf '%s\n' "$WRONG_A" > "$rc/a.sh"; rec_quiet "$rc/b.sh" 0.1 "$F_B"
+rec_quiet "$rc/c.sh" 0.1 'fn big_double(x: int) -> [] bool { return is_big(double(x)); }'
+out=$(runp "$root/tests/project/plan.json" "$wd" "$rc" "$lg" 4); : > "$lg"
+printf '%s\n' "$F_A" > "$wd/a-fix.cho"
+out=$(runp "$root/tests/project/plan.json" "$wd" "$rc" "$lg" 4 --patch a "$wd/a-fix.cho"); r=$?
+expect "patch --jobs 4: exit code" "$r" 0
+expect "patch --jobs 4: no model call for a: only c was asked" "$(order "$lg")" "c"
+expect "patch --jobs 4: the state" "$(order "$wd/state.txt")" "verified a verified b verified c"
+expect "patch --jobs 4: the journal records the human patch" "$(grep -c '"outcome":"human_patch"' "$wd/journal/events.jsonl")" 1
+rm -rf "$wd" "$rc"
+
 # ---- rewrite: a unit that changes what was there makes the units that had verified run again --------------------------------------------------
 set -- $(mk); wd=$1; rc=$2; lg=$3
 rec_quiet "$rc/a.sh" 0.1 "$F_A"; rec_quiet "$rc/b.sh" 0.1 "$F_B"
@@ -380,7 +424,7 @@ C="${CANCHO_PACKAGES:-}"
 [ -d "$C" ] || C="$(dirname "$(dirname "$(dirname "$(command -v "$CANCHO")")")")/packages"
 [ -d "$C" ] || { echo "no cancho packages found; set CANCHO_PACKAGES" >&2; exit 2; }
 aexe="$d/agent"
-"$CANCHO" build "$root/src/cancho_agent.cho" "$SRC/anthropic.cho" "$SRC/ollama.cho" "$SRC/prompt.cho" "$SRC/planprompt.cho" "$SRC/plan.cho" "$SRC/cases.cho" "$SRC/review.cho" "$SRC/splice.cho" "$SRC/provider.cho" "$SRC/reply.cho" "$SRC/calls.cho" \
+"$CANCHO" build "$root/src/cancho_agent.cho" "$SRC/anthropic.cho" "$SRC/ollama.cho" "$SRC/prompt.cho" "$SRC/planprompt.cho" "$SRC/plan.cho" "$SRC/cases.cho" "$SRC/review.cho" "$SRC/splice.cho" "$SRC/provider.cho" "$SRC/reply.cho" "$SRC/calls.cho" "$SRC/memory.cho" "$SRC/signature.cho" \
     "$root/vendor/fetch_io.cho" "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho --std --backend cranelift -o "$aexe" >/dev/null 2>"$d/abuild.err" \
     || { cat "$d/abuild.err" >&2; echo "agent did not build" >&2; exit 2; }
 cat > "$d/stub.py" <<'PY'
