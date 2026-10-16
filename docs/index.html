@@ -182,17 +182,17 @@ footer { border-top: 1px solid var(--line); padding: 1.5rem 0 2rem; color: var(-
 [BUILD_VERDICT]  done</code></pre>
   <div class="cards">
     <div class="card"><div class="ic">📝</div><h3>Your names stay</h3><p>The functions your brief names are the ones built. A plan that renames one is refused before anything is built.</p></div>
-    <div class="card"><div class="ic">📋</div><h3>A board, not a transcript</h3><p>A read-only page shows every unit as waiting, building, verified or stuck, with its attempts, the compiler's refusals, tokens and cost. <a href="board.html">Open it</a> and load a run's <code>board.json</code>.</p></div>
+    <div class="card"><div class="ic">📋</div><h3>A board, not a transcript</h3><p>A read-only page shows every unit as waiting, building, verified or stuck. Click a unit to read its whole story: each prompt, the model's reply, the compiler's full refusal, the diff between attempts, tokens and cost. <a href="board.html">Open it</a> and load a run's <code>board.json</code>.</p></div>
     <div class="card"><div class="ic">▶️</div><h3>Resumes</h3><p>Killed halfway? The next run keeps the verified units and does not ask for the plan again.</p></div>
   </div>
   <div class="boardbox">
     <div class="tabs" role="tablist" aria-label="Example runs">
       <button type="button" role="tab" aria-selected="true" data-src="demo/tokenbucket.json">The run above</button>
-      <button type="button" role="tab" aria-selected="false" data-src="demo/stuck.json">A run that got stuck</button>
+      <button type="button" role="tab" aria-selected="false" data-src="demo/stuck.json">A stuck run, with its whole story</button>
     </div>
     <iframe id="boardframe" title="The board of a real run" src="board.html?data=demo/tokenbucket.json" loading="lazy"></iframe>
   </div>
-  <p class="fine">The board above is <a href="board.html">docs/board.html</a> showing two real runs of Claude Haiku 5.5, each built from a hand-written plan: the <code>tokenbucket</code> run from the top of the page, and a <code>roman</code> run. The second run is a failure on purpose: <code>from_roman</code> was refused twice for the same reason, the loop stopped it and named it, and the unit that had verified stayed verified.</p>
+  <p class="fine">The board above is <a href="board.html">docs/board.html</a> showing two real runs of Claude Haiku 5.5. The first is the <code>tokenbucket</code> run from the top of the page. The second is a <code>sortedmap</code> run that failed, and it has a full journal: click the stuck <code>get</code> unit to read both attempts, the compiler's refusal and the diff, and open <em>Story</em> for the plan stage. What the journal shows is not the model's fault: the unit's own tests file imports <code>std.option</code> itself, so the model could not fix the "already bound" error; the plan's test generation is what needs fixing. Only the run machine's folder names were replaced in the data (by <code>/work</code>); nothing else was edited.</p>
   <p class="fine">Example, one run: Claude Haiku 5.5 built the <code>roman</code> library from its brief alone, 6 units, 88 seconds, $0.013, and passed the hidden audit 439/439. One run on one task; the numbers below are the larger measurement. Details: <a href="https://github.com/alpibrusl/cancho-code/blob/main/docs/build.md">docs/build.md</a>, <a href="https://github.com/alpibrusl/cancho-code/blob/main/docs/dashboard.md">docs/dashboard.md</a>.</p>
 </div></section>
 
