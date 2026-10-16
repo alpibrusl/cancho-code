@@ -1,0 +1,10 @@
+{
+  "name": "bad",
+  "files": [ { "file": "tokens.cho", "module": "tokens" } ],
+  "units": [
+    { "id": "digits", "file": "ghost.cho", "signature": "fn tok_digits(n: int) -> [] int",
+      "examples": ["tok_digits(12) == 2"], "deps": [] },
+    { "id": "other", "file": "tokens.cho", "signature": "fn tok_other(n: int) -> [] int",
+      "examples": ["tok_other(12) == 2"], "deps": [] }
+  ]
+}

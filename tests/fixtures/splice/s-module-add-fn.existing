@@ -1,0 +1,9 @@
+edition 7;
+
+module tokens;
+
+import std.buffer;
+
+pub fn tok_one() -> [] int {
+    return 1;
+}

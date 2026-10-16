@@ -1,0 +1,4 @@
+edition 7;
+import std.test;
+pub fn test_b_1() -> [] int { test.assert(is_big(11) == true); return 0; }
+pub fn test_b_2() -> [] int { test.assert(is_big(3) == false); return 0; }

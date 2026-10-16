@@ -1203,6 +1203,101 @@ fn file_rules[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte]
     return b;
 }
 
+// ---- what the project driver reads of the files (docs/project.md) ------------------------------------------------------------------------
+
+// The file the unit at `node` belongs to: its `file`, else `project.cho`.
+pub fn unit_file[&s, &t](src: &s [byte], tape: &t [int], node: int) -> [] &s [byte] {
+    let fl = json.get(src, tape, node, "file");
+    if fl < 0 || !json.is_string(tape, fl) {
+        return "project.cho";
+    }
+    return json.string_view(src, tape, fl);
+}
+
+// The module of the file the unit at `node` belongs to; empty for `project.cho` (the root file).
+pub fn unit_module[&s, &t](src: &s [byte], tape: &t [int], node: int) -> [] &s [byte] {
+    let nm = unit_file(src, tape, node);
+    if bytes.equal(nm, "project.cho") {
+        return "";
+    }
+    let k = find_entry(src, tape, nm);
+    if k < 0 {
+        return "";
+    }
+    return entry_text(src, tape, k, "module");
+}
+
+// How many entries `files` has (0: none, a single-file plan).
+pub fn files_declared[&s, &t](src: &s [byte], tape: &t [int]) -> [] int {
+    return files_count(src, tape);
+}
+
+pub fn declared_file[&s, &t](src: &s [byte], tape: &t [int], k: int) -> [] &s [byte] {
+    return entry_text(src, tape, k, "file");
+}
+
+pub fn declared_module[&s, &t](src: &s [byte], tape: &t [int], k: int) -> [] &s [byte] {
+    return entry_text(src, tape, k, "module");
+}
+
+// The entry for the file `name`, or -1 (`project.cho` when `files` does not list it).
+pub fn declared_index[&s, &t, &x](src: &s [byte], tape: &t [int], name: &x [byte]) -> [] int {
+    return find_entry(src, tape, name);
+}
+
+// How many imports entry `k` declares, and the `q`th.
+pub fn import_count[&s, &t](src: &s [byte], tape: &t [int], k: int) -> [] int {
+    let files = json.get(src, tape, 0, "files");
+    if files < 0 || !json.is_array(tape, files) || k < 0 || k >= json.count(tape, files) {
+        return 0;
+    }
+    let e = json.at(tape, files, k);
+    if !json.is_object(tape, e) {
+        return 0;
+    }
+    let im = json.get(src, tape, e, "imports");
+    if im < 0 || !all_strings(tape, im) {
+        return 0;
+    }
+    return json.count(tape, im);
+}
+
+pub fn import_at[&s, &t](src: &s [byte], tape: &t [int], k: int, q: int) -> [] &s [byte] {
+    let files = json.get(src, tape, 0, "files");
+    let e = json.at(tape, files, k);
+    let im = json.get(src, tape, e, "imports");
+    return json.string_view(src, tape, json.at(tape, im, q));
+}
+
+// The file whose module is `name`, or "".
+pub fn file_of_module[&s, &t, &x](src: &s [byte], tape: &t [int], name: &x [byte]) -> [] &s [byte] {
+    let k = slot_of_module(src, tape, name);
+    if k < 0 {
+        return "";
+    }
+    return entry_text(src, tape, k, "file");
+}
+
+// The names of the declared files other than `project.cho`, separated by a space (empty for a single-file plan).
+pub fn extra_files[&h, &s, &t](heap: &!h Heap, src: &s [byte], tape: &t [int]) -> [heap] buffer.Buffer {
+    var b = buffer.empty(heap, 64);
+    let fc = files_count(src, tape);
+    var k = 0;
+    var first = true;
+    while k < fc {
+        let nm = entry_text(src, tape, k, "file");
+        if len(nm) > 0 && !bytes.equal(nm, "project.cho") {
+            if !first {
+                b = buffer.push(heap, b, byte_of(32));
+            }
+            first = false;
+            b = buffer.append(heap, b, nm);
+        }
+        k = k + 1;
+    }
+    return b;
+}
+
 fn check_units[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], units: int) -> [heap] buffer.Buffer {
     var b = out;
     let n = json.count(tape, units);

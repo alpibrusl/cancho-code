@@ -545,6 +545,18 @@ fn journal_attempt_record[&h, &x, &c, &z, &d, &u, &f, &cl, &k, &a, &s, &t, &ht](
         w = put_str(heap, w, "signature", buffer.bytes(sq));
     }
     w = put_num(heap, w, "ms", ms);
+    // the module file the unit is built in, when it is not `project.cho` (docs/multi-file.md): the name after the last `/` of the file the loop drives
+    var fstart = 0;
+    var fi = 0;
+    while fi < len(file) {
+        if int_of(file[fi]) == 47 {
+            fstart = fi + 1;
+        }
+        fi = fi + 1;
+    }
+    if bytes.equal(file[fstart..len(file)], "project.cho") == false {
+        w = put_str(heap, w, "file", file[fstart..len(file)]);
+    }
     // what the person said about this unit when they re-opened it (docs/build.md `--retry`)
     if len(hint) > 0 {
         w = put_str(heap, w, "hint", hint);

@@ -17,8 +17,8 @@ Anything else at top level is an error. An item that never closes (or a fn heade
 IDENTITY: edition; `import PATH` (the text between `import` and `;`, trimmed); `fn NAME`; `type NAME` (struct and enum share it). `pub` does not count.
 
 SPLICE: a patch item whose identity is in the file replaces the FIRST such item in place (its text, leading comments included, byte for byte);
-an import already there is left alone; new imports go after the last import (else after the edition line, else at the top), one per line, in
-patch order; the patch's edition line is dropped; other new items are appended, each after one blank line; the result ends in exactly one "\\n"
+an import already there is left alone; new imports go after the last import (else after the last header line, `edition N;` and `module NAME;`, else at the top), one per line, in
+patch order; the patch's edition line (and its `module NAME;` line, which a file keeps as it is) is dropped; other new items are appended, each after one blank line; the result ends in exactly one "\\n"
 (trailing whitespace trimmed first). Free comments and spacing of the file are untouched. Errors: nothing changes and the report says why.
 
 PATCH SPAN: as reply.program_span (the longest fenced block, stray fences cut, `</think>`), then from the first line that begins with an item
@@ -28,7 +28,7 @@ import re
 import sys
 
 KEYWORDS = [(b"pub res struct ", 3), (b"res struct ", 3), (b"pub struct ", 3), (b"struct ", 3), (b"pub enum ", 4), (b"enum ", 4),
-            (b"pub fn ", 2), (b"fn ", 2), (b"import ", 1), (b"edition ", 0)]
+            (b"pub fn ", 2), (b"fn ", 2), (b"import ", 1), (b"edition ", 0), (b"module ", 0)]
 EDITION, IMPORT, FN, STRUCT, ENUM = range(5)
 WORD = {FN: b"fn", STRUCT: b"struct", ENUM: b"enum"}
 WS = b" \t\r\n"
@@ -233,7 +233,9 @@ def splice(existing, patch):
         if x["kind"] == IMPORT:
             anchor = e
     if anchor < 0:
-        anchor = next((e for e, x in enumerate(E) if x["kind"] == EDITION), -1)
+        for e, x in enumerate(E):
+            if x["kind"] == EDITION:
+                anchor = e      # the last header line: `edition N;`, then `module NAME;` in a module file
     inserts = b"".join(b"\n" + patch[i["start"]:i["end"]] for i in new_imports)
     out = b""
     if anchor < 0 and new_imports:
@@ -275,7 +277,7 @@ def normalise(text):
 
 # ---- the patch in a reply -------------------------------------------------------------------
 
-ITEM_LINES = (b"fn ", b"pub fn ", b"struct ", b"pub struct ", b"res struct ", b"pub res struct ", b"enum ", b"pub enum ", b"import ", b"//", b"edition ")
+ITEM_LINES = (b"fn ", b"pub fn ", b"struct ", b"pub struct ", b"res struct ", b"pub res struct ", b"enum ", b"pub enum ", b"import ", b"//", b"edition ", b"module ")
 
 
 def is_space(c):

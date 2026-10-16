@@ -1,0 +1,5 @@
+edition 7;
+import std.test;
+pub fn test_a_1() -> [] int { test.assert(double(2) == 4); return 0; }
+pub fn test_a_2() -> [] int { test.assert(double(0) == 0); return 0; }
+pub fn test_a_3() -> [] int { test.assert(double(-3) == -6); return 0; }

@@ -1,0 +1,18 @@
+{
+  "name": "wide",
+  "files": [
+    { "file": "tokens.cho", "module": "tokens" },
+    { "file": "parser.cho", "module": "parser" },
+    { "file": "store.cho", "module": "store", "imports": ["tokens", "parser"] }
+  ],
+  "units": [
+    { "id": "one", "file": "tokens.cho", "signature": "fn tok_one(x: int) -> [] int",
+      "examples": ["tok_one(3) == 7"], "deps": [] },
+    { "id": "two", "file": "tokens.cho", "signature": "fn tok_two(x: int) -> [] int",
+      "examples": ["tok_two(3) == 10"], "deps": [] },
+    { "id": "p", "file": "parser.cho", "signature": "fn parse_one(x: int) -> [] int",
+      "examples": ["parse_one(3) == 4"], "deps": [] },
+    { "id": "s", "file": "store.cho", "signature": "fn store_all(x: int) -> [] int",
+      "examples": ["store_all(3) == 24"], "deps": ["one", "two", "p"] }
+  ]
+}

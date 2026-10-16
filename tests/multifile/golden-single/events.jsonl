@@ -1,0 +1,13 @@
+{"MS":0,"kind":"run_start","options":{"review":false,"attempts":4,"MS":0}}
+{"MS":0,"kind":"unit_start","unit":"a","function":"double","deps":[]}
+{"MS":0,"kind":"attempt","unit":"a","n":0,"outcome":"verified","decision":"verified","signature":"","MS":0,"exit":0,"stderr":"a-a0-stderr.txt","feedback":"a-a0-feedback.txt","code":"a-a0-code.cho","checker":"a-a0-checker.json","acceptance":"a-a0-acceptance.txt","diff":"a-a0-diff.txt"}
+{"MS":0,"kind":"unit_end","unit":"a","state":"verified","attempts":1}
+{"MS":0,"kind":"unit_start","unit":"b","function":"is_big","deps":[]}
+{"MS":0,"kind":"attempt","unit":"b","n":0,"outcome":"verified","decision":"verified","signature":"","MS":0,"exit":0,"stderr":"b-a0-stderr.txt","feedback":"b-a0-feedback.txt","code":"b-a0-code.cho","checker":"b-a0-checker.json","acceptance":"b-a0-acceptance.txt","diff":"b-a0-diff.txt"}
+{"MS":0,"kind":"unit_end","unit":"b","state":"verified","attempts":1}
+{"MS":0,"kind":"sweep","after_unit":"b","held":["a"],"regressed":[]}
+{"MS":0,"kind":"unit_start","unit":"c","function":"big_double","deps":["a","b"]}
+{"MS":0,"kind":"attempt","unit":"c","n":0,"outcome":"verified","decision":"verified","signature":"","MS":0,"exit":0,"stderr":"c-a0-stderr.txt","feedback":"c-a0-feedback.txt","code":"c-a0-code.cho","checker":"c-a0-checker.json","acceptance":"c-a0-acceptance.txt","diff":"c-a0-diff.txt"}
+{"MS":0,"kind":"unit_end","unit":"c","state":"verified","attempts":1}
+{"MS":0,"kind":"sweep","after_unit":"c","held":["a","b"],"regressed":[]}
+{"MS":0,"kind":"run_end","verdict":"done","exit":0,"MS":0}
