@@ -1,0 +1,18 @@
+[PLAN]	valid
+[UNIT]	a	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	a	verified
+[UNIT]	b	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 2
+[UNIT]	b	verified
+[UNIT]	c	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	c	verified
+[UNIT]	d	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	d	verified
+[PROJECT_VERDICT]	done

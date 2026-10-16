@@ -1,0 +1,4 @@
+{"provider": "anthropic", "model": "claude-haiku-5-5", "task": "UNIT: a", "sample": 1, "in": 400, "out": 800, "cache_write": 0, "cache_read": 13000, "stop": "end_turn", "outcome": "written", "status": 200, "ms": 4000}
+{"provider": "anthropic", "model": "claude-haiku-5-5", "task": "UNIT: b", "sample": 1, "in": 400, "out": 800, "cache_write": 0, "cache_read": 13000, "stop": "end_turn", "outcome": "written", "status": 200, "ms": 5000}
+{"provider": "anthropic", "model": "claude-haiku-5-5", "task": "UNIT: c", "sample": 1, "in": 400, "out": 800, "cache_write": 0, "cache_read": 13000, "stop": "end_turn", "outcome": "written", "status": 200, "ms": 3000}
+{"provider": "anthropic", "model": "claude-haiku-5-5", "task": "UNIT: c", "sample": 1, "in": 410, "out": 900, "cache_write": 0, "cache_read": 13000, "stop": "end_turn", "outcome": "written", "status": 200, "ms": 3500}

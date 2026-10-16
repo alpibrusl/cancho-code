@@ -1,0 +1,124 @@
+{
+ "schema": 1,
+ "run": {
+  "name": "graph-unknown",
+  "brief": null,
+  "stage": null,
+  "plan_valid": null,
+  "provider": "anthropic",
+  "model": "claude-haiku-5-5",
+  "started_unix": null,
+  "seconds": 60.0,
+  "verdict": null
+ },
+ "files": {
+  "plan": true,
+  "run_log": true,
+  "state": true,
+  "usage": true,
+  "run_json": true,
+  "build_json": false,
+  "audit": false,
+  "prices": true
+ },
+ "metrics": {
+  "units_total": 3,
+  "units_verified": 1,
+  "columns": {
+   "waiting": 2,
+   "building": 0,
+   "verified": 1,
+   "stuck": 0,
+   "regressed": 0,
+   "unknown": 0
+  },
+  "calls": 1,
+  "tokens": {
+   "in": 400,
+   "out": 800,
+   "cache_write": 0,
+   "cache_read": 13000,
+   "thinking": null
+  },
+  "visible_out": null,
+  "thinking_share": null,
+  "cache_read_share": 0.9701,
+  "efficiency": 0.0,
+  "efficiency_calls": 1.0,
+  "efficiency_visible": null,
+  "cost_usd": 0.00057,
+  "cost_per_verified_unit": 0.00057,
+  "over_limit_calls": 0,
+  "audit": null
+ },
+ "truncated": false,
+ "units": [
+  {
+   "id": "a",
+   "function": "f_a",
+   "column": "verified",
+   "deps": [],
+   "attempts": 1,
+   "regressions": 0,
+   "calls": 1,
+   "tokens": {
+    "in": 400,
+    "out": 800,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 13000
+   },
+   "cost_usd": 0.00057,
+   "trail": [
+    {
+     "attempt": 0,
+     "agent_ms": 1000,
+     "outcome": "verified",
+     "sig": "",
+     "decision": "verified"
+    }
+   ]
+  },
+  {
+   "id": "b",
+   "function": "f_b",
+   "column": "waiting",
+   "deps": [
+    "a",
+    "ghost"
+   ],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  },
+  {
+   "id": "c",
+   "function": "f_c",
+   "column": "waiting",
+   "deps": [
+    "b"
+   ],
+   "attempts": null,
+   "regressions": 0,
+   "calls": 0,
+   "tokens": {
+    "in": 0,
+    "out": 0,
+    "thinking": null,
+    "cache_write": 0,
+    "cache_read": 0
+   },
+   "cost_usd": 0.0,
+   "trail": null
+  }
+ ]
+}

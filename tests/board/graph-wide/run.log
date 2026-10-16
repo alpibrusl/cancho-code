@@ -1,0 +1,25 @@
+[PLAN]	valid
+[UNIT]	w0	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	w0	verified
+[UNIT]	w1	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	w1	verified
+[UNIT]	w2	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	w2	verified
+[UNIT]	w3	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	w3	verified
+[UNIT]	w4	building
+[ACCEPTANCE]	pass
+[ISSUE_VERDICT]	verified	attempts 1
+[UNIT]	w4	verified
+[UNIT]	w5	building
+[ISSUE_VERDICT]	failed	ceiling
+[UNIT]	w5	failed
+[PROJECT_VERDICT]	stuck
