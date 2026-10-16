@@ -8,6 +8,7 @@
 #   scripts/check-authority.sh             compare the `fix` front door to docs/authority.json
 #   scripts/check-authority.sh --project   compare the project driver (it spawns the checker and the agent, reads and writes the work directory; no network) to docs/authority-project.json
 #   scripts/check-authority.sh --build    compare the build command (src/build.cho over the project driver: it runs the plan agent, the checker and the unit agent, reads and writes the work directory; no network) to docs/authority-build.json
+#   scripts/check-authority.sh --mcp      compare the MCP server (src/mcp.cho: reads and writes files under the root it is given, spawns processes, reads standard input and writes standard output; no network) to docs/authority-mcp.json
 #   scripts/check-authority.sh --plan      compare the plan checker (it reads one file and prints; no process, no network) to docs/authority-plan.json
 #   scripts/check-authority.sh --board     compare the dashboard's data tool (it reads a run directory and writes one file; no process, no network) to docs/authority-board.json
 #   scripts/check-authority.sh --lessons   compare the memory miner (it reads the journals it is named and writes the memory directory; no process, no network) to docs/authority-lessons.json
@@ -43,7 +44,8 @@ for arg in "$@"; do
     --lessons) variant=lessons ;;
     --project) variant=project ;;
     --build) variant=build ;;
-    *) echo "usage: $0 [--update | --prove] [--provider | --agent | --plan | --project | --board | --build | --lessons]" >&2; exit 2 ;;
+    --mcp) variant=mcp ;;
+    *) echo "usage: $0 [--update | --prove] [--provider | --agent | --plan | --project | --board | --build | --lessons | --mcp]" >&2; exit 2 ;;
   esac
 done
 
@@ -67,6 +69,9 @@ elif [ "$variant" = plan ]; then
 elif [ "$variant" = board ]; then
   pinned=$here/docs/authority-board.json
   files=("$here/tests/programs/board.cho" "$here/src/board.cho" "$here/src/plan.cho")
+elif [ "$variant" = mcp ]; then
+  pinned=$here/docs/authority-mcp.json
+  files=("$here/tests/programs/mcp.cho" "$here/src/mcp.cho")
 elif [ "$variant" = lessons ]; then
   pinned=$here/docs/authority-lessons.json
   files=("$here/tests/programs/lessons.cho" "$here/src/lessons.cho" "$here/src/memory.cho" "$here/src/signature.cho")
@@ -128,6 +133,6 @@ if diff -u "$pinned" "$work/report.json" > "$work/diff"; then
 fi
 cat "$work/diff"
 echo >&2
-echo "check-authority: the authority report changed. If it is intended, read the diff, run $0 --update$([ "$variant" = provider ] && echo " --provider")$([ "$variant" = agent ] && echo " --agent")$([ "$variant" = plan ] && echo " --plan")$([ "$variant" = project ] && echo " --project")$([ "$variant" = board ] && echo " --board")$([ "$variant" = build ] && echo " --build")$([ "$variant" = lessons ] && echo " --lessons")" >&2
+echo "check-authority: the authority report changed. If it is intended, read the diff, run $0 --update$([ "$variant" = provider ] && echo " --provider")$([ "$variant" = agent ] && echo " --agent")$([ "$variant" = plan ] && echo " --plan")$([ "$variant" = project ] && echo " --project")$([ "$variant" = board ] && echo " --board")$([ "$variant" = build ] && echo " --build")$([ "$variant" = lessons ] && echo " --lessons")$([ "$variant" = mcp ] && echo " --mcp")" >&2
 echo "and commit ${pinned#"$here"/}: that commit is the approval." >&2
 exit 1
