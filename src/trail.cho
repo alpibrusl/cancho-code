@@ -397,11 +397,40 @@ fn put_meta[&h, &z, &d](heap: &!h Heap, fs: &z Fs(""), w: json.Writer, call: &d 
     return o;
 }
 
+// What the agent's memory added to the prompt (docs/memory.md): the agent leaves `memory.json`, an array of {"id", "text"} (the lessons and the facts
+// it injected), and the event carries it as `memory`. No file, a file that is not a JSON array, or one over 12 KiB: no field.
+fn put_memory[&h, &z, &d](heap: &!h Heap, fs: &z Fs(""), w: json.Writer, call: &d [byte]) -> [heap, fs_read("")] json.Writer {
+    var o = w;
+    let mp = path_under(heap, call, "memory.json", "");
+    let store = box_slice(heap, 12288, byte_of(0));
+    borrow mut store as &!sw in {
+        var n = 0 - 1;
+        borrow mp as &mq in {
+            n = fs_read(fs, buffer.bytes(mq), contents(sw));
+        }
+        if n > 1 && n < 12288 {
+            let src = contents(sw)[0..n];
+            let tb = box_slice(heap, json.tape_len(src), 0);
+            borrow mut tb as &!tw in {
+                let tape = contents(tw);
+                if json.parse(src, tape) > 0 && json.is_array(tape, 0) {
+                    o = json.put_key(heap, o, "memory");
+                    o = json.put_fragment(heap, o, src);
+                }
+            }
+            unbox_slice(heap, tb);
+        }
+    }
+    unbox_slice(heap, store);
+    buffer.drop(heap, mp);
+    return o;
+}
+
 // The agent's sidecars are removed before each turn, so that a turn that leaves none is recorded as having left none.
 pub fn clear_call[&z, &f](fs: &z Fs(""), file: &f [byte]) -> [fs_write("")] int {
     region r {
         var names = 0;
-        while names < 3 {
+        while names < 4 {
             var p = alloc_slice[r](len(file) + 24, byte_of(0));
             var k = 0;
             while k < len(file) {
@@ -413,6 +442,8 @@ pub fn clear_call[&z, &f](fs: &z Fs(""), file: &f [byte]) -> [fs_write("")] int 
                 tail = ".call/reply.txt";
             } else if names == 2 {
                 tail = ".call/meta.json";
+            } else if names == 3 {
+                tail = ".call/memory.json";
             }
             var j = 0;
             while j < len(tail) {
@@ -522,6 +553,7 @@ fn journal_attempt_record[&h, &x, &c, &z, &d, &u, &f, &cl, &k, &a, &s, &t, &ht](
         w = put_num(heap, w, "exit", agent_exit);
     }
     w = put_meta(heap, fs, w, call);
+    w = put_memory(heap, fs, w, call);
     // the blobs the agent left, then the driver's own
     w = blob_field(heap, fs, dir, w, "prompt", unit, n, "prompt.txt", call, "prompt.txt");
     w = blob_field(heap, fs, dir, w, "reply", unit, n, "reply.txt", call, "reply.txt");

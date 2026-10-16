@@ -16,6 +16,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("item"); ap.add_argument("--provider", required=True); ap.add_argument("--model", required=True)
     ap.add_argument("--key-file"); ap.add_argument("--workspace"); ap.add_argument("--primer"); ap.add_argument("--max-tokens", default="16000")
+    ap.add_argument("--memory", help="a memory directory (docs/memory.md): lessons.jsonl and facts.txt the unit agent recalls from")
     ap.add_argument("--contract", action="store_true", help="give the planner the required public signatures (what plan_item.py does)")
     ap.add_argument("--review", default="on"); ap.add_argument("--runs", type=int, default=1); ap.add_argument("--first", type=int, default=1)
     ap.add_argument("--label", default="build"); ap.add_argument("--out", required=True)
@@ -36,6 +37,7 @@ def main():
         cmd = [exe, cancho, brief, wd, " ".join(agent), "--provider", a.provider, "--model", a.model, "--guide", os.path.join(ROOT, "docs", "plan-guide.md"),
                "--attempts", a.attempts, "--agent-seconds", a.agent_seconds, "--jobs", a.jobs]
         if a.review == "on": cmd += ["--review", "on", "--review-guide", os.path.join(ROOT, "docs", "review-guide.md")]
+        if a.memory: cmd += ["--memory", os.path.abspath(a.memory)]
         if a.contract:
             cf = os.path.join(wd, "contract.txt"); open(cf, "w").write(plan_item.contract_for(a.item)); cmd += ["--contract", cf]
         t0 = time.time()
@@ -46,7 +48,7 @@ def main():
         seconds = round(time.time() - t0, 1)
         open(os.path.join(wd, "stdout.txt"), "w").write(out)
         json.dump({"item": a.item, "label": a.label, "run": i, "provider": a.provider, "model": a.model, "seconds": seconds, "exit": rc, "cancho": cancho,
-                   "contract": a.contract, "review": a.review, "patch": True, "primer": a.primer}, open(os.path.join(wd, "run.json"), "w"), indent=1)
+                   "contract": a.contract, "review": a.review, "patch": True, "primer": a.primer, "memory": a.memory}, open(os.path.join(wd, "run.json"), "w"), indent=1)
         ap_ = subprocess.run([sys.executable, audit, os.path.join(wd, "project.cho")], capture_output=True, text=True, env=dict(os.environ, CANCHO=cancho))
         open(os.path.join(wd, "audit.txt"), "w").write(ap_.stdout + ap_.stderr)
         planp = os.path.join(wd, "plan.json")

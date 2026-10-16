@@ -11,6 +11,7 @@ edition 7;
 
 import build;
 import project;
+import std.buffer;
 import std.bytes;
 import std.io;
 
@@ -72,7 +73,8 @@ fn known[&a](name: &a [byte]) -> [] bool {
     return bytes.equal(name, "--provider") || bytes.equal(name, "--model") || bytes.equal(name, "--guide") || bytes.equal(name, "--review-guide")
         || bytes.equal(name, "--review") || bytes.equal(name, "--contract") || bytes.equal(name, "--rounds") || bytes.equal(name, "--attempts")
         || bytes.equal(name, "--agent-seconds") || bytes.equal(name, "--plan-seconds")
-        || bytes.equal(name, "--retry") || bytes.equal(name, "--hint") || bytes.equal(name, "--patch") || bytes.equal(name, "--jobs");
+        || bytes.equal(name, "--retry") || bytes.equal(name, "--hint") || bytes.equal(name, "--patch") || bytes.equal(name, "--jobs")
+        || bytes.equal(name, "--memory") || bytes.equal(name, "--remember");
 }
 
 // A word that goes into a shell command line: letters, digits and . _ / + : = @ % , - only.
@@ -87,6 +89,60 @@ fn plain[&a](text: &a [byte]) -> [] bool {
         i = i + 1;
     }
     return true;
+}
+
+// `--remember "<text>"` (docs/memory.md): one line of the person's own, appended to <memory dir>/facts.txt, which every prompt of a run given
+// `--memory <dir>` carries. 0 done; 1 the line cannot be added (ten facts are the most a prompt carries, or the file cannot be written).
+fn remember[&h, &z, &d, &t, &i](heap: &!h Heap, fs: &z Fs(""), io: &!i Io, dir: &d [byte], text: &t [byte]) -> [heap, fs_read(""), fs_write(""), err_write] int {
+    var path = buffer.append(heap, buffer.empty(heap, len(dir) + 16), dir);
+    path = buffer.append(heap, path, "/facts.txt");
+    var all = buffer.empty(heap, 256);
+    var facts = 0;
+    let room = box_slice(heap, 16384, byte_of(0));
+    borrow mut room as &!rw in {
+        borrow path as &pq0 in {
+            let n = fs_read(fs, buffer.bytes(pq0), contents(rw));
+            if n > 0 {
+                let old = contents(rw)[0..n];
+                all = buffer.append(heap, all, old);
+                if int_of(old[n - 1]) != 10 {
+                    all = buffer.push(heap, all, byte_of(10));
+                }
+                var p = 0;
+                while p < n {
+                    var e = p;
+                    while e < n && int_of(old[e]) != 10 {
+                        e = e + 1;
+                    }
+                    let l = bytes.trim(old[p..e]);
+                    if len(l) > 0 && int_of(l[0]) != 35 {
+                        facts = facts + 1;
+                    }
+                    p = e + 1;
+                }
+            }
+        }
+    }
+    unbox_slice(heap, room);
+    var status = 1;
+    if facts >= 10 {
+        io.error_all(io, "build: facts.txt already holds ten facts, the most a prompt carries; remove one first\n");
+    } else {
+        all = buffer.append(heap, all, text);
+        all = buffer.push(heap, all, byte_of(10));
+        borrow all as &aq in {
+            borrow path as &pq in {
+                if fs_write(fs, buffer.bytes(pq), buffer.bytes(aq)) == len(buffer.bytes(aq)) {
+                    status = 0;
+                } else {
+                    io.error_all(io, "build: facts.txt cannot be written in the --memory directory\n");
+                }
+            }
+        }
+    }
+    buffer.drop(heap, all);
+    buffer.drop(heap, path);
+    return status;
 }
 
 fn main(world: World) -> [] int {
@@ -117,6 +173,8 @@ fn main(world: World) -> [] int {
     var jobs = 4;
     var argv0 = "";
     var worker = false;
+    var memory = "";
+    var fact = "";
     var given = false;
     borrow args as &g0 in {
         if arg_count(g0) >= 2 && bytes.equal(arg(g0, 1), "--unit-worker") {
@@ -128,7 +186,7 @@ fn main(world: World) -> [] int {
             if worker {
                 given = false;
             } else if arg_count(g) < 5 {
-                io.error_all(ci, "usage: build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [--guide <file>] [--review on --review-guide <file>] [--contract <file>] [--rounds N] [--attempts N] [--agent-seconds N] [--plan-seconds N] [--retry <unit> [--hint <text>]] [--patch <unit> <file>] [--jobs N]\n");
+                io.error_all(ci, "usage: build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [--guide <file>] [--review on --review-guide <file>] [--contract <file>] [--rounds N] [--attempts N] [--agent-seconds N] [--plan-seconds N] [--retry <unit> [--hint <text>]] [--patch <unit> <file>] [--memory <dir> [--remember <text>]] [--jobs N]\n");
             } else {
                 given = true;
                 argv0 = arg(g, 0);
@@ -190,6 +248,22 @@ fn main(world: World) -> [] int {
                 if project.redo_args_ok(ci, retry, given_opt(g, "--hint"), hint, patch, pfile) == false {
                     given = false;
                 }
+                // --memory <dir> goes to the unit agent (docs/memory.md); --remember <text> adds one line of the person's own to <dir>/facts.txt first.
+                // The text never goes through a shell, it is one line of at most 160 bytes.
+                memory = opt(g, "--memory");
+                fact = opt(g, "--remember");
+                if given_opt(g, "--memory") && (len(memory) == 0 || int_of(memory[0]) != 47 || bytes.find(memory, "..") >= 0 || plain(memory) == false) {
+                    io.error_all(ci, "build: --memory needs an absolute directory (letters, digits and . _ / + : = @ % , - only, no ..)\n");
+                    given = false;
+                }
+                if given_opt(g, "--remember") && (len(fact) == 0 || len(bytes.trim(fact)) == 0 || bytes.find(fact, "\n") >= 0 || bytes.find(fact, "\r") >= 0 || len(fact) > 160) {
+                    io.error_all(ci, "build: --remember needs one non-empty line of at most 160 bytes\n");
+                    given = false;
+                }
+                if given_opt(g, "--remember") && len(memory) == 0 {
+                    io.error_all(ci, "build: --remember needs --memory <dir>\n");
+                    given = false;
+                }
                 let r = opt(g, "--review");
                 if bytes.equal(r, "on") {
                     review = true;
@@ -233,6 +307,7 @@ fn main(world: World) -> [] int {
         }
     }
     var status = 2;
+    var remembered = true;
     if given {
         borrow fs as &fz in {
             // The brief must be there (the agent reads it; here it is only checked).
@@ -246,9 +321,21 @@ fn main(world: World) -> [] int {
                 borrow clock as &c in {
                     borrow mut console as &!i in {
                         borrow mut h as &!hh in {
+                            if given && len(fact) > 0 && remember(hh, fz, i, memory, bytes.trim(fact)) != 0 {
+                                given = false;
+                                remembered = false;
+                            }
                             if given {
-                                status = build.run(hh, x, c, i, fz, checker, brief, wd, agent, provider, model, guide, review_guide, contract, review, rounds, attempts, agent_seconds * 1000, plan_seconds * 1000, retry, hint, patch, pfile, jobs, argv0);
-                            } else {
+                                var agent2 = buffer.append(hh, buffer.empty(hh, len(agent) + len(memory) + 16), agent);
+                                if len(memory) > 0 {
+                                    agent2 = buffer.append(hh, agent2, " --memory ");
+                                    agent2 = buffer.append(hh, agent2, memory);
+                                }
+                                borrow agent2 as &a2 in {
+                                status = build.run(hh, x, c, i, fz, checker, brief, wd, buffer.bytes(a2), provider, model, guide, review_guide, contract, review, rounds, attempts, agent_seconds * 1000, plan_seconds * 1000, retry, hint, patch, pfile, jobs, argv0);
+                                }
+                                buffer.drop(hh, agent2);
+                            } else if remembered {
                                 io.error_all(i, "build: the brief cannot be read\n");
                             }
                         }

@@ -1,0 +1,89 @@
+edition 7;
+
+// `memory_gate` -- the gate program for the recall path of src/memory.cho (docs/memory.md).
+//
+//     memory_gate <memory dir> <project file>
+//
+// Reads `<file>`, `<file>.task` and `<file>.feedback` (each may be missing), lets the memory add what it knows about the refusal in the feedback
+// to the task (`memory.prepare`: it also leaves `<file>.call/memory.json` when that directory is there), and prints the prompt built from the
+// result, exactly what the unit agent would send after the primer.
+
+import memory;
+import prompt;
+import std.buffer;
+import std.io;
+
+fn slurp[&h, &f, &p](heap: &!h Heap, fs: &f Fs(""), path: &p [byte]) -> [heap, fs_read("")] buffer.Buffer {
+    let store = box_slice(heap, 262144, byte_of(0));
+    var out = buffer.empty(heap, 16);
+    borrow mut store as &!sw in {
+        let n = fs_read(fs, path, contents(sw));
+        if n > 0 {
+            out = buffer.append(heap, out, contents(sw)[0..n]);
+        }
+    }
+    unbox_slice(heap, store);
+    return out;
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(signals);
+    release(exec);
+    release(net);
+    release(clock);
+    var console = io;
+    var h = heap;
+    var dir = "";
+    var path = "";
+    borrow args as &g in {
+        dir = arg(g, 1);
+        path = arg(g, 2);
+    }
+    borrow fs as &f in {
+        borrow mut console as &!i in {
+            borrow mut h as &!hh in {
+                var task_path = buffer.append(hh, buffer.empty(hh, 256), path);
+                task_path = buffer.append(hh, task_path, ".task");
+                var fb_path = buffer.append(hh, buffer.empty(hh, 256), path);
+                fb_path = buffer.append(hh, fb_path, ".feedback");
+                let source = slurp(hh, f, path);
+                var task = buffer.empty(hh, 16);
+                var feedback = buffer.empty(hh, 16);
+                borrow task_path as &tp in {
+                    buffer.drop(hh, task);
+                    task = slurp(hh, f, buffer.bytes(tp));
+                }
+                borrow fb_path as &fp in {
+                    buffer.drop(hh, feedback);
+                    feedback = slurp(hh, f, buffer.bytes(fp));
+                }
+                borrow feedback as &fq in {
+                    task = memory.prepare(hh, f, dir, path, buffer.bytes(fq), task);
+                }
+                borrow source as &sq in {
+                    borrow task as &tq in {
+                        borrow feedback as &fq2 in {
+                            let asked = prompt.build_patch(hh, buffer.bytes(sq), buffer.bytes(tq), buffer.bytes(fq2));
+                            borrow asked as &aq in {
+                                io.write_all(i, buffer.bytes(aq));
+                            }
+                            buffer.drop(hh, asked);
+                        }
+                    }
+                }
+                buffer.drop(hh, task_path);
+                buffer.drop(hh, fb_path);
+                buffer.drop(hh, source);
+                buffer.drop(hh, task);
+                buffer.drop(hh, feedback);
+            }
+        }
+    }
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return 0;
+}

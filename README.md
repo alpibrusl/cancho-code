@@ -40,6 +40,8 @@ compiler and the task's own examples say so — never because the model says so.
 
 ## Try it
 
+**Claude Code skill:** copy [`skills/cancho-code`](skills/cancho-code/SKILL.md) into `~/.claude/skills/` (or your project's `.claude/skills/`) and the agent knows how to install cancho-code, run a build, read what happened and continue a stuck unit, with the key rules built in. Other agents can read the same file as plain instructions.
+
 **Or ask your coding agent to do it:** paste [`docs/agent-prompt.md`](docs/agent-prompt.md) into Claude Code, Codex or similar. It installs everything, proves the install with a test that needs no key, and only then asks which model to use.
 
 ```sh

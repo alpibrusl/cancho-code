@@ -1,0 +1,552 @@
+edition 7;
+
+module memory;
+
+// `memory` -- what cancho-code remembers between runs (docs/memory.md). Two halves share this file, because they must agree on one thing, the
+// CLASS of a refusal:
+//
+//   * the miner (src/lessons.cho) groups the refusals of past runs by class and writes `lessons.jsonl`;
+//   * the unit agent, run with `--memory <dir>`, computes the class of the refusal the unit just got and adds what the memory knows about it to
+//     the prompt (`prepare`), recording what it added beside the project file for the journal.
+//
+// Nothing here is written by a model. A class is the refusal's signature (src/signature.cho: the rule, then the message with every number taken
+// out) with the names in it taken out too, so that `empty is not a function` and `nil is not a function` are one mistake:
+//
+//   * a backticked span keeps its text when it is a word of the language (`int`, `fn`, `Option`, `Buffer` ...: the closed list in `kept_word`) or one to
+//     three punctuation marks (`[`, `{`, `->`); a name (`empty`, `sm_get`, `std.option`) becomes `N`; anything with brackets, a `&` or a space
+//     (a type: `&l List[byte]`) becomes `T`; a character outside ASCII becomes `C`. Direction survives: "expected `int`, found `bool`" and
+//     "expected `bool`, found `int`" are two classes;
+//   * a number outside backticks becomes `#`; a path (a word that starts with `/` after a colon or a space) becomes `PATH`;
+//     in an acceptance failure the test's name, `test test_take_2 ... FAILED`, becomes `test N ... FAILED`;
+//   * at most 240 bytes.
+//
+// The id of a lesson is `L` and eight hex digits of the 32-bit hash h = 5381; h = h * 33 + byte over the class.
+
+import signature;
+import std.buffer;
+import std.bytes;
+import std.json;
+
+// ---- limits (the gate pins them) ----------------------------------------------------------------------------------------------
+
+fn class_cap() -> [] int { return 240; }
+// A lesson is recalled from this much evidence: occurrences and distinct runs.
+pub fn min_count() -> [] int { return 3; }
+pub fn min_runs() -> [] int { return 2; }
+// What one prompt may get from the memory: bytes of lesson text, lines of it, facts and their size.
+fn block_cap() -> [] int { return 1600; }
+fn block_lines() -> [] int { return 24; }
+fn facts_max() -> [] int { return 10; }
+fn fact_cap() -> [] int { return 160; }
+fn lessons_cap() -> [] int { return 262144; }
+
+// ---- small things -------------------------------------------------------------------------------------------------------------
+
+fn is_digit(c: int) -> [] bool {
+    return c >= 48 && c <= 57;
+}
+
+fn is_alpha(c: int) -> [] bool {
+    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
+}
+
+fn is_ident_start(c: int) -> [] bool {
+    return is_alpha(c) || c == 95;
+}
+
+fn is_name_char(c: int) -> [] bool {
+    return is_ident_start(c) || is_digit(c) || c == 46 || c == 35;
+}
+
+// The words of the language and the library that keep their text inside backticks.
+fn kept_word[&x](x: &x [byte]) -> [] bool {
+    return bytes.equal(x, "int") || bytes.equal(x, "bool") || bytes.equal(x, "float") || bytes.equal(x, "byte") || bytes.equal(x, "fn") || bytes.equal(x, "extern") || bytes.equal(x, "struct") || bytes.equal(x, "enum") || bytes.equal(x, "static") || bytes.equal(x, "let") || bytes.equal(x, "var") || bytes.equal(x, "if") || bytes.equal(x, "else") || bytes.equal(x, "while") || bytes.equal(x, "return") || bytes.equal(x, "match") || bytes.equal(x, "true") || bytes.equal(x, "false") || bytes.equal(x, "Option") || bytes.equal(x, "Result") || bytes.equal(x, "List") || bytes.equal(x, "Vec") || bytes.equal(x, "Map") || bytes.equal(x, "String") || bytes.equal(x, "Buffer") || bytes.equal(x, "Box") || bytes.equal(x, "Heap") || bytes.equal(x, "Io");
+}
+
+// 1: one to three punctuation marks, kept. 2: has a byte outside ASCII. 3: a name. 4: a type, or anything else. 0: a word of the language, kept.
+fn span_kind[&x](x: &x [byte]) -> [] int {
+    if kept_word(x) {
+        return 0;
+    }
+    var high = false;
+    var punct = len(x) >= 1 && len(x) <= 3;
+    var name = len(x) > 0 && is_ident_start(int_of(x[0]));
+    var i = 0;
+    while i < len(x) {
+        let c = int_of(x[i]);
+        if c >= 128 {
+            high = true;
+        }
+        if c >= 128 || is_alpha(c) || is_digit(c) || c == 95 || c == 32 {
+            punct = false;
+        }
+        if !is_name_char(c) {
+            name = false;
+        }
+        i = i + 1;
+    }
+    if len(x) == 0 {
+        return 1;
+    }
+    if high {
+        return 2;
+    }
+    if punct {
+        return 1;
+    }
+    if name {
+        return 3;
+    }
+    return 4;
+}
+
+fn append_int[&h](heap: &!h Heap, out: buffer.Buffer, n: int) -> [heap] buffer.Buffer {
+    var o = out;
+    var scale = 1;
+    while n / scale >= 10 {
+        scale = scale * 10;
+    }
+    var rest = n;
+    while scale >= 1 {
+        let d = rest / scale;
+        o = buffer.push(heap, o, byte_of(48 + d));
+        rest = rest - d * scale;
+        scale = scale / 10;
+    }
+    return o;
+}
+
+// ---- the class of a refusal ---------------------------------------------------------------------------------------------------
+
+// The class of the signature `sig` ("rule:message", as the driver records it), appended to `out`.
+pub fn class_of[&h, &s](heap: &!h Heap, out: buffer.Buffer, sig: &s [byte]) -> [heap] buffer.Buffer {
+    var b = out;
+    var i = 0;
+    var past_rule = false;
+    while i < len(sig) {
+        let c = int_of(sig[i]);
+        // stop at the cap (what is appended is never longer than what was read), but not inside a character
+        if i >= class_cap() && (c < 128 || c >= 192) {
+            i = len(sig);
+        } else if c == 96 {
+            var j = i + 1;
+            while j < len(sig) && int_of(sig[j]) != 96 {
+                j = j + 1;
+            }
+            if j < len(sig) {
+                let x = sig[i + 1..j];
+                let k = span_kind(x);
+                b = buffer.push(heap, b, byte_of(96));
+                if k == 0 || k == 1 {
+                    b = buffer.append(heap, b, x);
+                } else if k == 2 {
+                    b = buffer.push(heap, b, byte_of(67));
+                } else if k == 3 {
+                    b = buffer.push(heap, b, byte_of(78));
+                } else {
+                    b = buffer.push(heap, b, byte_of(84));
+                }
+                b = buffer.push(heap, b, byte_of(96));
+                i = j + 1;
+            } else {
+                b = buffer.push(heap, b, byte_of(96));
+                i = i + 1;
+            }
+        } else if past_rule && c == 47 && i > 0 && (int_of(sig[i - 1]) == 58 || int_of(sig[i - 1]) == 32) {
+            while i < len(sig) && int_of(sig[i]) != 32 && int_of(sig[i]) != 96 {
+                i = i + 1;
+            }
+            b = buffer.append(heap, b, "PATH");
+        } else if past_rule && i >= 5 && is_ident_start(c) && bytes.equal(sig[i - 5..i], "test ") {
+            while i < len(sig) && (is_ident_start(int_of(sig[i])) || is_digit(int_of(sig[i]))) {
+                i = i + 1;
+            }
+            b = buffer.push(heap, b, byte_of(78));
+        } else if is_digit(c) && past_rule {
+            while i < len(sig) && is_digit(int_of(sig[i])) {
+                i = i + 1;
+            }
+            b = buffer.push(heap, b, byte_of(35));
+        } else {
+            if c == 58 {
+                past_rule = true;
+            }
+            b = buffer.push(heap, b, sig[i]);
+            i = i + 1;
+        }
+    }
+    return b;
+}
+
+fn hex_digit(v: int) -> [] int {
+    if v < 10 {
+        return 48 + v;
+    }
+    return 87 + v;
+}
+
+// `L` and eight hex digits.
+pub fn id_of[&h, &c](heap: &!h Heap, out: buffer.Buffer, class: &c [byte]) -> [heap] buffer.Buffer {
+    var h5 = 5381;
+    var i = 0;
+    while i < len(class) {
+        h5 = (h5 * 33 + int_of(class[i])) % 4294967296;
+        i = i + 1;
+    }
+    var b = buffer.push(heap, out, byte_of(76));
+    var shift = 268435456;
+    while shift >= 1 {
+        b = buffer.push(heap, b, byte_of(hex_digit((h5 / shift) % 16)));
+        shift = shift / 16;
+    }
+    return b;
+}
+
+// ---- secrets --------------------------------------------------------------------------------------------------------------------
+
+// `text` with every word that looks like a key or a token taken out: a run of letters, digits, `-` and `_` at least 20 long that has a letter and a
+// digit and either a `-` or no `_` (a snake_case name is code; `sk-ant-...` and a hex digest are not). The journals never hold the key; this is the second
+// wall, for the diffs the miner copies.
+pub fn redacted[&h, &t](heap: &!h Heap, out: buffer.Buffer, text: &t [byte]) -> [heap] buffer.Buffer {
+    var b = out;
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if is_alpha(c) || is_digit(c) || c == 45 || c == 95 {
+            var j = i;
+            var letters = false;
+            var digits = false;
+            var hyphen = false;
+            var under = false;
+            while j < len(text) && (is_alpha(int_of(text[j])) || is_digit(int_of(text[j])) || int_of(text[j]) == 45 || int_of(text[j]) == 95) {
+                let d = int_of(text[j]);
+                if is_alpha(d) {
+                    letters = true;
+                } else if is_digit(d) {
+                    digits = true;
+                } else if d == 45 {
+                    hyphen = true;
+                } else {
+                    under = true;
+                }
+                j = j + 1;
+            }
+            if j - i >= 20 && letters && digits && (hyphen || !under) { // MUTANT:redact
+                b = buffer.append(heap, b, "[redacted]");
+            } else {
+                b = buffer.append(heap, b, text[i..j]);
+            }
+            i = j;
+        } else {
+            b = buffer.push(heap, b, text[i]);
+            i = i + 1;
+        }
+    }
+    return b;
+}
+
+// ---- the lessons file ---------------------------------------------------------------------------------------------------------
+
+fn line_end[&x](text: &x [byte], p: int, n: int) -> [] int {
+    var e = p;
+    while e < n && int_of(text[e]) != 10 {
+        e = e + 1;
+    }
+    return e;
+}
+
+// The first `most` bytes of `text`, not cutting a character in two.
+fn head[&t](text: &t [byte], most: int) -> [] &t [byte] {
+    if len(text) <= most {
+        return text;
+    }
+    var n = most;
+    while n > 0 && int_of(text[n]) >= 128 && int_of(text[n]) < 192 {
+        n = n - 1;
+    }
+    return text[0..n];
+}
+
+// The string at node `n`, decoded into `out`: the length, or -1.
+fn decode[&s, &t, &o](src: &s [byte], tape: &t [int], n: int, out: &!o [byte]) -> [] int {
+    let need = json.string_length(src, tape, n);
+    if need < 0 || need > len(out) {
+        return 0 - 1;
+    }
+    return json.string_into(src, tape, n, out);
+}
+
+fn count_at[&s, &t](src: &s [byte], tape: &t [int], obj: int, key: &static [byte]) -> [] int {
+    let n = json.get(src, tape, obj, key);
+    if n >= 0 && json.is_int(tape, n) {
+        return json.to_int(src, tape, n);
+    }
+    return 0;
+}
+
+// The text a lesson adds to a prompt, appended to `out`: what it says, its numbers, and up to two fixes that verified, as diffs. At most `block_cap()` bytes
+// and `block_lines()` lines whatever the file holds.
+fn lesson_text[&h, &l, &t, &s](heap: &!h Heap, out: buffer.Buffer, line: &l [byte], tape: &t [int], scratch: &!s [byte]) -> [heap] buffer.Buffer {
+    var b = out;
+    var used = 0;
+    let ex = decode(line, tape, json.get(line, tape, 0, "example"), scratch);
+    b = buffer.append(heap, b, "Seen in earlier runs: ");
+    used = used + 22;
+    if ex > 0 {
+        b = buffer.append(heap, b, head(scratch[0..ex], 200));
+        used = used + len(head(scratch[0..ex], 200));
+    }
+    b = buffer.append(heap, b, "\nIt recurred ");
+    b = append_int(heap, b, count_at(line, tape, 0, "count"));
+    b = buffer.append(heap, b, " times in ");
+    b = append_int(heap, b, count_at(line, tape, 0, "runs"));
+    b = buffer.append(heap, b, " runs; the attempt after it verified ");
+    b = append_int(heap, b, count_at(line, tape, 0, "next_verified"));
+    b = buffer.append(heap, b, " of ");
+    b = append_int(heap, b, count_at(line, tape, 0, "next_seen"));
+    b = buffer.append(heap, b, " times.\n");
+    used = used + 130;   // the numbers' line, counted at its longest
+    let fixes = json.get(line, tape, 0, "fixes");
+    var lines = 3;
+    var k = 0;
+    while k < 2 && k < json.count(tape, fixes) {
+        let f = json.at(tape, fixes, k);
+        let dn = json.get(line, tape, f, "diff");
+        let got = decode(line, tape, dn, scratch);
+        if got > 0 {
+            let text = scratch[0..got];
+            // the lines of the diff, indented, while the cap allows
+            var heading = "A change that fixed it, as a diff of the code (- removed, + added):\n";
+            if k > 0 {
+                heading = "Another change that fixed it:\n";
+            }
+            var room_ok = used + len(heading) < block_cap() && lines + 1 < block_lines();
+            if room_ok {
+                b = buffer.append(heap, b, heading);
+                used = used + len(heading);
+                lines = lines + 1;
+                var p = 0;
+                while p < len(text) && room_ok {
+                    let e = line_end(text, p, len(text));
+                    let l1 = head(text[p..e], 160);
+                    if used + len(l1) + 5 > block_cap() || lines >= block_lines() { // MUTANT:cap
+                        room_ok = false;
+                    } else {
+                        b = buffer.append(heap, b, "    ");
+                        b = buffer.append(heap, b, l1);
+                        b = buffer.push(heap, b, byte_of(10));
+                        used = used + len(l1) + 5;
+                        lines = lines + 1;
+                    }
+                    p = e + 1;
+                }
+            }
+        }
+        k = k + 1;
+    }
+    return b;
+}
+
+// Does the lesson on this line apply to a refusal of class `class`, and is it fit to recall? Active (the miner decided that, from the evidence and the
+// later outcomes), enough evidence by its own numbers, and a fix that verified to show. Then its text goes to `text` and its id to `idb`.
+fn matches[&l, &t, &c, &s](line: &l [byte], tape: &t [int], class: &c [byte], scratch: &!s [byte]) -> [] bool {
+    let cn = decode(line, tape, json.get(line, tape, 0, "class"), scratch);
+    if cn < 0 || bytes.equal(scratch[0..cn], class) == false { // MUTANT:class
+        return false;
+    }
+    let st = json.get(line, tape, 0, "status");
+    if st < 0 || json.string_equals(line, tape, st, "active") == false { // MUTANT:status
+        return false;
+    }
+    if count_at(line, tape, 0, "count") < min_count() || count_at(line, tape, 0, "runs") < min_runs() { // MUTANT:evidence
+        return false;
+    }
+    let fixes = json.get(line, tape, 0, "fixes");
+    if json.count(tape, fixes) == 0 {
+        return false;
+    }
+    let d = json.get(line, tape, json.at(tape, fixes, 0), "diff");
+    return json.string_length(line, tape, d) > 0;
+}
+
+// What the memory adds for the refusal in `feedback` (the checker's JSON): the task lines (`MEMORY: ` for a lesson, `FACT: ` for a fact of the person's
+// own, each after a NUL byte, so that a line of that look in a plan's own text is never taken for the memory), and the same as a JSON array of {"id", "text"} for the journal. Both empty when nothing applies.
+pub fn recall[&h, &l, &f, &k](heap: &!h Heap, lessons: &l [byte], facts: &f [byte], feedback: &k [byte]) -> [heap] (buffer.Buffer, buffer.Buffer) {
+    var lines = buffer.empty(heap, 256);
+    var rec = json.writer(heap, 256);
+    rec = json.begin_array(heap, rec);
+    var any = false;
+    var sg = signature.of(heap, buffer.empty(heap, 64), feedback);
+    var cls = buffer.empty(heap, 64);
+    borrow sg as &sq in {
+        cls = class_of(heap, cls, buffer.bytes(sq));
+    }
+    buffer.drop(heap, sg);
+    var cls_len = 0;
+    borrow cls as &cq0 in {
+        cls_len = len(buffer.bytes(cq0));
+    }
+    let sc = box_slice(heap, 8192, byte_of(0));
+    var found = false;
+    var p = 0;
+    while p < len(lessons) && found == false && cls_len > 0 {
+        let e = line_end(lessons, p, len(lessons));
+        let line = lessons[p..e];
+        if len(line) > 2 {
+            let tb = box_slice(heap, json.tape_len(line), 0);
+            borrow mut tb as &!tw in {
+                let tape = contents(tw);
+                if json.parse(line, tape) > 0 && json.is_object(tape, 0) {
+                    borrow mut sc as &!sw in {
+                        var ok = false;
+                        borrow cls as &cq in {
+                            ok = matches(line, tape, buffer.bytes(cq), contents(sw));
+                        }
+                        if ok {
+                            found = true;
+                            var tx = lesson_text(heap, buffer.empty(heap, 512), line, tape, contents(sw));
+                            var idb = buffer.empty(heap, 16);
+                            borrow cls as &cq2 in {
+                                idb = id_of(heap, idb, buffer.bytes(cq2));
+                            }
+                            borrow tx as &txq in {
+                                var q = 0;
+                                let all = buffer.bytes(txq);
+                                while q < len(all) {
+                                    let qe = line_end(all, q, len(all));
+                                    lines = buffer.append(heap, lines, "\0MEMORY: ");
+                                    lines = buffer.append(heap, lines, all[q..qe]);
+                                    lines = buffer.push(heap, lines, byte_of(10));
+                                    q = qe + 1;
+                                }
+                                borrow idb as &idq in {
+                                    rec = json.begin_object(heap, rec);
+                                    rec = json.put_key(heap, rec, "id");
+                                    rec = json.put_string(heap, rec, buffer.bytes(idq));
+                                    rec = json.put_key(heap, rec, "text");
+                                    rec = json.put_string(heap, rec, all);
+                                    rec = json.end_object(heap, rec);
+                                }
+                            }
+                            any = true;
+                            buffer.drop(heap, tx);
+                            buffer.drop(heap, idb);
+                        }
+                    }
+                }
+            }
+            unbox_slice(heap, tb);
+        }
+        p = e + 1;
+    }
+    unbox_slice(heap, sc);
+    buffer.drop(heap, cls);
+    // the person's own facts: one per line, `#` for a comment, at most facts_max() of at most fact_cap() bytes
+    var nf = 0;
+    var q = 0;
+    while q < len(facts) && nf < facts_max() {
+        let e = line_end(facts, q, len(facts));
+        let fl = bytes.trim(head(bytes.trim(facts[q..e]), fact_cap()));
+        if len(fl) > 0 && int_of(fl[0]) != 35 {
+            nf = nf + 1;
+            lines = buffer.append(heap, lines, "\0FACT: ");
+            lines = buffer.append(heap, lines, fl);
+            lines = buffer.push(heap, lines, byte_of(10));
+            var idf = buffer.append(heap, buffer.empty(heap, 8), "F");
+            idf = append_int(heap, idf, nf);
+            borrow idf as &ifq in {
+                rec = json.begin_object(heap, rec);
+                rec = json.put_key(heap, rec, "id");
+                rec = json.put_string(heap, rec, buffer.bytes(ifq));
+                rec = json.put_key(heap, rec, "text");
+                rec = json.put_string(heap, rec, fl);
+                rec = json.end_object(heap, rec);
+            }
+            buffer.drop(heap, idf);
+            any = true;
+        }
+        q = e + 1;
+    }
+    rec = json.end_array(heap, rec);
+    var recb = json.finish(rec);
+    if any == false {
+        buffer.drop(heap, recb);
+        recb = buffer.empty(heap, 8);
+        buffer.drop(heap, lines);
+        lines = buffer.empty(heap, 8);
+    }
+    return (lines, recb);
+}
+
+// ---- the agent's half ---------------------------------------------------------------------------------------------------------
+
+fn slurp_in[&h, &z, &d](heap: &!h Heap, fs: &z Fs(""), dir: &d [byte], name: &static [byte], cap: int) -> [heap, fs_read("")] buffer.Buffer {
+    var path = buffer.append(heap, buffer.empty(heap, len(dir) + 32), dir);
+    path = buffer.push(heap, path, byte_of(47));
+    path = buffer.append(heap, path, name);
+    var out = buffer.empty(heap, 16);
+    let room = box_slice(heap, cap, byte_of(0));
+    borrow mut room as &!rw in {
+        var n = 0 - 1;
+        borrow path as &pq in {
+            n = fs_read(fs, buffer.bytes(pq), contents(rw));
+        }
+        if n > 0 {
+            out = buffer.append(heap, out, contents(rw)[0..n]);
+        }
+    }
+    unbox_slice(heap, room);
+    buffer.drop(heap, path);
+    return out;
+}
+
+// The agent run with `--memory <dir>`: the task, with the memory's lines for the refusal in `feedback` added (the file `<project>.task` is not touched: the
+// lines live in the agent's copy), and the same recorded as `<project>.call/memory.json` for the journal when the driver made that directory. Without
+// anything to add the task comes back as it was and nothing is written.
+pub fn prepare[&h, &z, &d, &p, &k](heap: &!h Heap, fs: &z Fs(""), dir: &d [byte], project: &p [byte], feedback: &k [byte], task: buffer.Buffer) -> [heap, fs_read(""), fs_write("")] buffer.Buffer {
+    var out = task;
+    let lessons = slurp_in(heap, fs, dir, "lessons.jsonl", lessons_cap());
+    let facts = slurp_in(heap, fs, dir, "facts.txt", 16384);
+    var lines = buffer.empty(heap, 8);
+    var rec = buffer.empty(heap, 8);
+    borrow lessons as &lq in {
+        borrow facts as &fq in {
+            let (ln, rc) = recall(heap, buffer.bytes(lq), buffer.bytes(fq), feedback);
+            buffer.drop(heap, lines);
+            buffer.drop(heap, rec);
+            lines = ln;
+            rec = rc;
+        }
+    }
+    buffer.drop(heap, lessons);
+    buffer.drop(heap, facts);
+    var lines_len = 0;
+    borrow lines as &ln0 in {
+        lines_len = len(buffer.bytes(ln0));
+    }
+    if lines_len > 0 {
+        var joined = buffer.empty(heap, 256);
+        borrow out as &o2 in {
+            joined = buffer.append(heap, joined, buffer.bytes(o2));
+            if len(buffer.bytes(o2)) > 0 && int_of(buffer.bytes(o2)[len(buffer.bytes(o2)) - 1]) != 10 {
+                joined = buffer.push(heap, joined, byte_of(10));
+            }
+        }
+        borrow lines as &l2 in {
+            joined = buffer.append(heap, joined, buffer.bytes(l2));
+        }
+        buffer.drop(heap, out);
+        out = joined;
+        var path = buffer.append(heap, buffer.empty(heap, len(project) + 24), project);
+        path = buffer.append(heap, path, ".call/memory.json");
+        borrow path as &pq in {
+            borrow rec as &rq in {
+                fs_write(fs, buffer.bytes(pq), buffer.bytes(rq)); // MUTANT:journal
+            }
+        }
+        buffer.drop(heap, path);
+    }
+    buffer.drop(heap, lines);
+    buffer.drop(heap, rec);
+    return out;
+}

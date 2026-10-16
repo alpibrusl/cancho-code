@@ -20,6 +20,9 @@
 #   patch       `--patch <unit> <file>`: no agent call for the unit, run.log has `[PATCH]`, build.json names it (`patch`)
 #   redo usage  a unit that is not in the plan, no valid plan.json, an empty hint, --retry with --patch, a patch file that is not there, --hint with no
 #               --retry, `--patch` with a missing file name: exit 2, nothing written in the work directory
+#   memory      `--memory <dir>` reaches the unit agent's command line (docs/memory.md) and nothing else changes; `--remember "<text>"` appends one line to
+#               <dir>/facts.txt before the run and the run goes on; an empty, blank, multi-line or over-long text, a relative or `..` directory, no
+#               `--memory`, an eleventh fact: exit 2, nothing written, nothing run; without `--memory` the agent command has none
 #   usage       missing arguments, provider, model or guide, a relative checker, `..`, an unknown option, a brief that is not there: exit 2, nothing run
 #
 # Needs the real cancho as CANCHO. BUILD_SRC names a directory to take src/ from (the mutation runs of the gate's own review). Exit 0: every case held.
@@ -334,6 +337,46 @@ redo_usage "hint without retry" "goes with --retry" --hint x
 redo_usage "patch without its file" "option it does not know, or without its value" --patch a
 redo_usage "retry without a unit" "needs a unit" --retry ""
 rm -f "$POK"
+
+# memory: --memory goes to the unit agent; --remember adds a line of the person's own
+set -- $(mk); wd=$1; rc=$2; lg=$3
+mm=$(mktemp -d -t cc-build-mem-XXXXXX)
+out=$(run "$wd" "$rc" "$lg"); expect "memory: without --memory: exit code" "$?" 0
+case "$(cat "$rc/unit.args")" in *--memory*) echo "FAIL: memory: the unit agent got --memory though none was named" >&2; fail=1 ;; esac
+rm -rf "$wd" "$rc"
+set -- $(mk); wd=$1; rc=$2; lg=$3
+out=$(run "$wd" "$rc" "$lg" --memory "$mm" --remember "no network"); expect "memory: exit code" "$?" 0
+expect "memory: the unit agent got --memory <dir>" "$(grep -c -- "--memory $mm" "$rc/unit.args")" 1
+expect "memory: the fact was added" "$(cat "$mm/facts.txt")" "no network"
+rm -rf "$wd" "$rc"
+set -- $(mk); wd=$1; rc=$2; lg=$3
+out=$(run "$wd" "$rc" "$lg" --memory "$mm" --remember "public names are lowercase_with_underscores"); expect "memory: a second fact: exit code" "$?" 0
+expect "memory: the facts are kept in order" "$(cat "$mm/facts.txt" | tr '\n' '|')" "no network|public names are lowercase_with_underscores|"
+rm -rf "$wd" "$rc"
+mem_usage() { # name part args...
+    name=$1; part=$2; shift 2
+    set -- "$@"
+    w=$(mktemp -d -t cc-build-wd-XXXXXX); r=$(mktemp -d -t cc-build-rc-XXXXXX); l="$r/agent.log"; : > "$l"; cp "$P"/recipes-good/*.sh "$r"/
+    printf 'cp "%s" "$1"\n' "$P/plan.json" > "$r/plan.sh"
+    bf=$(cat "$mm/facts.txt")
+    o=$(run "$w" "$r" "$l" "$@"); rr=$?
+    expect "memory usage ($name): exit code" "$rr" 2
+    case "$o" in *"$part"*) ;; *) echo "FAIL: memory usage ($name): no message with '$part': $o" >&2; fail=1 ;; esac
+    expect "memory usage ($name): the facts are as they were" "$(cat "$mm/facts.txt")" "$bf"
+    expect "memory usage ($name): the agent was never asked" "$(wc -c < "$l" | tr -d ' ')" 0
+    rm -rf "$w" "$r"
+}
+mem_usage "empty text" "non-empty line" --memory "$mm" --remember ""
+mem_usage "blank text" "non-empty line" --memory "$mm" --remember "   "
+mem_usage "two lines" "non-empty line" --memory "$mm" --remember "$(printf 'one\ntwo')"
+mem_usage "over 160 bytes" "at most 160" --memory "$mm" --remember "$(printf 'x%.0s' $(seq 1 170))"
+mem_usage "no --memory" "needs --memory" --remember "no network"
+mem_usage "relative dir" "absolute directory" --memory relative/dir
+mem_usage "dotdot dir" "absolute directory" --memory "$mm/../x"
+mem_usage "memory without a directory" "absolute directory" --memory ""
+i=0; while [ $i -lt 8 ]; do printf 'fact %s\n' "$i" >> "$mm/facts.txt"; i=$((i + 1)); done
+mem_usage "an eleventh fact" "ten facts" --memory "$mm" --remember "one too many"
+rm -rf "$mm"
 
 # usage
 set -- $(mk); wd=$1; rc=$2; lg=$3

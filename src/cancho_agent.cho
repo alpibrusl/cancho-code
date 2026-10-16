@@ -34,6 +34,9 @@ edition 7;
 //   --effort        low | medium | high | xhigh | max            (the model's own)
 //   --workspace     a workspace id, for a key not scoped to one  (none)
 //   --save-raw      a file every raw reply is appended to        (none)
+//   --memory        a directory holding lessons.jsonl and/or facts.txt (docs/memory.md): editing a unit, the prompt gets the person's facts and,
+//                   for the refusal the unit just got, the lessons mined from past journals that apply to it; what was added is left in
+//                   <project>.call/memory.json. Without it nothing changes.
 //   --mode          edit (default): rewrite the project file; plan: ask for a PLAN (docs/plan.md) instead. In plan mode the last
 //                   argument is where the plan is written, and --guide <file> (how to write a plan) and --brief <file> (the task)
 //                   are required; --contract <file> (exact signatures) and --rounds N (3) are optional. The plan check
@@ -55,6 +58,7 @@ edition 7;
 import anthropic;
 import calls;
 import cases;
+import memory;
 import ollama;
 import plan;
 import planprompt;
@@ -708,6 +712,12 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
         }
         buffer.drop(heap, task_path);
         buffer.drop(heap, feedback_path);
+    }
+    // the memory (docs/memory.md): what it knows about the refusal in the feedback goes to this copy of the task, never to the task file
+    if plan_mode == false && len(opt(args, "--memory")) > 0 {
+        borrow feedback as &mfq in {
+            task = memory.prepare(heap, fs, opt(args, "--memory"), project, buffer.bytes(mfq), task);
+        }
     }
     let patch_out = bytes.equal(out_mode, "patch") && plan_mode == false;
     let review_on = bytes.equal(opt(args, "--review"), "on");
