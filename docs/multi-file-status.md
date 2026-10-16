@@ -11,11 +11,11 @@
 
 ## Gates
 All green under sh and dash (plan, splice, project, multi-file, board, eval, parallel, build, journal, planner, briefs, page, cases, review, ...), nine authority pins unchanged. `services` is flaky under machine load (kvstore/jobs attack off by one), also on origin/main.
-Mutations (dash, copies of the tree): 10 of 16 run so far all RED (wrong splice file x2, workspace copy, imports, plan rules x3, sweep, integration x2). Not yet seen: journal x2, pub-not-checked, module-tests-with-root, task-siblings, splice-module-line.
+Mutations (dash, copies of the tree): all 16 RED (wrong splice file x2, workspace copy, imports, plan rules x3, sweep, integration x2, journal x2, pub-not-checked, module-tests-with-root, task-siblings, splice-module-line).
 
 ## Half-done / next
 1. Finish mutation run (script lives outside the tree: scratchpad/mfmut.py).
-2. Last uncommitted tweak: INSTRUCTIONS text uses `module_name.function_name(...)` (src/project.cho); rerun test-multi-file.
+2. (done) INSTRUCTIONS text with `module_name.function_name(...)`: test-multi-file green under sh and dash.
 3. Measurement not started: 3 runs --jobs 1 and 3 runs --jobs 4 of eval/multi with Haiku 5.5, then 2 model-written plans via eval/run_build.py; write eval/results/<date>-multi-file.md|json; decide on a primer section for modules (not edited in cancho repo).
 4. Push; no PR, no merge.
 
@@ -28,3 +28,9 @@ Measure: python3 eval/run_item.py multi --provider anthropic --model claude-haik
 
 ## Only on this machine (scratchpad /private/tmp/claude-502/-Users-alfonso-Workspace-alpibrusl-lexsys/4f089fa1-e2fa-4158-b38c-f84f2540b341/scratchpad)
 mfmut.py / mfmut.out (mutation runner and results), mfgates.sh, gl-sh/ gl-dash/ (gate logs), red-multifile.log (RED run of the gate on origin/main driver), analyze_runs.py, analyze_plan.py (result analysers), primer-main.md, evaltools-mf/project, nodebin/node wrapper, mfmain/ (origin/main src for golden), wt/main-check (worktree of origin/main).
+
+## Cancho gap
+Filed as alpibrusl/cancho#528 (runner import already bound).
+
+## Still open
+The measurement (item 3 above) needs an Anthropic key; not run. No claim about model success on eval/multi is made by this branch.
