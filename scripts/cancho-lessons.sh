@@ -8,7 +8,7 @@
 #
 # The tool is a cancho program (src/lessons.cho). This wrapper builds it to build/cancho-lessons when that is missing or older than its sources (CANCHO is the
 # compiler), turns the paths into absolute ones with no `..` (the tool wants that: the file capability traps on `..`), finds the run directories under the
-# paths it is given (up to three levels down), and runs it. The run directories are only read.
+# paths it is given (up to six levels down), and runs it. The run directories are only read.
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 usage() { echo "usage: $0 --memory <dir> [--legacy] [--min-count N] [--min-runs N] <run dir | directory of run dirs>..." >&2; echo "       $0 --memory <dir> --promote" >&2; exit 2; }
@@ -52,11 +52,11 @@ list=$(mktemp)
 trap 'rm -f "$list"' EXIT
 args=""
 for p in $paths; do
-    find "$p" -maxdepth 4 -path '*/journal/events.jsonl' -type f | sort | while read -r ev; do
+    find "$p" -maxdepth 6 -path '*/journal/events.jsonl' -type f | sort | while read -r ev; do
         printf -- '--run\n%s\n' "$(dirname "$(dirname "$ev")")"
     done >> "$list"
     if [ $legacy = 1 ]; then
-        find "$p" -maxdepth 3 -name 'trail-*.jsonl' -type f | sort | while read -r t; do
+        find "$p" -maxdepth 5 -name 'trail-*.jsonl' -type f | sort | while read -r t; do
             d=$(dirname "$t")
             [ -f "$d/journal/events.jsonl" ] || printf -- '--trail\n%s\n' "$t"
         done >> "$list"
