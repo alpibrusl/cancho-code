@@ -842,6 +842,8 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
     var rc = 1;
     var attempt = 0;
     var finished = false;
+    // why an edit-mode run that used all its rounds gave up (the exit code, docs/project.md): 10 every sample was cut off by the bound, 11 no program, 12 a patch the splice refused
+    var gave = 0;
     while attempt < rounds && finished == false {
         attempt = attempt + 1;
         // the request is built each round: after a rejected plan the prompt carries the report
@@ -974,9 +976,24 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                                     } else {
                                                         buffer.drop(heap, creport);
                                                         borrow expanded as &er in {
-                                                            let (rep, code) = plan.check(heap, buffer.bytes(er));
+                                                            let (rep, code0) = plan.check(heap, buffer.bytes(er));
                                                             buffer.drop(heap, report);
                                                             report = rep;
+                                                            var code = code0;
+                                                            if code0 == 0 {
+                                                                // The brief's own function names, in this round: the model learns it renamed one while it can still fix it
+                                                                // (src/plan.cho `brief_report`; `build` keeps the same check as a backstop for a plan.json it did not just ask for).
+                                                                borrow source as &bsr in {
+                                                                    let (brep, bmissing) = plan.brief_report(heap, buffer.bytes(bsr), buffer.bytes(er));
+                                                                    if bmissing > 0 {
+                                                                        buffer.drop(heap, report);
+                                                                        report = brep;
+                                                                        code = 1;
+                                                                    } else {
+                                                                        buffer.drop(heap, brep);
+                                                                    }
+                                                                }
+                                                            }
                                                             if code == 0 {
                                                                 po = "written";
                                                                 accepted = true;
@@ -1195,6 +1212,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                             calls.note(heap, fs, clock, jdir, project, plan_mode, attempt, tin, tout, tthink, tcw, tcr, clock_ms(clock) - t0, stop, outcome, buffer.bytes(anj), buffer.bytes(xr), "", has_primer);
                                         }
                                         if cut {
+                                            gave = 10;
                                             io.error_all(io, "cancho-agent: a sample was cut off by the bound (--max-tokens / --num-predict)\n");
                                             if grown_bound(bound) > bound {
                                                 bound = grown_bound(bound);
@@ -1208,8 +1226,10 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                             }
                                         } else if patch_out {
                                             if pa < 0 {
+                                                gave = 11;
                                                 io.error_all(io, "cancho-agent: a sample has no code in it to add or change (reasoning, not a patch)\n");
                                             } else if scode != 0 {
+                                                gave = 12;
                                                 io.error_all(io, "cancho-agent: the patch could not be spliced into the file:\n");
                                                 borrow srep as &sq in {
                                                     io.error_all(io, buffer.bytes(sq));
@@ -1224,6 +1244,7 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                         } else {
                                             let (a, z) = reply.program_span(buffer.bytes(xr));
                                             if a < 0 {
+                                                gave = 11;
                                                 io.error_all(io, "cancho-agent: a sample has no program in it (reasoning, not a file)\n");
                                             } else {
                                                 // the program and one final newline, as the Python agent writes it
@@ -1253,6 +1274,10 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
               }
             }
         }
+    }
+    // every round used and none usable: the agent reached the model and gave up (an edit-mode run only; a plan keeps exit 1)
+    if plan_mode == false && finished == false && rc == 1 && gave > 0 {
+        rc = gave;
     }
     unbox_slice(heap, entropy);
     buffer.drop(heap, asked_now);

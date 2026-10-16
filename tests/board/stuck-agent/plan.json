@@ -1,0 +1,71 @@
+{
+ "name": "ini",
+ "units": [
+  {
+   "id": "key",
+   "signature": "fn ini_key_ok[&r](key: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "section",
+   "signature": "fn ini_section_name_ok[&r](name: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "unquote",
+   "signature": "fn ini_unquote[&r](value: &r [byte]) -> [] &r [byte]",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "kind",
+   "signature": "fn ini_line_kind[&r](line: &r [byte]) -> [] int",
+   "examples": [],
+   "deps": [
+    "key",
+    "section"
+   ]
+  },
+  {
+   "id": "raw",
+   "signature": "fn ini_raw[&h, &t](heap: &!h Heap, text: &t [byte]) -> [heap] result.Result[buffer.Buffer, int]",
+   "examples": [],
+   "deps": [
+    "unquote",
+    "kind"
+   ]
+  },
+  {
+   "id": "dedupe",
+   "signature": "fn ini_dedupe[&h, &r](heap: &!h Heap, raw: &r [byte]) -> [heap] buffer.Buffer",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "parse",
+   "signature": "fn ini_parse[&h, &t](heap: &!h Heap, text: &t [byte]) -> [heap] result.Result[buffer.Buffer, int]",
+   "examples": [],
+   "deps": [
+    "raw",
+    "dedupe"
+   ]
+  },
+  {
+   "id": "find",
+   "signature": "fn ini_find[&r, &k](entries: &r [byte], full: &k [byte]) -> [] int",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "get",
+   "signature": "fn ini_get[&h, &t, &s, &k](heap: &!h Heap, text: &t [byte], section: &s [byte], key: &k [byte]) -> [heap] result.Result[option.Option[buffer.Buffer], int]",
+   "examples": [],
+   "deps": [
+    "parse",
+    "find"
+   ]
+  }
+ ]
+}

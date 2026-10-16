@@ -42,10 +42,10 @@ The last line is `[BUILD_VERDICT]<TAB><word>`; the exit code follows the word.
 | word | exit | meaning |
 |---|---|---|
 | `done` | 0 | every unit verified and the final gate held |
-| `stuck` | 1 | a unit failed, or a unit depended on one that did |
+| `stuck` | 1 | a unit failed (its refusals, its examples, or the agent reached the model and gave up: [project.md](project.md#the-agents-exit-codes)), or a unit depended on one that did |
 | `gate_failed` | 1 | every unit verified, the whole did not check |
 | `plan_failed` | 3 | no valid plan: the agent used its rounds up, needs a decision (`plan.json.questions.json`), or wrote a plan the check refuses (its `[PLAN_ERROR]` lines are printed). **The project step does not run.** |
-| `provider_error` | 4 | the agent could not be reached, in the plan or in a unit; what verified is kept |
+| `provider_error` | 4 | the agent could not be reached (or crashed, or timed out), in the plan or in a unit; what verified is kept |
 
 Exit 2 is a usage error (nothing was run). A killed run is resumed by running the same command: a valid `plan.json` is not asked for again, and `state.txt` keeps the units that verified (they are re-checked, as in `project`).
 
@@ -66,7 +66,7 @@ Exit 2 is a usage error (nothing was run). A killed run is resumed by running th
 | `run.log` | the lines below, appended by every run |
 | `build.json` | the run as a whole, rewritten after each stage and at the end |
 
-`run.log` holds `[BUILD_STAGE]<TAB>plan|plan<TAB>reused|build`, `[PLAN]` and `[PLAN_ERROR]`, `[PLAN_REVIEW]<TAB>reviewed|unreviewed` (only when the plan agent ran with `--review on`: `unreviewed` means the review gave no usable answer twice, so the plan's cases were kept without a second reader; the plan agent's words are in `plan.log`), `[UNIT]<TAB><id><TAB>building|verified|kept|regressed|failed|skipped|unavailable`, `[AGENT_LOG]<TAB><id><TAB>agent-<id>.log` (after a unit that did not verify), `[PROJECT_VERDICT]` and `[BUILD_VERDICT]`. The loop's per-attempt `[ACCEPTANCE]` and `[ISSUE_VERDICT]` lines go to the console only; the attempts are in the trails.
+`run.log` holds `[BUILD_STAGE]<TAB>plan|plan<TAB>reused|build`, `[PLAN]` and `[PLAN_ERROR]`, `[PLAN_REVIEW]<TAB>reviewed|unreviewed` (only when the plan agent ran with `--review on`: `unreviewed` means the review gave no usable answer twice, so the plan's cases were kept without a second reader; the plan agent's words are in `plan.log`), `[UNIT]<TAB><id><TAB>building|verified|kept|regressed|failed|skipped|unavailable`, `[AGENT_LOG]<TAB><id><TAB>agent-<id>.log` (after a unit that did not verify), `[UNIT_WHY]<TAB><id><TAB>agent:gave-up:<why>` (only when the unit's last attempt was the agent giving up), `[PROJECT_VERDICT]` and `[BUILD_VERDICT]`. The loop's per-attempt `[ACCEPTANCE]` and `[ISSUE_VERDICT]` lines go to the console only; the attempts are in the trails.
 
 `build.json`, one line:
 
@@ -106,4 +106,4 @@ The board ([dashboard.md](dashboard.md)) shows this command, ready to copy, in t
 
 ## The brief's names are the plan's names
 
-A bullet in the brief of the form `- name(...) : what it does` (or `- name(...) -> Type : ...`) names a public function. After the plan check the build checks that every such name is declared by a unit (`fn name(` or `fn name[`, the whole name). A plan that renames one is refused with `[PLAN_ERROR]<TAB>brief-name<TAB>name`, the verdict is `plan_failed`, and nothing is built; a valid `plan.json` left in the work directory that lacks one is not reused. A brief with no such bullet requires nothing. Found on the first real run: a plan that called `to_roman` `roman_to_roman` was `done` by its own examples and scored 0 on the audit that calls `to_roman`.
+A bullet in the brief of the form `- name(...) : what it does` (or `- name(...) -> Type : ...`) names a public function. After the plan check the build checks that every such name is declared by a unit (`fn name(` or `fn name[`, the whole name). The plan agent runs the same check in each of its rounds (`--mode plan`, after the plan check, `src/plan.cho` `brief_report`), so a plan that renames a function is fed back while the model can fix it: every missing name at once, each with the action (`declare fn <name> with exactly this name (the brief states it; do not rename it)`); the build keeps the check as a backstop for a `plan.json` it did not just ask for. A plan that renames one is refused with `[PLAN_ERROR]<TAB>brief-name<TAB>name<TAB>the action`, the verdict is `plan_failed`, and nothing is built; a valid `plan.json` left in the work directory that lacks one is not reused. A brief with no such bullet requires nothing. Found on the first real run: a plan that called `to_roman` `roman_to_roman` was `done` by its own examples and scored 0 on the audit that calls `to_roman`.

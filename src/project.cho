@@ -1311,6 +1311,26 @@ fn drive[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &rc, 
                         tell(heap, io, fs, log, buffer.bytes(alb));
                     }
                     buffer.drop(heap, al);
+                    // and, when the agent reached the model but gave up (a named failure signature in the trail), why
+                    let whyp = in_wd(heap, wd, "project.cho.trail.jsonl", "", "");
+                    borrow whyp as &wpq in {
+                        let gw = trail.gave_up_why(heap, fs, buffer.bytes(wpq));
+                        borrow gw as &gwq in {
+                            if len(buffer.bytes(gwq)) > 0 {
+                                var wl = buffer.append(heap, buffer.empty(heap, 96), "[UNIT_WHY]\t");
+                                wl = buffer.append(heap, wl, id);
+                                wl = buffer.append(heap, wl, "\t");
+                                wl = buffer.append(heap, wl, buffer.bytes(gwq));
+                                wl = buffer.append(heap, wl, "\n");
+                                borrow wl as &wlb in {
+                                    tell(heap, io, fs, log, buffer.bytes(wlb));
+                                }
+                                buffer.drop(heap, wl);
+                            }
+                        }
+                        buffer.drop(heap, gw);
+                    }
+                    buffer.drop(heap, whyp);
                 }
                 if r == 0 {
                     unit_event(heap, clock, fs, wd, src, tape, nodes[next], id, "verified", true, "");

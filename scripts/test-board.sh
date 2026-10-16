@@ -8,7 +8,7 @@
 #   CANCHO     the compiler (default: cancho on PATH)
 #   BOARD_SRC  the source of the tool to judge (default: src/board.cho); how --mutants judges a broken copy
 #
-# What it asserts (the journal: fixtures journal, journal-killed, journal-gaps, and a big one made here)
+# What it asserts (a stuck run whose unit failed because the agent gave up, `stuck-agent`, renders in the Stuck column with its `agent:gave-up:cut-off` trail; the journal: fixtures journal, journal-killed, journal-gaps, and a big one made here)
 #   - for each fixture run directory under tests/board/ (a done run, a stuck run with refusal history, a run mid-build,
 #     a regressed unit, a directory with most files missing, no run.log, an empty directory, and junk), the tool's board.json
 #     equals tests/board/expected/<name>.json (compared as JSON, key order free) and also the independent oracle

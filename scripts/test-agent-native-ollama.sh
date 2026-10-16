@@ -104,6 +104,7 @@ kill $stub 2>/dev/null; wait $stub 2>/dev/null
 printf 'edition 7;\nfn keep() -> [] int { return 2; }\n' > "$d/keep.cho"; cp "$d/keep.cho" "$d/before.cho"
 ag "$d/keep.cho" >/dev/null 2>&1; rc=$?
 [ "$rc" != 0 ] || { echo "FAIL: away: exit code 0 with no server" >&2; fail=1; }
+expect "away: no server is exit 1, not a gave-up code" "$rc" 1
 expect "away: the file is untouched" "$(cat "$d/keep.cho")" "$(cat "$d/before.cho")"
 
 # model: there is no default model, and no default provider. Missing or empty is exit 2, the flag named, the file untouched, no request made
@@ -248,7 +249,7 @@ expect "patch: a whole-file reply is accepted as a patch (exit)" "$rc" 0
 cmp -s "$d/pt.cho" "$d/pt.before" || { echo "FAIL: patch: re-sending the whole file changed it" >&2; fail=1; }
 mkpatch; printf 'I am not sure what to write here.\n' > "$d/response.txt"; cp "$d/pt.cho" "$d/pt.before"; rm -f "$d/ulog.pt"
 ag --output patch --usage-log "$d/ulog.pt" "$d/pt.cho" >/dev/null 2>&1; rc=$?
-expect "patch: prose only is exit 1" "$rc" 1
+expect "patch: prose only is exit 11 (gave up, no program)" "$rc" 11
 cmp -s "$d/pt.cho" "$d/pt.before" || { echo "FAIL: patch: the file changed though nothing usable came back" >&2; fail=1; }
 expect "patch: three samples, all no_program" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog.pt')])")" "['no_program', 'no_program', 'no_program']"
 kill $stub 2>/dev/null; wait $stub 2>/dev/null

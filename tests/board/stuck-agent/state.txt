@@ -1,0 +1,7 @@
+verified key
+verified section
+verified unquote
+verified kind
+verified raw
+verified dedupe
+verified find
