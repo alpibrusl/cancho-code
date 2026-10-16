@@ -247,6 +247,24 @@ fn file_block[&h, &z, &s, &t, &d](heap: &!h Heap, fs: &z Fs(""), src: &s [byte],
     return b;
 }
 
+// Does the signature of a unit in the file `name` mention `word` (`result.`, `buffer.`, `option.`)?
+fn file_names[&s, &t, &n, &x](src: &s [byte], tape: &t [int], name: &n [byte], word: &x [byte]) -> [] bool {
+    let units = json.get(src, tape, 0, "units");
+    var j = units + 1;
+    var left = json.count(tape, units);
+    while left > 0 {
+        if bytes.equal(plan.unit_file(src, tape, j), name) {
+            let sg = json.get(src, tape, j, "signature");
+            if sg >= 0 && json.is_string(tape, sg) && bytes.find(json.string_view(src, tape, sg), word) >= 0 {
+                return true;
+            }
+        }
+        j = json.skip(tape, j);
+        left = left - 1;
+    }
+    return false;
+}
+
 // The scaffold of a declared file: `edition 7;`, its `module` line when it has one, its imports (docs/multi-file.md). Written when the file is absent, so a
 // resumed run keeps what is there.
 fn write_files[&h, &z, &s, &t, &w](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], tape: &t [int], wd: &w [byte]) -> [heap, fs_read(""), fs_write("")] int {
@@ -275,15 +293,41 @@ fn write_files[&h, &z, &s, &t, &w](heap: &!h Heap, fs: &z Fs(""), src: &s [byte]
                             b = buffer.append(heap, b, ";\n");
                         }
                         let ni = plan.import_count(src, tape, k);
-                        if ni > 0 {
+                        // the standard modules the signatures of the file's own units name (`build`'s scaffold rule), unless the plan declares them
+                        var want_result = file_names(src, tape, nm, "result.");
+                        var want_buffer = file_names(src, tape, nm, "buffer.");
+                        var want_option = file_names(src, tape, nm, "option.");
+                        var q = 0;
+                        while q < ni {
+                            if bytes.equal(plan.import_at(src, tape, k, q), "std.result") {
+                                want_result = false;
+                            }
+                            if bytes.equal(plan.import_at(src, tape, k, q), "std.buffer") {
+                                want_buffer = false;
+                            }
+                            if bytes.equal(plan.import_at(src, tape, k, q), "std.option") {
+                                want_option = false;
+                            }
+                            q = q + 1;
+                        }
+                        if ni > 0 || want_result || want_buffer || want_option {
                             b = buffer.append(heap, b, "\n");
                         }
-                        var q = 0;
+                        q = 0;
                         while q < ni {
                             b = buffer.append(heap, b, "import ");
                             b = buffer.append(heap, b, plan.import_at(src, tape, k, q));
                             b = buffer.append(heap, b, ";\n");
                             q = q + 1;
+                        }
+                        if want_result {
+                            b = buffer.append(heap, b, "import std.result;\n");
+                        }
+                        if want_buffer {
+                            b = buffer.append(heap, b, "import std.buffer;\n");
+                        }
+                        if want_option {
+                            b = buffer.append(heap, b, "import std.option;\n");
                         }
                         if put(heap, fs, buffer.bytes(pq), b) < 0 {
                             r = -1;

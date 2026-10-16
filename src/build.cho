@@ -103,6 +103,18 @@ fn scaffold[&h, &s](heap: &!h Heap, src: &s [byte]) -> [heap] buffer.Buffer {
     }
     unbox_slice(heap, tb);
     var b = buffer.append(heap, buffer.empty(heap, 128), "edition 7;\n");
+    // a plan with files declares the imports of each file, and the project driver writes them (docs/multi-file.md)
+    var declared = 0;
+    let fb = box_slice(heap, json.tape_len(src), 0);
+    borrow mut fb as &!fw in {
+        let ftape = contents(fw);
+        json.parse(src, ftape);
+        declared = plan.files_declared(src, ftape);
+    }
+    unbox_slice(heap, fb);
+    if declared > 0 {
+        return b;
+    }
     if has_result {
         b = buffer.append(heap, b, "import std.result;\n");
     }

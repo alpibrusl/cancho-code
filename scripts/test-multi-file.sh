@@ -305,6 +305,25 @@ expect "resume: only cost and total are built" "$(order "$lg")" "digits width co
 expect "resume: tokens.cho still has one function" "$(grep -c 'fn tok_digits' "$wd/tokens.cho")" 1
 rm -rf "${wd:?}" "${rc:?}"
 
+# ---- std: the standard modules a file's signatures name are imported by the scaffold --------------------------------------------------
+set -- $(mk); wd=$1; rc=$2; lg=$3
+cat > "$rc/first.sh" <<'EOT'
+cat >> "$1" <<'EOS'
+
+pub fn tok_first(n: int) -> [] option.Option[int] {
+    if n > 0 {
+        return option.Option::Some(n);
+    }
+    return option.Option::None;
+}
+EOS
+EOT
+out=$(runp "$T/plan-std.json" "$wd" "$rc" "$lg" 1); r=$?
+expect "std: exit code" "$r" 0
+has "std: tokens.cho imports std.option (from the signature)" "$wd/tokens.cho" "import std.option;"
+expect "std: project.cho is as the driver made it" "$(cat "$wd/project.cho")" "edition 7;"
+rm -rf "${wd:?}" "${rc:?}"
+
 # ---- no plan: a file the plan does not declare ----------------------------------------------------------------------------------------------
 set -- $(mk); wd=$1; rc=$2; lg=$3
 out=$(runp "$T/plan-bad-file.json" "$wd" "$rc" "$lg" 1); r=$?
