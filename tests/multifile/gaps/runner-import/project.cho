@@ -1,0 +1,7 @@
+edition 7;
+
+import store;
+
+fn app() -> [] int {
+    return store.one() + 1;
+}

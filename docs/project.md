@@ -23,7 +23,8 @@ Usage errors (exit 2, nothing written, nothing asked of the agent): a unit the p
 
 | file in `workdir` | what |
 |---|---|
-| `project.cho` | `edition 7;` and the units' functions. The ONLY file the agent edits. Created (`edition 7;`) when absent. |
+| `project.cho` | `edition 7;` and the units' functions. The file the agent edits for a unit that names no other file. Created (`edition 7;`) when absent. |
+| `<file>` (`tokens.cho`, ...) | a plan with `files` (docs/multi-file.md): one file per entry, written from the plan's `module` and `imports` when absent; the file a unit with that `file` edits. Its sidecars are named after it (`tokens.cho.task`, `.trail.jsonl`, `.before`, `.agent.err`, `.agent.log`, `.snap<N>.cho`, `.call/`) as `project.cho`'s are |
 | `main.cho` | a fixed `main` that releases every capability; written by the driver each run. `cancho test` supplies its own `main`, so the program's `main` lives apart from the functions. |
 | `project.cho.task` | the unit being built: written before each unit (with `HINT:` lines when the unit was re-opened with `--hint`) |
 | `tests-<id>.cho` | the unit's examples as tests, written before each unit |
@@ -36,7 +37,7 @@ Usage errors (exit 2, nothing written, nothing asked of the agent): a unit the p
 
 The run's story is also kept in `journal/` (`events.jsonl` and `blobs/`: every attempt's prompt, reply, code, the compiler's whole refusal, the acceptance output and the diff against the attempt before; [journal.md](journal.md)); the files above are as they were.
 
-Files without a `module` header share one namespace when compiled together, so the tests call the functions unqualified.
+Files without a `module` header share one namespace when compiled together, so the tests call the functions unqualified. A plan with files ([multi-file.md](multi-file.md)) has one more kind: the tests of a unit of a module file start `edition 7;`, `module <name>;`, `import std.test;`, so they are in that module and are run on the module files without `project.cho` (every file, with `project.cho`, for a unit of `project.cho`); the checker and the final gate compile every file of the plan.
 
 ## The task file
 
@@ -45,6 +46,7 @@ UNIT: <id>
 FUNCTION: <name>
 SIGNATURE: <signature, as in the plan>
 DESCRIPTION: <the unit's description, decoded; only when the plan has one>
+FILE: <file>, MODULE: <module>, the file's imports, the public items of the files it imports, the files it does not: only for a plan with files (docs/multi-file.md)
 EXAMPLES:
 <one example per line, as in the plan>
 INSTRUCTIONS: Add this function to project.cho, keeping every other function as it is. The file has no main. Do not write tests or examples of your own: the examples above are run for you.

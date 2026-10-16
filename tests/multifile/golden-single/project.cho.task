@@ -1,0 +1,7 @@
+UNIT: c
+FUNCTION: big_double
+SIGNATURE: fn big_double(x: int) -> [] bool
+EXAMPLES:
+big_double(6) == true
+big_double(5) == false
+INSTRUCTIONS: Add this function to project.cho, keeping every other function as it is. The file has no main. Do not write tests or examples of your own: the examples above are run for you.

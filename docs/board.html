@@ -74,6 +74,7 @@
   .card .head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
   .card .id { font-weight: 650; overflow-wrap: anywhere; }
   .card .fn { font-family: var(--mono); font-size: 0.82rem; color: var(--muted); overflow-wrap: anywhere; }
+  .card .file { font-family: var(--mono); font-size: 0.72rem; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
   .chip { font-size: 0.78rem; padding: 1px 8px; border-radius: 999px; background: var(--soft); border: 1px solid var(--line); font-variant-numeric: tabular-nums; }
   .chip.warn { color: var(--warn); border-color: var(--warn); }
@@ -727,6 +728,7 @@ function card(u, states, usageKnown) {
   var head = el("div", "head");
   head.appendChild(el("span", "id", u.id));
   if (u.function) head.appendChild(el("span", "fn", u.function));
+  if (typeof u.file === "string" && u.file) head.appendChild(el("span", "chip file", u.file));
   c.appendChild(head);
 
   var chips = el("div", "chips");
@@ -1218,6 +1220,7 @@ function openUnit(u, focusN, opener) {
     var top = el("section", "sec");
     var kv = el("div", "kv");
     kv.appendChild(chip("state", u.column));
+    if (typeof u.file === "string" && u.file) kv.appendChild(chip("file", u.file));
     kv.appendChild(chip("attempts", u.attempts === null ? "unknown" : String(u.attempts)));
     if (u.regressions) kv.appendChild(chip("regressed", u.regressions + "×"));
     var cost = fmtUsd(u.cost_usd);
@@ -1300,7 +1303,7 @@ function eventLine(r) {
   else if (k === "plan_call") { s = "Planner round " + nz(e.round) + ": " + (e.outcome || "outcome not recorded") + (Array.isArray(e.errors) && e.errors.length ? ", " + e.errors.length + " refusal(s) fed back" : ""); if (e.outcome === "refused") cls = "bad"; }
   else if (k === "plan_review") s = "Review: kept " + nz(e.kept) + ", dropped " + (Array.isArray(e.dropped) ? e.dropped.length : "?");
   else if (k === "plan_final") { s = "Plan " + (e.valid === true ? "valid" : e.valid === false ? "not valid" : "validity not recorded") + (isNum(e.units) ? ", " + e.units + " units" : ""); cls = e.valid === false ? "bad" : ""; }
-  else if (k === "unit_start") s = "Unit " + nz(e.unit) + " started" + (e.function ? " (" + e.function + ")" : "");
+  else if (k === "unit_start") s = "Unit " + nz(e.unit) + " started" + (e.function ? " (" + e.function + ")" : "") + (typeof e.file === "string" && e.file ? " in " + e.file : "");
   else if (k === "attempt") { s = "Unit " + nz(e.unit) + ", attempt #" + nz(e.n) + ": " + (e.outcome || "outcome not recorded") + (e.decision ? " → " + e.decision : "") + (isNum(e.ms) ? " · " + fmtMs(e.ms) : ""); cls = e.outcome === "refused" || e.outcome === "defect" ? "bad" : (e.outcome === "accepted" || e.outcome === "verified" ? "good" : ""); }
   else if (k === "sweep") s = "Sweep after " + nz(e.after_unit) + ": " + sweepText(e);
   else if (k === "unit_end") { s = "Unit " + nz(e.unit) + " ended: " + (e.state || "state not recorded"); cls = e.state === "failed" ? "bad" : (e.state === "verified" ? "good" : ""); }
@@ -1504,16 +1507,16 @@ function renderGraph(d) {
     node.setAttribute("tabindex", "0");
     node.setAttribute("role", "button");
     var needs = Array.isArray(u.deps) && u.deps.length ? ", needs " + u.deps.join(", ") : ", needs nothing";
-    node.setAttribute("aria-label", "Unit " + id + (u.function ? ", function " + u.function : "") + ", " + colName(u.column) + ", " +
+    node.setAttribute("aria-label", "Unit " + id + (u.function ? ", function " + u.function : "") + (u.file ? ", file " + u.file : "") + ", " + colName(u.column) + ", " +
       (f.att === null ? "attempts not recorded" : plural(f.att, "attempt", "attempts")) + ", cost " + (f.cost || "not recorded") +
       (f.secs ? ", agent time " + f.secs : "") + needs + (onCrit[id] ? ", on the critical path" : "") + (rank[id] ? ", built number " + rank[id] : "") + ". Press Enter for details.");
-    node.appendChild(sv("title", null, id + (u.function ? " (" + u.function + ")" : "") + ": " + colName(u.column) + (onCrit[id] ? ", on the critical path" : "")));
+    node.appendChild(sv("title", null, id + (u.function ? " (" + u.function + ")" : "") + (u.file ? " in " + u.file : "") + ": " + colName(u.column) + (onCrit[id] ? ", on the critical path" : "")));
     node.appendChild(sv("rect", { "class": "ring", x: -4, y: -4, width: g.nodeW + 8, height: g.nodeH + 8, rx: 12 }));
     node.appendChild(sv("rect", { "class": "box", width: g.nodeW, height: g.nodeH, rx: 8 }));
     node.appendChild(sv("circle", { "class": "dotc", cx: 14, cy: 18, r: 5 }));
     node.appendChild(sv("text", { "class": "t-id", x: 26, y: 23 }, clip(id, 18)));
     if (rank[id]) node.appendChild(sv("text", { "class": "t-rank", x: g.nodeW - 8, y: 22, "text-anchor": "end" }, "#" + rank[id]));
-    node.appendChild(sv("text", { "class": "t-fn", x: 12, y: 38 }, u.function ? clip(u.function, 30) : "function: not recorded"));
+    node.appendChild(sv("text", { "class": "t-fn", x: 12, y: 38 }, u.function ? clip(u.function + (u.file ? " \u00b7 " + u.file : ""), 34) : "function: not recorded"));
     node.appendChild(sv("text", { "class": "t-facts", x: 12, y: 52 }, clip([colName(u.column), f.att === null ? "? att" : f.att + " att", f.cost || "$ ?", f.secs].filter(Boolean).join(" \u00b7 "), 36)));
     function open() { openUnit(u, null, node); }
     node.addEventListener("click", open);

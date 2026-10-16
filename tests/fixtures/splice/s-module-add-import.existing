@@ -1,0 +1,7 @@
+edition 7;
+
+module tokens;
+
+pub fn tok_one() -> [] int {
+    return 1;
+}

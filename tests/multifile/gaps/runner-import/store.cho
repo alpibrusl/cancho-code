@@ -1,0 +1,7 @@
+edition 7;
+
+module store;
+
+pub fn one() -> [] int {
+    return 1;
+}

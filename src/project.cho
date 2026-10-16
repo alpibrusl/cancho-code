@@ -116,6 +116,232 @@ fn say[&h, &i, &z, &l, &d](heap: &!h Heap, io: &!i Io, fs: &z Fs(""), log: &l [b
     return 0;
 }
 
+// ---- files (docs/multi-file.md) ---------------------------------------------------------------------------------------------------------
+
+// `dir/a.cho dir/b.cho ` for the names (separated by a space) of the plan's extra files, each followed by a space: what goes on a compile command
+// between `project.cho` and the rest. Nothing for a single-file plan.
+fn add_files[&h, &d, &f](heap: &!h Heap, b: buffer.Buffer, dir: &d [byte], names: &f [byte]) -> [heap] buffer.Buffer {
+    var out = b;
+    var at = 0;
+    while at < len(names) {
+        var e = at;
+        while e < len(names) && int_of(names[e]) != 32 {
+            e = e + 1;
+        }
+        if e > at {
+            out = buffer.append(heap, out, dir);
+            out = buffer.append(heap, out, "/");
+            out = buffer.append(heap, out, names[at..e]);
+            out = buffer.append(heap, out, " ");
+        }
+        at = e + 1;
+    }
+    return out;
+}
+
+// The text of the file `name` in `dir`, at most `cap` bytes; empty when it cannot be read.
+fn file_text[&h, &z, &d, &n](heap: &!h Heap, fs: &z Fs(""), dir: &d [byte], name: &n [byte]) -> [heap, fs_read("")] buffer.Buffer {
+    let path = in_wd(heap, dir, name, "", "");
+    var text = buffer.empty(heap, 16);
+    borrow path as &pq in {
+        let (t, ok) = slurp_all(heap, fs, buffer.bytes(pq), 1048576);
+        buffer.drop(heap, text);
+        text = t;
+    }
+    buffer.drop(heap, path);
+    return text;
+}
+
+// What the task says about files, for a plan that has them (nothing otherwise): the file the unit is built in, its module, the imports its file already
+// has, and the public items of every file it imports (read from `dir`, where the unit works, as they are now), then the files it does not import.
+fn file_block[&h, &z, &s, &t, &d](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], tape: &t [int], node: int, dir: &d [byte]) -> [heap, fs_read("")] buffer.Buffer {
+    var b = buffer.empty(heap, 64);
+    let uf = plan.unit_file(src, tape, node);
+    let fc = plan.files_declared(src, tape);
+    if fc == 0 && bytes.equal(uf, "project.cho") {
+        return b;
+    }
+    let um = plan.unit_module(src, tape, node);
+    b = buffer.append(heap, b, "\nFILE: ");
+    b = buffer.append(heap, b, uf);
+    if len(um) > 0 {
+        b = buffer.append(heap, b, "\nMODULE: ");
+        b = buffer.append(heap, b, um);
+    }
+    let k = plan.declared_index(src, tape, uf);
+    var q = 0;
+    var shown = 0;
+    if k >= 0 {
+        let ni = plan.import_count(src, tape, k);
+        if ni > 0 {
+            b = buffer.append(heap, b, "\nIMPORTS ALREADY AT THE TOP OF ");
+            b = buffer.append(heap, b, uf);
+            b = buffer.append(heap, b, ": ");
+            while q < ni {
+                if q > 0 {
+                    b = buffer.append(heap, b, ", ");
+                }
+                b = buffer.append(heap, b, plan.import_at(src, tape, k, q));
+                q = q + 1;
+            }
+        }
+        q = 0;
+        while q < ni {
+            let im = plan.import_at(src, tape, k, q);
+            let nf = plan.file_of_module(src, tape, im);
+            if len(nf) > 0 {
+                b = buffer.append(heap, b, "\nOTHER FILE ");
+                b = buffer.append(heap, b, nf);
+                b = buffer.append(heap, b, " (module ");
+                b = buffer.append(heap, b, im);
+                b = buffer.append(heap, b, "; read only, you do not write it; call its public items with the module name in front, as ");
+                b = buffer.append(heap, b, im);
+                b = buffer.append(heap, b, ".NAME(...)); its public items now:\n");
+                let ft = file_text(heap, fs, dir, nf);
+                borrow ft as &ftq in {
+                    let items = splice.public_items(heap, buffer.bytes(ftq));
+                    borrow items as &itq in {
+                        if len(buffer.bytes(itq)) == 0 {
+                            b = buffer.append(heap, b, "(nothing yet)\n");
+                        } else {
+                            b = buffer.append(heap, b, buffer.bytes(itq));
+                        }
+                    }
+                    buffer.drop(heap, items);
+                }
+                buffer.drop(heap, ft);
+                shown = shown + 1;
+            }
+            q = q + 1;
+        }
+    }
+    var other = 0;
+    var m = 0;
+    while m < fc {
+        let nm = plan.declared_file(src, tape, m);
+        if len(nm) > 0 && bytes.equal(nm, uf) == false && bytes.equal(nm, "project.cho") == false {
+            var imported = false;
+            if k >= 0 {
+                var r = 0;
+                while r < plan.import_count(src, tape, k) {
+                    if bytes.equal(plan.import_at(src, tape, k, r), plan.declared_module(src, tape, m)) {
+                        imported = true;
+                    }
+                    r = r + 1;
+                }
+            }
+            if imported == false {
+                if other == 0 {
+                    b = buffer.append(heap, b, "\nNOT IMPORTED BY ");
+                    b = buffer.append(heap, b, uf);
+                    b = buffer.append(heap, b, " (do not use): ");
+                } else {
+                    b = buffer.append(heap, b, ", ");
+                }
+                b = buffer.append(heap, b, nm);
+                other = other + 1;
+            }
+        }
+        m = m + 1;
+    }
+    return b;
+}
+
+// Does the signature of a unit in the file `name` mention `word` (`result.`, `buffer.`, `option.`)?
+fn file_names[&s, &t, &n, &x](src: &s [byte], tape: &t [int], name: &n [byte], word: &x [byte]) -> [] bool {
+    let units = json.get(src, tape, 0, "units");
+    var j = units + 1;
+    var left = json.count(tape, units);
+    while left > 0 {
+        if bytes.equal(plan.unit_file(src, tape, j), name) {
+            let sg = json.get(src, tape, j, "signature");
+            if sg >= 0 && json.is_string(tape, sg) && bytes.find(json.string_view(src, tape, sg), word) >= 0 {
+                return true;
+            }
+        }
+        j = json.skip(tape, j);
+        left = left - 1;
+    }
+    return false;
+}
+
+// The scaffold of a declared file: `edition 7;`, its `module` line when it has one, its imports (docs/multi-file.md). Written when the file is absent, so a
+// resumed run keeps what is there.
+fn write_files[&h, &z, &s, &t, &w](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], tape: &t [int], wd: &w [byte]) -> [heap, fs_read(""), fs_write("")] int {
+    var r = 0;
+    let fc = plan.files_declared(src, tape);
+    var k = 0;
+    while k < fc {
+        let nm = plan.declared_file(src, tape, k);
+        if len(nm) > 0 {
+            let pp = in_wd(heap, wd, nm, "", "");
+            borrow pp as &pq in {
+                region g {
+                    let probe = alloc_slice[g](16, byte_of(0));
+                    let had = fs_read(fs, buffer.bytes(pq), probe);
+                    // project.cho is made by `write_fixed` as just `edition 7;`: that is a file nobody has written to yet, and gets its imports
+                    var fresh = had < 0;
+                    if had == 11 && bytes.equal(probe[0..11], "edition 7;\n") {
+                        fresh = true;
+                    }
+                    if fresh {
+                        var b = buffer.append(heap, buffer.empty(heap, 128), "edition 7;\n");
+                        let md = plan.declared_module(src, tape, k);
+                        if len(md) > 0 {
+                            b = buffer.append(heap, b, "\nmodule ");
+                            b = buffer.append(heap, b, md);
+                            b = buffer.append(heap, b, ";\n");
+                        }
+                        let ni = plan.import_count(src, tape, k);
+                        // the standard modules the signatures of the file's own units name (`build`'s scaffold rule), unless the plan declares them
+                        var want_result = file_names(src, tape, nm, "result.");
+                        var want_buffer = file_names(src, tape, nm, "buffer.");
+                        var want_option = file_names(src, tape, nm, "option.");
+                        var q = 0;
+                        while q < ni {
+                            if bytes.equal(plan.import_at(src, tape, k, q), "std.result") {
+                                want_result = false;
+                            }
+                            if bytes.equal(plan.import_at(src, tape, k, q), "std.buffer") {
+                                want_buffer = false;
+                            }
+                            if bytes.equal(plan.import_at(src, tape, k, q), "std.option") {
+                                want_option = false;
+                            }
+                            q = q + 1;
+                        }
+                        if ni > 0 || want_result || want_buffer || want_option {
+                            b = buffer.append(heap, b, "\n");
+                        }
+                        q = 0;
+                        while q < ni {
+                            b = buffer.append(heap, b, "import ");
+                            b = buffer.append(heap, b, plan.import_at(src, tape, k, q));
+                            b = buffer.append(heap, b, ";\n");
+                            q = q + 1;
+                        }
+                        if want_result {
+                            b = buffer.append(heap, b, "import std.result;\n");
+                        }
+                        if want_buffer {
+                            b = buffer.append(heap, b, "import std.buffer;\n");
+                        }
+                        if want_option {
+                            b = buffer.append(heap, b, "import std.option;\n");
+                        }
+                        if put(heap, fs, buffer.bytes(pq), b) < 0 {
+                            r = -1;
+                        }
+                    }
+                }
+            }
+            buffer.drop(heap, pp);
+        }
+        k = k + 1;
+    }
+    return r;
+}
+
 // ---- the plan -------------------------------------------------------------
 
 fn uid[&s, &t, &n](src: &s [byte], tape: &t [int], nodes: &n [int], u: int) -> [] &s [byte] {
@@ -248,7 +474,16 @@ fn write_tests[&h, &z, &s, &t, &w](heap: &!h Heap, fs: &z Fs(""), src: &s [byte]
         }
         q = q + 1;
     }
-    var tests = buffer.append(heap, buffer.empty(heap, 512), "edition 7;\nimport std.test;\n");
+    // A unit of a module file has its tests in that module (docs/multi-file.md): they call the unit's function as the file does, see what the file
+    // imports, and the unit's own file imports `std.test` for them.
+    var tests = buffer.append(heap, buffer.empty(heap, 512), "edition 7;\n");
+    let tmod = plan.unit_module(src, tape, node);
+    if len(tmod) > 0 {
+        tests = buffer.append(heap, tests, "module ");
+        tests = buffer.append(heap, tests, tmod);
+        tests = buffer.append(heap, tests, ";\n");
+    }
+    tests = buffer.append(heap, tests, "import std.test;\n");
     var legend = buffer.empty(heap, 256);
     // A unit's own `tests` (docs/plan.md) are the executable form when it has any: the examples stay documentation, for a function
     // an example cannot call (a result that is text, or a Result).
@@ -319,8 +554,8 @@ fn write_tests[&h, &z, &s, &t, &w](heap: &!h Heap, fs: &z Fs(""), src: &s [byte]
     return r;
 }
 
-// `project.cho.task` for unit `node`.
-fn write_task[&h, &z, &s, &t, &w, &x, &y](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], tape: &t [int], node: int, wd: &w [byte], note: &x [byte], hint: &y [byte], integ: bool) -> [heap, fs_write("")] int {
+// `<file>.task` for unit `node` (`project.cho.task` for a unit of the default file).
+fn write_task[&h, &z, &s, &t, &w, &x, &y](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], tape: &t [int], node: int, wd: &w [byte], note: &x [byte], hint: &y [byte], integ: bool) -> [heap, fs_read(""), fs_write("")] int {
     let id = json.string_view(src, tape, json.get(src, tape, node, "id"));
     let sg = json.get(src, tape, node, "signature");
     var sig = add_str(heap, buffer.empty(heap, 96), src, tape, sg);
@@ -348,6 +583,14 @@ fn write_task[&h, &z, &s, &t, &w, &x, &y](heap: &!h Heap, fs: &z Fs(""), src: &s
         b = buffer.append(heap, b, "\nEFFORT: ");
         b = add_decoded(heap, b, src, tape, en);
     }
+    // The files of a multi-file plan (docs/multi-file.md): which file this unit writes and what the other files offer.
+    let fb = file_block(heap, fs, src, tape, node, wd);
+    borrow fb as &fbq in {
+        b = buffer.append(heap, b, buffer.bytes(fbq));
+    }
+    buffer.drop(heap, fb);
+    let uf = plan.unit_file(src, tape, node);
+    let um = plan.unit_module(src, tape, node);
     if integ {
         // The integration unit (docs/plan.md `integration`): the application, wired from the functions already in project.cho, judged by
         // the service's acceptance scenarios, whose output is the feedback. It has no examples.
@@ -363,7 +606,17 @@ fn write_task[&h, &z, &s, &t, &w, &x, &y](heap: &!h Heap, fs: &z Fs(""), src: &s
             j = json.skip(tape, j);
             left = left - 1;
         }
-        b = buffer.append(heap, b, "INSTRUCTIONS: Add this function to project.cho, keeping every other function as it is. The file has no main. Do not write tests or examples of your own: the examples above are run for you.\n");
+        if len(um) > 0 {
+            b = buffer.append(heap, b, "INSTRUCTIONS: Add this function to ");
+            b = buffer.append(heap, b, uf);
+            b = buffer.append(heap, b, ", keeping every other function as it is. The file is the module `");
+            b = buffer.append(heap, b, um);
+            b = buffer.append(heap, b, "`: its `module` line and its imports are already there, and you write only this one file. Declare the function `pub fn`: another module can call a function only when it is `pub`, and the unit is refused otherwise. Call another module's function with the module name in front (`module_name.function_name(...)`), only for a module this file imports. The file has no main. Do not write tests or examples of your own: the examples above are run for you.\n");
+        } else if plan.files_declared(src, tape) > 0 {
+            b = buffer.append(heap, b, "INSTRUCTIONS: Add this function to project.cho, keeping every other function as it is. project.cho is the root file: call a function of another file with its module name in front (`module_name.function_name(...)`), for a module the file imports. The file has no main. Do not write tests or examples of your own: the examples above are run for you.\n");
+        } else {
+            b = buffer.append(heap, b, "INSTRUCTIONS: Add this function to project.cho, keeping every other function as it is. The file has no main. Do not write tests or examples of your own: the examples above are run for you.\n");
+        }
     }
     if len(note) > 0 {
         b = buffer.append(heap, b, "NOTE: ");
@@ -386,7 +639,7 @@ fn write_task[&h, &z, &s, &t, &w, &x, &y](heap: &!h Heap, fs: &z Fs(""), src: &s
         }
         at = e + 1;
     }
-    let path = in_wd(heap, wd, "project.cho.task", "", "");
+    let path = in_wd(heap, wd, uf, ".task", "");
     var r = 0;
     borrow path as &pq in {
         r = put(heap, fs, buffer.bytes(pq), b);
@@ -478,14 +731,49 @@ fn write_fixed[&h, &z, &w](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte]) -> [hea
 //
 // `libs` are source files every compile gets beside the project (a service's http-server package). The integration unit's acceptance
 // is the service's own command (`accept`): it builds and runs the whole service, and the runner appends the project file to it.
-fn unit_accept[&h, &k, &w, &d, &ac, &lb](heap: &!h Heap, checker: &k [byte], wd: &w [byte], id: &d [byte], integ: bool, accept: &ac [byte], libs: &lb [byte]) -> [heap] buffer.Buffer {
+fn unit_accept[&h, &k, &w, &s, &t, &n, &ac, &lb](heap: &!h Heap, checker: &k [byte], wd: &w [byte], src: &s [byte], tape: &t [int], nodes: &n [int], u: int, integ: bool, accept: &ac [byte], libs: &lb [byte]) -> [heap] buffer.Buffer {
     if integ {
         return buffer.append(heap, buffer.empty(heap, 512), accept);
     }
-    var b = buffer.append(heap, buffer.empty(heap, 512), checker);
+    let id = uid(src, tape, nodes, u);
+    var b = buffer.empty(heap, 512);
+    // A unit of a module file declares its function `pub` (docs/multi-file.md): its tests are in the module and would pass on a private function,
+    // but the next unit, in another module, could not call it. Checked first, with the refusal as the first line of the output.
+    let um = plan.unit_module(src, tape, nodes[u]);
+    if len(um) > 0 {
+        let uf = plan.unit_file(src, tape, nodes[u]);
+        let (fa, fe) = plan.name_range(json.string_view(src, tape, json.get(src, tape, nodes[u], "signature")));
+        if fa >= 0 {
+            let fname = json.string_view(src, tape, json.get(src, tape, nodes[u], "signature"))[fa..fe];
+            b = buffer.append(heap, b, "{ grep -Eq '^pub fn ");
+            b = buffer.append(heap, b, fname);
+            b = buffer.append(heap, b, "[[(]' ");
+            b = buffer.append(heap, b, wd);
+            b = buffer.append(heap, b, "/");
+            b = buffer.append(heap, b, uf);
+            b = buffer.append(heap, b, " || { echo 'error: ");
+            b = buffer.append(heap, b, fname);
+            b = buffer.append(heap, b, " is not declared pub fn in ");
+            b = buffer.append(heap, b, uf);
+            b = buffer.append(heap, b, " (module ");
+            b = buffer.append(heap, b, um);
+            b = buffer.append(heap, b, "): another module can call only a pub function'; exit 1; }; } && ");
+        }
+    }
+    b = buffer.append(heap, b, checker);
     b = buffer.append(heap, b, " test --std --backend cranelift ");
-    b = buffer.append(heap, b, wd);
-    b = buffer.append(heap, b, "/project.cho ");
+    // The tests of a unit of a module file are in that module and run on the module files without project.cho (docs/multi-file.md): `cancho test`
+    // makes a root runner that imports the module under test, and a project.cho that imports it too is refused (`is already bound to another import`).
+    // No module imports project.cho, so nothing of the module's depends on it.
+    if len(um) == 0 {
+        b = buffer.append(heap, b, wd);
+        b = buffer.append(heap, b, "/project.cho ");
+    }
+    let fl = plan.extra_files(heap, src, tape);
+    borrow fl as &flq in {
+        b = add_files(heap, b, wd, buffer.bytes(flq));
+    }
+    buffer.drop(heap, fl);
     b = buffer.append(heap, b, wd);
     b = buffer.append(heap, b, "/tests-");
     b = buffer.append(heap, b, id);
@@ -508,8 +796,8 @@ fn accept_ms(integ: bool) -> [] int {
 }
 
 // Run unit `id`'s acceptance command on project.cho.
-fn verify[&h, &x, &c, &k, &w, &d, &ac, &lb](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, checker: &k [byte], wd: &w [byte], id: &d [byte], integ: bool, accept: &ac [byte], libs: &lb [byte]) -> [heap, exec(""), clock, poll] acceptance.Result {
-    let text = unit_accept(heap, checker, wd, id, integ, accept, libs);
+fn verify[&h, &x, &c, &k, &w, &s, &t, &n, &ac, &lb](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, checker: &k [byte], wd: &w [byte], src: &s [byte], tape: &t [int], nodes: &n [int], u: int, integ: bool, accept: &ac [byte], libs: &lb [byte]) -> [heap, exec(""), clock, poll] acceptance.Result {
+    let text = unit_accept(heap, checker, wd, src, tape, nodes, u, integ, accept, libs);
     let file = in_wd(heap, wd, "project.cho", "", "");
     var ans = acceptance.Result { held: 2, why: buffer.empty(heap, 8), said: buffer.empty(heap, 8) };
     borrow text as &tb in {
@@ -566,7 +854,7 @@ fn recheck[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &b, &l, &ac, &lb](hea
     var bad_ids = buffer.empty(heap, 64);
     while u < count {
         if u != skip && meta[3 * u] == 1 {
-            let r = verify(heap, exec, clock, checker, wd, uid(src, tape, nodes, u), u == integ, accept, libs);
+            let r = verify(heap, exec, clock, checker, wd, src, tape, nodes, u, u == integ, accept, libs);
             let acceptance.Result { held, why, said } = r;
             buffer.drop(heap, why);
             if held == 0 {
@@ -604,12 +892,18 @@ fn build[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &ht](
         meta[3 * u + 1] = meta[3 * u + 1] + 1;
         say(heap, io, fs, log, id, "building");
     }
-    let file = in_wd(heap, wd, "project.cho", "", "");
+    let uf = plan.unit_file(src, tape, nodes[u]);
+    let file = in_wd(heap, wd, uf, "", "");
     var cmd = buffer.append(heap, buffer.empty(heap, 512), "-c\0");
     cmd = buffer.append(heap, cmd, checker);
     cmd = buffer.append(heap, cmd, " check --std --output json --backend cranelift ");
     cmd = buffer.append(heap, cmd, wd);
     cmd = buffer.append(heap, cmd, "/project.cho ");
+    let fl = plan.extra_files(heap, src, tape);
+    borrow fl as &flq in {
+        cmd = add_files(heap, cmd, wd, buffer.bytes(flq));
+    }
+    buffer.drop(heap, fl);
     cmd = buffer.append(heap, cmd, wd);
     cmd = buffer.append(heap, cmd, "/main.cho ");
     cmd = buffer.append(heap, cmd, libs);
@@ -619,12 +913,18 @@ fn build[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &ht](
     act = buffer.append(heap, act, " ");
     act = buffer.append(heap, act, wd);
     // the agent's standard error goes to a file the driver reads after every turn (src/driver.cho `agent_note`)
-    act = buffer.append(heap, act, "/project.cho 2>");
+    act = buffer.append(heap, act, "/");
+    act = buffer.append(heap, act, uf);
+    act = buffer.append(heap, act, " 2>");
     act = buffer.append(heap, act, wd);
-    act = buffer.append(heap, act, "/project.cho.agent.err\0");
+    act = buffer.append(heap, act, "/");
+    act = buffer.append(heap, act, uf);
+    act = buffer.append(heap, act, ".agent.err\0");
     var prefix = buffer.append(heap, buffer.empty(heap, 128), wd);
-    prefix = buffer.append(heap, prefix, "/project.cho.snap");
-    let accept = unit_accept(heap, checker, wd, id, u == integ, accept_cmd, libs);
+    prefix = buffer.append(heap, prefix, "/");
+    prefix = buffer.append(heap, prefix, uf);
+    prefix = buffer.append(heap, prefix, ".snap");
+    let accept = unit_accept(heap, checker, wd, src, tape, nodes, u, u == integ, accept_cmd, libs);
     let jd = trail.journal_dir(heap, wd);
     var status = 1;
     borrow jd as &jq in {
@@ -681,6 +981,10 @@ fn unit_start_event[&h, &c, &z, &d, &s, &t](heap: &!h Heap, clock: &c Clock, fs:
         }
     }
     buffer.drop(heap, sig);
+    // the module file the unit is built in, for a plan that has files or a unit that names one (docs/multi-file.md)
+    if plan.files_declared(src, tape) > 0 || json.get(src, tape, node, "file") >= 0 {
+        w = trail.put_str(heap, w, "file", plan.unit_file(src, tape, node));
+    }
     // a unit re-opened by the person (`how` is `retry` or `patch`): the story says so
     if len(how) > 0 {
         w = trail.put_flag(heap, w, how, true);
@@ -712,7 +1016,7 @@ fn unit_start_event[&h, &c, &z, &d, &s, &t](heap: &!h Heap, clock: &c Clock, fs:
 // The unit's journal event (docs/journal.md): its start (`ended` false), or its end in `state` (the attempts are those of its trail).
 fn unit_event[&h, &c, &z, &s, &t, &n, &w, &d](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), wd: &w [byte], src: &s [byte], tape: &t [int], node: int, id: &d [byte], state: &static [byte], ended: bool, how: &static [byte]) -> [heap, clock, fs_read(""), fs_write("")] int {
     let jd = trail.journal_dir(heap, wd);
-    let tp = in_wd(heap, wd, "project.cho.trail.jsonl", "", "");
+    let tp = in_wd(heap, wd, plan.unit_file(src, tape, node), ".trail.jsonl", "");
     borrow jd as &jq in {
         borrow tp as &tq in {
             if ended {
@@ -727,10 +1031,10 @@ fn unit_event[&h, &c, &z, &s, &t, &n, &w, &d](heap: &!h Heap, clock: &c Clock, f
     return 0;
 }
 
-// Copy project.cho to `<name>` in the work directory, or `<name>` back over project.cho (`back`): 0, or -1.
-fn keep_copy[&h, &z, &w, &d](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], name: &d [byte], back: bool) -> [heap, fs_read(""), fs_write("")] int {
-    let file = in_wd(heap, wd, "project.cho", "", "");
-    let other = in_wd(heap, wd, name, "", "");
+// Copy the unit's file `uf` (project.cho for a unit of the default file) to `<uf>.before` in the work directory, or `<uf>.before` back over it (`back`): 0, or -1.
+fn keep_copy[&h, &z, &w, &d](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], uf: &d [byte], back: bool) -> [heap, fs_read(""), fs_write("")] int {
+    let file = in_wd(heap, wd, uf, "", "");
+    let other = in_wd(heap, wd, uf, ".before", "");
     var r = -1;
     borrow file as &fb in {
         borrow other as &ob in {
@@ -747,8 +1051,8 @@ fn keep_copy[&h, &z, &w, &d](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], name:
 }
 
 // Keep the unit's trail, whatever its outcome: `trail-<id>.jsonl`.
-fn keep_trail[&h, &z, &d, &w](heap: &!h Heap, fs: &z Fs(""), id: &d [byte], wd: &w [byte]) -> [heap, fs_read(""), fs_write("")] int {
-    let from = in_wd(heap, wd, "project.cho.trail.jsonl", "", "");
+fn keep_trail[&h, &z, &d, &w, &u](heap: &!h Heap, fs: &z Fs(""), id: &d [byte], wd: &w [byte], uf: &u [byte]) -> [heap, fs_read(""), fs_write("")] int {
+    let from = in_wd(heap, wd, uf, ".trail.jsonl", "");
     let into = in_wd(heap, wd, "trail-", id, ".jsonl");
     var r = -1;
     borrow from as &fb in {
@@ -762,8 +1066,8 @@ fn keep_trail[&h, &z, &d, &w](heap: &!h Heap, fs: &z Fs(""), id: &d [byte], wd: 
 }
 
 // Keep the unit's agent log (the standard error of every turn, src/driver.cho), whatever its outcome: `agent-<id>.log`.
-fn keep_agent_log[&h, &z, &d, &w](heap: &!h Heap, fs: &z Fs(""), id: &d [byte], wd: &w [byte]) -> [heap, fs_read(""), fs_write("")] int {
-    let from = in_wd(heap, wd, "project.cho.agent.log", "", "");
+fn keep_agent_log[&h, &z, &d, &w, &u](heap: &!h Heap, fs: &z Fs(""), id: &d [byte], wd: &w [byte], uf: &u [byte]) -> [heap, fs_read(""), fs_write("")] int {
+    let from = in_wd(heap, wd, uf, ".agent.log", "");
     let into = in_wd(heap, wd, "agent-", id, ".log");
     var r = -1;
     borrow from as &fb in {
@@ -782,6 +1086,10 @@ fn final_gate[&h, &x, &c, &s, &t, &n, &k, &w, &ac, &lb](heap: &!h Heap, exec: &x
     b = buffer.append(heap, b, " check --std --output json --backend cranelift ");
     b = buffer.append(heap, b, wd);
     b = buffer.append(heap, b, "/project.cho ");
+    let fl = plan.extra_files(heap, src, tape);
+    borrow fl as &flq in {
+        b = add_files(heap, b, wd, buffer.bytes(flq));
+    }
     b = buffer.append(heap, b, wd);
     b = buffer.append(heap, b, "/main.cho ");
     b = buffer.append(heap, b, libs);
@@ -792,8 +1100,13 @@ fn final_gate[&h, &x, &c, &s, &t, &n, &k, &w, &ac, &lb](heap: &!h Heap, exec: &x
             b = buffer.append(heap, b, " && ");
             b = buffer.append(heap, b, checker);
             b = buffer.append(heap, b, " test --std --backend cranelift ");
-            b = buffer.append(heap, b, wd);
-            b = buffer.append(heap, b, "/project.cho ");
+            if len(plan.unit_module(src, tape, nodes[u])) == 0 {
+                b = buffer.append(heap, b, wd);
+                b = buffer.append(heap, b, "/project.cho ");
+            }
+            borrow fl as &flq2 in {
+                b = add_files(heap, b, wd, buffer.bytes(flq2));
+            }
             b = buffer.append(heap, b, wd);
             b = buffer.append(heap, b, "/tests-");
             b = buffer.append(heap, b, uid(src, tape, nodes, u));
@@ -811,6 +1124,7 @@ fn final_gate[&h, &x, &c, &s, &t, &n, &k, &w, &ac, &lb](heap: &!h Heap, exec: &x
         b = buffer.append(heap, b, "/project.cho");
     }
     b = buffer.append(heap, b, " #");
+    buffer.drop(heap, fl);
     let file = in_wd(heap, wd, "project.cho", "", "");
     var ok = false;
     borrow b as &bb in {
@@ -957,9 +1271,9 @@ fn dep_reached[&s, &t, &n, &r](src: &s [byte], tape: &t [int], nodes: &n [int], 
 // The unit's trail is continued, not restarted, when the person re-opens it: its earlier records are put back as the loop's trail file (the loop adds
 // to it) and their number is the offset of the new attempts' numbers (the journal's blobs are named by them, and the earlier attempts' stay).
 // Answers the number of earlier records; 0 when the unit has no trail yet (the loop starts a fresh one).
-fn seed_trail[&h, &z, &d, &w](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], id: &d [byte]) -> [heap, fs_read(""), fs_write("")] int {
+fn seed_trail[&h, &z, &d, &w, &u](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], id: &d [byte], uf: &u [byte]) -> [heap, fs_read(""), fs_write("")] int {
     let from = in_wd(heap, wd, "trail-", id, ".jsonl");
-    let into = in_wd(heap, wd, "project.cho.trail.jsonl", "", "");
+    let into = in_wd(heap, wd, uf, ".trail.jsonl", "");
     var n = 0;
     borrow from as &fb in {
         borrow into as &ib in {
@@ -1023,8 +1337,8 @@ fn show_refusal[&h, &i, &z, &l, &w, &d](heap: &!h Heap, io: &!i Io, fs: &z Fs(""
 
 // A patch that could not even be put into the file (it holds no item, or the splice refused it) is still an attempt: the trail's record and the
 // journal's `attempt` event (outcome `human_patch`, decision `ceiling`: the person's one try), with the patch as the code and the splice's report.
-fn splice_refused[&h, &c, &z, &w, &d, &p, &r](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), wd: &w [byte], id: &d [byte], base: int, patch: &p [byte], report: &r [byte]) -> [heap, clock, fs_read(""), fs_write("")] int {
-    let tp = in_wd(heap, wd, "project.cho.trail.jsonl", "", "");
+fn splice_refused[&h, &c, &z, &w, &d, &p, &r, &u](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), wd: &w [byte], id: &d [byte], base: int, patch: &p [byte], report: &r [byte], uf: &u [byte]) -> [heap, clock, fs_read(""), fs_write("")] int {
+    let tp = in_wd(heap, wd, uf, ".trail.jsonl", "");
     borrow tp as &tq in {
         if base == 0 {
             trail.begin(fs, buffer.bytes(tq));
@@ -1074,11 +1388,12 @@ fn apply_patch[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &l, &ac, &lb, &pf
         tell(heap, io, fs, log, buffer.bytes(lnb));
     }
     buffer.drop(heap, line);
-    keep_copy(heap, fs, wd, "project.cho.before", false);
+    let uf = plan.unit_file(src, tape, nodes[u]);
+    keep_copy(heap, fs, wd, uf, false);
     unit_event(heap, clock, fs, wd, src, tape, nodes[u], id, "", false, "patch");
-    let base = seed_trail(heap, fs, wd, id);
+    let base = seed_trail(heap, fs, wd, id, uf);
     // splice: the patch as a model's reply would be read (fences and all), then put into the file
-    let pp = in_wd(heap, wd, "project.cho", "", "");
+    let pp = in_wd(heap, wd, uf, "", "");
     var cur = buffer.empty(heap, 16);
     var cur_ok = false;
     borrow pp as &ppq in {
@@ -1114,7 +1429,7 @@ fn apply_patch[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &l, &ac, &lb, &pf
     buffer.drop(heap, pat);
     var result = 1;
     if code == 0 {
-        let pf2 = in_wd(heap, wd, "project.cho.patched", "", "");
+        let pf2 = in_wd(heap, wd, uf, ".patched", "");
         borrow pf2 as &pfq in {
             put(heap, fs, buffer.bytes(pfq), newfile);
         }
@@ -1122,12 +1437,14 @@ fn apply_patch[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &l, &ac, &lb, &pf
         // the agent of this attempt is a copy, not a model
         var cp = buffer.append(heap, buffer.empty(heap, 256), "cp ");
         cp = buffer.append(heap, cp, wd);
-        cp = buffer.append(heap, cp, "/project.cho.patched");
+        cp = buffer.append(heap, cp, "/");
+        cp = buffer.append(heap, cp, uf);
+        cp = buffer.append(heap, cp, ".patched");
         borrow cp as &cpq in {
             result = build(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, u, checker, wd, buffer.bytes(cpq), 1, agent_ms, log, integ, accept, libs, base, "", true);
         }
         buffer.drop(heap, cp);
-        keep_trail(heap, fs, id, wd);
+        keep_trail(heap, fs, id, wd, uf);
     } else {
         buffer.drop(heap, newfile);
         borrow report as &rq in {
@@ -1135,10 +1452,10 @@ fn apply_patch[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &l, &ac, &lb, &pf
         }
         borrow report as &rq2 in {
             borrow shown as &shq in {
-                splice_refused(heap, clock, fs, wd, id, base, buffer.bytes(shq), buffer.bytes(rq2));
+                splice_refused(heap, clock, fs, wd, id, base, buffer.bytes(shq), buffer.bytes(rq2), uf);
             }
         }
-        keep_trail(heap, fs, id, wd);
+        keep_trail(heap, fs, id, wd, uf);
     }
     buffer.drop(heap, report);
     buffer.drop(heap, shown);
@@ -1150,7 +1467,7 @@ fn apply_patch[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &l, &ac, &lb, &pf
     }
     if result != 0 {
         // the unit stays as it was: the project file goes back
-        keep_copy(heap, fs, wd, "project.cho.before", true);
+        keep_copy(heap, fs, wd, uf, true);
         if code == 0 {
             show_refusal(heap, io, fs, log, wd, id, base);
         }
@@ -1218,11 +1535,12 @@ fn number[&a](text: &a [byte]) -> [] int {
     return n;
 }
 
-// The worker (`<self> --unit-worker =<checker> =<workspace> =<unit> =<agent> =<attempts> =<agent-ms> =<accept-ms> =<base> =<hint> =<libs> =<accept>`):
-// the `fix` loop on the workspace's project.cho, with the unit's journal in `<workspace>/journal`. It says what the loop says. Exit 0 verified,
+// The worker (`<self> --unit-worker =<checker> =<workspace> =<unit> =<agent> =<attempts> =<agent-ms> =<accept-ms> =<base> =<hint> =<libs> =<accept> =<file> =<files>`):
+// the `fix` loop on the workspace's copy of the unit's file (`<file>`, project.cho for a single-file plan; `<files>` are the plan's other files, which the
+// compile commands name), with the unit's journal in `<workspace>/journal`. It says what the loop says. Exit 0 verified,
 // 1 failed, 2 unavailable (the agent or the checker is away), 3 usage.
 pub fn unit_worker[&h, &x, &c, &i, &z, &g](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), g: &g Args) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write, args] int {
-    if arg_count(g) < 13 {
+    if arg_count(g) < 15 {
         return 3;
     }
     let checker = wval(g, 2);
@@ -1236,15 +1554,18 @@ pub fn unit_worker[&h, &x, &c, &i, &z, &g](heap: &!h Heap, exec: &x Exec(""), cl
     let hint = wval(g, 10);
     let libs = wval(g, 11);
     let accept = wval(g, 12);
-    if attempts < 0 || agent_ms < 0 || accept_ms < 0 || base < 0 {
+    let uf = wval(g, 13);
+    let names = wval(g, 14);
+    if attempts < 0 || agent_ms < 0 || accept_ms < 0 || base < 0 || len(uf) == 0 {
         return 3;
     }
-    let file = in_wd(heap, ws, "project.cho", "", "");
+    let file = in_wd(heap, ws, uf, "", "");
     var cmd = buffer.append(heap, buffer.empty(heap, 512), "-c\0");
     cmd = buffer.append(heap, cmd, checker);
     cmd = buffer.append(heap, cmd, " check --std --output json --backend cranelift ");
     cmd = buffer.append(heap, cmd, ws);
     cmd = buffer.append(heap, cmd, "/project.cho ");
+    cmd = add_files(heap, cmd, ws, names);
     cmd = buffer.append(heap, cmd, ws);
     cmd = buffer.append(heap, cmd, "/main.cho ");
     cmd = buffer.append(heap, cmd, libs);
@@ -1253,11 +1574,17 @@ pub fn unit_worker[&h, &x, &c, &i, &z, &g](heap: &!h Heap, exec: &x Exec(""), cl
     act = buffer.append(heap, act, agent);
     act = buffer.append(heap, act, " ");
     act = buffer.append(heap, act, ws);
-    act = buffer.append(heap, act, "/project.cho 2>");
+    act = buffer.append(heap, act, "/");
+    act = buffer.append(heap, act, uf);
+    act = buffer.append(heap, act, " 2>");
     act = buffer.append(heap, act, ws);
-    act = buffer.append(heap, act, "/project.cho.agent.err\0");
+    act = buffer.append(heap, act, "/");
+    act = buffer.append(heap, act, uf);
+    act = buffer.append(heap, act, ".agent.err\0");
     var prefix = buffer.append(heap, buffer.empty(heap, 128), ws);
-    prefix = buffer.append(heap, prefix, "/project.cho.snap");
+    prefix = buffer.append(heap, prefix, "/");
+    prefix = buffer.append(heap, prefix, uf);
+    prefix = buffer.append(heap, prefix, ".snap");
     let jd = trail.journal_dir(heap, ws);
     var status = 1;
     borrow jd as &jq in {
@@ -1324,6 +1651,8 @@ fn sh_ok[&h, &x, &c, &m](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, cmd
 // Unit `u` into a workspace and onto a worker: 0, or the errno / -1 when it could not be started. The workspace is made fresh from project.cho as it is.
 fn par_start[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &ht, &sf](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], tape: &t [int], nodes: &n [int], meta: &!m [int], notes: &o [byte], u: int, checker: &k [byte], wd: &w [byte], agent: &a [byte], attempts: int, agent_ms: int, log: &l [byte], integ: int, accept_cmd: &ac [byte], libs: &lb [byte], base: int, hint: &ht [byte], how: &static [byte], lane: int, selfx: &sf [byte], pl: pool.Pool) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] (pool.Pool, int) {
     let id = uid(src, tape, nodes, u);
+    let uf = plan.unit_file(src, tape, nodes[u]);
+    let fl = plan.extra_files(heap, src, tape);
     let wsbuf = in_wd(heap, wd, "units/", id, "");
     var started = pl;
     var answer = 0 - 1;
@@ -1337,16 +1666,46 @@ fn par_start[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &
     prep = buffer.append(heap, prep, wd);
     prep = buffer.append(heap, prep, "/project.cho ");
     prep = buffer.append(heap, prep, ws);
-    prep = buffer.append(heap, prep, "/project.cho && cp ");
+    prep = buffer.append(heap, prep, "/project.cho");
+    // every file of the project, as it is now (docs/multi-file.md): the unit's tests and checks compile them all
+    var fa = 0;
+    borrow fl as &flq0 in {
+        while fa < len(buffer.bytes(flq0)) {
+            var fe = fa;
+            while fe < len(buffer.bytes(flq0)) && int_of(buffer.bytes(flq0)[fe]) != 32 {
+                fe = fe + 1;
+            }
+            if fe > fa {
+                prep = buffer.append(heap, prep, " && cp ");
+                prep = buffer.append(heap, prep, wd);
+                prep = buffer.append(heap, prep, "/");
+                prep = buffer.append(heap, prep, buffer.bytes(flq0)[fa..fe]);
+                prep = buffer.append(heap, prep, " ");
+                prep = buffer.append(heap, prep, ws);
+                prep = buffer.append(heap, prep, "/");
+                prep = buffer.append(heap, prep, buffer.bytes(flq0)[fa..fe]);
+            }
+            fa = fe + 1;
+        }
+    }
+    prep = buffer.append(heap, prep, " && cp ");
     prep = buffer.append(heap, prep, wd);
-    prep = buffer.append(heap, prep, "/project.cho ");
+    prep = buffer.append(heap, prep, "/");
+    prep = buffer.append(heap, prep, uf);
+    prep = buffer.append(heap, prep, " ");
     prep = buffer.append(heap, prep, ws);
-    prep = buffer.append(heap, prep, "/project.cho.base && cp ");
+    prep = buffer.append(heap, prep, "/");
+    prep = buffer.append(heap, prep, uf);
+    prep = buffer.append(heap, prep, ".base && cp ");
     prep = buffer.append(heap, prep, wd);
-    prep = buffer.append(heap, prep, "/project.cho ");
+    prep = buffer.append(heap, prep, "/");
+    prep = buffer.append(heap, prep, uf);
+    prep = buffer.append(heap, prep, " ");
     prep = buffer.append(heap, prep, ws);
     // what the journal's diff of the unit's first attempt is made against (src/trail.cho `diff_field`): the file as it stood before the unit
-    prep = buffer.append(heap, prep, "/project.cho.before");
+    prep = buffer.append(heap, prep, "/");
+    prep = buffer.append(heap, prep, uf);
+    prep = buffer.append(heap, prep, ".before");
     if base > 0 {
         // ... and, for an attempt that goes on after earlier ones, the code of the attempt before it
         prep = buffer.append(heap, prep, " && { cp ");
@@ -1367,7 +1726,9 @@ fn par_start[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &
         prep = buffer.append(heap, prep, id);
         prep = buffer.append(heap, prep, ".jsonl ");
         prep = buffer.append(heap, prep, ws);
-        prep = buffer.append(heap, prep, "/project.cho.trail.jsonl");
+        prep = buffer.append(heap, prep, "/");
+        prep = buffer.append(heap, prep, uf);
+        prep = buffer.append(heap, prep, ".trail.jsonl");
     }
     prep = buffer.append(heap, prep, " #");
     var ready = false;
@@ -1390,7 +1751,7 @@ fn par_start[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &
             unit_start_event(heap, clock, fs, buffer.bytes(jq), src, tape, nodes[u], how, lane);
         }
         buffer.drop(heap, jd);
-        let accept = unit_accept(heap, checker, ws, id, u == integ, accept_cmd, libs);
+        let accept = unit_accept(heap, checker, ws, src, tape, nodes, u, u == integ, accept_cmd, libs);
         var args = buffer.append(heap, buffer.empty(heap, 1024), "--unit-worker");
         args = buffer.push(heap, args, byte_of(0));
         args = put_arg(heap, args, checker);
@@ -1406,6 +1767,10 @@ fn par_start[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &
         borrow accept as &qb in {
             args = put_arg(heap, args, buffer.bytes(qb));
         }
+        args = put_arg(heap, args, uf);
+        borrow fl as &flq1 in {
+            args = put_arg(heap, args, buffer.bytes(flq1));
+        }
         borrow args as &ab in {
             let (next, e) = pool.start(heap, exec, clock, started, u, selfx, buffer.bytes(ab), "PATH=/usr/local/bin:/usr/bin:/bin\0");
             started = next;
@@ -1416,6 +1781,7 @@ fn par_start[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &
     }
     }
     buffer.drop(heap, wsbuf);
+    buffer.drop(heap, fl);
     return (started, answer);
 }
 
@@ -1450,7 +1816,7 @@ fn set_integration_note[&o, &m, &x](notes: &!o [byte], meta: &!m [int], u: int, 
 // Does unit `which` hold on the project file as it is? Empty when it does, else what it said (the unit named first).
 fn unit_says[&h, &x, &c, &s, &t, &n, &k, &w, &ac, &lb](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, src: &s [byte], tape: &t [int], nodes: &n [int], which: int, checker: &k [byte], wd: &w [byte], integ: int, accept: &ac [byte], libs: &lb [byte]) -> [heap, exec(""), clock, poll] buffer.Buffer {
     var bad = buffer.empty(heap, 64);
-    let r = verify(heap, exec, clock, checker, wd, uid(src, tape, nodes, which), which == integ, accept, libs);
+    let r = verify(heap, exec, clock, checker, wd, src, tape, nodes, which, which == integ, accept, libs);
     let acceptance.Result { held, why, said } = r;
     buffer.drop(heap, why);
     if held != 0 {
@@ -1473,6 +1839,11 @@ fn combined_holds[&h, &x, &c, &s, &t, &n, &m, &k, &w, &ac, &lb](heap: &!h Heap, 
     cmd = buffer.append(heap, cmd, " check --std --backend cranelift ");
     cmd = buffer.append(heap, cmd, wd);
     cmd = buffer.append(heap, cmd, "/project.cho ");
+    let fl = plan.extra_files(heap, src, tape);
+    borrow fl as &flq in {
+        cmd = add_files(heap, cmd, wd, buffer.bytes(flq));
+    }
+    buffer.drop(heap, fl);
     cmd = buffer.append(heap, cmd, wd);
     cmd = buffer.append(heap, cmd, "/main.cho ");
     cmd = buffer.append(heap, cmd, libs);
@@ -1535,6 +1906,7 @@ fn say_integrate[&h, &i, &z, &l, &d, &w](heap: &!h Heap, io: &!i Io, fs: &z Fs("
 // is requeued when that fails. 0, or 1 when the agent or the checker was away (unavailable).
 fn par_finish[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &l, &ac, &lb, &sa](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], tape: &t [int], nodes: &n [int], meta: &!m [int], notes: &!o [byte], count: int, u: int, checker: &k [byte], wd: &w [byte], log: &l [byte], integ: int, accept: &ac [byte], libs: &lb [byte], st: &!sa [int], attempts: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] int {
     let id = uid(src, tape, nodes, u);
+    let uf = plan.unit_file(src, tape, nodes[u]);
     let lane = st[8 * u];
     let code = st[8 * u + 6];
     let wall = st[8 * u + 7];
@@ -1544,7 +1916,7 @@ fn par_finish[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &l, &ac, &lb, &sa]
     borrow wsbuf as &wsr in {
     let ws = buffer.bytes(wsr);
     let wsj = trail.journal_dir(heap, ws);
-    let wstrail = in_wd(heap, ws, "project.cho.trail.jsonl", "", "");
+    let wstrail = in_wd(heap, ws, uf, ".trail.jsonl", "");
     borrow jd as &jq in {
         borrow wsj as &wq in {
             parallel.merge_events(heap, fs, buffer.bytes(jq), buffer.bytes(wq), lane);
@@ -1553,7 +1925,7 @@ fn par_finish[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &l, &ac, &lb, &sa]
     }
     // the trail and the agent's words, kept whatever the outcome
     let keep_t = in_wd(heap, wd, "trail-", id, ".jsonl");
-    let from_l = in_wd(heap, ws, "project.cho.agent.log", "", "");
+    let from_l = in_wd(heap, ws, uf, ".agent.log", "");
     let keep_l = in_wd(heap, wd, "agent-", id, ".log");
     borrow wstrail as &wtq in {
         borrow keep_t as &ktq in {
@@ -1609,15 +1981,19 @@ fn par_finish[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &l, &ac, &lb, &sa]
         provider = 1;
     } else {
         // verified in its workspace: into the project file
-        let basep = in_wd(heap, ws, "project.cho.base", "", "");
-        let mainp = in_wd(heap, wd, "project.cho", "", "");
-        let wsp = in_wd(heap, ws, "project.cho", "", "");
+        let basep = in_wd(heap, ws, uf, ".base", "");
+        let mainp = in_wd(heap, wd, uf, "", "");
+        let wsp = in_wd(heap, ws, uf, "", "");
         var same = false;
         var cmp = buffer.append(heap, buffer.empty(heap, 256), "cmp -s ");
         cmp = buffer.append(heap, cmp, wd);
-        cmp = buffer.append(heap, cmp, "/project.cho ");
+        cmp = buffer.append(heap, cmp, "/");
+        cmp = buffer.append(heap, cmp, uf);
+        cmp = buffer.append(heap, cmp, " ");
         cmp = buffer.append(heap, cmp, ws);
-        cmp = buffer.append(heap, cmp, "/project.cho.base #");
+        cmp = buffer.append(heap, cmp, "/");
+        cmp = buffer.append(heap, cmp, uf);
+        cmp = buffer.append(heap, cmp, ".base #");
         borrow cmp as &cq in {
             same = sh_ok(heap, exec, clock, buffer.bytes(cq));
         }
@@ -1639,14 +2015,18 @@ fn par_finish[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &l, &ac, &lb, &sa]
                 buffer.drop(heap, tt0);
             }
         }
-        keep_copy(heap, fs, wd, "project.cho.before", false);
+        keep_copy(heap, fs, wd, uf, false);
         var bad = buffer.empty(heap, 64);
         if same {
             var cp = buffer.append(heap, buffer.empty(heap, 256), "cp ");
             cp = buffer.append(heap, cp, ws);
-            cp = buffer.append(heap, cp, "/project.cho ");
+            cp = buffer.append(heap, cp, "/");
+            cp = buffer.append(heap, cp, uf);
+            cp = buffer.append(heap, cp, " ");
             cp = buffer.append(heap, cp, wd);
-            cp = buffer.append(heap, cp, "/project.cho #");
+            cp = buffer.append(heap, cp, "/");
+            cp = buffer.append(heap, cp, uf);
+            cp = buffer.append(heap, cp, " #");
             borrow cp as &cpq in {
                 if sh_ok(heap, exec, clock, buffer.bytes(cpq)) == false {
                     bad = buffer.append(heap, bad, "the unit's file could not be copied into the project file");
@@ -1728,7 +2108,7 @@ fn par_finish[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &l, &ac, &lb, &sa]
                 recheck(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, count, u, id, false, checker, wd, log, integ, accept, libs);
             }
         } else {
-            keep_copy(heap, fs, wd, "project.cho.before", true);
+            keep_copy(heap, fs, wd, uf, true);
             st[8 * u + 3] = st[8 * u + 3] + 1;
             var sigh = 0;
             var line = buffer.empty(heap, 16);
@@ -1923,7 +2303,9 @@ fn par_loop[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &h
                     } else {
                         // the first unit's first call has returned, or it is done: the others may start
                         if cold && cold_u >= 0 {
-                            let mp = in_wd(heap, wd, "units/", uid(src, tape, nodes, cold_u), "/project.cho.call/meta.json");
+                            let mp0 = in_wd(heap, wd, "units/", uid(src, tape, nodes, cold_u), "/");
+                            let mp2 = buffer.append(heap, mp0, plan.unit_file(src, tape, nodes[cold_u]));
+                            let mp = buffer.append(heap, mp2, ".call/meta.json");
                             var said_so = false;
                             borrow mp as &mpq in {
                                 said_so = parallel.exists(fs, buffer.bytes(mpq));
@@ -2068,6 +2450,8 @@ fn drive[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &rc, 
         tell(heap, io, fs, log, "project: the plan names an integration unit and no acceptance command was given\n");
         return 2;
     }
+    // The scaffolds of the plan's declared files (docs/multi-file.md), when they are not there yet.
+    write_files(heap, fs, src, tape, wd);
     u = 0;
     while u < count {
         if u != integ {
@@ -2167,12 +2551,13 @@ fn drive[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &rc, 
             } else {
                 // A unit that fails leaves its attempts in project.cho; the file goes back to what it was, so the units
                 // that do not depend on it still build.
-                keep_copy(heap, fs, wd, "project.cho.before", false);
+                let nuf = plan.unit_file(src, tape, nodes[next]);
+                keep_copy(heap, fs, wd, nuf, false);
                 var how = "";
                 var base = 0;
                 if next == redo && patching == false {
                     how = "retry";
-                    base = seed_trail(heap, fs, wd, id);
+                    base = seed_trail(heap, fs, wd, id, nuf);
                 }
                 unit_event(heap, clock, fs, wd, src, tape, nodes[next], id, "", false, how);
                 var r = 1;
@@ -2182,8 +2567,8 @@ fn drive[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &rc, 
                     r = build(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, next, checker, wd, agent, attempts, agent_ms, log, integ, accept, libs, 0, "", false);
                 }
                 // The unit's trail is kept whatever the outcome: a unit that failed is the one whose trail is wanted.
-                keep_trail(heap, fs, id, wd);
-                keep_agent_log(heap, fs, id, wd);
+                keep_trail(heap, fs, id, wd, nuf);
+                keep_agent_log(heap, fs, id, wd, nuf);
                 if r != 0 {
                     report_not_verified(heap, io, fs, log, wd, id);
                 }
@@ -2200,7 +2585,7 @@ fn drive[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &rc, 
                     say(heap, io, fs, log, id, "verified");
                     recheck(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, count, next, id, false, checker, wd, log, integ, accept, libs);
                 } else if r == 1 {
-                    keep_copy(heap, fs, wd, "project.cho.before", true);
+                    keep_copy(heap, fs, wd, nuf, true);
                     meta[3 * next] = 2;
                     say(heap, io, fs, log, id, "failed");
                 } else {

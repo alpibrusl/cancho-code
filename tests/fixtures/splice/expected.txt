@@ -43,7 +43,7 @@ e-unclosed-line3	1	3:patch: item never closes
 e-fn-semicolon	1	item never closes
 e-stray-middle	1	2:patch: text outside any item: let x = 5;
 e-stray-trailing	1	2:patch: text outside any item: }
-e-stray-existing	1	2:existing: text outside any item: module x;
+e-stray-existing	1	2:existing: text outside any item: use x;
 e-unclosed-existing	1	2:existing: item never closes
 e-both-bad	1	existing: text outside
 e-dup-fn	1	3:patch: defines fn a twice (first at line 1)
@@ -53,3 +53,7 @@ e-name-missing	1	text outside any item
 e-edition-twice-fine	0	dropped edition
 e-char-quote-unclosed	0	added fn a
 s-big-file	0	replaced fn big_150
+s-module-add-fn	0	added fn tok_two
+s-module-add-import	0	added import std.buffer
+s-module-empty	0	added import std.vec
+s-module-patch-line	0	replaced fn tok_one

@@ -1,0 +1,13 @@
+UNIT: digits
+FUNCTION: tok_digits
+SIGNATURE: fn tok_digits(n: int) -> [] int
+DESCRIPTION: How many decimal digits n has (n is not negative).
+FILE: tokens.cho
+MODULE: tokens
+IMPORTS ALREADY AT THE TOP OF tokens.cho: std.buffer
+NOT IMPORTED BY tokens.cho (do not use): parser.cho, store.cho
+EXAMPLES:
+tok_digits(12) == 2
+tok_digits(0) == 1
+tok_digits(1000) == 4
+INSTRUCTIONS: Add this function to tokens.cho, keeping every other function as it is. The file is the module `tokens`: its `module` line and its imports are already there, and you write only this one file. Declare the function `pub fn`: another module can call a function only when it is `pub`, and the unit is refused otherwise. Call another module's function with the module name in front (`tokens.tok_next(...)`), only for a module this file imports. The file has no main. Do not write tests or examples of your own: the examples above are run for you.

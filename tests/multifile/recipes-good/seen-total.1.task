@@ -1,0 +1,13 @@
+UNIT: total
+FUNCTION: app_total
+SIGNATURE: fn app_total(n: int) -> [] int
+DESCRIPTION: The cost of n, plus one.
+FILE: project.cho
+IMPORTS ALREADY AT THE TOP OF project.cho: store
+OTHER FILE store.cho (module store; read only, you do not write it; call its public items with the module name in front, as store.NAME(...)); its public items now:
+pub fn store_cost(n: int) -> [] int
+
+NOT IMPORTED BY project.cho (do not use): tokens.cho, parser.cho
+EXAMPLES:
+app_total(12) == 7
+INSTRUCTIONS: Add this function to project.cho, keeping every other function as it is. project.cho is the root file: call a function of another file with its module name in front (`tokens.tok_next(...)`), for a module the file imports. The file has no main. Do not write tests or examples of your own: the examples above are run for you.

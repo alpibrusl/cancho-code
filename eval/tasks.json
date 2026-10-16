@@ -113,6 +113,14 @@
    "why": "lists of lists of owned text (codegen bug cancho#461 forces Box[Box[..]]); quoting rules"
   },
   {
+   "id": "multi",
+   "name": "a calculator in three modules (tokens, parser, calc)",
+   "level": 5,
+   "source": "new",
+   "status": "runnable",
+   "why": "three source files, each a module, with cross-file calls and a unit plan that says which file each unit belongs to; the state is the caller's int slices; the audit calls only the public functions across the modules (docs/multi-file.md)"
+  },
+  {
    "id": "09-jobs",
    "name": "job queue service",
    "level": 5,

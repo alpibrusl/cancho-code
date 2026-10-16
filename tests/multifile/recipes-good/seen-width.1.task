@@ -1,0 +1,15 @@
+UNIT: width
+FUNCTION: parse_width
+SIGNATURE: fn parse_width(n: int) -> [] int
+DESCRIPTION: The width of n written in a field: its digits plus one for the separator.
+FILE: parser.cho
+MODULE: parser
+IMPORTS ALREADY AT THE TOP OF parser.cho: tokens
+OTHER FILE tokens.cho (module tokens; read only, you do not write it; call its public items with the module name in front, as tokens.NAME(...)); its public items now:
+pub fn tok_digits(n: int) -> [] int
+
+NOT IMPORTED BY parser.cho (do not use): store.cho
+EXAMPLES:
+parse_width(12) == 3
+parse_width(7) == 2
+INSTRUCTIONS: Add this function to parser.cho, keeping every other function as it is. The file is the module `parser`: its `module` line and its imports are already there, and you write only this one file. Declare the function `pub fn`: another module can call a function only when it is `pub`, and the unit is refused otherwise. Call another module's function with the module name in front (`tokens.tok_next(...)`), only for a module this file imports. The file has no main. Do not write tests or examples of your own: the examples above are run for you.

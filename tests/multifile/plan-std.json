@@ -1,0 +1,8 @@
+{
+  "name": "std",
+  "files": [ { "file": "tokens.cho", "module": "tokens" } ],
+  "units": [
+    { "id": "first", "file": "tokens.cho", "signature": "fn tok_first(n: int) -> [] option.Option[int]",
+      "examples": ["tok_first(3) == option.Option::Some(3)", "tok_first(0) == option.Option::None"], "deps": [] }
+  ]
+}

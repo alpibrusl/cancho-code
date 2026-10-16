@@ -1,0 +1,2 @@
+test_c_1 big_double(6) == true
+test_c_2 big_double(5) == false

@@ -1,0 +1,28 @@
+{
+ "item": "multi",
+ "files": 3,
+ "units": 11,
+ "oracle_cases": 873,
+ "audit_tests": 102,
+ "reference_loc": 254,
+ "reference_fns": 11,
+ "needs": [
+  "three source files, each a module (`module tokens;`, `module parser;`, `module calc;`), the second importing the first and the third both",
+  "calls across modules with the module name in front, only to `pub fn`s",
+  "state in caller-provided int slices (the token list as pairs, the output slot, a two-element store)",
+  "a recursive-descent evaluator over a flat token slice, with the arithmetic checked before it is done",
+  "an error code that passes through a second module (the scanner's -1, -2, -3 become 3, 4, 5)"
+ ],
+ "pitfalls": [
+  "a function that is not `pub` passes its own tests and cannot be called from the next module",
+  "another module's function called without the module name (`tk_scan(...)` instead of `tokens.tk_scan(...)`) is not found",
+  "code written in the file of the module that uses it, or in project.cho, instead of in its own module: the audit reads only the three module files",
+  "a module that imports itself, or one that the file does not import, is refused by the compiler",
+  "scan: a tab is whitespace, a 19th digit is an error even in a number of zeros, a full token list is an error only when another token comes",
+  "ps_eval: reads left to right and does each operation at once; `--3` and `2*-3` are signs; a sign overflows only on the smallest int; nothing may be left after a complete expression",
+  "the product of two ints must be checked without computing it in a way that overflows (the overflow traps)",
+  "calc_record: a failed expression changes neither the sum nor the count; a sum that does not fit is code 2 and leaves the store as it was",
+  "`val` is a keyword; no break/continue; mutating slice parameters need &! in the signature"
+ ],
+ "difficulty_notes": "L5 by the rubric (more than one module). Eleven small functions, about 250 reference lines in three files. The oracle (eval/multi/oracle.py, 873 cases: 93 scans, 12 accessors, 270 fit checks, 226 token lists, 241 texts, 25 record sequences, 6 getter pairs) writes the rules a second time as plain Python with unbounded integers and drops any text whose answer would depend on whether a syntax error or an overflow is met first. The audit (eval/audit_multi.py) compiles each group with the modules it needs and calls only the public functions, so a function left private, a module that does not build, or a unit put in the wrong file costs the groups that need it. eval/multi/mutants.json: thirteen single-line edits of the reference, each of which the audit must reject."
+}

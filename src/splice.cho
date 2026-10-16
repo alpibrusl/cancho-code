@@ -165,6 +165,9 @@ fn kw_info[&t](t: &t [byte], i: int) -> [] (int, int) {
     if match_at(t, i, "edition ") {
         return (0, 8);
     }
+    if match_at(t, i, "module ") {
+        return (0, 7);
+    }
     return (0 - 1, 0);
 }
 
@@ -379,7 +382,7 @@ fn parse_items[&t, &x](t: &t [byte], tab: &!x [int]) -> [] (int, int, int, int) 
 fn starts_item_line[&s](s: &s [byte], i: int) -> [] bool {
     return match_at(s, i, "fn ") || match_at(s, i, "pub fn ") || match_at(s, i, "struct ") || match_at(s, i, "pub struct ")
         || match_at(s, i, "res struct ") || match_at(s, i, "pub res struct ") || match_at(s, i, "enum ") || match_at(s, i, "pub enum ")
-        || match_at(s, i, "import ") || match_at(s, i, "//") || match_at(s, i, "edition ");
+        || match_at(s, i, "import ") || match_at(s, i, "//") || match_at(s, i, "edition ") || match_at(s, i, "module ");
 }
 
 fn segment_patch[&s](s: &s [byte], lo: int, hi: int) -> [] (int, int) {
@@ -684,7 +687,7 @@ pub fn splice[&h, &s, &p](heap: &!h Heap, existing: &s [byte], patch: &p [byte])
                             }
                             k = k + 1;
                         }
-                        // the anchor of new imports: the last import, else the first edition line
+                        // the anchor of new imports: the last import, else the last header line (`edition N;`, then `module NAME;` in a module file)
                         var anchor = 0 - 1;
                         var e = 0;
                         while e < ne {
@@ -695,7 +698,7 @@ pub fn splice[&h, &s, &p](heap: &!h Heap, existing: &s [byte], patch: &p [byte])
                         }
                         if anchor < 0 {
                             e = 0;
-                            while e < ne && anchor < 0 {
+                            while e < ne {
                                 if te[6 * e] == 0 {
                                     anchor = e;
                                 }
@@ -961,4 +964,43 @@ pub fn rewrites[&h, &b, &t](heap: &!h Heap, base: &b [byte], theirs: &t [byte]) 
     unbox_slice(heap, tb);
     unbox_slice(heap, bb);
     return count;
+}
+
+// ---- the public surface of a module file ----------------------------------------------------------------------------------------------------
+//
+// The multi-file task (docs/multi-file.md) tells the agent what the other files of the project offer: for every `pub` item of a file, a `pub fn` as its
+// signature line (up to the body) and a `pub` struct or enum whole, one after the other, each ended by a newline. A file that does not parse gives an
+// empty answer (the agent then sees the file's name and nothing else).
+pub fn public_items[&h, &s](heap: &!h Heap, text: &s [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 256);
+    let tb = box_slice(heap, 6 * (len(text) / 4 + 16), 0);
+    borrow mut tb as &!tw in {
+        let tab = contents(tw);
+        let (n, st, pos, last) = parse_items(text, tab);
+        if st == 0 {
+            var k = 0;
+            while k < n && 6 * k + 5 < len(tab) {
+                let kind = tab[6 * k];
+                let kw = tab[6 * k + 5];
+                let end = tab[6 * k + 2];
+                if kind >= 2 && match_at(text, kw, "pub ") {
+                    var stop = end;
+                    if kind == 2 {
+                        let brace = find_in(text, kw, end, "{");
+                        if brace >= 0 {
+                            stop = brace;
+                        }
+                    }
+                    while stop > kw && is_ws(int_of(text[stop - 1])) {
+                        stop = stop - 1;
+                    }
+                    out = buffer.append(heap, out, text[kw..stop]);
+                    out = buffer.push(heap, out, byte_of(10));
+                }
+                k = k + 1;
+            }
+        }
+    }
+    unbox_slice(heap, tb);
+    return out;
 }

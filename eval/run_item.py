@@ -6,7 +6,7 @@
 
 For run i it makes <out>/<label>-<item>-<i>/ holding: project.cho and the driver's files, raw.txt (every raw reply), usage.jsonl (one line per API
 call), run.log, run.json, audit.txt (the hidden audit's output) and result.json (eval/metrics.py's numbers). The scaffold is `edition 7;` plus the
-imports the plan's signatures name (std.result / std.buffer / std.option); nothing else is given to the builder besides the plan and the primer.
+imports the plan's signatures name (std.result / std.buffer / std.option; a plan with `files` gets `edition 7;` only, the driver writes each file's scaffold: docs/multi-file.md); nothing else is given to the builder besides the plan and the primer.
 Exit 0 when every run was graded (not when it passed). Needs: the `project` binary and build/cancho-agent (scripts/build-agent.sh); --tools names
 the directory holding `project` (default /tmp/evaltools)."""
 import argparse, json, os, re, shutil, subprocess, sys, time
@@ -17,6 +17,8 @@ sys.path.insert(0, HERE)
 import metrics
 
 def scaffold_for(plan):
+    if plan.get("files"):
+        return "edition 7;\n"      # a plan with files: the project driver writes the scaffold of each file from the plan (docs/multi-file.md)
     sigs = " ".join(u["signature"] for u in plan["units"])
     s = "edition 7;\n"
     for mod in ("result", "buffer", "option"):
@@ -43,6 +45,7 @@ def main():
     ap.add_argument("--agent-seconds", default="300")
     ap.add_argument("--patch", action="store_true", help="the model returns only the code to add or change; a program splices it into the project (agent --output patch)")
     ap.add_argument("--plan", help="a plan to build instead of eval/<item>/plan.json (e.g. one a model wrote)")
+    ap.add_argument("--jobs", type=int, default=1, help="how many units to build at once (project --jobs); 1 is the driver one unit at a time")
     ap.add_argument("--tools", default="/tmp/evaltools")
     ap.add_argument("--timeout", type=int, default=3600)
     a = ap.parse_args()
@@ -72,7 +75,8 @@ def main():
         if a.effort: agent += ["--effort", a.effort]
         started = time.time()
         try:
-            p = subprocess.run([os.path.join(a.tools, "project"), cancho, plan_path, wd, " ".join(agent), a.attempts, a.agent_seconds],
+            p = subprocess.run([os.path.join(a.tools, "project"), cancho, plan_path, wd, " ".join(agent), a.attempts, a.agent_seconds]
+                               + (["--jobs", str(a.jobs)] if a.jobs > 1 else []),
                                capture_output=True, text=True, timeout=a.timeout)
             out, rc = p.stdout, p.returncode
         except subprocess.TimeoutExpired as e:
@@ -81,7 +85,7 @@ def main():
         open(os.path.join(wd, "run.log"), "w").write(out)
         json.dump({"item": a.item, "label": a.label, "run": i, "provider": a.provider, "model": a.model, "scaffold_chars": len(scaffold),
                    "seconds": seconds, "exit": rc, "cancho": cancho, "primer": a.primer, "max_tokens": a.max_tokens,
-                   "thinking": a.thinking, "effort": a.effort, "plan": plan_path, "patch": a.patch}, open(os.path.join(wd, "run.json"), "w"), indent=1)
+                   "thinking": a.thinking, "effort": a.effort, "plan": plan_path, "patch": a.patch, "jobs": a.jobs}, open(os.path.join(wd, "run.json"), "w"), indent=1)
         env = dict(os.environ, CANCHO=cancho)
         ap_ = subprocess.run([sys.executable, audit, os.path.join(wd, "project.cho")], capture_output=True, text=True, env=env)
         open(os.path.join(wd, "audit.txt"), "w").write(ap_.stdout + ap_.stderr)

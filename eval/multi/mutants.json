@@ -1,0 +1,15 @@
+[
+ {"name": "tab-is-not-space", "file": "tokens.cho", "from": "if c == 32 || c == 9 {", "to": "if c == 32 {", "group": "tk_scan"},
+ {"name": "nineteen-digits", "file": "tokens.cho", "from": "if digits >= 18 {", "to": "if digits >= 19 {", "group": "tk_scan"},
+ {"name": "value-reads-the-kind", "file": "tokens.cho", "from": "return toks[2 * i + 1];", "to": "return toks[2 * i];", "group": "tk_kind/tk_value"},
+ {"name": "star-is-not-an-operator", "file": "parser.cho", "from": "tokens.tk_kind(toks, st[0]) == 4 {", "to": "tokens.tk_kind(toks, st[0]) == 99 {", "group": "ps_eval"},
+ {"name": "no-unary-minus", "file": "parser.cho", "from": "    if k == 3 {\n        st[0] = st[0] + 1;\n        let v = ps_factor", "to": "    if k == 99 {\n        st[0] = st[0] + 1;\n        let v = ps_factor", "group": "ps_eval"},
+ {"name": "product-not-checked", "file": "parser.cho", "from": "if ps_fits_mul(v, w) {", "to": "if true {", "group": "ps_eval"},
+ {"name": "leftover-tokens-accepted", "file": "parser.cho", "from": "if st[1] == 0 && st[0] != n {", "to": "if false {", "group": "ps_eval"},
+ {"name": "sum-not-checked-in-fits", "file": "parser.cho", "from": "return a <= 9223372036854775807 - b;", "to": "return a <= 9223372036854775807;", "group": "ps_fits_*"},
+ {"name": "scan-error-code-lost", "file": "calc.cho", "from": "if n == 0 - 1 {\n        return 3;", "to": "if n == 0 - 1 {\n        return 1;", "group": "calc_eval"},
+ {"name": "token-count-off-by-one", "file": "calc.cho", "from": "return parser.ps_eval(toks, n, out);", "to": "return parser.ps_eval(toks, n - 1, out);", "group": "calc_eval"},
+ {"name": "failed-expression-counted", "file": "calc.cho", "from": "    if code != 0 {\n        return code;\n    }\n    let v = out[0];", "to": "    if code != 0 {\n        store[1] = store[1] + 1;\n        return code;\n    }\n    let v = out[0];", "group": "calc_record"},
+ {"name": "total-not-checked", "file": "calc.cho", "from": "if parser.ps_fits_add(store[0], v) == false {", "to": "if false {", "group": "calc_record"},
+ {"name": "count-is-the-total", "file": "calc.cho", "from": "return store[1];", "to": "return store[0];", "group": "calc_total/count"}
+]

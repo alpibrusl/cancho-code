@@ -1,0 +1,5 @@
+import std.buffer;
+
+pub fn tok_two() -> [] int {
+    return 2;
+}

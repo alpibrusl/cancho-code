@@ -1,0 +1,7 @@
+edition 7;
+
+fn double(x: int) -> [] int { return x * 2; }
+
+fn is_big(x: int) -> [] bool { return x > 10; }
+
+fn big_double(x: int) -> [] bool { return is_big(double(x)); }

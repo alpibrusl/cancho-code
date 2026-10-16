@@ -1,0 +1,84 @@
+{
+  "name": "widths",
+  "files": [
+    {
+      "file": "tokens.cho",
+      "module": "tokens",
+      "imports": [
+        "std.buffer"
+      ]
+    },
+    {
+      "file": "parser.cho",
+      "module": "parser",
+      "imports": [
+        "tokens"
+      ]
+    },
+    {
+      "file": "store.cho",
+      "module": "store",
+      "imports": [
+        "parser"
+      ]
+    },
+    {
+      "file": "project.cho",
+      "imports": [
+        "store"
+      ]
+    }
+  ],
+  "units": [
+    {
+      "id": "digits",
+      "file": "tokens.cho",
+      "signature": "fn tok_digits(n: int) -> [] int",
+      "description": "How many decimal digits n has (n is not negative).",
+      "examples": [
+        "tok_digits(12) == 2",
+        "tok_digits(0) == 1",
+        "tok_digits(1000) == 4"
+      ],
+      "deps": []
+    },
+    {
+      "id": "width",
+      "file": "parser.cho",
+      "signature": "fn parse_width(n: int) -> [] int",
+      "description": "The width of n written in a field: its digits plus one for the separator.",
+      "examples": [
+        "parse_width(12) == 3",
+        "parse_width(7) == 2",
+        "parse_width(100) == 4"
+      ],
+      "deps": [
+        "digits"
+      ]
+    },
+    {
+      "id": "cost",
+      "file": "store.cho",
+      "signature": "fn store_cost(n: int) -> [] int",
+      "description": "Twice the width of n.",
+      "examples": [
+        "store_cost(12) == 6",
+        "store_cost(7) == 4"
+      ],
+      "deps": [
+        "width"
+      ]
+    },
+    {
+      "id": "total",
+      "signature": "fn app_total(n: int) -> [] int",
+      "description": "The cost of n, plus one.",
+      "examples": [
+        "app_total(12) == 7"
+      ],
+      "deps": [
+        "cost"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+ "name": "widths",
+ "files": [
+  { "file": "tokens.cho", "module": "tokens" },
+  { "file": "parser.cho", "module": "parser", "imports": ["tokens"] },
+  { "file": "project.cho", "imports": ["parser"] }
+ ],
+ "units": [
+  { "id": "digits", "file": "tokens.cho", "signature": "fn tok_digits(n: int) -> [] int", "examples": ["tok_digits(12) == 2"], "deps": [] },
+  { "id": "width", "file": "parser.cho", "signature": "fn parse_width(n: int) -> [] int", "examples": ["parse_width(12) == 3"], "deps": ["digits"] },
+  { "id": "total", "signature": "fn app_total(n: int) -> [] int", "examples": ["app_total(12) == 7"], "deps": ["width"] }
+ ]
+}
