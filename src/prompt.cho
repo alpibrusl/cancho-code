@@ -159,7 +159,7 @@ pub fn feedback_text[&h, &s, &f](heap: &!h Heap, source: &s [byte], feedback: &f
 
 // The task without its lines that start with `prefix`, and those lines' text after the prefix, one per line. The `HINT: ` lines are a person's words
 // about the unit, written by the project driver when a unit is re-opened with `--retry <unit> --hint "..."` (docs/build.md); the `MEMORY: ` and `FACT: `
-// lines are what the agent's memory adds in its own copy of the task (docs/memory.md). A task with no such line comes back as it was, byte for byte.
+// lines, each after a NUL byte, are what the agent's memory adds in its own copy of the task (docs/memory.md). A task with no such line comes back as it was, byte for byte.
 fn split_prefix[&h, &t, &x](heap: &!h Heap, task: &t [byte], prefix: &x [byte]) -> [heap] (buffer.Buffer, buffer.Buffer) {
     var rest = buffer.empty(heap, len(task) + 8);
     var hint = buffer.empty(heap, 64);
@@ -213,13 +213,13 @@ fn lead_lines[&h, &t](heap: &!h Heap, out: buffer.Buffer, text: &t [byte], lead:
 // output, then the file between rules.
 fn compose[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte], patch: bool) -> [heap] buffer.Buffer {
     var p = buffer.empty(heap, 4096);
-    let (rest0, memo) = split_prefix(heap, task, "MEMORY: ");
+    let (rest0, memo) = split_prefix(heap, task, "\0MEMORY: ");
     var rest1 = buffer.empty(heap, 8);
     var facts = buffer.empty(heap, 8);
     borrow rest0 as &r0 in {
         buffer.drop(heap, rest1);
         buffer.drop(heap, facts);
-        let (a, b) = split_prefix(heap, buffer.bytes(r0), "FACT: ");
+        let (a, b) = split_prefix(heap, buffer.bytes(r0), "\0FACT: ");
         rest1 = a;
         facts = b;
     }

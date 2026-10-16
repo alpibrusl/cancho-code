@@ -370,7 +370,7 @@ fn matches[&l, &t, &c, &s](line: &l [byte], tape: &t [int], class: &c [byte], sc
 }
 
 // What the memory adds for the refusal in `feedback` (the checker's JSON): the task lines (`MEMORY: ` for a lesson, `FACT: ` for a fact of the person's
-// own), and the same as a JSON array of {"id", "text"} for the journal. Both empty when nothing applies.
+// own, each after a NUL byte, so that a line of that look in a plan's own text is never taken for the memory), and the same as a JSON array of {"id", "text"} for the journal. Both empty when nothing applies.
 pub fn recall[&h, &l, &f, &k](heap: &!h Heap, lessons: &l [byte], facts: &f [byte], feedback: &k [byte]) -> [heap] (buffer.Buffer, buffer.Buffer) {
     var lines = buffer.empty(heap, 256);
     var rec = json.writer(heap, 256);
@@ -414,7 +414,7 @@ pub fn recall[&h, &l, &f, &k](heap: &!h Heap, lessons: &l [byte], facts: &f [byt
                                 let all = buffer.bytes(txq);
                                 while q < len(all) {
                                     let qe = line_end(all, q, len(all));
-                                    lines = buffer.append(heap, lines, "MEMORY: ");
+                                    lines = buffer.append(heap, lines, "\0MEMORY: ");
                                     lines = buffer.append(heap, lines, all[q..qe]);
                                     lines = buffer.push(heap, lines, byte_of(10));
                                     q = qe + 1;
@@ -449,7 +449,7 @@ pub fn recall[&h, &l, &f, &k](heap: &!h Heap, lessons: &l [byte], facts: &f [byt
         let fl = bytes.trim(head(bytes.trim(facts[q..e]), fact_cap()));
         if len(fl) > 0 && int_of(fl[0]) != 35 {
             nf = nf + 1;
-            lines = buffer.append(heap, lines, "FACT: ");
+            lines = buffer.append(heap, lines, "\0FACT: ");
             lines = buffer.append(heap, lines, fl);
             lines = buffer.push(heap, lines, byte_of(10));
             var idf = buffer.append(heap, buffer.empty(heap, 8), "F");
