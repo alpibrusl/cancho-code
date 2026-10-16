@@ -1,0 +1,2 @@
+edition 7;
+fn tok_parse[&r](text: &r [byte]) -> [] int { return 1; }

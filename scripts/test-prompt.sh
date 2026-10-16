@@ -6,6 +6,8 @@
 #   task      a unit's task goes ahead of the file, trimmed; the refusals still follow
 #   feedback  at most eight refusals; a column that points past the line; a line past the end; the checker's JSON with no `refused`; a
 #             non-JSON feedback (its first 1,500 bytes); an empty one; a refusal missing a field (the whole feedback falls back to the text)
+#   hint      `HINT:` lines of the task (the person's words, `--retry --hint`) are taken out of the task and put under their own heading; a task
+#             without one is byte-for-byte what the Python reference gives
 #   absent    neither .task nor .feedback
 set -u
 
@@ -81,6 +83,33 @@ for name, (src, task, feedback) in cases.items():
         i = next((k for k in range(min(len(a), len(b))) if a[k] != b[k]), min(len(a), len(b)))
         print("FAIL: %s (exit %d): first difference at byte %d\n  python %r\n  cancho %r" % (name, p.returncode, i, a[max(0, i - 30):i + 60], b[max(0, i - 30):i + 60]), file=sys.stderr)
 print("prompt: %d cases, each also in patch mode" % len(cases))
+
+# the hint: the task's HINT lines move under a heading; the rest is the reference's prompt for the same task without them
+HEAD = "\n\nWhat the person who runs this build says about this unit (they have read the earlier attempts; take it into account, but the compiler and the tests still decide whether the code is right):\n"
+for name, task, said in [
+    ("one line", "UNIT: u\nFUNCTION: f\nHINT: use a loop\nINSTRUCTIONS: go\n", "use a loop"),
+    ("two lines, the first with quotes", "UNIT: u\nHINT: say \"x\" \\ y\nHINT: second\nNOTE: n\n", 'say "x" \\ y\nsecond'),
+    ("hint last, no newline", "UNIT: u\nHINT: only", "only"),
+]:
+    f = os.path.join(d, "project.cho")
+    for ext in ("", ".task", ".feedback"):
+        try: os.remove(f + ext)
+        except OSError: pass
+    open(f, "w", encoding="utf-8").write(SRC)
+    open(f + ".task", "w", encoding="utf-8").write(task)
+    open(f + ".feedback", "w", encoding="utf-8").write(fb(ref(2, 30)))
+    rest = "".join(l for l in task.splitlines(True) if not l.startswith("HINT: "))
+    open(f + ".task", "w", encoding="utf-8").write(rest)
+    _, plain = agent_lib.build_prompt(f, "t", "NO_SUCH_PRIMER_VARIABLE")
+    open(f + ".task", "w", encoding="utf-8").write(task)
+    tail = "\n\nReply with the complete file, with the task done, and nothing else: no markdown fences, no explanation.\n"
+    assert tail in plain
+    want = plain.replace(tail, HEAD + said + tail, 1)
+    p = subprocess.run([os.path.join(d, "gate"), f, "x", "x", "x"], capture_output=True)
+    if p.returncode != 0 or p.stdout != want.encode("utf-8"):
+        fails += 1
+        print("FAIL: hint: %s (exit %d)\n  wanted %r\n  got    %r" % (name, p.returncode, want.encode()[:400], p.stdout[:400]), file=sys.stderr)
+print("prompt hint: 3 cases")
 
 # the planner's prompt: guide, THE TASK, REQUIRED PUBLIC FUNCTIONS only when given, the rejection only when there is one
 def plan_case(name, guide, brief, contract, feedback):

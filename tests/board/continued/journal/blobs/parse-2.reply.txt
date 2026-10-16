@@ -1,0 +1,1 @@
+fn tok_parse[&r](text: &r [byte]) -> [] int { return 0; }

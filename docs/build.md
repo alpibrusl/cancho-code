@@ -76,9 +76,33 @@ Exit 2 is a usage error (nothing was run). A killed run is resumed by running th
 
 `review` is `reviewed`, `unreviewed` or `none` (no review, or no plan.log), read from the plan agent's output; it is never silent when a plan stands without its review. `stage` is the stage in progress (`plan`, `build`) and `done` once the run has ended, with `verdict` set to the word above (empty before). `units_verified` is counted from `state.txt` at each write; during the build, `state.txt` is the live count. `started_unix` and `seconds` are of this invocation (Unix seconds from the wall clock, which can step; the number is a stamp, not a timer). A run that is killed leaves the file as of its last stage.
 
+## Continuing a stuck unit
+
+A run that ends `stuck` is not lost: the plan and `state.txt` are in the work directory, and the units that verified stay verified. Run the same command again with one more option and only the unit you name (and the units that need it) is worked on:
+
+```sh
+# the unit `get` was refused three times. Try it again, and tell the model what you see:
+build "$CANCHO" brief.txt "$PWD/runs/sortedmap" "$AGENT" --provider anthropic --model claude-haiku-5-5 \
+    --retry get --hint "the key is a borrowed slice: compare with buffer.bytes(k), not k"
+
+# or write it yourself: the code in a file, checked like a model's would be, with no model call
+build "$CANCHO" brief.txt "$PWD/runs/sortedmap" "$AGENT" --provider anthropic --model claude-haiku-5-5 \
+    --patch get get.cho
+```
+
+| option | |
+|---|---|
+| `--retry <unit>` | re-opens the unit: it goes back to not verified (even if it had verified), its attempts start counting from one and the same-refusal rule starts over, and it is built again. The units that need it are checked again after it, and one that broke is rebuilt; the other units are left alone. The earlier attempts stay in `trail-<unit>.jsonl` (the new ones are numbered after them) and in the journal |
+| `--hint <text>` | with `--retry`: your words about the unit. They reach the agent as `HINT:` lines of the unit's task and the model reads them under "What the person who runs this build says about this unit"; the compiler and the unit's own examples still decide. Not empty, at most 4000 bytes; it is data, never run by a shell |
+| `--patch <unit> <file>` | the code in `<file>` (the unit's function and what it needs, as complete top-level items; a model's reply shape, fences and a word around it are fine) is put into `project.cho` the way a model's patch would be, then checked by the compiler and the unit's own examples: one attempt, no model. If it does not verify, `project.cho` is put back as it was and the refusal is shown (`[PATCH]<TAB><unit><TAB>refused`, exit 1, `stuck`). If it does, the units that were waiting for the unit are built as in any run |
+
+`--retry` and `--patch` do not go together, and each needs the plan the run left (`plan.json` valid in the work directory, the unit in it); a unit the plan does not have, an empty hint, a file that cannot be read: exit 2 with the reason and nothing changed. `run.log` says `[RETRY]<TAB><unit>[<TAB>hint]` and `[PATCH]<TAB><unit><TAB>applying|verified|refused`, `build.json` has `"retry":"<unit>"` or `"patch":"<unit>"` for this invocation, and the journal ([journal.md](journal.md)) marks the unit's start (`retry` / `patch`), puts the hint on the attempts of a retried unit, and records a patch as an attempt with outcome `human_patch`. The verdict lines and exit codes are the same as always. `project` takes the same options after its positional arguments.
+
+The board ([dashboard.md](dashboard.md)) shows this command, ready to copy, in the panel of a stuck unit.
+
 ## Gate and authority
 
-`scripts/test-build.sh` runs the whole chain against a stand-in agent (no network, no key, no model): the happy path, the arguments each call gets, plan reuse, an invalid plan, a plan the agent gave up on, an unreachable agent, a build killed with SIGKILL and resumed, a failing unit, a stuck unit, usage errors, and the fields of `build.json`. The authority report is pinned in [authority-build.json](authority-build.json) (`scripts/check-authority.sh --build`): the tool spawns processes and reads and writes files; it has no network.
+`scripts/test-build.sh` runs the whole chain against a stand-in agent (no network, no key, no model): the happy path, the arguments each call gets, plan reuse, an invalid plan, a plan the agent gave up on, an unreachable agent, a build killed with SIGKILL and resumed, a failing unit, a stuck unit, a stuck unit continued with `--retry` and `--patch`, usage errors, and the fields of `build.json`. The authority report is pinned in [authority-build.json](authority-build.json) (`scripts/check-authority.sh --build`): the tool spawns processes and reads and writes files; it has no network.
 
 ## The brief's names are the plan's names
 

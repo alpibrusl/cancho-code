@@ -12,6 +12,8 @@
 #             `<project.cho>.call` is there: prompt.txt (the message after the primer, exactly what was sent), reply.txt (the raw reply; a later sample is
 #             appended after `=== sample K ===`), meta.json (tokens, stop reason, samples, primer flag), primer.txt once; planning with --journal writes plan
 #             events; the key is in none of it
+#   hint      a `HINT:` line of the task (a person's words about a unit, from `--retry --hint`) reaches the model under its own heading and is not repeated
+#             as a task line; no HINT line, no heading
 #   workspace the id is sent as anthropic-workspace-id only when named
 #   thinking  thinking and effort are sent only when named; a bad value is exit 2 and no request; an all-thinking reply says so
 #   cut off   a reply that stopped at max_tokens is retried, never written, and the next request has the bound doubled (at most 32000)
@@ -251,6 +253,26 @@ expect "unit effort: a task without EFFORT leaves the flag" "$(req)" '[null, {"e
 rm -f "$d/count"; broken; printf 'UNIT: u\nEFFORT: huge\n' > "$F.task"; agent >/dev/null 2>"$d/err.txt"; rc=$?
 expect "unit effort: a bad EFFORT in the task is exit 2" "$rc" 2
 expect "unit effort: ... and sends no request" "$(count)" 0
+rm -f "$F.task"
+
+# a person's hint (`HINT:` lines of the task, written by `--retry <unit> --hint`): the model sees it under a heading of its own, once, and the
+# compiler's feedback and the file stay where they were
+broken; printf 'UNIT: u\nFUNCTION: f\nHINT: prefer a loop "over" recursion\nHINT: second line of the hint\nINSTRUCTIONS: do it\n' > "$F.task"; agent >/dev/null 2>&1
+python3 - "$d/request.json" <<'PY' || fail=1
+import json, sys
+m = json.load(open(sys.argv[1]))["messages"][0]["content"]
+bad = []
+head = "What the person who runs this build says about this unit"
+if m.count(head) != 1: bad.append("the heading appears %d times" % m.count(head))
+if 'prefer a loop "over" recursion\nsecond line of the hint' not in m: bad.append("the hint's two lines are not there, in order")
+if "HINT:" in m: bad.append("a raw HINT: line is still in the task text")
+if m.index("UNIT: u") > m.index(head) or m.index(head) > m.index("---\n"): bad.append("the order is not task, hint, file")
+if "compiler and the tests still decide" not in m: bad.append("the hint does not say the compiler still decides")
+for x in bad: print("FAIL: hint: " + x, file=sys.stderr)
+sys.exit(1 if bad else 0)
+PY
+broken; printf 'UNIT: u\nFUNCTION: f\n' > "$F.task"; agent >/dev/null 2>&1
+expect "hint: a task without a hint has no hint heading" "$(python3 -c "import json; print('says about this unit' in json.load(open('$d/request.json'))['messages'][0]['content'])")" False
 rm -f "$F.task"
 
 # no primer: no system block

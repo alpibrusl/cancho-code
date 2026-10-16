@@ -14,6 +14,11 @@
 #   provider    the unit agent fails: provider_error, exit 4, the state keeps what verified, build.json agrees; run.log names the unit's agent log (`[AGENT_LOG]`), which holds the turn's header and the agent's standard error
 #   stuck       a unit never verifies: stuck, exit 1, build.json counts the verified ones
 #   names       the brief names its public functions (`- name(...) : ...`): a plan that does not declare one is refused (`brief-name`), plan_failed, exit 3; a plan that does is built; a valid plan.json that lacks one is not reused
+#   retry       `--retry <unit> --hint "..."` on a stuck run: the plan is not asked for again, only that unit and the ones that need it are worked
+#               on, the hint is in the unit agent's task, run.log has `[RETRY]`, build.json names the unit (`retry`) and ends `done`
+#   patch       `--patch <unit> <file>`: no agent call for the unit, run.log has `[PATCH]`, build.json names it (`patch`)
+#   redo usage  a unit that is not in the plan, no valid plan.json, an empty hint, --retry with --patch, a patch file that is not there, --hint with no
+#               --retry, `--patch` with a missing file name: exit 2, nothing written in the work directory
 #   usage       missing arguments, provider, model or guide, a relative checker, `..`, an unknown option, a brief that is not there: exit 2, nothing run
 #
 # Needs the real cancho as CANCHO. BUILD_SRC names a directory to take src/ from (the mutation runs of the gate's own review). Exit 0: every case held.
@@ -26,7 +31,7 @@ SRC="${BUILD_SRC:-$root/src}"
 exe=$(mktemp -t cc-build-XXXXXX)
 "$CANCHO" build "$root/tests/programs/build.cho" "$SRC/build.cho" "$SRC/project.cho" "$SRC/plan.cho" "$SRC/driver.cho" \
     "$SRC/checker.cho" "$SRC/signature.cho" "$SRC/loop_check.cho" "$SRC/snapshot.cho" "$SRC/trail.cho" \
-    "$SRC/acceptance.cho" --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
+    "$SRC/acceptance.cho" "$SRC/splice.cho" --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }
@@ -244,6 +249,76 @@ expect "stuck: build.json units_total" "$(jf "$wd" units_total)" 3
 expect "stuck: build.json units_verified" "$(jf "$wd" units_verified)" 1
 expect "stuck: build.json stage" "$(jf "$wd" stage)" done
 rm -rf "$wd" "$rc"
+
+# retry and patch through the one command: a is stuck, the plan stands in the work directory, the person continues
+WRONGA='sed -i.bak "/fn double/d" "$1"; printf "\nfn double(x: int) -> [] int { return x + 3; }\n" >> "$1"'
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf '%s\n' "$WRONGA" > "$rc/a.sh"
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "retry: the first run is stuck" "$(verdict "$out")" stuck
+expect "retry: ... and has no retry in build.json" "$(jf "$wd" retry)" ""
+printf 'if grep -q "^HINT: multiply$" "$1.task"; then printf "\nfn double(x: int) -> [] int { return x * 2; }\n" >> "$1"; else exit 4; fi\n' > "$rc/a.sh"
+out=$(run "$wd" "$rc" "$lg" --retry a --hint "multiply"); r=$?
+expect "retry: exit code" "$r" 0
+expect "retry: verdict" "$(verdict "$out")" done
+expect "retry: the plan was not asked for again; a and c were" "$(order "$lg")" "PLAN a a b a c"
+expect "retry: run.log has the [RETRY] line" "$(grep '^\[RETRY\]' "$wd/run.log" | tr '\t' ':')" "[RETRY]:a:hint"
+expect "retry: build.json names the unit" "$(jf "$wd" retry)" a
+expect "retry: build.json verdict" "$(jf "$wd" verdict)" done
+expect "retry: build.json units_verified" "$(jf "$wd" units_verified)" 3
+case "$(cat "$rc/unit.args")" in *"--provider stand"*"--model m1"*) ;; *) echo "FAIL: retry: the unit agent lacks provider and model: $(cat "$rc/unit.args")" >&2; fail=1 ;; esac
+case "$(cat "$rc/unit.args")" in *multiply*|*--hint*) echo "FAIL: retry: the hint went into the agent's command line: $(cat "$rc/unit.args")" >&2; fail=1 ;; esac
+rm -rf "$wd" "$rc"
+# patch
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf '%s\n' "$WRONGA" > "$rc/a.sh"
+out=$(run "$wd" "$rc" "$lg")
+printf '```\nfn double(x: int) -> [] int { return x * 2; }\n```\n' > "$wd.patch.txt"
+out=$(run "$wd" "$rc" "$lg" --patch a "$wd.patch.txt"); r=$?
+expect "patch: exit code" "$r" 0
+expect "patch: verdict" "$(verdict "$out")" done
+expect "patch: no model call for a: only c was asked" "$(order "$lg")" "PLAN a a b c"
+expect "patch: run.log has the [PATCH] lines" "$(grep '^\[PATCH\]' "$wd/run.log" | cut -f2,3 | tr '\t' ':' | tr '\n' ' ')" "a:applying a:verified "
+expect "patch: build.json names the unit" "$(jf "$wd" patch)" a
+rm -rf "$wd" "$rc" "$wd.patch.txt"
+# the person's own code that does not verify: refused, the stuck run stays as it was, exit 1
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf '%s\n' "$WRONGA" > "$rc/a.sh"
+out=$(run "$wd" "$rc" "$lg")
+cp "$wd/project.cho" "$wd.before"
+printf 'fn double(x: int) -> [] int { return x + 9; }\n' > "$wd.patch.txt"
+out=$(run "$wd" "$rc" "$lg" --patch a "$wd.patch.txt"); r=$?
+expect "patch refused: exit code" "$r" 1
+expect "patch refused: verdict" "$(verdict "$out")" stuck
+cmp -s "$wd/project.cho" "$wd.before" || { echo "FAIL: patch refused: project.cho was not restored" >&2; fail=1; }
+expect "patch refused: run.log says so" "$(grep '^\[PATCH\]' "$wd/run.log" | cut -f2,3 | tr '\t' ':' | tr '\n' ' ')" "a:applying a:refused "
+rm -rf "$wd" "$rc" "$wd.before" "$wd.patch.txt"
+# redo usage: nothing is written in the work directory
+redo_usage() { # name part args...
+    name=$1; part=$2; shift 2
+    set -- "$@"
+    w=$(mktemp -d -t cc-build-wd-XXXXXX); r=$(mktemp -d -t cc-build-rc-XXXXXX); l="$r/agent.log"; : > "$l"; cp "$P"/recipes-good/*.sh "$r"/
+    printf 'cp "%s" "$1"\n' "$P/plan.json" > "$r/plan.sh"
+    if [ "$name" != "no plan" ]; then cp "$P/plan.json" "$w/plan.json"; fi
+    before=$(cd "$w" && find . -type f | sort | xargs cksum 2>/dev/null)
+    o=$(run "$w" "$r" "$l" "$@"); rr=$?
+    expect "redo usage ($name): exit code" "$rr" 2
+    case "$o" in *"$part"*) ;; *) echo "FAIL: redo usage ($name): no message with '$part': $o" >&2; fail=1 ;; esac
+    expect "redo usage ($name): nothing was written" "$(cd "$w" && find . -type f | sort | xargs cksum 2>/dev/null)" "$before"
+    expect "redo usage ($name): the agent was never asked" "$(wc -c < "$l" | tr -d ' ')" 0
+    rm -rf "$w" "$r"
+}
+POK=$(mktemp -t cc-build-patch-XXXXXX); printf 'fn double(x: int) -> [] int { return x * 2; }\n' > "$POK"
+redo_usage "unit not in the plan" "does not have" --retry nosuch --hint x
+redo_usage "patch unit not in the plan" "does not have" --patch nosuch "$POK"
+redo_usage "no plan" "no valid plan.json" --retry a --hint x
+redo_usage "empty hint" "empty" --retry a --hint ""
+redo_usage "retry and patch" "together" --retry a --patch b "$POK"
+redo_usage "patch file missing" "cannot be read" --patch a /no/such/file.txt
+redo_usage "hint without retry" "goes with --retry" --hint x
+redo_usage "patch without its file" "option it does not know, or without its value" --patch a
+redo_usage "retry without a unit" "needs a unit" --retry ""
+rm -f "$POK"
 
 # usage
 set -- $(mk); wd=$1; rc=$2; lg=$3

@@ -1,0 +1,3 @@
+Unit key: fn tok_key_ok[&r](key: &r [byte]) -> [] bool
+A key is non-empty and has no spaces.
+Examples: tok_key_ok("a") == true; tok_key_ok("") == false

@@ -1,0 +1,4 @@
+{"provider":"anthropic","model":"claude-haiku-5-5","task":"PLAN: tokens","sample":1,"in":900,"out":700,"cache_write":13000,"cache_read":0,"thinking":0,"outcome":"written","ms":1000}
+{"provider":"anthropic","model":"claude-haiku-5-5","task":"UNIT: key","sample":1,"in":421,"out":889,"cache_write":0,"cache_read":13374,"thinking":0,"outcome":"written","ms":1000}
+{"provider":"anthropic","model":"claude-haiku-5-5","task":"UNIT: parse","sample":1,"in":640,"out":1210,"cache_write":0,"cache_read":13374,"thinking":0,"outcome":"written","ms":1000}
+{"provider":"anthropic","model":"claude-haiku-5-5","task":"UNIT: parse","sample":1,"in":1830,"out":1302,"cache_write":0,"cache_read":13374,"thinking":0,"outcome":"written","ms":1000}

@@ -1,0 +1,8 @@
+Your task, for the cancho program below:
+UNIT: parse
+
+What the person who runs this build says about this unit (they have read the earlier attempts; take it into account, but the compiler and the tests still decide whether the code is right):
+the key is a borrowed slice: use buffer.bytes(...) before comparing
+---
+edition 7;
+---

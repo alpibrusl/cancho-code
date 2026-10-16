@@ -6,6 +6,17 @@ docs/parity.md P5. `fix` drives one issue against one file. A **project** is a p
 project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds [acceptance-command [lib-files]]]]
 ```
 
+```
+project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds [acceptance-command [lib-files]]]] [--retry <unit> [--hint "<text>"]] [--patch <unit> <file>]
+```
+
+`--retry` and `--patch` continue a unit that is stuck (or any unit) instead of starting the whole plan over; this is where they live, and [build.md](build.md#continuing-a-stuck-unit) shows them from the person's side. The inputs are the plan and `state.txt`:
+
+- `--retry get --hint "compare with buffer.bytes(k)"`: `get` goes back to not verified and is built again with an agent task that carries `HINT: compare with buffer.bytes(k)` (one `HINT:` line per line of the hint, after `NOTE:`). Its budgets start fresh; its trail goes on from the earlier attempts (the unit's records are put back as `project.cho.trail.jsonl`, and the new attempts are numbered after them). Only `get` and the units that depend on it, directly or not, are worked on in this run; after `get` verifies the sweep checks everything else that verified, and what broke is rebuilt with its `NOTE`. Every other unit that is not verified stays as it is and is not mentioned.
+- `--patch get get.cho`: `get.cho` is read like a model's patch reply (`src/splice.cho`), spliced into `project.cho`, and `driver.run_issue_journal` runs ONE attempt whose "agent" is `cp` of the spliced file over `project.cho`: the same checker, the same acceptance command for the unit, the same trail and journal record, no model. Not verified: `project.cho` goes back to `project.cho.before`, nothing else is built, `[PROJECT_VERDICT] stuck`. Verified: as any unit, then the units waiting for it.
+
+Usage errors (exit 2, nothing written, nothing asked of the agent): a unit the plan does not have, an empty `--hint`, `--hint` without `--retry`, `--retry` with `--patch`, a patch file that cannot be read or is empty.
+
 `checker` and `workdir` are absolute paths (a relative checker is exit 2: the first implementation died with SIGILL on one); `workdir` must exist. The agent command is the same shell command `fix` takes: it is run with the project file appended as its last argument and reads `<project.cho>.task` to learn what to write (scripts/cancho-agent.sh does). `attempts` is the ceiling per unit (default 4), `agent-seconds` the cap on one agent turn (default 30). `acceptance-command` and `lib-files` are for a plan with an `integration` unit (below); they are the `fix` hook's and extra files' counterparts.
 
 ## Layout (flat: a program cannot make directories)
@@ -14,7 +25,7 @@ project <checker> <plan.json> <workdir> <agent-command> [attempts [agent-seconds
 |---|---|
 | `project.cho` | `edition 7;` and the units' functions. The ONLY file the agent edits. Created (`edition 7;`) when absent. |
 | `main.cho` | a fixed `main` that releases every capability; written by the driver each run. `cancho test` supplies its own `main`, so the program's `main` lives apart from the functions. |
-| `project.cho.task` | the unit being built: written before each unit |
+| `project.cho.task` | the unit being built: written before each unit (with `HINT:` lines when the unit was re-opened with `--hint`) |
 | `tests-<id>.cho` | the unit's examples as tests, written before each unit |
 | `legend-<id>.txt` | test name and example text, one per line |
 | `state.txt` | one line `verified <id>` per verified unit, rewritten whole after every change: what a resumed run keeps |
@@ -38,6 +49,7 @@ EXAMPLES:
 <one example per line, as in the plan>
 INSTRUCTIONS: Add this function to project.cho, keeping every other function as it is. The file has no main. Do not write tests or examples of your own: the examples above are run for you.
 NOTE: <only after a regression: which unit broke, with the failing test output>
+HINT: <only when the person re-opened the unit with --hint: their words, one line per line>
 ```
 
 ## The tests

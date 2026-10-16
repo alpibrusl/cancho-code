@@ -1,0 +1,27 @@
+{
+ "name": "tokens",
+ "units": [
+  {
+   "id": "key",
+   "signature": "fn tok_key_ok[&r](key: &r [byte]) -> [] bool",
+   "examples": [],
+   "deps": []
+  },
+  {
+   "id": "parse",
+   "signature": "fn tok_parse[&r](text: &r [byte]) -> [] int",
+   "examples": [],
+   "deps": [
+    "key"
+   ]
+  },
+  {
+   "id": "get",
+   "signature": "fn tok_get[&r](text: &r [byte]) -> [] int",
+   "examples": [],
+   "deps": [
+    "parse"
+   ]
+  }
+ ]
+}

@@ -734,6 +734,8 @@ function attemptBlock(r, last, trailRow) {
   sec.id = "att-" + (isNum(ev.n) ? ev.n : r.i);
   sec.appendChild(el("h3", "", "Attempt #" + (isNum(ev.n) ? ev.n : "?") + (typeof ev.decision === "string" ? " → " + ev.decision : "")));
   if (typeof ev.decision === "string" && DECISIONS[ev.decision]) sec.appendChild(el("div", "note", "Decision: " + DECISIONS[ev.decision] + "."));
+  if (ev.outcome === "human_patch") sec.appendChild(el("div", "note", "A person's own code, checked like a model's: no model was asked."));
+  if (typeof ev.hint === "string" && ev.hint) sec.appendChild(el("div", "note", "The person's hint for this attempt: " + ev.hint));
   var st = callStats(ev, r.i);
   sec.appendChild(st.el);
   var sig = typeof ev.signature === "string" && ev.signature ? ev.signature : (trailRow && trailRow.sig ? trailRow.sig : null);
@@ -835,6 +837,46 @@ function finalBlock(r) {
   return sec;
 }
 
+/* retry-note:begin */
+// The one place the page names a command: how a person continues a stuck unit (docs/build.md). The board runs nothing; this is text to copy. Built
+// from board.json's run (brief, provider, model) where it knows them, with a placeholder for what it cannot know (the checker, the work directory, the agent).
+function retryCommand(run, unit) {
+  var plain = /^[A-Za-z0-9._\/+:=@%,-]+$/;
+  function known(v, placeholder) { return typeof v === "string" && plain.test(v) ? v : placeholder; }
+  var r = run || {};
+  return "build <checker> " + known(r.brief, "<brief.txt>") + " <workdir> <agent-command> --provider " + known(r.provider, "<provider>") +
+    " --model " + known(r.model, "<model>") + " --retry " + unit + ' --hint "<what you know about this unit>"';
+}
+
+function retryNote(run, unit) {
+  var sec = el("section", "sec");
+  sec.appendChild(el("h3", "", "Continue this unit"));
+  sec.appendChild(el("div", "note", "This board only reads. To try the unit again with a hint of your own, run this in the folder of the run (the same checker, work directory and agent command as the run's; edit the hint). The units that need it are checked again after it. To give your own code instead: --patch " + unit + " <file>."));
+  var cmd = retryCommand(run, unit);
+  var pre = el("pre", "txt", cmd);
+  pre.id = "retry-cmd";
+  pre.tabIndex = 0;
+  sec.appendChild(pre);
+  var copy = el("button", "", "Copy command");
+  copy.type = "button";
+  copy.addEventListener("click", function () {
+    var done = function () { copy.textContent = "Copied"; };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(cmd).then(done, function () { selectText(pre); });
+    else selectText(pre);
+  });
+  sec.appendChild(copy);
+  return sec;
+}
+
+function selectText(node) {
+  var range = document.createRange();
+  range.selectNodeContents(node);
+  var sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+/* retry-note:end */
+
 // ---- the unit panel ------------------------------------------------------------------------------------------------------------
 
 function openUnit(u, focusN, opener) {
@@ -871,6 +913,7 @@ function openUnit(u, focusN, opener) {
       top.appendChild(el("div", "note", "Dependencies: not recorded (no plan.json)."));
     }
     body.appendChild(top);
+    if (u.column === "stuck") body.appendChild(retryNote(state.data.run, u.id));
 
     var jr = J && J.units[u.id];
     if (jr && jr.start && typeof jr.start.ev.function === "string" && !u.function) $("psub").textContent = jr.start.ev.function;

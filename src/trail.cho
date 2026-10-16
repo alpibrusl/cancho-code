@@ -444,7 +444,7 @@ pub fn make_call_dir[&h, &x, &c, &f](heap: &!h Heap, exec: &x Exec(""), clock: &
 // whole answer after the attempt and `accept_text` the acceptance command's whole output (empty: none), `agent_exit` the agent's exit code (-1: not
 // known). The numbers (attempt, agent time, outcome, signature, decision) are those of the trail record the loop has just written; the
 // prompt, reply, tokens, stop reason and stderr are what the agent left in `<file>.call/`.
-pub fn journal_attempt[&h, &x, &c, &z, &d, &u, &f, &k, &a](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &z Fs(""), dir: &d [byte], unit: &u [byte], n: int, file: &f [byte], checker_text: &k [byte], accept_text: &a [byte], agent_exit: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write("")] int {
+pub fn journal_attempt[&h, &x, &c, &z, &d, &u, &f, &k, &a, &ht](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &z Fs(""), dir: &d [byte], unit: &u [byte], n: int, file: &f [byte], checker_text: &k [byte], accept_text: &a [byte], agent_exit: int, hint: &ht [byte], human: bool) -> [heap, exec(""), clock, poll, fs_read(""), fs_write("")] int {
     let tp = buffer.append(heap, buffer.append(heap, buffer.empty(heap, len(file) + 24), file), ".trail.jsonl");
     let call = buffer.append(heap, buffer.append(heap, buffer.empty(heap, len(file) + 24), file), ".call");
     var result = -1;
@@ -462,7 +462,7 @@ pub fn journal_attempt[&h, &x, &c, &z, &d, &u, &f, &k, &a](heap: &!h Heap, exec:
                 let nodes = json.parse(line, tape);
                 if nodes > 0 && json.is_object(tape, 0) && int_at(line, tape, json.get(line, tape, 0, "attempt")) == n && json.get(line, tape, 0, "attempt") >= 0 {
                     borrow call as &callq in {
-                        result = journal_attempt_record(heap, exec, clock, fs, dir, unit, n, file, buffer.bytes(callq), checker_text, accept_text, agent_exit, line, tape);
+                        result = journal_attempt_record(heap, exec, clock, fs, dir, unit, n, file, buffer.bytes(callq), checker_text, accept_text, agent_exit, line, tape, hint, human);
                     }
                 }
             }
@@ -475,7 +475,7 @@ pub fn journal_attempt[&h, &x, &c, &z, &d, &u, &f, &k, &a](heap: &!h Heap, exec:
 }
 
 // The rest of `attempt`, once the trail record is parsed: the blobs, the diff and the event.
-fn journal_attempt_record[&h, &x, &c, &z, &d, &u, &f, &cl, &k, &a, &s, &t](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &z Fs(""), dir: &d [byte], unit: &u [byte], n: int, file: &f [byte], call: &cl [byte], checker_text: &k [byte], accept_text: &a [byte], agent_exit: int, line: &s [byte], tape: &t [int]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write("")] int {
+fn journal_attempt_record[&h, &x, &c, &z, &d, &u, &f, &cl, &k, &a, &s, &t, &ht](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &z Fs(""), dir: &d [byte], unit: &u [byte], n: int, file: &f [byte], call: &cl [byte], checker_text: &k [byte], accept_text: &a [byte], agent_exit: int, line: &s [byte], tape: &t [int], hint: &ht [byte], human: bool) -> [heap, exec(""), clock, poll, fs_read(""), fs_write("")] int {
     var outcome = add_string(heap, buffer.empty(heap, 16), line, tape, json.get(line, tape, 0, "outcome"));
     var decision = add_string(heap, buffer.empty(heap, 16), line, tape, json.get(line, tape, 0, "decision"));
     var sig = add_string(heap, buffer.empty(heap, 64), line, tape, json.get(line, tape, 0, "sig"));
@@ -486,6 +486,8 @@ fn journal_attempt_record[&h, &x, &c, &z, &d, &u, &f, &cl, &k, &a, &s, &t](heap:
         borrow decision as &dq in {
             if bytes.starts_with(buffer.bytes(dq), "agent_") {
                 named = buffer.append(heap, named, "agent_failed");
+            } else if human {
+                named = buffer.append(heap, named, "human_patch");
             } else if bytes.equal(buffer.bytes(oq), "refused") && len(accept_text) > 0 {
                 named = buffer.append(heap, named, "acceptance_failed");
             } else {
@@ -510,6 +512,10 @@ fn journal_attempt_record[&h, &x, &c, &z, &d, &u, &f, &cl, &k, &a, &s, &t](heap:
         w = put_str(heap, w, "signature", buffer.bytes(sq));
     }
     w = put_num(heap, w, "ms", ms);
+    // what the person said about this unit when they re-opened it (docs/build.md `--retry`)
+    if len(hint) > 0 {
+        w = put_str(heap, w, "hint", hint);
+    }
     if agent_exit >= 0 {
         w = put_num(heap, w, "exit", agent_exit);
     }
@@ -517,7 +523,10 @@ fn journal_attempt_record[&h, &x, &c, &z, &d, &u, &f, &cl, &k, &a, &s, &t](heap:
     // the blobs the agent left, then the driver's own
     w = blob_field(heap, fs, dir, w, "prompt", unit, n, "prompt.txt", call, "prompt.txt");
     w = blob_field(heap, fs, dir, w, "reply", unit, n, "reply.txt", call, "reply.txt");
-    w = blob_field(heap, fs, dir, w, "stderr", unit, n, "stderr.txt", file, ".agent.err");
+    // a person's patch has no agent turn: no standard error, no feedback shown to anyone
+    if human == false {
+        w = blob_field(heap, fs, dir, w, "stderr", unit, n, "stderr.txt", file, ".agent.err");
+    }
     if blob_there(heap, fs, dir, "primer.txt") == false {
         let pp = path_under(heap, call, "primer.txt", "");
         borrow pp as &pq in {
@@ -525,7 +534,9 @@ fn journal_attempt_record[&h, &x, &c, &z, &d, &u, &f, &cl, &k, &a, &s, &t](heap:
         }
         buffer.drop(heap, pp);
     }
-    w = blob_field(heap, fs, dir, w, "feedback", unit, n, "feedback.txt", file, ".feedback");
+    if human == false {
+        w = blob_field(heap, fs, dir, w, "feedback", unit, n, "feedback.txt", file, ".feedback");
+    }
     if agent_failed == false {
         w = blob_field(heap, fs, dir, w, "code", unit, n, "code.cho", file, "");
     }
@@ -731,7 +742,7 @@ pub fn plan_final[&h, &c, &z, &d, &p](heap: &!h Heap, clock: &c Clock, fs: &z Fs
 }
 
 // The number of records the unit's trail holds so far: its 
-fn attempts_so_far[&z, &p](fs: &z Fs(""), trail_path: &p [byte]) -> [fs_read("")] int {
+pub fn attempts_so_far[&z, &p](fs: &z Fs(""), trail_path: &p [byte]) -> [fs_read("")] int {
     var n = 0;
     region r {
         let text = alloc_slice[r](65536, byte_of(0));

@@ -68,11 +68,11 @@ elif [ "$variant" = board ]; then
 elif [ "$variant" = project ]; then
   pinned=$here/docs/authority-project.json
   files=("$here/tests/programs/project.cho" "$here/src/project.cho" "$here/src/plan.cho" "$here/src/driver.cho" "$here/src/checker.cho"
-    "$here/src/signature.cho" "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho" "$here/src/acceptance.cho")
+    "$here/src/signature.cho" "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho" "$here/src/acceptance.cho" "$here/src/splice.cho")
 elif [ "$variant" = build ]; then
   pinned=$here/docs/authority-build.json
   files=("$here/tests/programs/build.cho" "$here/src/build.cho" "$here/src/project.cho" "$here/src/plan.cho" "$here/src/driver.cho" "$here/src/checker.cho"
-    "$here/src/signature.cho" "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho" "$here/src/acceptance.cho")
+    "$here/src/signature.cho" "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho" "$here/src/acceptance.cho" "$here/src/splice.cho")
 else
   pinned=$here/docs/authority.json
   files=("$here/tests/programs/fix.cho" "$here/src/driver.cho" "$here/src/checker.cho" "$here/src/signature.cho"
