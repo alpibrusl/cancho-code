@@ -88,6 +88,34 @@ def summary(rows):
             "audit_cases": "%d/%d" % (sum(r["audit_passed"] or 0 for r in rows), sum(r["audit_of"] or 0 for r in rows))}
 
 
+def coverage(out, label, arm_dir, memory_root):
+    """Of the refusals that were followed by another attempt, how many were of a class the item's leave-one-out memory has an active lesson with a fix for
+    (checker refusals only: an acceptance failure is never recalled), and what became of that next attempt."""
+    sys.path.insert(0, os.path.join(ROOT, "tests", "reference"))
+    import lessons_ref
+    refusals = retries = covered = 0
+    rows = []
+    for d in sorted(glob.glob(os.path.join(out, arm_dir, "%s-*" % label))):
+        item = item_of(d)
+        ok = set()
+        try:
+            for l in open(os.path.join(memory_root, item, "lessons.jsonl")):
+                l = json.loads(l)
+                if l["status"] == "active" and l["fixes"]: ok.add(l["class"])
+        except OSError:
+            pass
+        last = {}
+        for e in (x for x in events(d) if x.get("kind") == "attempt"):
+            if e["unit"] in last:
+                p = last.pop(e["unit"]); retries += 1
+                c = lessons_ref.class_of(p["signature"])
+                if c in ok and not p["signature"].startswith("acceptance"):
+                    covered += 1; rows.append({"run": os.path.basename(d), "unit": e["unit"], "attempt": e["n"], "class": c, "next_outcome": e["outcome"], "lesson_in_prompt": bool(e.get("memory"))})
+            if e.get("outcome") in ("refused", "acceptance_failed") and e.get("signature"):
+                refusals += 1; last[e["unit"]] = e
+    return {"refusals": refusals, "followed_by_an_attempt": retries, "of_a_class_with_an_active_lesson_and_fix": covered, "those": rows}
+
+
 def cmd_report(a):
     arms = {}
     for label in (a.a, a.b):
@@ -95,6 +123,13 @@ def cmd_report(a):
         if not arms[label]:
             arms[label] = [analyse(d) for d in sorted(glob.glob(os.path.join(a.out, "%s-*" % label))) if os.path.exists(os.path.join(d, "result.json"))]
     res = {"arms": {k: {"summary": summary(v), "runs": v} for k, v in arms.items()}, "a": a.a, "b": a.b, "spent_before_usd": a.spent}
+    if a.memory_root:
+        res["coverage"] = {a.a: coverage(a.out, a.a, "a", a.memory_root), a.b: coverage(a.out, a.b, "b", a.memory_root)}
+    if a.lessons:
+        L = [json.loads(l) for l in open(a.lessons)]
+        res["evidence_base"] = {"classes": len(L), "refusals": sum(l["count"] for l in L), "active": sum(l["status"] == "active" for l in L),
+                                "with_a_fix": sum(1 for l in L if l["fixes"]), "top10": [{k: l[k] for k in ("class", "count", "runs", "units", "next_seen", "next_verified", "source")}
+                                                                                       | {"fixes": len(l["fixes"])} for l in sorted(L, key=lambda l: -l["count"])[:10]]}
     os.makedirs(os.path.join(ROOT, "eval", "results"), exist_ok=True)
     json.dump(res, open(os.path.join(ROOT, "eval", "results", a.stem + ".json"), "w"), indent=1)
     print(json.dumps({k: v["summary"] for k, v in res["arms"].items()}, indent=1))
@@ -107,6 +142,7 @@ def main():
     r.add_argument("--workspace", default="wrkspc_01NnYYkfhp6fKLUr8B6UXnfX"); r.add_argument("--primer", required=True)
     m = sp.add_parser("mine"); m.add_argument("root"); m.add_argument("dirs", nargs="+")
     p = sp.add_parser("report"); p.add_argument("out"); p.add_argument("a"); p.add_argument("b"); p.add_argument("stem"); p.add_argument("--spent", type=float, default=0.0)
+    p.add_argument("--memory-root"); p.add_argument("--lessons")
     a = ap.parse_args()
     {"run": cmd_run, "mine": cmd_mine, "report": cmd_report}[a.cmd](a)
 

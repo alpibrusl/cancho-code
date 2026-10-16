@@ -83,4 +83,8 @@ Before the journal, a run left `trail-<unit>.jsonl` (the signature and the outco
 
 ## Measured
 
-MEASURED
+Details, the top classes and the A/B: [eval/results/2026-10-16-memory.md](../eval/results/2026-10-16-memory.md). In short:
+
+- **The evidence base.** Over every run kept so far (77 with a journal, 3,748 trails without): 957 refusals in 75 classes, 37 with enough evidence, **8 with a fix** (only a journal has diffs). The early journal runs hold 2 refusals in 55 attempts. The class `` expected `T`, found `Buffer` `` (the pitfall behind the AGENTS.md hint) comes out of the old trails on its own: 30 occurrences in 21 runs, the next attempt verified 6 times in 25. Counts are exact: an independent count over the raw trails gives the same numbers.
+- **The A/B** (13 items x 2 runs, brief only, haiku, lessons mined from the other items' journals only): the memory recalled one lesson, the missing import, on 4 retries of 26 runs; 3 of the 4 verified; the same refusal in the arm without memory was fixed 2 times of 2 by the model reading the message. Done 22 against 23, fully right 14 against 17, attempts per unit 1.073 against 1.077. **This is noise, not an effect**: 2 runs per cell cannot separate them, and the memory had one recallable lesson per item. What it shows is that the whole path works on the real API.
+- Next steps with evidence behind them: more journals (every run now leaves one), then `--promote` for what recurs and does not fix itself.
