@@ -47,7 +47,7 @@ if [ "${1:-}" = "--mutants" ]; then
     mkdir -p "$work/tools"
     "$CANCHO" build "$root/tests/programs/build.cho" "$root/src/build.cho" "$root/src/project.cho" "$root/src/plan.cho" "$root/src/driver.cho" \
         "$root/src/checker.cho" "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" \
-        "$root/src/acceptance.cho" "$root/src/splice.cho" --std --backend cranelift -o "$work/tools/cancho-build" >/dev/null 2>&1 || { echo "FAIL: the build tool did not build" >&2; exit 1; }
+        "$root/src/acceptance.cho" "$root/src/splice.cho" "$root/src/pool.cho" "$root/src/parallel.cho" --std --backend cranelift -o "$work/tools/cancho-build" >/dev/null 2>&1 || { echo "FAIL: the build tool did not build" >&2; exit 1; }
     "$CANCHO" build "$root/tests/programs/board.cho" "$root/src/board.cho" "$root/src/plan.cho" --std --backend cranelift -o "$work/tools/cancho-board" >/dev/null 2>&1 || { echo "FAIL: the board tool did not build" >&2; exit 1; }
     mutant() {
         name=$1; from=$2; to=$3
@@ -105,7 +105,7 @@ mkdir -p "$work/tools" "$work/out" "$work/in"
 if [ -z "${MCP_TOOLS:-}" ]; then
     "$CANCHO" build "$root/tests/programs/build.cho" "$root/src/build.cho" "$root/src/project.cho" "$root/src/plan.cho" "$root/src/driver.cho" \
         "$root/src/checker.cho" "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" \
-        "$root/src/acceptance.cho" "$root/src/splice.cho" --std --backend cranelift -o "$tools/cancho-build" >"$work/build.log" 2>&1 || { cat "$work/build.log" >&2; echo "FAIL: the build tool did not build" >&2; exit 1; }
+        "$root/src/acceptance.cho" "$root/src/splice.cho" "$root/src/pool.cho" "$root/src/parallel.cho" --std --backend cranelift -o "$tools/cancho-build" >"$work/build.log" 2>&1 || { cat "$work/build.log" >&2; echo "FAIL: the build tool did not build" >&2; exit 1; }
     "$CANCHO" build "$root/tests/programs/board.cho" "$root/src/board.cho" "$root/src/plan.cho" --std --backend cranelift -o "$tools/cancho-board" >"$work/build.log" 2>&1 || { cat "$work/build.log" >&2; echo "FAIL: the board tool did not build" >&2; exit 1; }
 fi
 exe="$work/cancho-mcp"
