@@ -1,0 +1,2 @@
+{"attempt": 0, "agent_ms": 10, "outcome": "refused", "sig": "acceptance:test test_take_2 ... FAILED", "decision": "retry"}
+{"attempt": 1, "agent_ms": 10, "outcome": "verified", "sig": "", "decision": "verified"}

@@ -1,0 +1,106 @@
+edition 7;
+
+module memory_test;
+
+// The class of a refusal (src/memory.cho, docs/memory.md): what makes two refusals "the same mistake" for the memory. Every case is a
+// signature as the driver records it (src/signature.cho) and the class it must have. A class that is too fine never gathers evidence; one that is too
+// coarse mixes mistakes that have different fixes.
+
+import memory;
+import std.buffer;
+import std.bytes;
+import std.test;
+
+fn class_is[&h](heap: &!h Heap, sig: &static [byte], want: &static [byte]) -> [heap] bool {
+    let c = memory.class_of(heap, buffer.empty(heap, 64), sig);
+    var same = false;
+    borrow c as &cq in {
+        same = bytes.equal(buffer.bytes(cq), want);
+    }
+    buffer.drop(heap, c);
+    return same;
+}
+
+pub fn test_direction_survives[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(class_is(heap, "type-mismatch:expected `int`, found `bool`", "type-mismatch:expected `int`, found `bool`"));
+    test.assert(class_is(heap, "type-mismatch:expected `bool`, found `int`", "type-mismatch:expected `bool`, found `int`"));
+    test.assert(class_is(heap, "type-mismatch:expected `[byte]`, found `Buffer`", "type-mismatch:expected `T`, found `Buffer`"));
+    return 0;
+}
+
+pub fn test_names_are_one_class[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(class_is(heap, "not-a-function:`empty` is not a function in this program", "not-a-function:`N` is not a function in this program"));
+    test.assert(class_is(heap, "not-a-function:`nil` is not a function in this program", "not-a-function:`N` is not a function in this program"));
+    test.assert(class_is(heap, "unknown-name:no module `std.option` in this program; a module exists where a file declares", "unknown-name:no module `N` in this program; a module exists where a file declares"));
+    test.assert(class_is(heap, "unknown-name:`List` has no variant `Nil`", "unknown-name:`List` has no variant `N`"));
+    return 0;
+}
+
+pub fn test_types_and_marks[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(class_is(heap, "not-a-slice:`&l List[Box[byte]]` is not a slice", "not-a-slice:`T` is not a slice"));
+    test.assert(class_is(heap, "type-mismatch:expected `[`, found an identifier", "type-mismatch:expected `[`, found an identifier"));
+    test.assert(class_is(heap, "type-mismatch:expected `fn`, `extern`, `struct`, `enum` or `static`, found `-`", "type-mismatch:expected `fn`, `extern`, `struct`, `enum` or `static`, found `-`"));
+    test.assert(class_is(heap, "unexpected-character:unexpected character `✓`", "unexpected-character:unexpected character `C`"));
+    test.assert(class_is(heap, "unexpected-character:unexpected character ```", "unexpected-character:unexpected character ```"));
+    return 0;
+}
+
+pub fn test_numbers_paths_tests[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(class_is(heap, "arity:expected 3 arguments, found 14", "arity:expected # arguments, found #"));
+    test.assert(class_is(heap, "acceptance:test test_take_2 ... FAILED", "acceptance:test N ... FAILED"));
+    test.assert(class_is(heap, "acceptance:test test_refill_10 ... FAILED", "acceptance:test N ... FAILED"));
+    test.assert(class_is(heap, "acceptance:/private/tmp/x/tests-get.cho:3:1: erro", "acceptance:PATH erro"));
+    test.assert(class_is(heap, "acceptance:", "acceptance:"));
+    test.assert(class_is(heap, "", ""));
+    return 0;
+}
+
+pub fn test_class_is_idempotent[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(class_is(heap, "not-a-function:`N` is not a function in this program", "not-a-function:`N` is not a function in this program"));
+    test.assert(class_is(heap, "arity:expected # arguments, found #", "arity:expected # arguments, found #"));
+    return 0;
+}
+
+pub fn test_class_is_bounded[&h](heap: &!h Heap) -> [heap] int {
+    let c = memory.class_of(heap, buffer.empty(heap, 64), "x:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    var n = 0;
+    borrow c as &cq in {
+        n = len(buffer.bytes(cq));
+    }
+    buffer.drop(heap, c);
+    test.assert(n <= 241);
+    test.assert(n >= 200);
+    return 0;
+}
+
+pub fn test_id_is_the_hash_of_the_class[&h](heap: &!h Heap) -> [heap] int {
+    let a = memory.id_of(heap, buffer.empty(heap, 16), "type-mismatch:expected `int`, found `bool`");
+    let b = memory.id_of(heap, buffer.empty(heap, 16), "not-a-function:`N` is not a function in this program");
+    borrow a as &aq in {
+        test.assert(bytes.equal(buffer.bytes(aq), "L1c382455"));
+    }
+    borrow b as &bq in {
+        test.assert(bytes.equal(buffer.bytes(bq), "Le876a31a"));
+    }
+    buffer.drop(heap, a);
+    buffer.drop(heap, b);
+    return 0;
+}
+
+fn redact_is[&h](heap: &!h Heap, text: &static [byte], want: &static [byte]) -> [heap] bool {
+    let c = memory.redacted(heap, buffer.empty(heap, 64), text);
+    var same = false;
+    borrow c as &cq in {
+        same = bytes.equal(buffer.bytes(cq), want);
+    }
+    buffer.drop(heap, c);
+    return same;
+}
+
+pub fn test_keys_are_taken_out_and_code_is_not[&h](heap: &!h Heap) -> [heap] int {
+    test.assert(redact_is(heap, "+    let k = \"sk-ant-test-0123456789-not-a-real-key\";", "+    let k = \"[redacted]\";"));
+    test.assert(redact_is(heap, "token 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 x", "token [redacted] x"));
+    test.assert(redact_is(heap, "+fn iniconf_valid_section_name_check_2(s: &r [byte]) -> [] bool {", "+fn iniconf_valid_section_name_check_2(s: &r [byte]) -> [] bool {"));
+    test.assert(redact_is(heap, "short-key-1 and plain words", "short-key-1 and plain words"));
+    return 0;
+}
