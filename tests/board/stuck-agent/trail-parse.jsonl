@@ -1,0 +1,2 @@
+{"attempt":0,"agent_ms":223410,"outcome":"gave_up","sig":"agent:gave-up:cut-off","decision":"retry"}
+{"attempt":1,"agent_ms":198204,"outcome":"gave_up","sig":"agent:gave-up:cut-off","decision":"signature"}

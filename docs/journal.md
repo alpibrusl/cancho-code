@@ -37,7 +37,7 @@ The other files of a run (`state.txt`, `trail-<id>.jsonl`, `usage.jsonl`, `raw.t
 
 An `attempt` is one turn of the agent and the check that followed:
 
-- `outcome`: `verified`, `refused` (the compiler refused the code), `acceptance_failed` (it compiled and its examples or scenarios failed), `agent_failed` (the agent did not answer: `exit` says how it ended), `defect`, `outage`, `human_patch` (the person's own code, `--patch`: no model was asked, so no `prompt`, `reply`, `stderr`, `feedback` or `tokens`; `code` is the project file with their code in it, `decision` says whether it verified (`verified`) or not (`ceiling`), `signature` why; a patch the splice could not even put in the file has `signature` `splice` and its report as `feedback`).
+- `outcome`: `verified`, `refused` (the compiler refused the code), `acceptance_failed` (it compiled and its examples or scenarios failed), `agent_failed` (the agent did not answer: `exit` says how it ended; with a `signature` `agent:gave-up:cut-off|no-program|splice` it reached the model and gave up, and the loop retries it like a refusal; without one, its `decision` is `agent_exit`, `agent_timeout`, ...: it is away, a wait), `defect`, `outage`, `human_patch` (the person's own code, `--patch`: no model was asked, so no `prompt`, `reply`, `stderr`, `feedback` or `tokens`; `code` is the project file with their code in it, `decision` says whether it verified (`verified`) or not (`ceiling`), `signature` why; a patch the splice could not even put in the file has `signature` `splice` and its report as `feedback`).
 - `decision`: what the loop did next: `retry`, `verified`, `signature` (the same refusal twice, the loop stops), `ceiling`, `defect`, `provider`, `agent_exit`, `agent_timeout`, `agent_signal`, `agent_output`, `agent_failed`, `regressed`.
 - `hint`: on the attempts of a unit the person re-opened with `--retry <unit> --hint "..."`, their text (the prompt blob of the attempt holds it too). `n` goes on from the attempts before the retry, so the earlier attempts and their blobs stay and the numbers do not repeat.
 - `signature`: the short form the stop rule compares. The whole refusal is `checker`.
@@ -90,7 +90,7 @@ The story of the retry is in the blobs. `get-a0-acceptance.txt` is what the exam
 +fn sm_get[&k, &v](...) -> [] opt.Option[int] {
 ```
 
-A run that fails for a reason the verdict hides is told the same way: another run's unit `parse` ended `provider_error`, and its single `attempt` event says `"outcome":"agent_failed"`, `"exit":1`, `"stop":"max_tokens"`, `"tokens":{"out":48000,...}`, with `parse-a0-stderr.txt` holding three lines "a sample was cut off by the bound": the model was cut off three times, the API was never down.
+A run that fails for a reason the verdict hides is told the same way (this one is why the exit codes of the agent are documented, [project.md](project.md#the-agents-exit-codes): the unit now ends `stuck`, with the signature `agent:gave-up:cut-off`, and the second turn is another attempt): another run's unit `parse` ended `provider_error`, and its single `attempt` event said `"outcome":"agent_failed"`, `"exit":1`, `"stop":"max_tokens"`, `"tokens":{"out":48000,...}`, with `parse-a0-stderr.txt` holding three lines "a sample was cut off by the bound": the model was cut off three times, the API was never down.
 
 ## Showing it
 

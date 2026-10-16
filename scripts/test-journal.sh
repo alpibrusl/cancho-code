@@ -12,6 +12,8 @@
 #   cap         a 300 kB reply is cut to 262144 bytes with a visible marker; no blob is over the cap
 #   stuck       a unit that never verifies: its attempts, `stuck`, the run's verdict
 #   provider    an agent that fails: the attempt says agent_failed with its exit, the unit says unavailable, the run provider_error
+#   gave up     an agent that exits with a documented gave-up code (11): the attempt is agent_failed WITH the signature agent:gave-up:no-program, the same-signature
+#               stop ends the unit stuck, the run stuck (exit 1), not provider_error
 #   killed      a run killed with SIGKILL leaves a journal whose every line is whole; the next run appends to it
 #
 # Needs the real cancho as CANCHO. JOURNAL_SRC names a directory to take src/ from (the mutation runs). Exit 0: every case held.
@@ -137,6 +139,20 @@ expect "provider: c's attempt" "$(q "$wd" attempts | tr ' ' '\n' | grep '^c/')" 
 expect "provider: the agent's exit" "$(q "$wd" field c 0 exit)" 3
 expect "provider: the unit's end" "$(q "$wd" units)" "a:verified:2 b:verified:2 c:unavailable:1"
 expect "provider: the run's end" "$(q "$wd" first run_end | sed 's/"seconds": [0-9]*/"seconds": N/')" '{"exit": 4, "kind": "run_end", "seconds": N, "verdict": "provider_error"}'
+rm -rf "$wd" "$rc"
+
+# gave up: c's agent reaches its model and finds no program (exit 11): the unit fails, it is not the provider; the attempt keeps the name agent_failed
+# and gets the signature, the same-signature stop ends the unit stuck, the run ends stuck (exit 1)
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf 'echo "cancho-agent: a sample has no program in it (reasoning, not a file)" >&2; exit 11\n' > "$rc/c.sh"
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "gave up: exit code" "$r" 1
+expect "gave up: c's attempts" "$(q "$wd" attempts | tr ' ' '\n' | grep '^c/' | tr '\n' ' ')" "c/0:agent_failed:retry c/1:agent_failed:signature "
+expect "gave up: the signature is named" "$(q "$wd" field c 1 signature)" "agent:gave-up:no-program"
+expect "gave up: the agent's exit" "$(q "$wd" field c 1 exit)" 11
+expect "gave up: the unit's end" "$(q "$wd" units)" "a:verified:2 b:verified:2 c:stuck:2"
+expect "gave up: every blob named is there" "$(q "$wd" blobs)" ok
+expect "gave up: the run's end" "$(q "$wd" first run_end | sed 's/"seconds": [0-9]*/"seconds": N/')" '{"exit": 1, "kind": "run_end", "seconds": N, "verdict": "stuck"}'
 rm -rf "$wd" "$rc"
 
 # killed: SIGKILL the build while the agent is building c

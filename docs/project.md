@@ -71,11 +71,27 @@ A unit that carries `tests` (docs/plan.md) uses them instead: each is decoded an
 4. **Next unit**: the first unit in file order that is not verified, not failed, and whose dependencies are all verified. None left: go to 6.
 5. Build it: write the task and the tests, print `[UNIT]<TAB><id><TAB>building`, run `driver.run_issue` on `project.cho` with the check command, the acceptance command, `attempts`, K=2 and `agent-seconds`. Then:
    - Verified: add to the state (rewrite `state.txt`), print `[UNIT]<TAB><id><TAB>verified`, copy the trail to `trail-<id>.jsonl`, then **sweep**: run the acceptance command of every OTHER verified unit. One that fails is dropped from the state, printed `[UNIT]<TAB><sid><TAB>regressed`, and its next task carries a `NOTE:` naming the unit that broke it and the failing output. Back to 4.
-   - Failed (signature, ceiling, defect): mark it failed for this run, print `[UNIT]<TAB><id><TAB>failed`. Back to 4: units that do not depend on it are still built.
+   - Failed (signature, ceiling, defect): mark it failed for this run, print `[UNIT]<TAB><id><TAB>failed`. Back to 4: units that do not depend on it are still built. An agent that gave up (below) ends here too, and a line `[UNIT_WHY]<TAB><id><TAB>agent:gave-up:<why>` says so (console and `run.log`), next to the `[AGENT_LOG]` line.
    - Unavailable (the agent or the checker is away): print `[UNIT]<TAB><id><TAB>unavailable`, stop at once with `[PROJECT_VERDICT]<TAB>provider_error`, exit 4. The state keeps what verified.
 6. Units never reached because a dependency failed are printed `[UNIT]<TAB><id><TAB>skipped`. If any unit failed or was skipped: `[PROJECT_VERDICT]<TAB>stuck`, exit 1. Otherwise the **final gate**: check `project.cho` + `main.cho`, and run every unit's tests, one `cancho test` per tests file (each starts `import std.test;`, and two such files in one run are refused: `test is already bound to another import`). Holds: `[PROJECT_VERDICT]<TAB>done`, exit 0. Fails: `[PROJECT_VERDICT]<TAB>gate_failed`, exit 1.
 
 Usage errors (fewer than 4 arguments, `workdir` or the plan file unreadable): exit 2.
+
+## The agent's exit codes
+
+The driver (`src/driver.cho`, shared by `fix`, `project` and `build`) reads how a unit's agent turn ended. A unit's agent that could not do its job and a unit's agent that did its job badly are different things, and the run must not call the second a provider error: `ini`'s unit `parse` had three samples cut off by the output bound, the agent exited 1 after 223 s while the API was fine, and the whole run ended `provider_error`, a verdict that says "wait and rerun" about a unit that needed a different approach.
+
+| agent turn | meaning | the unit | trail decision / signature |
+|---|---|---|---|
+| exit **0** | the agent wrote a file; the checker is the oracle | checked, as ever | `retry`, `verified`, ... |
+| exit **10** | **gave up, cut off**: the agent reached the model, and every sample was cut off by the output bound | the unit failed this attempt | `retry`/`signature`/`ceiling`, outcome `gave_up`, signature `agent:gave-up:cut-off` |
+| exit **11** | **gave up, no program**: it reached the model, and no sample held a program (prose only, reasoning, no code) | the unit failed this attempt | signature `agent:gave-up:no-program` |
+| exit **12** | **gave up, splice**: it reached the model, and the patch it returned could not be spliced into the file (`--output patch`) | the unit failed this attempt | signature `agent:gave-up:splice` |
+| **any other** exit (1, 2, 3, 4, 127, ...), a timeout, a signal, too much output, could not be run | the agent is away or broken: no network, a non-2xx or auth failure after its own retries, a crash, a missing tool, a usage error, or a third-party agent that only knows "non-zero = failed" | `unavailable agent`: the run stops, `provider_error`, exit 4, the attempts are kept | `agent_exit` / `agent_timeout` / `agent_output` / `agent_signal` / `agent_failed` |
+
+**Only a documented code means "gave up".** A plain non-zero exit keeps the meaning it always had (the agent is unavailable), so a stand-in agent, a script or someone else's agent command changes nothing; `cancho-agent` is the only one that exits 10, 11 or 12, and it never exits them for an unreachable host, a TLS failure or an HTTP error (those stay exit 1). A turn that gave up leaves the file as it was, counts as an attempt, and is judged by the same rules as a refusal: the attempt ceiling (default 4) and the same-signature stop (two turns in a row with the same signature end the unit `failed`, so the unit is `stuck`, verdict `stuck`, exit 1). A different reason each turn (cut off, then no program) goes on until the ceiling. In the journal ([journal.md](journal.md)) the attempt's outcome keeps its name `agent_failed`, now with the `signature` and the agent's `exit`; in `run.log` the unit's end is `failed` and `[UNIT_WHY]` names the signature. The agent's own standard error (`agent-<id>.log`) says which samples and why.
+
+`cancho-agent` exits (edit mode, the unit's agent): 0 the file was written; 10, 11, 12 above, after its rounds (three samples) were all used; 1 the model could not be reached, answered with an HTTP error (rejected key, rate limit, overload, ...), or the key/roots/primer/project file could not be read; 2 the command line was wrong (nothing was read or sent). In `--mode plan` the exits are 0 (a plan passed the check and was written), 3 (`unclear` / `too_big`: `<out>.questions.json`), 2 (usage) and 1 for everything else, including the rounds used up on rejected plans; the build treats any non-zero plan exit as `plan_failed`, so the gave-up codes are not used there.
 
 ## Services: the integration unit
 

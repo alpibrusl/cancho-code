@@ -710,6 +710,101 @@ fn check_units[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], t
     return b;
 }
 
+// The function names the brief states, and whether the plan declares each (used by `build` for a plan it did not just ask for and by the plan agent in each round):
+// a bullet `- name(...) : what it does` (or `... ) -> Type : ...`) names a public function, and the
+// plan must declare it as `fn name`. Answers "\nname\nname2\n" for the ones no unit declares (empty: none). A brief with no such bullet
+// requires nothing.
+fn is_name_byte(c: int) -> [] bool {
+    return (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95;
+}
+
+pub fn brief_gaps[&h, &b, &s](heap: &!h Heap, brief: &b [byte], plan: &s [byte]) -> [heap] buffer.Buffer {
+    var gaps = buffer.append(heap, buffer.empty(heap, 16), "\n");
+    var pos = 0;
+    while pos < len(brief) {
+        var e = pos;
+        while e < len(brief) && int_of(brief[e]) != 10 {
+            e = e + 1;
+        }
+        let line = brief[pos..e];
+        if len(line) > 3 && int_of(line[0]) == 45 && int_of(line[1]) == 32 && int_of(line[2]) >= 97 && int_of(line[2]) <= 122 {
+            var j = 2;
+            while j < len(line) && is_name_byte(int_of(line[j])) {
+                j = j + 1;
+            }
+            if j < len(line) && int_of(line[j]) == 40 && (bytes.find(line, ") :") >= 0 || bytes.find(line, ") ->") >= 0) {
+                let name = line[2..j];
+                // `fn name` must end at the name: the next byte is `(` or `[`.
+                var exact = false;
+                var rest = plan;
+                var look = true;
+                while look {
+                    let k = bytes.find(rest, "fn ");
+                    if k < 0 {
+                        look = false;
+                    } else {
+                        let from = k + 3;
+                        if from + len(name) < len(rest) && bytes.equal(rest[from..from + len(name)], name) && (int_of(rest[from + len(name)]) == 40 || int_of(rest[from + len(name)]) == 91) {
+                            exact = true;
+                            look = false;
+                        } else {
+                            rest = rest[from..len(rest)];
+                        }
+                    }
+                }
+                if !exact {
+                    var seen = false;
+                    borrow gaps as &gb in {
+                        var probe = buffer.append(heap, buffer.empty(heap, 32), "\n");
+                        probe = buffer.append(heap, probe, name);
+                        probe = buffer.append(heap, probe, "\n");
+                        borrow probe as &pb in {
+                            seen = bytes.find(buffer.bytes(gb), buffer.bytes(pb)) >= 0;
+                        }
+                        buffer.drop(heap, probe);
+                    }
+                    if !seen {
+                        gaps = buffer.append(heap, gaps, name);
+                        gaps = buffer.append(heap, gaps, "\n");
+                    }
+                }
+            }
+        }
+        pos = e + 1;
+    }
+    return gaps;
+}
+
+// The report for the names the plan lacks: one `[PLAN_ERROR]<TAB>brief-name<TAB><name><TAB><the action>` line per missing name (ALL of them, so the model fixes
+// them in one round), then `[PLAN]<TAB>invalid`; and how many were missing (0: the report is empty).
+pub fn brief_report[&h, &b, &s](heap: &!h Heap, brief: &b [byte], plan: &s [byte]) -> [heap] (buffer.Buffer, int) {
+    var out = buffer.empty(heap, 16);
+    var count = 0;
+    let gaps = brief_gaps(heap, brief, plan);
+    borrow gaps as &gb in {
+        let g = buffer.bytes(gb);
+        var at = 1;
+        while at < len(g) {
+            var e = at;
+            while int_of(g[e]) != 10 {
+                e = e + 1;
+            }
+            out = buffer.append(heap, out, "[PLAN_ERROR]\tbrief-name\t");
+            out = buffer.append(heap, out, g[at..e]);
+            out = buffer.append(heap, out, "\tthe brief names this function and no unit declares it: declare `fn ");
+            out = buffer.append(heap, out, g[at..e]);
+            out = buffer.append(heap, out, "` with exactly this name (the brief states it; do not rename it)\n");
+            count = count + 1;
+            at = e + 1;
+        }
+    }
+    buffer.drop(heap, gaps);
+    if count > 0 {
+        out = buffer.append(heap, out, "[PLAN]\tinvalid\n");
+    }
+    return (out, count);
+}
+
 // Check the plan in `src`: the output text and the exit code (0 valid, 1 invalid).
 pub fn check[&h, &s](heap: &!h Heap, src: &s [byte]) -> [heap] (buffer.Buffer, int) {
     var out = buffer.empty(heap, 512);

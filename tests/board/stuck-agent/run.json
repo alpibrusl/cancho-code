@@ -1,0 +1,15 @@
+{
+ "item": "ini",
+ "label": "baseline",
+ "run": 1,
+ "provider": "anthropic",
+ "model": "claude-haiku-5-5",
+ "scaffold_chars": 68,
+ "seconds": 160.0,
+ "exit": 1,
+ "cancho": "/x/cancho",
+ "primer": "/x/primer",
+ "max_tokens": "16000",
+ "thinking": null,
+ "effort": null
+}
