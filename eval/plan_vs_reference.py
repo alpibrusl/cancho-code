@@ -20,11 +20,13 @@ def tests_for(unit):
         out.append("pub fn test_%s_%d() -> [] int { test.assert(%s); return 0; }" % (sid, k, ex))
     return "\n".join(out), None
 
-def run(ref_path, body):
+def run(ref_path, body, module=""):
+    """ref_path is the reference file, or a list of the module files of a multi-file item (docs/multi-file.md); a unit of a module has its tests in that module and
+    they run on the module files, as the project driver runs them."""
     d = tempfile.mkdtemp(prefix="pvr-")
     t = os.path.join(d, "tests.cho")
-    open(t, "w").write("edition 7;\nimport std.test;\n" + body + "\n")
-    p = subprocess.run([C, "test", "--std", "--backend", "cranelift", ref_path, t], capture_output=True, text=True)
+    open(t, "w").write("edition 7;\n" + ("module %s;\n" % module if module else "") + "import std.test;\n" + body + "\n")
+    p = subprocess.run([C, "test", "--std", "--backend", "cranelift"] + (ref_path if isinstance(ref_path, list) else [ref_path]) + [t], capture_output=True, text=True)
     out = p.stdout + p.stderr
     m = re.search(r"test result: \w+\. (\d+) passed; (\d+) failed", out)
     if m:
@@ -35,8 +37,16 @@ def run(ref_path, body):
 def main():
     item, plan_path = sys.argv[1], sys.argv[2]
     ref = os.path.join(HERE, item, "reference.cho")
-    src = open(ref).read()
     plan = json.load(open(plan_path))
+    # an item of several files has its reference in a directory, one file per module (eval/multi/reference/)
+    refdir = os.path.join(HERE, item, "reference")
+    modules = {}
+    if os.path.isdir(refdir):
+        ref = sorted(os.path.join(refdir, f) for f in os.listdir(refdir) if f.endswith(".cho") and f != "project.cho")
+        src = "\n".join(open(f).read() for f in ref)
+        modules = {e["file"]: e.get("module", "") for e in plan.get("files", []) if isinstance(e, dict) and "file" in e}
+    else:
+        src = open(ref).read()
     judged = wrong = unbuilt = tot_pass = tot_fail = 0
     rows = []
     for u in plan["units"]:
@@ -44,7 +54,7 @@ def main():
         if not m or not re.search(r"\bfn\s+%s\b" % re.escape(m.group(1)), src):
             continue
         body, _ = tests_for(u)
-        passed, failed, err = run(ref, body)
+        passed, failed, err = run(ref, body, modules.get(u.get("file", ""), "") if modules else "")
         judged += 1
         if err:
             unbuilt += 1

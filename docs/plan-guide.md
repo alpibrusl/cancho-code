@@ -20,6 +20,24 @@ You are planning, not programming. A program (the project driver) will build wha
 - **tests** (a fallback, replaces the cases; see "When `cases` cannot express a signature" below): cancho test source, only for a signature whose types `cases` cannot express. The test file already starts with `edition 7;` and `import std.test;`; a test is `pub fn test_NAME() -> [] int { ...; return 0; }` using `test.assert(CONDITION)` or `test.assert_eq(INT, INT)`; one that needs a heap is `pub fn test_NAME[&h](heap: &!h Heap) -> [heap] int` (NEVER `(world: World)`, never `split`); names must be unique across the plan; do not import in a test what the project already imports. A unit has `cases` OR `tests`, never both.
 - Cover the task's every stated rule in some unit's description AND in some example or test, including the failure cases (see "Cover everything the task states" below).
 
+## Several files (ONLY when the task asks for them)
+
+Most tasks are one file: then leave `files` and `file` out. When the task says the library is several files, or modules, add:
+
+- **`files`**, at the root next to `units`: one entry per file the task names, `{"file": "tokens.cho", "module": "tokens", "imports": ["std.buffer"]}`: the file's name as the task gives it, the module name the task gives, and in `imports` the `std.` modules the file's functions will use and the `module` of every OTHER file whose functions this file calls. The builder writes each file's `module` and `import` lines from this: it does not guess them. A file that is used by another comes first: the imports may not form a cycle, and a file with no unit is refused.
+- **`file`** on every unit: the file the task says the function belongs to (`"file": "tokens.cho"`).
+- A unit that depends on a unit of ANOTHER file needs that file's module in its own file's `imports`, or the plan is refused. Two files may not both declare a function of the same name. Helpers keep the task prefix as ever.
+- An example calls the unit's own function by its plain name. To call a function of another module inside an example or a test, put the module's name in front, `tokens.tk_kind(toks, 0)`; the unit's tests run inside its own module, so they see the imports of its file. A function another module calls must be `pub fn` (the builder is told).
+- `project.cho` is the root file: no module can import it, so a unit that other files use never goes there. Leave it out of `files`, unless a unit of yours (the one that wires the modules together) is to live there: then `{"file": "project.cho", "imports": [...]}`.
+
+```text
+{ "name": "widths",
+  "files": [ { "file": "tokens.cho", "module": "tokens" },
+             { "file": "parser.cho", "module": "parser", "imports": ["tokens"] } ],
+  "units": [ { "id": "digits", "file": "tokens.cho", "signature": "fn tok_digits(n: int) -> [] int", "examples": ["tok_digits(12) == 2"], "deps": [] },
+             { "id": "width", "file": "parser.cho", "signature": "fn parse_width(n: int) -> [] int", "examples": ["parse_width(12) == 3"], "deps": ["digits"] } ] }
+```
+
 ## A worked example (a different task, so you can copy the shape and not the content)
 
 Task: "parse 1 to 8 hex digits into the number they spell; anything else is an error."

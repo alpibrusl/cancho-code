@@ -97,6 +97,7 @@ jobs:
           sh scripts/test-plan.sh
           sh scripts/test-project.sh
           sh scripts/test-parallel.sh
+          sh scripts/test-multi-file.sh
           sh scripts/test-board.sh
           sh scripts/test-board.sh --mutants
           sh scripts/test-lessons.sh

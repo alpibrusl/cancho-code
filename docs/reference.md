@@ -51,6 +51,8 @@ real API, the checker still the oracle.
 
 `--jobs N` (`build`: 4 by default, `project`: 1) builds the units whose dependencies are verified at the same time, each in a private workspace, integrated into `project.cho` by the one driver and rebuilt when they clash; the agent waits out HTTP 429 and 529. Spec: [docs/parallel.md](parallel.md); gate: `scripts/test-parallel.sh`.
 
+A plan may name the module file of each unit (`file`) and declare the files with their modules and imports (`files`); the driver writes each file's start, every check sees every file, a unit of a module is judged in that module, and the plan check, the board and the journal know the file. Spec: [docs/multi-file.md](multi-file.md); gate: `scripts/test-multi-file.sh`.
+
 Every run of `build` and `project` also leaves a **journal** in `<workdir>/journal/`: the events in order (`events.jsonl`) and the texts they name (`blobs/`): each model call's prompt and reply, each attempt's code, the compiler's whole refusal, the acceptance output and the diff against the attempt before, the review's dropped cases, the sweeps and the verdict, so the full story of a run can be shown. Spec: [docs/journal.md](journal.md); gate: `scripts/test-journal.sh`.
 
 ## A Claude agent
