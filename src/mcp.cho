@@ -38,6 +38,7 @@ pub struct Config {
     attempts: int,
     agent_seconds: int,
     max_runs: int,
+    jobs: int,
 }
 
 fn nat_of[&t](text: &t [byte]) -> [] int {
@@ -91,7 +92,7 @@ fn key_of(agent: &static [byte]) -> [] &static [byte] {
 
 // The configuration, or why it is not one.
 pub fn configure[&g](g: &g Args) -> [args] (Config, &static [byte]) {
-    let none = Config { root: "", build_bin: "", board_bin: "", prices: "", checker: "", agent: "", provider: "", model: "", guide: "", review_guide: "", path_env: "PATH=/usr/local/bin:/usr/bin:/bin\0", secret: "", attempts: 6, agent_seconds: 300, max_runs: 2 };
+    let none = Config { root: "", build_bin: "", board_bin: "", prices: "", checker: "", agent: "", provider: "", model: "", guide: "", review_guide: "", path_env: "PATH=/usr/local/bin:/usr/bin:/bin\0", secret: "", attempts: 6, agent_seconds: 300, max_runs: 2, jobs: 0 };
     var root: &static [byte] = "";
     var build_bin: &static [byte] = "";
     var board_bin: &static [byte] = "";
@@ -105,6 +106,7 @@ pub fn configure[&g](g: &g Args) -> [args] (Config, &static [byte]) {
     var attempts = 6;
     var agent_seconds = 300;
     var max_runs = 2;
+    var jobs = 0;
     var k = 1;
     while k < arg_count(g) {
         let flag = arg(g, k);
@@ -138,8 +140,10 @@ pub fn configure[&g](g: &g Args) -> [args] (Config, &static [byte]) {
             agent_seconds = nat_of(v);
         } else if bytes.equal(flag, "--max-runs") {
             max_runs = nat_of(v);
+        } else if bytes.equal(flag, "--jobs") {
+            jobs = nat_of(v);
         } else {
-            return (none, "the options are --root --build-bin --board-bin --prices --checker --agent-command --provider --model [--guide --review-guide --attempts --agent-seconds --max-runs]");
+            return (none, "the options are --root --build-bin --board-bin --prices --checker --agent-command --provider --model [--guide --review-guide --attempts --agent-seconds --max-runs --jobs]");
         }
         k = k + 2;
     }
@@ -161,10 +165,10 @@ pub fn configure[&g](g: &g Args) -> [args] (Config, &static [byte]) {
     if len(agent) == 0 || len(provider) == 0 || len(model) == 0 || plain(provider) == false || plain(model) == false {
         return (none, "--agent-command, --provider and --model are required");
     }
-    if attempts < 1 || agent_seconds < 1 || max_runs < 1 {
-        return (none, "--attempts, --agent-seconds and --max-runs are positive numbers");
+    if attempts < 1 || agent_seconds < 1 || max_runs < 1 || jobs < 0 || jobs > 64 {
+        return (none, "--attempts, --agent-seconds and --max-runs are positive numbers, --jobs a number from 1 to 64");
     }
-    return (Config { root: root, build_bin: build_bin, board_bin: board_bin, prices: prices, checker: checker, agent: agent, provider: provider, model: model, guide: guide, review_guide: review_guide, path_env: "PATH=/usr/local/bin:/usr/bin:/bin\0", secret: key_of(agent), attempts: attempts, agent_seconds: agent_seconds, max_runs: max_runs }, "");
+    return (Config { root: root, build_bin: build_bin, board_bin: board_bin, prices: prices, checker: checker, agent: agent, provider: provider, model: model, guide: guide, review_guide: review_guide, path_env: "PATH=/usr/local/bin:/usr/bin:/bin\0", secret: key_of(agent), attempts: attempts, agent_seconds: agent_seconds, max_runs: max_runs, jobs: jobs }, "");
 }
 
 // ---- constant scripts ------------------------------------------------------------------------------------------------------------
@@ -676,6 +680,15 @@ fn launch[&h, &x, &c, &n, &b, &p, &q, &r, &u](heap: &!h Heap, exec: &x Exec(""),
     }
     buffer.drop(heap, attempts);
     buffer.drop(heap, seconds);
+    // `--jobs` only when the operator named one: otherwise `build`'s own default (docs/parallel.md)
+    if cfg.jobs > 0 {
+        let jobs = buffer.push_nat(heap, buffer.empty(heap, 16), cfg.jobs);
+        av = av_add(heap, av, "--jobs");
+        borrow jobs as &jb in {
+            av = av_add(heap, av, buffer.bytes(jb));
+        }
+        buffer.drop(heap, jobs);
+    }
     if len(w1) > 0 {
         av = av_add(heap, av, w1);
     }

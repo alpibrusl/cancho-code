@@ -45,6 +45,8 @@ The driver stays one program with one loop. It is still the **only writer** of `
 
 ## What is written
 
+A unit's own free-standing comments (ones that belong to no item, i.e. not directly above a function or type) are trivia to the merge, as to `splice`, and are not carried into `project.cho` when the unit is merged rather than copied; comments directly above an item are.
+
 Everything of a unit's story is moved into the driver's files when the unit ends, so `run.log` and the console never interleave two units' lines.
 
 - `run.log` and the console: `[UNIT]` lines exactly as before. The loop's own `[ACCEPTANCE]` and `[ISSUE_VERDICT]` lines of a unit come as a block when it ends (console only, as before). New, and only with `--jobs` above 1: `[INTEGRATE]<TAB><unit><TAB>fast|merge` when a unit's work went into `project.cho`, and `[INTEGRATE]<TAB><unit><TAB>requeued|failed<TAB><first line of why>` when it did not.

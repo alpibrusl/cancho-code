@@ -1341,7 +1341,24 @@ fn par_start[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &
     prep = buffer.append(heap, prep, wd);
     prep = buffer.append(heap, prep, "/project.cho ");
     prep = buffer.append(heap, prep, ws);
-    prep = buffer.append(heap, prep, "/project.cho.base");
+    prep = buffer.append(heap, prep, "/project.cho.base && cp ");
+    prep = buffer.append(heap, prep, wd);
+    prep = buffer.append(heap, prep, "/project.cho ");
+    prep = buffer.append(heap, prep, ws);
+    // what the journal's diff of the unit's first attempt is made against (src/trail.cho `diff_field`): the file as it stood before the unit
+    prep = buffer.append(heap, prep, "/project.cho.before");
+    if base > 0 {
+        // ... and, for an attempt that goes on after earlier ones, the code of the attempt before it
+        prep = buffer.append(heap, prep, " && { cp ");
+        prep = buffer.append(heap, prep, wd);
+        prep = buffer.append(heap, prep, "/journal/blobs/");
+        prep = buffer.append(heap, prep, id);
+        prep = buffer.append(heap, prep, "-a");
+        prep = buffer.push_nat(heap, prep, base - 1);
+        prep = buffer.append(heap, prep, "-code.cho ");
+        prep = buffer.append(heap, prep, ws);
+        prep = buffer.append(heap, prep, "/journal/blobs/ 2>/dev/null || true; }");
+    }
     if base > 0 {
         // the unit's earlier records go on in the workspace's trail
         prep = buffer.append(heap, prep, " && cp ");

@@ -137,6 +137,7 @@ ln=$($J "$wd" lanes)
 case "$ln" in *a=0*) ;; *) echo "FAIL: overlap: unit a has no lane 0 ($ln)" >&2; fail=1 ;; esac
 expect "overlap: the three that ran together have three different lanes" "$(printf '%s\n' "$ln" | tr ' ' '\n' | grep -E '^(a|b|c)=' | cut -d= -f2 | sort -u | wc -l | tr -d ' ')" 3
 ok "overlap: the journal's lines are whole and never go back in time" $J "$wd" whole
+expect "overlap: every attempt has its diff (a unit's first one against the file it started from)" "$(grep '"kind":"attempt"' "$wd/journal/events.jsonl" | grep -c '"diff":')" 4
 expect "overlap: units that only added to the file did not make the others run again (no sweep)" "$(grep -c '"kind":"sweep"' "$wd/journal/events.jsonl")" 0
 expect "overlap: a unit_end carries ms and lane" "$(grep '"kind":"unit_end"' "$wd/journal/events.jsonl" | grep -c '"ms":[0-9]*,"lane":\|"lane":[0-9]*,"ms":\|"lane":' )" 4
 rm -rf "$wd" "$rc"
@@ -202,6 +203,7 @@ expect "clash: the first request had no note" "$(grep -c '^NOTE' "$rc/seen-b.1.t
 expect "clash: one shared in the file" "$(grep -c 'fn shared' "$wd/project.cho")" 1
 expect "clash: the journal's integrations" "$($J "$wd" integrate)" "a:fast:ok b:merge:no b:fast:ok c:fast:ok"
 case "$out" in *"$(printf '[INTEGRATE]\tb\trequeued')"*) ;; *) echo "FAIL: clash: no [INTEGRATE] b requeued line" >&2; fail=1 ;; esac
+expect "clash: b's attempt after the requeue has a diff against the code of the one before" "$(grep '"kind":"attempt","unit":"b"' "$wd/journal/events.jsonl" | grep -c '"diff":')" 2
 expect "clash: the state" "$(order "$wd/state.txt")" "verified a verified b verified c"
 expect "clash: b's trail has both builds (the numbers go on)" "$(wc -l < "$wd/trail-b.jsonl" | tr -d ' ')" 2
 rm -rf "$wd" "$rc"

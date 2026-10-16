@@ -20,6 +20,7 @@
 #   arguments   missing and mistyped arguments, a run that does not exist, a code that is empty
 #   happy       start (brief_text and brief_path) returns at once with a pid, status is running then finished (stage, verdict, units, state, a log tail),
 #               result has project.cho and complete, unit_story has the attempt with its outcome, checker text and diff
+#   jobs        the same flow with --jobs 1 and 2 (status, result, unit_story with the diff of the first attempt); stop ends the workers and their agents
 #   stuck       a unit that never verifies: status lists it, the story has the refusal; cancho_retry with a hint (shell metacharacters in it run nothing and
 #               the hint reaches the unit agent's task file byte for byte) ends done; cancho_patch with code ends done
 #   secrets     the key file's path and an API-key-shaped string, put by the stand-in into the project code, never appear in any output of the server
@@ -267,10 +268,10 @@ expect "adopt: ... but a retry needs the brief record the server wrote" "$(Q "$O
 rm -rf "$ROOT/fx-done"
 
 # ---- the happy path: start, poll, result, story ----
-# b.sh also writes what a leaking agent would: the key file's path and a key-shaped string
+# b.sh also writes what a leaking agent would: the key file's path and a key-shaped string, in a comment above its function (a comment that belongs to no
+# item is trivia, which putting a unit's items into the file, docs/parallel.md, does not carry)
 cat > "$RC/b.sh" <<'XEOF'
-printf "\nfn is_big(x: int) -> [] bool { return x > 10; }\n" >> "$1"
-printf "// --key-file KEYFILE sk-ant-api03-LEAKLEAKLEAK\n" >> "$1"
+printf "\n// --key-file KEYFILE sk-ant-api03-LEAKLEAKLEAK\nfn is_big(x: int) -> [] bool { return x > 10; }\n" >> "$1"
 XEOF
 sed -i.bak "s#KEYFILE#$KEYFILE#" "$RC/b.sh"
 one start "$(python3 "$T/cases.py" call cancho_build_start name=h1 brief_text=@"$B/brief.txt")"
@@ -304,6 +305,32 @@ expect "happy: brief_path run finished" "$(Q "$ONE" 1 "T['verdict']")" done
 grep -q "$KEYFILE" "$ROOT/h1/project.cho" || bad "secrets: the stand-in did not put the key path into project.cho (the case is empty)"
 one resultleak "$(tc 1 cancho_result '{"name":"h1"}')"
 expect "secrets: the leak is replaced in a result" "$(Q "$ONE" 1 "T['project_cho'].count('[redacted]')>=2")" true
+
+# ---- the same through a build that runs units side by side (the server passes --jobs when its operator gave one; build's default is 4) ----
+for jb in 1 2; do
+    JN=$(printf '{"name":"hj%s"}' $jb)
+    one "jobs$jb" "$(tc 1 cancho_build_start "$(printf '{"name":"hj%s","brief_text":"a tiny library"}' $jb)")" --jobs $jb
+    expect "jobs $jb: start" "$(Q "$ONE" 1 "[T['ok'], T['started']]")" '[true, true]'
+    wait_done hj$jb --jobs $jb
+    one "jobs${jb}s" "$(tc 1 cancho_status "$JN")" --jobs $jb
+    expect "jobs $jb: status: finished, three units" "$(Q "$ONE" 1 "[T['alive'], T['state'], T['verdict'], T['units_verified'], T['units_total'], T['units_stuck']]")" '[false, "finished", "done", 3, 3, []]'
+    one "jobs${jb}r" "$(tc 1 cancho_result "$JN")" --jobs $jb
+    expect "jobs $jb: result: complete" "$(Q "$ONE" 1 "[T['complete'], 'fn big_double' in T['project_cho']]")" '[true, true]'
+    one "jobs${jb}u" "$(tc 1 cancho_unit_story "$(printf '{"name":"hj%s","unit":"a"}' $jb)")" --jobs $jb
+    expect "jobs $jb: story: the attempt, its checker text and its diff against the file before" "$(Q "$ONE" 1 "[T['attempts_total'], T['attempts'][0]['outcome'], 'double' in T['attempts'][0]['diff'], 'refused' in T['attempts'][0]['checker']]")" '[1, "verified", true, true]'
+done
+expect "jobs 2: the journal says the units ran in lanes" "$(grep -c '"lane":' "$ROOT/hj2/journal/events.jsonl" | sed 's/^[1-9][0-9]*$/some/')" some
+expect "jobs 1: it did not" "$(grep -c '"lane":' "$ROOT/hj1/journal/events.jsonl")" 0
+# stop ends the workers and what they started too
+RCP=$(mkrc "$P/plan.json"); printf 'exec sleep 298\n' > "$RCP/a.sh"; cp "$RCP/a.sh" "$RCP/b.sh"
+AP=$(agent_for "$RCP")
+one pstart "$(tc 1 cancho_build_start '{"name":"hp","brief_text":"slow units"}')" --agent-command "$AP" --jobs 2
+k=0; while [ $k -lt 80 ]; do [ "$(ps -A -o args= | grep -c '[s]leep 298')" -ge 2 ] && break; sleep 0.25; k=$((k + 1)); done
+[ "$(ps -A -o args= | grep -c '[s]leep 298')" -ge 2 ] || bad "jobs 2: two units were not running together"
+one pstop "$(tc 1 cancho_stop '{"name":"hp"}')" --agent-command "$AP" --jobs 2
+expect "jobs 2: stop" "$(Q "$ONE" 1 "T['stopped']")" true
+k=0; while [ $k -lt 40 ]; do ps -A -o args= | grep -q '[s]leep 298' || break; sleep 0.25; k=$((k + 1)); done
+ps -A -o args= | grep -q '[s]leep 298' && bad "jobs 2: stop left the units' agents running"
 
 # ---- a stuck unit, a retry with a hint, a patch ----
 SRC_STUCK() { # a.sh: wrong without a HINT line, right with one (and keeps the task it saw)
