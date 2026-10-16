@@ -59,7 +59,7 @@ elif [ "$variant" = agent ]; then
   C="${CANCHO_PACKAGES:-}"
   [ -d "$C" ] || C="$(dirname "$(dirname "$(command -v "$CANCHO")")")/packages"
   [ -d "$C" ] || { echo "check-authority: no cancho packages found; set CANCHO_PACKAGES" >&2; exit 2; }
-  files=("$here/src/cancho_agent.cho" "$here/src/anthropic.cho" "$here/src/ollama.cho" "$here/src/prompt.cho" "$here/src/planprompt.cho" "$here/src/plan.cho" "$here/src/cases.cho" "$here/src/review.cho" "$here/src/splice.cho" "$here/src/provider.cho" "$here/src/reply.cho" "$here/src/calls.cho"
+  files=("$here/src/cancho_agent.cho" "$here/src/anthropic.cho" "$here/src/ollama.cho" "$here/src/prompt.cho" "$here/src/planprompt.cho" "$here/src/plan.cho" "$here/src/cases.cho" "$here/src/review.cho" "$here/src/splice.cho" "$here/src/provider.cho" "$here/src/reply.cho" "$here/src/calls.cho" "$here/src/memory.cho" "$here/src/signature.cho"
     "$here/vendor/fetch_io.cho" "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho)
 elif [ "$variant" = plan ]; then
   pinned=$here/docs/authority-plan.json
