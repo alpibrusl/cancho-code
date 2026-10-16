@@ -14,6 +14,7 @@
 #               on the project file as it is then, and verifies; one `shared` is in the file
 #   combined    two units whose items merge cleanly but do not compile together (two modules under one alias): the combined check refuses, the unit is requeued
 #               with the compiler's words as feedback
+#   rewrite     a unit that changes what was there makes the units that had verified run again; one that only added does not
 #   order       units that end together are integrated in plan order, whatever the order they ended in (`--settle`); the journal says so
 #   isolation   one unit's agent fails (exit 3) while others are running: they finish and are kept, nothing new is started, provider_error; the rerun builds the rest
 #   stuck       a unit that is never right fails alone: independent units verify, its dependent is skipped, stuck
@@ -134,6 +135,7 @@ ln=$($J "$wd" lanes)
 case "$ln" in *a=0*) ;; *) echo "FAIL: overlap: unit a has no lane 0 ($ln)" >&2; fail=1 ;; esac
 expect "overlap: the three that ran together have three different lanes" "$(printf '%s\n' "$ln" | tr ' ' '\n' | grep -E '^(a|b|c)=' | cut -d= -f2 | sort -u | wc -l | tr -d ' ')" 3
 ok "overlap: the journal's lines are whole and never go back in time" $J "$wd" whole
+expect "overlap: units that only added to the file did not make the others run again (no sweep)" "$(grep -c '"kind":"sweep"' "$wd/journal/events.jsonl")" 0
 expect "overlap: a unit_end carries ms and lane" "$(grep '"kind":"unit_end"' "$wd/journal/events.jsonl" | grep -c '"ms":[0-9]*,"lane":\|"lane":[0-9]*,"ms":\|"lane":' )" 4
 rm -rf "$wd" "$rc"
 
@@ -225,6 +227,24 @@ expect "combined: verdict" "$(verdict "$out")" done
 expect "combined: b was asked twice" "$(order "$lg" | tr ' ' '\n' | grep -c '^b$')" 2
 expect "combined: the journal's integrations (the merge was refused by the compiler on the combined file)" "$($J "$wd" integrate)" "a:fast:ok b:merge:no b:fast:ok"
 expect "combined: both aliases are in the file" "$(grep -c '^import std.\(option as m\|bytes as bb\);' "$wd/project.cho")" 2
+rm -rf "$wd" "$rc"
+
+# ---- rewrite: a unit that changes what was there makes the units that had verified run again --------------------------------------------------
+set -- $(mk); wd=$1; rc=$2; lg=$3
+rec_quiet "$rc/a.sh" 0.1 "$F_A"; rec_quiet "$rc/b.sh" 0.1 "$F_B"
+cat > "$rc/c.sh" <<'EOF'
+sed -i.bak '/^fn double/d' "$1"
+printf '\n%s\n' 'fn double(x: int) -> [] int { if x == 0 { return 1; } return x * 2; }' >> "$1"
+printf '\n%s\n' 'fn big_double(x: int) -> [] bool { return is_big(double(x)); }' >> "$1"
+EOF
+cat > "$rc/a.2.sh" <<'EOF'
+sed -i.bak '/^fn double/d' "$1"
+printf '\n%s\n' 'fn double(x: int) -> [] int { return x * 2; }' >> "$1"
+EOF
+out=$(runp "$root/tests/project/plan.json" "$wd" "$rc" "$lg" 4); r=$?
+expect "rewrite: exit code" "$r" 0
+case "$(units "$out")" in *"c:verified a:regressed"*) ;; *) echo "FAIL: rewrite: no 'a:regressed' right after c verified: $(units "$out")" >&2; fail=1 ;; esac
+expect "rewrite: a was asked twice (its tests failed on the file c rewrote)" "$(grep -c '^a$' "$lg")" 2
 rm -rf "$wd" "$rc"
 
 # ---- order: units that end together are integrated in plan order ---------------------------------------------------------------------------

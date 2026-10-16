@@ -1449,8 +1449,8 @@ fn unit_says[&h, &x, &c, &s, &t, &n, &k, &w, &ac, &lb](heap: &!h Heap, exec: &x 
 }
 
 // What is wrong with the project file after unit `u`'s work was put into it, or nothing (empty): the combined file must compile, the unit's own examples
-// must hold on it, and so must every unit that had verified.
-fn combined_holds[&h, &x, &c, &s, &t, &n, &m, &k, &w, &ac, &lb](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, src: &s [byte], tape: &t [int], nodes: &n [int], meta: &m [int], count: int, u: int, checker: &k [byte], wd: &w [byte], integ: int, accept: &ac [byte], libs: &lb [byte]) -> [heap, exec(""), clock, poll] buffer.Buffer {
+// must hold on it, and so must every unit that had verified (`others`; a unit that only added to the file cannot have changed what they do, see `splice.rewrites`).
+fn combined_holds[&h, &x, &c, &s, &t, &n, &m, &k, &w, &ac, &lb](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, src: &s [byte], tape: &t [int], nodes: &n [int], meta: &m [int], count: int, u: int, others: bool, checker: &k [byte], wd: &w [byte], integ: int, accept: &ac [byte], libs: &lb [byte]) -> [heap, exec(""), clock, poll] buffer.Buffer {
     var bad = buffer.empty(heap, 64);
     var cmd = buffer.append(heap, buffer.empty(heap, 512), checker);
     cmd = buffer.append(heap, cmd, " check --std --backend cranelift ");
@@ -1486,7 +1486,7 @@ fn combined_holds[&h, &x, &c, &s, &t, &n, &m, &k, &w, &ac, &lb](heap: &!h Heap, 
         borrow bad as &wq2 in {
             clean = buffer.size(wq2) == 0;
         }
-        if clean && v != u && meta[3 * v] == 1 {
+        if clean && others && v != u && meta[3 * v] == 1 {
             buffer.drop(heap, bad);
             bad = unit_says(heap, exec, clock, src, tape, nodes, v, checker, wd, integ, accept, libs);
         }
@@ -1605,6 +1605,23 @@ fn par_finish[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &l, &ac, &lb, &sa]
             same = sh_ok(heap, exec, clock, buffer.bytes(cq));
         }
         buffer.drop(heap, cmp);
+        // Did the unit change anything that was there when it started? If it only added, the units that had verified need not be run again.
+        var rew = true;
+        borrow basep as &bpr in {
+            borrow wsp as &wpr in {
+                let (bt0, bok0) = slurp_all(heap, fs, buffer.bytes(bpr), 1048576);
+                let (tt0, tok0) = slurp_all(heap, fs, buffer.bytes(wpr), 1048576);
+                if bok0 && tok0 {
+                    borrow bt0 as &bq0 in {
+                        borrow tt0 as &tq0 in {
+                            rew = splice.rewrites(heap, buffer.bytes(bq0), buffer.bytes(tq0)) != 0;
+                        }
+                    }
+                }
+                buffer.drop(heap, bt0);
+                buffer.drop(heap, tt0);
+            }
+        }
         keep_copy(heap, fs, wd, "project.cho.before", false);
         var bad = buffer.empty(heap, 64);
         if same {
@@ -1662,7 +1679,7 @@ fn par_finish[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &l, &ac, &lb, &sa]
             }
             if clean {
                 buffer.drop(heap, bad);
-                bad = combined_holds(heap, exec, clock, src, tape, nodes, meta, count, u, checker, wd, integ, accept, libs);
+                bad = combined_holds(heap, exec, clock, src, tape, nodes, meta, count, u, rew, checker, wd, integ, accept, libs);
             }
         }
         buffer.drop(heap, basep);
@@ -1689,7 +1706,7 @@ fn par_finish[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &l, &ac, &lb, &sa]
             state_write(heap, fs, src, tape, nodes, meta, count, wd);
             say_integrate(heap, io, fs, log, id, mode, "");
             say(heap, io, fs, log, id, "verified");
-            if same {
+            if same && rew {
                 // the units that had verified are checked again, as when units are built one at a time: one the new work broke is rebuilt
                 recheck(heap, exec, clock, io, fs, src, tape, nodes, meta, notes, count, u, id, false, checker, wd, log, integ, accept, libs);
             }

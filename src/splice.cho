@@ -917,3 +917,48 @@ pub fn merge3[&h, &b, &o, &t](heap: &!h Heap, base: &b [byte], ours: &o [byte], 
     unbox_slice(heap, bb);
     return (out, rep, code);
 }
+
+// How many items of `base` the unit that started from it has changed or dropped in `theirs` (by identity, as `merge3` finds them; an import counts when it
+// is gone): 0 means the unit only ADDED to the file, so no unit that had verified can behave differently (a name it would shadow is a clash, and a file that
+// does not compile is the combined check's to find). -1 when either file cannot be parsed: the caller then assumes the worst.
+pub fn rewrites[&h, &b, &t](heap: &!h Heap, base: &b [byte], theirs: &t [byte]) -> [heap] int {
+    var count = 0;
+    let bb = box_slice(heap, 6 * (len(base) / 4 + 16), 0);
+    let tb = box_slice(heap, 6 * (len(theirs) / 4 + 16), 0);
+    borrow mut bb as &!bw in {
+        borrow mut tb as &!tw in {
+            let eb = bw;
+            let et = tw;
+            let (nb, sb, pb, lb) = parse_items(base, contents(eb));
+            let (nt, st, pt, lt) = parse_items(theirs, contents(et));
+            if sb != 0 || st != 0 {
+                count = 0 - 1;
+            } else {
+                let tab_b = contents(eb);
+                let tab_t = contents(et);
+                var k = 0;
+                while k < nb {
+                    if tab_b[6 * k] != 0 {
+                        var found = false;
+                        var same = false;
+                        var e = 0;
+                        while e < nt {
+                            if found == false && same_ident(base, tab_b, k, theirs, tab_t, e) {
+                                found = true;
+                                same = bytes.equal(base[tab_b[6 * k + 1]..tab_b[6 * k + 2]], theirs[tab_t[6 * e + 1]..tab_t[6 * e + 2]]);
+                            }
+                            e = e + 1;
+                        }
+                        if same == false {
+                            count = count + 1;
+                        }
+                    }
+                    k = k + 1;
+                }
+            }
+        }
+    }
+    unbox_slice(heap, tb);
+    unbox_slice(heap, bb);
+    return count;
+}
