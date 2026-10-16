@@ -30,7 +30,7 @@ def main():
     demo = json.load(open(os.path.join(sdir, "demo.json")))
     launch = json.load(open(os.path.join(sdir, "launch.json")))
     project = os.path.abspath(a.project)
-    files = service_run.service_files(cancho, project)
+    files = service_run.service_files(cancho, project, False, a.service)
     out = tempfile.mkdtemp(prefix="demo-"); binary = os.path.join(out, "service")
     b = subprocess.run([cancho, "build", "--std", "--backend", "cranelift"] + files + ["-o", binary], capture_output=True, text=True)
     if b.returncode != 0:

@@ -14,7 +14,7 @@ check() {
     out=$(grep -n -E "$pat" "$1" 2>/dev/null)
     [ -z "$out" ] || { echo "FAIL: $1 names Lex or uses its notation:" >&2; echo "$out" | head -3 | cut -c1-160 >&2; fail=1; }
 }
-for f in "$ROOT"/eval/*/brief.txt "$ROOT"/eval/services/*/brief.txt "$ROOT"/docs/plan-guide.md "$ROOT"/docs/review-guide.md "$ROOT"/docs/agent-prompt.md "$ROOT"/skills/*/SKILL.md "$@"; do
+for f in "$ROOT"/eval/*/brief.txt "$ROOT"/eval/services/*/brief.txt "$ROOT"/eval/*/plan.json "$ROOT"/eval/services/*/plan.json "$ROOT"/docs/plan-guide.md "$ROOT"/docs/review-guide.md "$ROOT"/docs/agent-prompt.md "$ROOT"/skills/*/SKILL.md "$@"; do
     [ -f "$f" ] && check "$f"
 done
 # the prompt-building sources: code comments are not sent to a model, string literals are

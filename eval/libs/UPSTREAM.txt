@@ -1,0 +1,23 @@
+# The cancho libraries the `users` service (eval/services/users) is built with. Vendored, unmodified, from their upstream repositories (both
+# EUPL-1.2, the licence of this repository; each LICENSE and NOTICE is copied beside its source).
+#
+#   cancho-web     https://github.com/alpibrusl/cancho-web     commit 5f404a777018cf42b5c713daa4972c938c9229f4 (main, 2026-10)   src/web.cho
+#   cancho-schema  https://github.com/alpibrusl/cancho-schema  commit a7eaad6d5119d6cf517204f16260cd38f03ceba0 (main, 2026-10)   src/schema.cho
+#
+# src/schema.cho at that commit is byte for byte the file at 59a70285ff23af63a226bc56ff978feccb4cf8ca, the SCHEMA_REV that cancho-web's own CI
+# pins (the commits between them change only LICENSE and NOTICE).
+#
+# Compiler: the libraries' CI builds with cancho a4572ea3b506e4bcec1c4be43deda1043c11ba9f (cancho-web CANCHO_REV, cancho-schema CANCHO_REV). This
+# repository builds with the revision in .cancho-rev (2e72479d42535fb8becd58e9ad29310ca1c91831). Both files compile under it, and the libraries' own
+# unit tests (cancho-schema tests/schema_test.cho: 29, cancho-web tests/web_test.cho: 22) pass with it.
+#
+# Not vendored: the libraries' tests, examples, store (.cancho-vcs) and deps/*.lock. They are fetched with `cancho vcs fetch` upstream; here the two
+# source files are compiled in directly (eval/services/users/libs.txt), the way http-server's server.cho is.
+#
+# sha256 of every file here (scripts/test-users.sh checks them):
+b6ae5e216da7629b16b015ba3fb447801f56b632242040737f4c8f46059fa8c3  eval/libs/cancho-web/src/web.cho
+02c2238fcaf4f157c45fb4b0c4cfbfb9ce4a26aafa23eb9007993811705c43ff  eval/libs/cancho-web/LICENSE
+4788bbcdee9eccf2501179f12bdc03f4597b53d71f86cf1ec69aeaa4158f0bdc  eval/libs/cancho-web/NOTICE
+8d272c578b3bdcd56de3975d74ec1a75250af5c193274dd26c2a0bd79b5e03a6  eval/libs/cancho-schema/src/schema.cho
+02c2238fcaf4f157c45fb4b0c4cfbfb9ce4a26aafa23eb9007993811705c43ff  eval/libs/cancho-schema/LICENSE
+4788bbcdee9eccf2501179f12bdc03f4597b53d71f86cf1ec69aeaa4158f0bdc  eval/libs/cancho-schema/NOTICE

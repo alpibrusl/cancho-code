@@ -119,6 +119,8 @@ jobs:
           sh scripts/test-splice.sh
           sh scripts/test-planner.sh
           sh scripts/test-services.sh
+          sh scripts/test-users.sh
+          sh scripts/test-service-plans.sh users
           sh scripts/test-agent-native.sh
           sh scripts/test-agent-native-ollama.sh
 
