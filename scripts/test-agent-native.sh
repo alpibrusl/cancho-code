@@ -257,7 +257,7 @@ rm -f "$F.task"
 
 # a person's hint (`HINT:` lines of the task, written by `--retry <unit> --hint`): the model sees it under a heading of its own, once, and the
 # compiler's feedback and the file stay where they were
-broken; printf 'UNIT: u\nFUNCTION: f\nHINT: prefer a loop \"over\" recursion\nHINT: second line of the hint\nINSTRUCTIONS: do it\n' > "$F.task"; agent >/dev/null 2>&1
+broken; printf 'UNIT: u\nFUNCTION: f\nHINT: prefer a loop "over" recursion\nHINT: second line of the hint\nINSTRUCTIONS: do it\n' > "$F.task"; agent >/dev/null 2>&1
 python3 - "$d/request.json" <<'PY' || fail=1
 import json, sys
 m = json.load(open(sys.argv[1]))["messages"][0]["content"]
