@@ -9,6 +9,8 @@
 #   task      <project>.task, when there is one, goes in the prompt ahead of the file (a project unit; docs/project.md)
 #   truncated a reply cut off by the generation bound (done_reason "length") is not a sample: retried, never written
 #   primer    --primer names a file that goes first in the prompt; an unreadable one is an error, not a silent skip
+#   memory    --memory <dir> (docs/memory.md): the prompt gets a `Known pitfalls` block for the class of the refusal the unit just got and the person's facts;
+#             without --memory, for a superseded lesson, for another class: nothing is added; what was added is in <project>.call/memory.json; the task file is untouched
 #   away      a server that is not there is a non-zero exit and the file is left as it was (the driver names it `agent_exit`)
 #
 # Needs python3 (the stub, and the script's own HTTP call; standard library only).
@@ -26,7 +28,7 @@ expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail
 
 d=$(mktemp -d -t cc-ollama-d-XXXXXX)
 exe="$d/agent"
-"$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" "$root/src/prompt.cho" "$root/src/planprompt.cho" "$root/src/plan.cho" "$root/src/cases.cho" "$root/src/review.cho" "$root/src/splice.cho" "$root/src/provider.cho" "$root/src/reply.cho" "$root/src/calls.cho" \
+"$CANCHO" build "$root/src/cancho_agent.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" "$root/src/prompt.cho" "$root/src/planprompt.cho" "$root/src/plan.cho" "$root/src/cases.cho" "$root/src/review.cho" "$root/src/splice.cho" "$root/src/provider.cho" "$root/src/reply.cho" "$root/src/calls.cho" "$root/src/memory.cho" "$root/src/signature.cho" \
     "$root/vendor/fetch_io.cho" "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho --std --backend cranelift -o "$exe" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }
 # the agent, with no environment at all; $port is read when it runs
@@ -298,6 +300,39 @@ ag "$d/without.cho" >/dev/null 2>&1
 expect "primer: absent when not named" "$(grep -c PRIMER-SENTINEL "$d/request.json")" 0
 ag --primer "$d/nope.md" "$d/without.cho" >/dev/null 2>&1; rc=$?
 [ "$rc" != 0 ] || { echo "FAIL: primer: a primer file that cannot be read must not be silently skipped" >&2; fail=1; }
+kill $stub 2>/dev/null; wait $stub 2>/dev/null
+
+# memory: the unit agent run with --memory <dir>; the lessons come from tests/lessons/memory/good (the gate of the memory is scripts/test-lessons.sh)
+python3 "$d/stub.py" "$d" & stub=$!
+rm -f "$d/port" "$d/request.json"; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
+good="$root/tests/lessons/memory/good"
+mfeed() { printf '{\n  "refused": [\n    {\n      "rule": "%s",\n      "message": "%s",\n      "position": { "line": 2, "column": 30 }\n    }\n  ]\n}\n' "$1" "$2" > "$d/mem.cho.feedback"; }
+mkmem() { printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$d/mem.cho"; printf 'UNIT: refill\nFUNCTION: bucket_refill\n' > "$d/mem.cho.task"; rm -rf "$d/mem.cho.call"; mkdir "$d/mem.cho.call"; rm -f "$d/request.json"; }
+mkmem; mfeed type-mismatch 'expected `&[byte]`, found `Buffer`'
+ag --memory "$good" "$d/mem.cho" >/dev/null 2>&1; expect "memory: exit code" "$?" 0
+mreq=$(python3 -c "
+import json; p = json.load(open('$d/request.json'))['prompt']
+print('Known pitfalls' in p, '+    let n = len(buffer.bytes(b));' in p, 'no network' in p, 0 <= p.find('Known pitfalls') < p.find('\\n---\\n'), 'UNIT: refill' in p)")
+expect "memory: the pitfalls block with its fix, the facts, ahead of the file" "$mreq" "True True True True True"
+expect "memory: the sidecar names the lesson and the facts" "$(python3 -c "import json; print([m['id'] for m in json.load(open('$d/mem.cho.call/memory.json'))])")" "['L864bef6c', 'F1', 'F2']"
+expect "memory: the task file is as it was" "$(cat "$d/mem.cho.task")" "UNIT: refill
+FUNCTION: bucket_refill"
+mkmem; mfeed type-mismatch 'expected `&[byte]`, found `Buffer`'
+ag "$d/mem.cho" >/dev/null 2>&1
+expect "memory: nothing without --memory" "$(grep -c 'Known pitfalls\|no network' "$d/request.json")" 0
+[ ! -e "$d/mem.cho.call/memory.json" ] || { echo "FAIL: memory: a sidecar without --memory" >&2; fail=1; }
+mkmem; mfeed not-a-function '`empty` is not a function in this program'
+ag --memory "$good" "$d/mem.cho" >/dev/null 2>&1
+expect "memory: a superseded lesson is not recalled (the facts still are)" "$(python3 -c "
+import json; p = json.load(open('$d/request.json'))['prompt']
+print('Known pitfalls' in p, 'no network' in p)")" "False True"
+mkmem; mfeed type-mismatch 'expected `int`, found `float`'
+ag --memory "$good" "$d/mem.cho" >/dev/null 2>&1
+expect "memory: another class is not recalled" "$(grep -c 'Known pitfalls' "$d/request.json")" 0
+rm -rf "$d/mem.cho.call"; mkmem; rm -rf "$d/mem.cho.call"; mfeed type-mismatch 'expected `&[byte]`, found `Buffer`'
+ag --memory "$good" "$d/mem.cho" >/dev/null 2>&1; expect "memory: no .call directory is no error" "$?" 0
+[ ! -e "$d/mem.cho.call" ] || { echo "FAIL: memory: the agent made the .call directory" >&2; fail=1; }
+ag --memory "$d/no-such-memory" "$d/mem.cho" >/dev/null 2>&1; expect "memory: a memory directory that is not there is no error" "$?" 0
 kill $stub 2>/dev/null; wait $stub 2>/dev/null
 
 rm -rf "$d"

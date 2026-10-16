@@ -1,0 +1,1152 @@
+edition 7;
+
+module lessons;
+
+// `lessons` -- the miner (docs/memory.md). It reads the journals of past runs (docs/journal.md) and writes `lessons.jsonl` in a memory directory:
+// one line per CLASS of refusal (src/memory.cho says what a class is), with how often it came, in how many runs and units, what the attempt after it
+// did, the diffs that fixed it, and where each piece of evidence is in the journals. Nothing a model wrote about itself is read: only the `attempt`
+// events' fields (unit, attempt number, outcome, signature, the diff blob's name, the lessons the prompt carried) and the diff blobs.
+//
+// A run without a journal can be read from its older files in "legacy mode": `--trail <trail-unit.jsonl>` names one unit's trail (attempt, outcome,
+// sig). It gives counts and the success of the next attempt, never a fix: those runs left no code.
+//
+//   lessons --memory <dir> [--min-count 3] [--min-runs 2] (--run <run dir> | --trail <file>)...     mine; write <dir>/lessons.jsonl
+//   lessons --memory <dir> --promote                                                                  print the lessons worth a hint upstream
+//
+// Everything is bounded: lines of 64 KiB, 512 classes, 12 evidence items and 3 fixes of at most 600 bytes per class, 256 KiB for the file.
+// Paths are absolute with no `..` (the file capability traps on `..`; scripts/cancho-lessons.sh resolves them).
+
+import memory;
+import std.buffer;
+import std.bytes;
+import std.io;
+import std.json;
+
+// ---- limits and layout ----------------------------------------------------------------------------------------------------------
+
+fn max_classes() -> [] int { return 512; }
+fn max_evidence() -> [] int { return 12; }
+fn max_fixes() -> [] int { return 3; }
+fn fix_cap() -> [] int { return 600; }
+fn fix_lines() -> [] int { return 14; }
+fn file_cap() -> [] int { return 262144; }
+fn max_line() -> [] int { return 65536; }
+fn max_runs() -> [] int { return 2048; }
+fn max_units() -> [] int { return 16384; }
+fn run_units() -> [] int { return 256; }
+fn pool_size() -> [] int { return 2097152; }
+
+// globals
+fn g_nclass() -> [] int { return 0; }
+fn g_plen() -> [] int { return 1; }
+fn g_nruns() -> [] int { return 2; }
+fn g_nunits() -> [] int { return 3; }
+fn g_dropped() -> [] int { return 4; }
+fn g_skipped() -> [] int { return 5; }
+fn g_attempts() -> [] int { return 6; }
+fn g_refusals() -> [] int { return 7; }
+fn g_min_count() -> [] int { return 8; }
+fn g_min_runs() -> [] int { return 9; }
+fn g_unit_base() -> [] int { return 10; }
+fn g_journals() -> [] int { return 11; }
+fn g_trails() -> [] int { return 12; }
+fn g_full() -> [] int { return 13; }
+fn g_omitted() -> [] int { return 14; }
+fn g_ignored() -> [] int { return 15; }
+
+fn rbase() -> [] int { return 64; }
+fn ubase() -> [] int { return 64 + 2 * 2048; }
+fn pbase() -> [] int { return 64 + 2 * 2048 + 2 * 16384; }
+fn cbase() -> [] int { return 64 + 2 * 2048 + 2 * 16384 + 256; }
+fn cstride() -> [] int { return 24; }
+fn ebase() -> [] int { return 64 + 2 * 2048 + 2 * 16384 + 256 + 24 * 512; }
+fn fbase() -> [] int { return 64 + 2 * 2048 + 2 * 16384 + 256 + 24 * 512 + 3 * 12 * 512; }
+fn obase() -> [] int { return 64 + 2 * 2048 + 2 * 16384 + 256 + 24 * 512 + 3 * 12 * 512 + 6 * 3 * 512; }
+fn t_size() -> [] int { return 64 + 2 * 2048 + 2 * 16384 + 256 + 24 * 512 + 3 * 12 * 512 + 6 * 3 * 512 + 512 + 8; }
+
+fn c_off() -> [] int { return 0; }
+fn c_len() -> [] int { return 1; }
+fn c_eoff() -> [] int { return 2; }
+fn c_elen() -> [] int { return 3; }
+fn c_count() -> [] int { return 4; }
+fn c_runs() -> [] int { return 5; }
+fn c_units() -> [] int { return 6; }
+fn c_next_seen() -> [] int { return 7; }
+fn c_next_ver() -> [] int { return 8; }
+fn c_first() -> [] int { return 9; }
+fn c_last() -> [] int { return 10; }
+fn c_contra() -> [] int { return 11; }
+fn c_confirm() -> [] int { return 12; }
+fn c_last_run() -> [] int { return 13; }
+fn c_last_unit() -> [] int { return 14; }
+fn c_nfix() -> [] int { return 15; }
+fn c_nev() -> [] int { return 16; }
+fn c_src_j() -> [] int { return 17; }
+fn c_src_l() -> [] int { return 18; }
+
+// ---- small things ----------------------------------------------------------------------------------------------------------------
+
+fn line_end[&x](text: &x [byte], p: int, n: int) -> [] int {
+    var e = p;
+    while e < n && int_of(text[e]) != 10 {
+        e = e + 1;
+    }
+    return e;
+}
+
+fn chomp[&x](line: &x [byte]) -> [] &x [byte] {
+    if len(line) > 0 && int_of(line[len(line) - 1]) == 13 {
+        return line[0..len(line) - 1];
+    }
+    return line;
+}
+
+fn head[&t](text: &t [byte], most: int) -> [] &t [byte] {
+    if len(text) <= most {
+        return text;
+    }
+    var n = most;
+    while n > 0 && int_of(text[n]) >= 128 && int_of(text[n]) < 192 {
+        n = n - 1;
+    }
+    return text[0..n];
+}
+
+fn number(text: &static [byte]) -> [] int {
+    var n = 0;
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if c < 48 || c > 57 {
+            return 0 - 1;
+        }
+        n = n * 10 + (c - 48);
+        i = i + 1;
+    }
+    if len(text) == 0 {
+        return 0 - 1;
+    }
+    return n;
+}
+
+// A file name that stays inside the blobs directory: letters, digits, `.`, `_`, `-`, no leading dot, at most 128 bytes.
+fn plain_name[&x](name: &x [byte]) -> [] bool {
+    if len(name) == 0 || len(name) > 128 || int_of(name[0]) == 46 { // MUTANT:plain
+        return false;
+    }
+    var i = 0;
+    while i < len(name) {
+        let c = int_of(name[i]);
+        let ok = (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 46 || c == 95 || c == 45;
+        if !ok {
+            return false;
+        }
+        i = i + 1;
+    }
+    return bytes.find(name, "..") < 0;
+}
+
+fn tget[&s](t: &s [int], c: int, f: int) -> [] int {
+    return t[cbase() + c * cstride() + f];
+}
+
+fn tset[&s](t: &!s [int], c: int, f: int, v: int) -> [] int {
+    t[cbase() + c * cstride() + f] = v;
+    return 0;
+}
+
+// Copy `text` to the pool: its offset, or -1 when the pool is full.
+fn pool_put[&s, &q, &x](t: &!s [int], p: &!q [byte], text: &x [byte]) -> [] int {
+    let at = t[g_plen()];
+    if at + len(text) > len(p) {
+        t[g_full()] = 1;
+        return 0 - 1;
+    }
+    var i = 0;
+    while i < len(text) {
+        p[at + i] = text[i];
+        i = i + 1;
+    }
+    t[g_plen()] = at + len(text);
+    return at;
+}
+
+// ---- runs and units ----------------------------------------------------------------------------------------------------------------
+
+// A run begins (or goes on, when the name is the one before): its index.
+fn begin_run[&s, &q, &x](t: &!s [int], p: &!q [byte], name: &x [byte]) -> [] int {
+    let n = t[g_nruns()];
+    if n > 0 {
+        let last = n - 1;
+        let off = t[rbase() + 2 * last];
+        let l = t[rbase() + 2 * last + 1];
+        if bytes.equal(p[off..off + l], name) {
+            return last;
+        }
+    }
+    if n >= max_runs() {
+        return 0 - 1;
+    }
+    let off = pool_put(t, p, name);
+    if off < 0 {
+        return 0 - 1;
+    }
+    t[rbase() + 2 * n] = off;
+    t[rbase() + 2 * n + 1] = len(name);
+    t[g_nruns()] = n + 1;
+    t[g_unit_base()] = t[g_nunits()];
+    var z = 0;
+    while z < run_units() {
+        t[pbase() + z] = 0;
+        z = z + 1;
+    }
+    return n;
+}
+
+// The unit `name` of the current run: its global index (found or new), or -1.
+fn unit_of[&s, &q, &x](t: &!s [int], p: &!q [byte], name: &x [byte]) -> [] int {
+    var u = t[g_unit_base()];
+    while u < t[g_nunits()] {
+        if bytes.equal(p[t[ubase() + 2 * u]..t[ubase() + 2 * u] + t[ubase() + 2 * u + 1]], name) {
+            return u;
+        }
+        u = u + 1;
+    }
+    if t[g_nunits()] >= max_units() || t[g_nunits()] - t[g_unit_base()] >= run_units() {
+        return 0 - 1;
+    }
+    let off = pool_put(t, p, name);
+    if off < 0 {
+        return 0 - 1;
+    }
+    let n = t[g_nunits()];
+    t[ubase() + 2 * n] = off;
+    t[ubase() + 2 * n + 1] = len(name);
+    t[g_nunits()] = n + 1;
+    t[pbase() + (n - t[g_unit_base()])] = 0;
+    return n;
+}
+
+// ---- classes --------------------------------------------------------------------------------------------------------------------------
+
+// The class `cls` (bytes): its index, new if needed; -1 when the table or the pool is full.
+fn class_of_bytes[&s, &q, &x, &e](t: &!s [int], p: &!q [byte], cls: &x [byte], example: &e [byte]) -> [] int {
+    var c = 0;
+    while c < t[g_nclass()] {
+        let off = tget(t, c, c_off());
+        if tget(t, c, c_len()) == len(cls) && bytes.equal(p[off..off + len(cls)], cls) { // MUTANT:merge
+            return c;
+        }
+        c = c + 1;
+    }
+    if t[g_nclass()] >= max_classes() {
+        t[g_dropped()] = t[g_dropped()] + 1;
+        return 0 - 1;
+    }
+    let off = pool_put(t, p, cls);
+    let eoff = pool_put(t, p, example);
+    if off < 0 || eoff < 0 {
+        return 0 - 1;
+    }
+    let n = t[g_nclass()];
+    var f = 0;
+    while f < cstride() {
+        tset(t, n, f, 0);
+        f = f + 1;
+    }
+    tset(t, n, c_off(), off);
+    tset(t, n, c_len(), len(cls));
+    tset(t, n, c_eoff(), eoff);
+    tset(t, n, c_elen(), len(example));
+    tset(t, n, c_last_run(), 0 - 1);
+    tset(t, n, c_last_unit(), 0 - 1);
+    t[g_nclass()] = n + 1;
+    return n;
+}
+
+// ---- the fix: a bounded excerpt of the diff -----------------------------------------------------------------------------------------
+
+// The lines of a unified diff that were added or removed (not the headers, not the context), at most `fix_lines()` lines and `fix_cap()` bytes, each
+// line cut at 160 bytes, with anything that looks like a key taken out.
+fn excerpt[&h, &x](heap: &!h Heap, text: &x [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.empty(heap, 256);
+    var used = 0;
+    var lines = 0;
+    var p = 0;
+    while p < len(text) && lines < fix_lines() && used < fix_cap() {
+        let e = line_end(text, p, len(text));
+        let l = chomp(text[p..e]);
+        let changed = len(l) > 0 && (int_of(l[0]) == 43 || int_of(l[0]) == 45) && bytes.starts_with(l, "+++ ") == false && bytes.starts_with(l, "--- ") == false;
+        if changed {
+            let cut = head(l, 160);
+            if used + len(cut) + 1 <= fix_cap() {
+                b = memory.redacted(heap, b, cut);
+                b = buffer.push(heap, b, byte_of(10));
+                used = used + len(cut) + 1;
+                lines = lines + 1;
+            } else {
+                used = fix_cap();
+            }
+        }
+        p = e + 1;
+    }
+    return b;
+}
+
+// Record a fix for class `c` from the diff blob `name` of the run directory `rd`: kept when there are fewer than three, or shorter than the longest kept.
+fn add_fix[&h, &z, &s, &q, &r, &n, &b](heap: &!h Heap, fs: &z Fs(""), t: &!s [int], p: &!q [byte], bl: &!b [byte], rd: &r [byte], name: &n [byte], c: int, run: int, unit: int, attempt: int) -> [heap, fs_read("")] int {
+    if !plain_name(name) {
+        return 0;
+    }
+    var path = buffer.append(heap, buffer.empty(heap, len(rd) + len(name) + 24), rd);
+    path = buffer.append(heap, path, "/journal/blobs/");
+    path = buffer.append(heap, path, name);
+    var got = 0 - 1;
+    borrow path as &pq in {
+        got = fs_read(fs, buffer.bytes(pq), bl);
+    }
+    buffer.drop(heap, path);
+    if got <= 0 {
+        return 0;
+    }
+    var used = got;
+    if used > len(bl) {
+        used = len(bl);
+    }
+    let ex = excerpt(heap, bl[0..used]);
+    var elen = 0;
+    borrow ex as &eq in {
+        elen = len(buffer.bytes(eq));
+        if elen > 0 {
+            let nf = tget(t, c, c_nfix());
+            var slot = 0 - 1;
+            if nf < max_fixes() {
+                let off = pool_put(t, p, buffer.bytes(eq));
+                if off >= 0 {
+                    slot = nf;
+                    t[fbase() + (c * 3 + slot) * 6] = off;
+                    tset(t, c, c_nfix(), nf + 1);
+                }
+            } else {
+                var worst = 0;
+                var k = 1;
+                while k < max_fixes() {
+                    if t[fbase() + (c * 3 + k) * 6 + 1] > t[fbase() + (c * 3 + worst) * 6 + 1] {
+                        worst = k;
+                    }
+                    k = k + 1;
+                }
+                if elen < t[fbase() + (c * 3 + worst) * 6 + 1] {
+                    slot = worst;
+                    let off = t[fbase() + (c * 3 + slot) * 6];
+                    var i = 0;
+                    while i < elen {
+                        p[off + i] = buffer.bytes(eq)[i];
+                        i = i + 1;
+                    }
+                }
+            }
+            if slot >= 0 {
+                t[fbase() + (c * 3 + slot) * 6 + 1] = elen;
+                t[fbase() + (c * 3 + slot) * 6 + 2] = run;
+                t[fbase() + (c * 3 + slot) * 6 + 3] = unit;
+                t[fbase() + (c * 3 + slot) * 6 + 4] = attempt;
+            }
+        }
+    }
+    buffer.drop(heap, ex);
+    return 0;
+}
+
+// ---- one attempt -----------------------------------------------------------------------------------------------------------------------
+
+// Does the array at `node` hold an object whose "id" is `id`?
+fn has_id[&x, &t, &i](line: &x [byte], tape: &t [int], node: int, id: &i [byte]) -> [] bool {
+    if node < 0 || !json.is_array(tape, node) {
+        return false;
+    }
+    var k = 0;
+    while k < json.count(tape, node) {
+        let el = json.at(tape, node, k);
+        let idn = json.get(line, tape, el, "id");
+        if idn >= 0 && json.string_equals(line, tape, idn, id) {
+            return true;
+        }
+        k = k + 1;
+    }
+    return false;
+}
+
+// What one attempt of a unit means for the lessons. `kind`: 0 verified, 1 refused (the compiler or the examples said no), 2 anything else (the agent
+// failed, a person patched: the story of the unit is cut here). `cls` and `example` are the refusal's class and text (kind 1). `mem` is the node of the
+// event's `memory` array (-1: none). `diff` is the name of the attempt's diff blob.
+fn apply[&h, &z, &s, &q, &b, &r, &x, &t, &d, &c, &e](heap: &!h Heap, fs: &z Fs(""), st: &!s [int], p: &!q [byte], bl: &!b [byte], rd: &r [byte], run: int, uid: int, attempt: int, t_ms: int, kind: int, cls: &c [byte], example: &e [byte], line: &x [byte], tape: &t [int], mem: int, diff: &d [byte]) -> [heap, fs_read("")] int {
+    st[g_attempts()] = st[g_attempts()] + 1;
+    let slot = pbase() + (uid - st[g_unit_base()]);
+    let prev = st[slot] - 1;
+    if prev >= 0 {
+        if kind == 0 || kind == 1 {
+            tset(st, prev, c_next_seen(), tget(st, prev, c_next_seen()) + 1);
+            var pid = memory.id_of(heap, buffer.empty(heap, 16), p[tget(st, prev, c_off())..tget(st, prev, c_off()) + tget(st, prev, c_len())]);
+            var recalled = false;
+            borrow pid as &pq in {
+                recalled = has_id(line, tape, mem, buffer.bytes(pq));
+            }
+            buffer.drop(heap, pid);
+            if kind == 0 {
+                tset(st, prev, c_next_ver(), tget(st, prev, c_next_ver()) + 1);
+                if recalled {
+                    tset(st, prev, c_confirm(), tget(st, prev, c_confirm()) + 1);
+                }
+                add_fix(heap, fs, st, p, bl, rd, diff, prev, run, uid, attempt);
+            } else if recalled && bytes.equal(p[tget(st, prev, c_off())..tget(st, prev, c_off()) + tget(st, prev, c_len())], cls) {
+                tset(st, prev, c_contra(), tget(st, prev, c_contra()) + 1);
+            }
+        }
+        st[slot] = 0;
+    }
+    if kind == 1 {
+        st[g_refusals()] = st[g_refusals()] + 1;
+        let c = class_of_bytes(st, p, cls, example);
+        if c >= 0 {
+            tset(st, c, c_count(), tget(st, c, c_count()) + 1);
+            if tget(st, c, c_last_run()) != run { // MUTANT:runs
+                tset(st, c, c_runs(), tget(st, c, c_runs()) + 1);
+                tset(st, c, c_last_run(), run);
+            }
+            if tget(st, c, c_last_unit()) != uid {
+                tset(st, c, c_units(), tget(st, c, c_units()) + 1);
+                tset(st, c, c_last_unit(), uid);
+            }
+            if t_ms > 0 {
+                if tget(st, c, c_first()) == 0 || t_ms < tget(st, c, c_first()) {
+                    tset(st, c, c_first(), t_ms);
+                }
+                if t_ms > tget(st, c, c_last()) {
+                    tset(st, c, c_last(), t_ms);
+                }
+                tset(st, c, c_src_j(), tget(st, c, c_src_j()) + 1);
+            } else {
+                tset(st, c, c_src_l(), tget(st, c, c_src_l()) + 1);
+            }
+            let ne = tget(st, c, c_nev());
+            if ne < max_evidence() {
+                st[ebase() + (c * 12 + ne) * 3] = run;
+                st[ebase() + (c * 12 + ne) * 3 + 1] = uid;
+                st[ebase() + (c * 12 + ne) * 3 + 2] = attempt;
+                tset(st, c, c_nev(), ne + 1);
+            }
+            st[slot] = c + 1;
+        }
+    }
+    return 0;
+}
+
+// The outcome word of an attempt as a kind (see `apply`).
+fn kind_of[&x, &t](line: &x [byte], tape: &t [int], node: int) -> [] int {
+    if node < 0 {
+        return 2;
+    }
+    if json.string_equals(line, tape, node, "verified") {
+        return 0;
+    }
+    if json.string_equals(line, tape, node, "refused") || json.string_equals(line, tape, node, "acceptance_failed") {
+        return 1;
+    }
+    return 2;
+}
+
+// The unit's name, the signature's class and example, from the scratch `sc`: all three come out as owned buffers (`uname` only to intern it).
+// Returns the unit index (or -1) and, for a refusal, the class and the example.
+fn event[&h, &z, &s, &q, &b, &r, &x, &t, &c](heap: &!h Heap, fs: &z Fs(""), st: &!s [int], p: &!q [byte], bl: &!b [byte], sc: &!c [byte], rd: &r [byte], run: int, line: &x [byte], tape: &t [int]) -> [heap, fs_read("")] int {
+    let un = json.get(line, tape, 0, "unit");
+    if un < 0 || !json.is_string(tape, un) {
+        return 0;
+    }
+    var uid = 0 - 1;
+    let ulen = json.string_length(line, tape, un);
+    if ulen > 0 && ulen <= len(sc) {
+        let got = json.string_into(line, tape, un, sc);
+        uid = unit_of(st, p, sc[0..got]);
+    }
+    if uid < 0 {
+        return 0;
+    }
+    let kind = kind_of(line, tape, json.get(line, tape, 0, "outcome"));
+    var attempt = 0 - 1;
+    let nn = json.get(line, tape, 0, "n");
+    if nn >= 0 && json.is_int(tape, nn) {
+        attempt = json.to_int(line, tape, nn);
+    }
+    var t_ms = 0;
+    let tn = json.get(line, tape, 0, "t_ms");
+    if tn >= 0 && json.is_int(tape, tn) {
+        t_ms = json.to_int(line, tape, tn);
+    }
+    if t_ms < 1 {
+        t_ms = 1;
+    }
+    var dname = buffer.empty(heap, 16);
+    let dn = json.get(line, tape, 0, "diff");
+    if dn >= 0 && json.is_string(tape, dn) && json.string_length(line, tape, dn) <= 128 {
+        let got = json.string_into(line, tape, dn, sc);
+        if got > 0 {
+            dname = buffer.append(heap, dname, sc[0..got]);
+        }
+    }
+    var cls = buffer.empty(heap, 64);
+    var example = buffer.empty(heap, 64);
+    var kk = kind;
+    if kind == 1 {
+        let sn = json.get(line, tape, 0, "signature");
+        if sn >= 0 && json.is_string(tape, sn) && json.string_length(line, tape, sn) > 0 && json.string_length(line, tape, sn) <= len(sc) {
+            let got = json.string_into(line, tape, sn, sc);
+            example = memory.redacted(heap, example, head(sc[0..got], 200));
+            borrow example as &eq in {
+                cls = memory.class_of(heap, cls, buffer.bytes(eq));
+            }
+        } else {
+            kk = 2;
+        }
+    }
+    borrow cls as &cq in {
+        borrow example as &eq2 in {
+            borrow dname as &dq in {
+                apply(heap, fs, st, p, bl, rd, run, uid, attempt, t_ms, kk, buffer.bytes(cq), buffer.bytes(eq2), line, tape, json.get(line, tape, 0, "memory"), buffer.bytes(dq));
+            }
+        }
+    }
+    buffer.drop(heap, cls);
+    buffer.drop(heap, example);
+    buffer.drop(heap, dname);
+    return 0;
+}
+
+// ---- reading a run -------------------------------------------------------------------------------------------------------------------
+
+fn base_name[&x](path: &x [byte]) -> [] &x [byte] {
+    var e = len(path);
+    while e > 1 && int_of(path[e - 1]) == 47 {
+        e = e - 1;
+    }
+    var a = e;
+    while a > 0 && int_of(path[a - 1]) != 47 {
+        a = a - 1;
+    }
+    return path[a..e];
+}
+
+// The journal of the run directory `rd`, if it has one: 1 when it did, 0 when not.
+fn mine_journal[&h, &z, &s, &q, &b, &c, &e, &r, &w](heap: &!h Heap, fs: &z Fs(""), st: &!s [int], p: &!q [byte], bl: &!b [byte], sc: &!c [byte], ev: &!e [byte], tb: &!r [int], rd: &w [byte]) -> [heap, fs_read("")] int {
+    var path = buffer.append(heap, buffer.empty(heap, len(rd) + 32), rd);
+    path = buffer.append(heap, path, "/journal/events.jsonl");
+    var got = 0 - 1;
+    borrow path as &pq in {
+        got = fs_read(fs, buffer.bytes(pq), ev);
+    }
+    buffer.drop(heap, path);
+    if got <= 0 {
+        return 0;
+    }
+    let run = begin_run(st, p, base_name(rd));
+    if run < 0 {
+        return 0;
+    }
+    st[g_journals()] = st[g_journals()] + 1;
+    var pos = 0;
+    while pos < got {
+        let e = line_end(ev, pos, got);
+        let line = chomp(ev[pos..e]);
+        if len(line) > 0 {
+            var ok = false;
+            if len(line) < max_line() {
+                ok = json.parse(line, tb) > 0 && json.is_object(tb, 0);
+            }
+            if !ok {
+                st[g_skipped()] = st[g_skipped()] + 1;
+            } else {
+                let kn = json.get(line, tb, 0, "kind");
+                if kn >= 0 && json.string_equals(line, tb, kn, "attempt") {
+                    event(heap, fs, st, p, bl, sc, rd, run, line, tb);
+                }
+            }
+        }
+        pos = e + 1;
+    }
+    return 1;
+}
+
+// One legacy trail file: `trail-<unit>.jsonl` in a run directory, lines {"attempt", "outcome", "sig", ...}.
+fn mine_trail[&h, &z, &s, &q, &b, &c, &e, &r, &w](heap: &!h Heap, fs: &z Fs(""), st: &!s [int], p: &!q [byte], bl: &!b [byte], sc: &!c [byte], ev: &!e [byte], tb: &!r [int], file: &w [byte]) -> [heap, fs_read("")] int {
+    var got = 0 - 1;
+    got = fs_read(fs, file, ev);
+    if got <= 0 {
+        return 0;
+    }
+    // <run dir>/trail-<unit>.jsonl
+    var cut = len(file);
+    while cut > 0 && int_of(file[cut - 1]) != 47 {
+        cut = cut - 1;
+    }
+    let dir = file[0..cut - 1];
+    let leaf = file[cut..len(file)];
+    if !bytes.starts_with(leaf, "trail-") || !bytes.ends_with(leaf, ".jsonl") || len(leaf) <= 12 || cut < 2 {
+        return 0;
+    }
+    let uname = leaf[6..len(leaf) - 6];
+    let run = begin_run(st, p, base_name(dir));
+    if run < 0 {
+        return 0;
+    }
+    let uid = unit_of(st, p, uname);
+    if uid < 0 {
+        return 0;
+    }
+    st[g_trails()] = st[g_trails()] + 1;
+    var pos = 0;
+    while pos < got {
+        let e = line_end(ev, pos, got);
+        let line = chomp(ev[pos..e]);
+        if len(line) > 0 {
+            var ok = false;
+            if len(line) < max_line() {
+                ok = json.parse(line, tb) > 0 && json.is_object(tb, 0);
+            }
+            if !ok {
+                st[g_skipped()] = st[g_skipped()] + 1;
+            } else {
+                let kind = kind_of(line, tb, json.get(line, tb, 0, "outcome"));
+                var attempt = 0 - 1;
+                let nn = json.get(line, tb, 0, "attempt");
+                if nn >= 0 && json.is_int(tb, nn) {
+                    attempt = json.to_int(line, tb, nn);
+                }
+                var cls = buffer.empty(heap, 64);
+                var example = buffer.empty(heap, 64);
+                var kk = kind;
+                if kind == 1 {
+                    let sn = json.get(line, tb, 0, "sig");
+                    if sn >= 0 && json.is_string(tb, sn) && json.string_length(line, tb, sn) > 0 && json.string_length(line, tb, sn) <= len(sc) {
+                        let n2 = json.string_into(line, tb, sn, sc);
+                        example = memory.redacted(heap, example, head(sc[0..n2], 200));
+                        borrow example as &eq in {
+                            cls = memory.class_of(heap, cls, buffer.bytes(eq));
+                        }
+                    } else {
+                        kk = 2;
+                    }
+                }
+                borrow cls as &cq in {
+                    borrow example as &eq2 in {
+                        apply(heap, fs, st, p, bl, dir, run, uid, attempt, 0, kk, buffer.bytes(cq), buffer.bytes(eq2), line, tb, 0 - 1, "");
+                    }
+                }
+                buffer.drop(heap, cls);
+                buffer.drop(heap, example);
+            }
+        }
+        pos = e + 1;
+    }
+    return 1;
+}
+
+// ---- the file -------------------------------------------------------------------------------------------------------------------------------
+
+fn status_of[&s](st: &s [int], c: int) -> [] int {
+    // 0 active, 1 superseded, 2 insufficient
+    if tget(st, c, c_contra()) >= 2 && tget(st, c, c_contra()) > tget(st, c, c_confirm()) { // MUTANT:super
+        return 1;
+    }
+    if tget(st, c, c_count()) >= st[g_min_count()] && tget(st, c, c_runs()) >= st[g_min_runs()] { // MUTANT:minc
+        return 0;
+    }
+    return 2;
+}
+
+fn put_str[&h, &t](heap: &!h Heap, w: json.Writer, key: &static [byte], text: &t [byte]) -> [heap] json.Writer {
+    var o = json.put_key(heap, w, key);
+    o = json.put_string(heap, o, text);
+    return o;
+}
+
+fn put_num[&h](heap: &!h Heap, w: json.Writer, key: &static [byte], n: int) -> [heap] json.Writer {
+    var o = json.put_key(heap, w, key);
+    o = json.put_int(heap, o, n);
+    return o;
+}
+
+fn run_name[&s, &q](st: &s [int], p: &q [byte], r: int) -> [] &q [byte] {
+    return p[st[rbase() + 2 * r]..st[rbase() + 2 * r] + st[rbase() + 2 * r + 1]];
+}
+
+fn unit_name[&s, &q](st: &s [int], p: &q [byte], u: int) -> [] &q [byte] {
+    return p[st[ubase() + 2 * u]..st[ubase() + 2 * u] + st[ubase() + 2 * u + 1]];
+}
+
+// The line of class `c`.
+fn lesson_line[&h, &s, &q](heap: &!h Heap, st: &s [int], p: &q [byte], c: int, status: int) -> [heap] buffer.Buffer {
+    let cls = p[tget(st, c, c_off())..tget(st, c, c_off()) + tget(st, c, c_len())];
+    let example = p[tget(st, c, c_eoff())..tget(st, c, c_eoff()) + tget(st, c, c_elen())];
+    var w = json.writer(heap, 1024);
+    w = json.begin_object(heap, w);
+    var idb = memory.id_of(heap, buffer.empty(heap, 16), cls);
+    borrow idb as &iq in {
+        w = put_str(heap, w, "id", buffer.bytes(iq));
+    }
+    buffer.drop(heap, idb);
+    var colon = 0;
+    while colon < len(cls) && int_of(cls[colon]) != 58 {
+        colon = colon + 1;
+    }
+    w = put_str(heap, w, "rule", cls[0..colon]);
+    w = put_str(heap, w, "class", cls);
+    w = put_str(heap, w, "example", example);
+    var sw = "active";
+    if status == 1 {
+        sw = "superseded";
+    } else if status == 2 {
+        sw = "insufficient";
+    }
+    w = put_str(heap, w, "status", sw);
+    w = put_num(heap, w, "count", tget(st, c, c_count()));
+    w = put_num(heap, w, "runs", tget(st, c, c_runs()));
+    w = put_num(heap, w, "units", tget(st, c, c_units()));
+    w = put_num(heap, w, "next_seen", tget(st, c, c_next_seen()));
+    w = put_num(heap, w, "next_verified", tget(st, c, c_next_ver()));
+    w = put_num(heap, w, "first", tget(st, c, c_first()));
+    w = put_num(heap, w, "last", tget(st, c, c_last()));
+    w = put_num(heap, w, "contradicted", tget(st, c, c_contra()));
+    w = put_num(heap, w, "confirmed", tget(st, c, c_confirm()));
+    var src = "legacy";
+    if tget(st, c, c_src_j()) > 0 && tget(st, c, c_src_l()) > 0 {
+        src = "mixed";
+    } else if tget(st, c, c_src_j()) > 0 {
+        src = "journal";
+    }
+    w = put_str(heap, w, "source", src);
+    w = json.put_key(heap, w, "fixes");
+    w = json.begin_array(heap, w);
+    var k = 0;
+    while k < tget(st, c, c_nfix()) {
+        let at = fbase() + (c * 3 + k) * 6;
+        w = json.begin_object(heap, w);
+        w = put_str(heap, w, "run", run_name(st, p, st[at + 2]));
+        w = put_str(heap, w, "unit", unit_name(st, p, st[at + 3]));
+        w = put_num(heap, w, "attempt", st[at + 4]);
+        w = put_str(heap, w, "diff", p[st[at]..st[at] + st[at + 1]]);
+        w = json.end_object(heap, w);
+        k = k + 1;
+    }
+    w = json.end_array(heap, w);
+    w = json.put_key(heap, w, "evidence");
+    w = json.begin_array(heap, w);
+    k = 0;
+    while k < tget(st, c, c_nev()) {
+        let at = ebase() + (c * 12 + k) * 3;
+        w = json.begin_object(heap, w);
+        w = put_str(heap, w, "run", run_name(st, p, st[at]));
+        w = put_str(heap, w, "unit", unit_name(st, p, st[at + 1]));
+        w = put_num(heap, w, "attempt", st[at + 2]);
+        w = json.end_object(heap, w);
+        k = k + 1;
+    }
+    w = json.end_array(heap, w);
+    w = json.end_object(heap, w);
+    return json.finish(w);
+}
+
+// Is `id` one of the lines of `ignore`?
+fn ignored[&x, &i](ignore: &x [byte], id: &i [byte]) -> [] bool {
+    var p = 0;
+    while p < len(ignore) {
+        let e = line_end(ignore, p, len(ignore));
+        if bytes.equal(bytes.trim(ignore[p..e]), id) {
+            return true;
+        }
+        p = e + 1;
+    }
+    return false;
+}
+
+// Order the classes: active first, then superseded, then the rest; more evidence first within each; creation order breaks the tie.
+fn order[&s](st: &!s [int]) -> [] int {
+    var i = 0;
+    while i < st[g_nclass()] {
+        st[obase() + i] = i;
+        i = i + 1;
+    }
+    i = 1;
+    while i < st[g_nclass()] {
+        let v = st[obase() + i];
+        var j = i - 1;
+        while j >= 0 && ranks_before(st, v, st[obase() + j]) {
+            st[obase() + j + 1] = st[obase() + j];
+            j = j - 1;
+        }
+        st[obase() + j + 1] = v;
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn ranks_before[&s](st: &s [int], a: int, b: int) -> [] bool {
+    let ra = status_of(st, a);
+    let rb = status_of(st, b);
+    if ra != rb {
+        return ra < rb;
+    }
+    return tget(st, a, c_count()) > tget(st, b, c_count());
+}
+
+fn lessons_file[&h, &s, &q, &g](heap: &!h Heap, st: &!s [int], p: &q [byte], ignore: &g [byte]) -> [heap] buffer.Buffer {
+    order(st);
+    var out = buffer.empty(heap, 4096);
+    var size = 0;
+    var i = 0;
+    while i < st[g_nclass()] {
+        let c = st[obase() + i];
+        var idb = memory.id_of(heap, buffer.empty(heap, 16), p[tget(st, c, c_off())..tget(st, c, c_off()) + tget(st, c, c_len())]);
+        var skip = false;
+        borrow idb as &iq in {
+            skip = ignored(ignore, buffer.bytes(iq));
+        }
+        buffer.drop(heap, idb);
+        if skip {
+            st[g_ignored()] = st[g_ignored()] + 1;
+        } else {
+            let line = lesson_line(heap, st, p, c, status_of(st, c));
+            var n = 0;
+            borrow line as &lq in {
+                n = len(buffer.bytes(lq)) + 1;
+                if size + n <= file_cap() {
+                    out = buffer.append(heap, out, buffer.bytes(lq));
+                    out = buffer.push(heap, out, byte_of(10));
+                    size = size + n;
+                } else {
+                    st[g_omitted()] = st[g_omitted()] + 1;
+                }
+            }
+            buffer.drop(heap, line);
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+// ---- promotion --------------------------------------------------------------------------------------------------------------------------------
+
+fn say[&i, &x](io: &!i Io, text: &x [byte]) -> [err_write] int {
+    return io.error_all(io, text);
+}
+
+fn out[&i, &x](io: &!i Io, text: &x [byte]) -> [io_write] int {
+    return io.write_all(io, text);
+}
+
+fn count_of[&x, &t](line: &x [byte], tape: &t [int], key: &static [byte]) -> [] int {
+    let n = json.get(line, tape, 0, key);
+    if n >= 0 && json.is_int(tape, n) {
+        return json.to_int(line, tape, n);
+    }
+    return 0;
+}
+
+fn num_text[&h](heap: &!h Heap, b: buffer.Buffer, n: int) -> [heap] buffer.Buffer {
+    return buffer.push_nat(heap, b, n);
+}
+
+// For the lessons with a lot of evidence and a fix that works, a text a person can read and paste into AGENTS.md. Nothing is written.
+fn promote[&h, &z, &i, &d](heap: &!h Heap, fs: &z Fs(""), io: &!i Io, dir: &d [byte]) -> [heap, fs_read(""), io_write, err_write] int {
+    var path = buffer.append(heap, buffer.empty(heap, len(dir) + 24), dir);
+    path = buffer.append(heap, path, "/lessons.jsonl");
+    let room = box_slice(heap, file_cap() + 1, byte_of(0));
+    var got = 0 - 1;
+    borrow mut room as &!rw in {
+        borrow path as &pq in {
+            got = fs_read(fs, buffer.bytes(pq), contents(rw));
+        }
+    }
+    buffer.drop(heap, path);
+    if got < 0 {
+        unbox_slice(heap, room);
+        say(io, "lessons: no lessons.jsonl in the memory directory\n");
+        return 1;
+    }
+    var shown = 0;
+    borrow mut room as &!rw2 in {
+        let text = contents(rw2);
+        let sc = box_slice(heap, 4096, byte_of(0));
+        borrow mut sc as &!sw in {
+            var pos = 0;
+            while pos < got {
+                let e = line_end(text, pos, got);
+                let line = text[pos..e];
+                if len(line) > 2 && len(line) < max_line() {
+                    let tb = box_slice(heap, json.tape_len(line), 0);
+                    borrow mut tb as &!tw in {
+                        let tape = contents(tw);
+                        if json.parse(line, tape) > 0 && json.is_object(tape, 0) {
+                            let stn = json.get(line, tape, 0, "status");
+                            let fixes = json.get(line, tape, 0, "fixes");
+                            let ns = count_of(line, tape, "next_seen");
+                            let nv = count_of(line, tape, "next_verified");
+                            let good = stn >= 0 && json.string_equals(line, tape, stn, "active") && count_of(line, tape, "count") >= 5 && count_of(line, tape, "runs") >= 3 && json.count(tape, fixes) > 0 && ns >= 3 && nv * 100 >= 70 * ns;
+                            if good {
+                                shown = shown + 1;
+                                var b = buffer.append(heap, buffer.empty(heap, 512), "## A hint worth a place in AGENTS.md (lesson ");
+                                let idn = json.get(line, tape, 0, "id");
+                                let il = json.string_length(line, tape, idn);
+                                if il > 0 && il < 64 {
+                                    let g2 = json.string_into(line, tape, idn, contents(sw));
+                                    b = buffer.append(heap, b, contents(sw)[0..g2]);
+                                }
+                                b = buffer.append(heap, b, ")\n\nPitfall: ");
+                                let ex = json.get(line, tape, 0, "example");
+                                let el = json.string_length(line, tape, ex);
+                                if el > 0 && el < 1000 {
+                                    let g3 = json.string_into(line, tape, ex, contents(sw));
+                                    b = buffer.append(heap, b, contents(sw)[0..g3]);
+                                }
+                                b = buffer.append(heap, b, "\nEvidence: ");
+                                b = num_text(heap, b, count_of(line, tape, "count"));
+                                b = buffer.append(heap, b, " occurrences in ");
+                                b = num_text(heap, b, count_of(line, tape, "runs"));
+                                b = buffer.append(heap, b, " runs and ");
+                                b = num_text(heap, b, count_of(line, tape, "units"));
+                                b = buffer.append(heap, b, " units; the next attempt verified ");
+                                b = num_text(heap, b, nv);
+                                b = buffer.append(heap, b, " of ");
+                                b = num_text(heap, b, ns);
+                                b = buffer.append(heap, b, " times.\nA change that fixed it (- removed, + added):\n");
+                                let f0 = json.at(tape, fixes, 0);
+                                let dn = json.get(line, tape, f0, "diff");
+                                let dl = json.string_length(line, tape, dn);
+                                if dl > 0 && dl < 4000 {
+                                    let g4 = json.string_into(line, tape, dn, contents(sw));
+                                    b = buffer.append(heap, b, contents(sw)[0..g4]);
+                                }
+                                b = buffer.append(heap, b, "\nRead the evidence in the journals (the runs and units are in lessons.jsonl) before you paste this: a lesson is a pattern in past runs, not a rule of the language.\n\n");
+                                borrow b as &bq in {
+                                    out(io, buffer.bytes(bq));
+                                }
+                                buffer.drop(heap, b);
+                            }
+                        }
+                    }
+                    unbox_slice(heap, tb);
+                }
+                pos = e + 1;
+            }
+        }
+        unbox_slice(heap, sc);
+    }
+    unbox_slice(heap, room);
+    if shown == 0 {
+        say(io, "lessons: no lesson has enough evidence to promote (5 occurrences in 3 runs, a fix, the next attempt verified 70% of the time)\n");
+    }
+    return 0;
+}
+
+// ---- the command ------------------------------------------------------------------------------------------------------------------------------
+
+fn arg_is[&g](g: &g Args, i: int, name: &static [byte]) -> [args] bool {
+    return bytes.equal(arg(g, i), name);
+}
+
+// Read a whole small file into a Buffer (empty when it is not there).
+fn slurp[&h, &z, &d](heap: &!h Heap, fs: &z Fs(""), path: &d [byte], cap: int) -> [heap, fs_read("")] buffer.Buffer {
+    var out = buffer.empty(heap, 16);
+    let room = box_slice(heap, cap, byte_of(0));
+    borrow mut room as &!rw in {
+        let n = fs_read(fs, path, contents(rw));
+        if n > 0 {
+            out = buffer.append(heap, out, contents(rw)[0..n]);
+        }
+    }
+    unbox_slice(heap, room);
+    return out;
+}
+
+// 0 done, 1 the file could not be written, 2 a usage error.
+pub fn run[&h, &z, &i, &g](heap: &!h Heap, fs: &z Fs(""), io: &!i Io, args: &g Args) -> [heap, fs_read(""), fs_write(""), io_write, err_write, args] int {
+    var memdir = "";
+    var promote_on = false;
+    var min_count = memory.min_count();
+    var min_runs = memory.min_runs();
+    var bad = false;
+    var inputs = 0;
+    var k = 1;
+    while k < arg_count(args) {
+        if arg_is(args, k, "--memory") && k + 1 < arg_count(args) {
+            memdir = arg(args, k + 1);
+            k = k + 2;
+        } else if arg_is(args, k, "--promote") {
+            promote_on = true;
+            k = k + 1;
+        } else if arg_is(args, k, "--min-count") && k + 1 < arg_count(args) {
+            min_count = number(arg(args, k + 1));
+            if min_count < 1 {
+                bad = true;
+            }
+            k = k + 2;
+        } else if arg_is(args, k, "--min-runs") && k + 1 < arg_count(args) {
+            min_runs = number(arg(args, k + 1));
+            if min_runs < 1 {
+                bad = true;
+            }
+            k = k + 2;
+        } else if (arg_is(args, k, "--run") || arg_is(args, k, "--trail")) && k + 1 < arg_count(args) {
+            inputs = inputs + 1;
+            if len(arg(args, k + 1)) == 0 || int_of(arg(args, k + 1)[0]) != 47 || bytes.find(arg(args, k + 1), "..") >= 0 {
+                bad = true;
+            }
+            k = k + 2;
+        } else {
+            bad = true;
+            k = k + 1;
+        }
+    }
+    if len(memdir) == 0 || int_of(memdir[0]) != 47 || bytes.find(memdir, "..") >= 0 {
+        bad = true;
+    }
+    if promote_on && inputs > 0 {
+        bad = true;
+    }
+    if !promote_on && inputs == 0 {
+        bad = true;
+    }
+    if bad {
+        say(io, "usage: lessons --memory <absolute dir> [--min-count N] [--min-runs N] (--run <absolute run dir> | --trail <absolute trail-unit.jsonl>)...\n       lessons --memory <absolute dir> --promote\n");
+        return 2;
+    }
+    if promote_on {
+        return promote(heap, fs, io, memdir);
+    }
+    let tb0 = box_slice(heap, t_size(), 0);
+    let pb = box_slice(heap, pool_size(), byte_of(0));
+    let blb = box_slice(heap, 262145, byte_of(0));
+    let scb = box_slice(heap, 4096, byte_of(0));
+    let evb = box_slice(heap, 2300000, byte_of(0));
+    let tapeb = box_slice(heap, 3 * 65537, 0);
+    var status = 1;
+    borrow mut tb0 as &!tw in {
+        borrow mut pb as &!pw in {
+            borrow mut blb as &!bw in {
+                borrow mut scb as &!sw in {
+                    borrow mut evb as &!ew in {
+                        borrow mut tapeb as &!kw in {
+                            let st = contents(tw);
+                            let p = contents(pw);
+                            let bl = contents(bw);
+                            let sc = contents(sw);
+                            let ev = contents(ew);
+                            let tape = contents(kw);
+                            var z = 0;
+                            while z < len(st) {
+                                st[z] = 0;
+                                z = z + 1;
+                            }
+                            st[g_min_count()] = min_count;
+                            st[g_min_runs()] = min_runs;
+                            var a = 1;
+                            while a < arg_count(args) {
+                                if arg_is(args, a, "--run") {
+                                    mine_journal(heap, fs, st, p, bl, sc, ev, tape, arg(args, a + 1));
+                                    a = a + 2;
+                                } else if arg_is(args, a, "--trail") {
+                                    mine_trail(heap, fs, st, p, bl, sc, ev, tape, arg(args, a + 1));
+                                    a = a + 2;
+                                } else if arg_is(args, a, "--memory") || arg_is(args, a, "--min-count") || arg_is(args, a, "--min-runs") {
+                                    a = a + 2;
+                                } else {
+                                    a = a + 1;
+                                }
+                            }
+                            var ipath = buffer.append(heap, buffer.empty(heap, len(memdir) + 16), memdir);
+                            ipath = buffer.append(heap, ipath, "/ignore.txt");
+                            var ignore = buffer.empty(heap, 8);
+                            borrow ipath as &ipq in {
+                                buffer.drop(heap, ignore);
+                                ignore = slurp(heap, fs, buffer.bytes(ipq), 65536);
+                            }
+                            buffer.drop(heap, ipath);
+                            var file = buffer.empty(heap, 16);
+                            borrow ignore as &iq in {
+                                buffer.drop(heap, file);
+                                file = lessons_file(heap, st, p, buffer.bytes(iq));
+                            }
+                            buffer.drop(heap, ignore);
+                            var dest = buffer.append(heap, buffer.empty(heap, len(memdir) + 32), memdir);
+                            var tmp = buffer.append(heap, buffer.empty(heap, len(memdir) + 32), memdir);
+                            dest = buffer.append(heap, dest, "/lessons.jsonl");
+                            tmp = buffer.append(heap, tmp, "/lessons.jsonl.tmp");
+                            borrow file as &fq in {
+                                borrow dest as &dq in {
+                                    borrow tmp as &tq in {
+                                        let all = buffer.bytes(fq);
+                                        if fs_write(fs, buffer.bytes(tq), all) == len(all) {
+                                            match fs_rename(fs, buffer.bytes(tq), buffer.bytes(dq)) {
+                                                Done::Ok(r) => { status = 0; }
+                                                Done::Failed(e) => { }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            buffer.drop(heap, file);
+                            buffer.drop(heap, dest);
+                            buffer.drop(heap, tmp);
+                            var m = buffer.append(heap, buffer.empty(heap, 256), "lessons: ");
+                            m = buffer.push_nat(heap, m, st[g_journals()]);
+                            m = buffer.append(heap, m, " journals, ");
+                            m = buffer.push_nat(heap, m, st[g_trails()]);
+                            m = buffer.append(heap, m, " legacy trails, ");
+                            m = buffer.push_nat(heap, m, st[g_attempts()]);
+                            m = buffer.append(heap, m, " attempts, ");
+                            m = buffer.push_nat(heap, m, st[g_refusals()]);
+                            m = buffer.append(heap, m, " refusals, ");
+                            m = buffer.push_nat(heap, m, st[g_nclass()]);
+                            m = buffer.append(heap, m, " classes");
+                            var active = 0;
+                            var sup = 0;
+                            var c = 0;
+                            while c < st[g_nclass()] {
+                                if status_of(st, c) == 0 {
+                                    active = active + 1;
+                                } else if status_of(st, c) == 1 {
+                                    sup = sup + 1;
+                                }
+                                c = c + 1;
+                            }
+                            m = buffer.append(heap, m, " (");
+                            m = buffer.push_nat(heap, m, active);
+                            m = buffer.append(heap, m, " active, ");
+                            m = buffer.push_nat(heap, m, sup);
+                            m = buffer.append(heap, m, " superseded), ");
+                            m = buffer.push_nat(heap, m, st[g_skipped()]);
+                            m = buffer.append(heap, m, " lines skipped, ");
+                            m = buffer.push_nat(heap, m, st[g_omitted()]);
+                            m = buffer.append(heap, m, " left out for size, ");
+                            m = buffer.push_nat(heap, m, st[g_ignored()]);
+                            m = buffer.append(heap, m, " ignored\n");
+                            borrow m as &mq in {
+                                say(io, buffer.bytes(mq));
+                            }
+                            buffer.drop(heap, m);
+                            if status != 0 {
+                                say(io, "lessons: the memory directory cannot be written\n");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    unbox_slice(heap, tapeb);
+    unbox_slice(heap, evb);
+    unbox_slice(heap, scb);
+    unbox_slice(heap, blb);
+    unbox_slice(heap, pb);
+    unbox_slice(heap, tb0);
+    return status;
+}

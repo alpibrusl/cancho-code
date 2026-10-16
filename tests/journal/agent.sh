@@ -25,6 +25,12 @@ if [ -f "$recipes/sidecars" ]; then
     printf '{"samples":1,"tokens":{"in":%s,"out":20,"thinking":3,"cache_write":0,"cache_read":9000},"stop":"end_turn","outcome":"written","primer":true}\n' "$((100 + n))" > "$d/meta.json"
     printf 'THE-PRIMER-TEXT-ONCE\n' > "$d/primer.txt"
 fi
+# with <recipe-dir>/memory the agent also leaves what its memory added (docs/memory.md): unit a's first try a valid memory.json, unit b's first try a file
+# that is not a JSON array; the other tries none
+if [ -f "$recipes/memory" ] && [ -d "$file.call" ]; then
+    [ "$unit" = a ] && [ "$n" = 1 ] && printf '[{"id":"L864bef6c","text":"a lesson text"},{"id":"F1","text":"no network"}]' > "$file.call/memory.json"
+    [ "$unit" = b ] && [ "$n" = 1 ] && printf 'this is not an array' > "$file.call/memory.json"
+fi
 echo "agent says: unit $unit try $n" >&2
 if [ -f "$recipes/$unit.$n.sh" ]; then sh "$recipes/$unit.$n.sh" "$file"
 elif [ -f "$recipes/$unit.sh" ]; then sh "$recipes/$unit.sh" "$file"

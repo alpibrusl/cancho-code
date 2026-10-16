@@ -1,0 +1,4 @@
+# the person's own constraints
+no network
+
+public names are lowercase_with_underscores
