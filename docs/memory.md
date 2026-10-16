@@ -60,6 +60,8 @@ scripts/cancho-lessons.sh --memory ~/cancho-memory --promote        # what is wo
 build/cancho-build "$CANCHO" brief.txt run "$AGENT" --provider ... --model ... --memory ~/cancho-memory --remember "no network"
 ```
 
+`project` and `fix` take `--memory <dir>` the way they take `--primer`: it is a flag of the agent, so it goes in the agent command (`scripts/cancho-agent.sh --key-file ... --memory ~/cancho-memory`). `build` adds it to the unit agent's command itself, and only to that: the plan agent has no unit, no refusal and no use for it. Inside the agent the lines the memory adds to the task begin with a NUL byte, so that a line of a plan's own text that starts `MEMORY:` or `FACT:` is only text.
+
 ## Safety
 
 - **No secret enters.** The miner reads, from a journal, only the `unit`, `n`, `outcome`, `signature`, `memory` and `diff` fields of the attempts and the diff blobs they name; prompts, replies, stderr and feedback are not opened. What it copies is bounded (a signature to 200 bytes, a fix to 14 lines and 600 bytes) and any word that looks like a key (20 or more letters, digits, `-` and `_` with a letter and a digit and either a `-` or no `_`) is replaced by `[redacted]`. The gate puts a stand-in key in a prompt, a reply, a diff and a signature of a mined journal and requires it nowhere in the memory directory or the output.
@@ -79,7 +81,7 @@ Before the journal, a run left `trail-<unit>.jsonl` (the signature and the outco
 
 ## Gate
 
-`scripts/test-lessons.sh` (and `--mutants`), plus the memory cases of `scripts/test-agent-native-ollama.sh` (the agent: the pitfalls block in the request, nothing without `--memory`, `memory.json` beside the project), `scripts/test-journal.sh` (the `memory` field) and `scripts/test-build.sh` (`--memory`, `--remember`).
+`scripts/test-lessons.sh` (and `--mutants`: eleven broken copies of the miner and the recall path, each must turn it red: the evidence threshold off by one, in the miner and in the recall; a contradicted lesson still active; a lesson recalled though superseded; a lesson of another class recalled; a key copied; a blob outside the blobs directory read; an unbounded block; runs counted wrongly; an injection that is not journalled), plus the memory cases of `scripts/test-agent-native-ollama.sh` (the agent: the pitfalls block in the request, nothing without `--memory`, `memory.json` beside the project), `scripts/test-journal.sh` (the `memory` field) and `scripts/test-build.sh` (`--memory`, `--remember`).
 
 ## Measured
 
