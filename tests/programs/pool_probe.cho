@@ -1,0 +1,274 @@
+edition 7;
+
+// A probe, not a gate: does cancho let one program hold SEVERAL children at once? It starts four `sh -c 'sleep 1; echo ...'`, puts
+// every child and every output pipe on ONE poller, waits for all of them in one loop with a deadline, reads each child's output
+// into a buffer of its own, and kills one of them. It prints one line per child as it ends, then the wall time in milliseconds.
+// (docs/parallel.md, "What the probe found".)
+
+import std.buffer;
+import std.io;
+import std.list;
+import std.option;
+
+res struct Slot {
+    child: Child,
+    out: Pipe,
+    id: int,
+    got: buffer.Buffer,
+}
+
+fn tok_out(id: int) -> [] int {
+    return id * 4 + 1;
+}
+
+fn tok_exit(id: int) -> [] int {
+    return id * 4 + 3;
+}
+
+fn seen[&e](events: &e [int], n: int, token: int) -> [] bool {
+    var k = 0;
+    while k < n {
+        if events[2 * k] == token {
+            return true;
+        }
+        k = k + 1;
+    }
+    return false;
+}
+
+// Read what is there, without waiting.
+fn drain[&h, &p, &s](heap: &!h Heap, out: &!p Pipe, scratch: &!s [byte], got: buffer.Buffer) -> [heap, pipe_read] buffer.Buffer {
+    var b = got;
+    var going = true;
+    while going {
+        match pipe_read(out, scratch) {
+            Received::Data(n) => {
+                b = buffer.append(heap, b, scratch[0..n]);
+            }
+            Received::End => {
+                going = false;
+            }
+            Received::Again => {
+                going = false;
+            }
+            Received::Failed(e) => {
+                going = false;
+            }
+        }
+    }
+    return b;
+}
+
+// One slot after a wake-up: still running (back on the list), or ended (said on the console).
+fn service[&h, &i, &e, &s](heap: &!h Heap, io: &!i Io, slot: Slot, events: &e [int], n: int, scratch: &!s [byte], alive: list.List[Slot]) -> [heap, io_write, pipe_read] list.List[Slot] {
+    let Slot { child, out, id, got } = slot;
+    var pipe = out;
+    var text = got;
+    var ended = false;
+    if seen(events, n, tok_out(id)) || seen(events, n, tok_exit(id)) {
+        borrow mut pipe as &!pp in {
+            text = drain(heap, pp, scratch, text);
+        }
+    }
+    if seen(events, n, tok_exit(id)) {
+        ended = true;
+    }
+    if ended {
+        pipe_close(pipe);
+        var code = 0 - 1;
+        match child_wait(child) {
+            Exited::Code(c) => {
+                code = c;
+            }
+            Exited::Signaled(sg) => {
+                code = 1000 + sg;
+            }
+            Exited::Failed(f) => {
+                code = 2000 + f;
+            }
+        }
+        io.write_all(io, "child ");
+        io.print_int(io, id);
+        io.write_all(io, " code ");
+        io.print_int(io, code);
+        io.write_all(io, " said '");
+        borrow text as &tb in {
+            io.write_all(io, buffer.bytes(tb));
+        }
+        io.write_all(io, "'\n");
+        buffer.drop(heap, text);
+        return alive;
+    }
+    return list.push(heap, alive, Slot { child: child, out: pipe, id: id, got: text });
+}
+
+// All of the list, one slot at a time (a list of resources is taken apart by `pop`, and put back together by `push`).
+fn walk[&h, &i, &e, &s](heap: &!h Heap, io: &!i Io, rest: list.List[Slot], events: &e [int], n: int, scratch: &!s [byte], alive: list.List[Slot]) -> [heap, io_write, pipe_read] list.List[Slot] {
+    match list.pop(heap, rest) {
+        option.Option::None => {
+            return alive;
+        }
+        option.Option::Some(pair) => {
+            let (slot, tail) = pair;
+            let kept = service(heap, io, slot, events, n, scratch, alive);
+            return walk(heap, io, tail, events, n, scratch, kept);
+        }
+    }
+}
+
+// Kill the slot `id` (SIGKILL, bit 256) and leave it on the list: its exit arrives on the poller like any other.
+fn kill_one[&h](heap: &!h Heap, rest: list.List[Slot], target: int, alive: list.List[Slot]) -> [heap, child_signal] list.List[Slot] {
+    match list.pop(heap, rest) {
+        option.Option::None => {
+            return alive;
+        }
+        option.Option::Some(pair) => {
+            let (slot, tail) = pair;
+            let Slot { child, out, id, got } = slot;
+            if id == target {
+                borrow child as &ch in {
+                    child_kill(ch, 256);
+                }
+            }
+            let kept = list.push(heap, alive, Slot { child: child, out: out, id: id, got: got });
+            return kill_one(heap, tail, target, kept);
+        }
+    }
+}
+
+fn spawn_one[&h, &x, &p](heap: &!h Heap, exec: &x Exec(""), poller: &!p Poller, id: int, held: list.List[Slot]) -> [heap, exec(""), poll] list.List[Slot] {
+    var args = buffer.append(heap, buffer.empty(heap, 64), "-c\0sleep 1; echo hello from ");
+    args = buffer.push_nat(heap, args, id);
+    args = buffer.push(heap, args, byte_of(0));
+    var list_out = held;
+    match pipe_open() {
+        Piped::Failed(e) => {
+            let z = e;
+        }
+        Piped::Ok(from, child_end) => {
+            var reader = from;
+            borrow args as &ab in {
+                match exec_spawn(exec, "/bin/sh", buffer.bytes(ab), "PATH=/usr/local/bin:/usr/bin:/bin\0", Stdio::Null, Stdio::Pipe(child_end), Stdio::Null) {
+                    Spawned::Failed(e) => {
+                        pipe_close(reader);
+                    }
+                    Spawned::Ok(child) => {
+                        borrow mut reader as &!rm in {
+                            pipe_nonblocking(rm);
+                        }
+                        borrow child as &ch in {
+                            poller_add_child(poller, ch, tok_exit(id));
+                        }
+                        borrow reader as &rp in {
+                            poller_add_pipe(poller, rp, tok_out(id), 1);
+                        }
+                        list_out = list.push(heap, list_out, Slot { child: child, out: reader, id: id, got: buffer.empty(heap, 64) });
+                    }
+                }
+            }
+        }
+    }
+    buffer.drop(heap, args);
+    return list_out;
+}
+
+fn run[&h, &x, &c, &i](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io) -> [heap, exec(""), clock, poll, io_write, pipe_read, child_signal] int {
+    let t0 = clock_ms(clock);
+    match poller_new() {
+        Polling::Failed(e) => {
+            return 1;
+        }
+        Polling::Ok(p) => {
+            var poller = p;
+            var held = list.List::Empty;
+            borrow mut poller as &!ph in {
+                var id = 0;
+                while id < 4 {
+                    held = spawn_one(heap, exec, ph, id, held);
+                    id = id + 1;
+                }
+                io.write_all(io, "live children: ");
+                borrow held as &hl in {
+                    io.print_int(io, list.length(hl));
+                }
+                io.newline(io);
+                // one of them is killed straight away
+                held = kill_one(heap, held, 2, list.List::Empty);
+                let deadline = t0 + 8000;
+                let events = box_slice(heap, 32, 0);
+                let scratch = box_slice(heap, 4096, byte_of(0));
+                var left_n = 4;
+                while left_n > 0 && clock_ms(clock) < deadline {
+                    var n = 0;
+                    borrow mut events as &!ew in {
+                        n = poller_wait(ph, contents(ew), deadline - clock_ms(clock));
+                    }
+                    if n > 0 {
+                        borrow events as &er in {
+                            borrow mut scratch as &!sw in {
+                                held = walk(heap, io, held, contents(er), n, contents(sw), list.List::Empty);
+                            }
+                        }
+                    }
+                    borrow held as &hl in {
+                        left_n = list.length(hl);
+                    }
+                }
+                unbox_slice(heap, events);
+                unbox_slice(heap, scratch);
+            }
+            // anything still alive at the deadline is killed and reaped
+            kill_rest(heap, held);
+            poller_close(poller);
+        }
+    }
+    io.write_all(io, "wall ms: ");
+    io.print_int(io, clock_ms(clock) - t0);
+    io.newline(io);
+    return 0;
+}
+
+fn kill_rest[&h](heap: &!h Heap, rest: list.List[Slot]) -> [heap, child_signal] int {
+    match list.pop(heap, rest) {
+        option.Option::None => {
+            return 0;
+        }
+        option.Option::Some(pair) => {
+            let (slot, tail) = pair;
+            let Slot { child, out, id, got } = slot;
+            borrow child as &ch in {
+                child_kill(ch, 256);
+            }
+            child_wait(child);
+            pipe_close(out);
+            buffer.drop(heap, got);
+            return 1 + kill_rest(heap, tail);
+        }
+    }
+}
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(fs);
+    release(net);
+    release(signals);
+    release(args);
+    var console = io;
+    var h = heap;
+    var rc = 1;
+    borrow exec as &x in {
+        borrow clock as &c in {
+            borrow mut console as &!ci in {
+                borrow mut h as &!hh in {
+                    rc = run(hh, x, c, ci);
+                }
+            }
+        }
+    }
+    release(exec);
+    release(clock);
+    release(console);
+    release(h);
+    return rc;
+}
