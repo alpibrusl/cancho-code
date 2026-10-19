@@ -1,0 +1,50 @@
+{
+ "name": "bank",
+ "requirements": [
+  {
+   "id": "R1",
+   "text": "keep accounts and their balances"
+  },
+  {
+   "id": "R2",
+   "text": "a transfer moves the money or changes nothing"
+  },
+  {
+   "id": "R3",
+   "text": "an API exposes both"
+  }
+ ],
+ "interfaces": [
+  {
+   "id": "I1",
+   "text": "pub struct Money { cents: int } ; pub fn money_add(a: int, b: int) -> [] int",
+   "provider": "ledger"
+  }
+ ],
+ "modules": [
+  {
+   "id": "ledger",
+   "brief": "Keep accounts and balances; apply a transfer atomically.",
+   "claims": [
+    "R1",
+    "R2"
+   ],
+   "needs": [
+    "fs_write"
+   ],
+   "units": 6
+  },
+  {
+   "id": "api",
+   "brief": "Expose the ledger to callers.",
+   "claims": [],
+   "deps": [
+    "ledger"
+   ],
+   "uses": [
+    "I1"
+   ],
+   "units": 5
+  }
+ ]
+}

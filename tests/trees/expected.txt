@@ -1,0 +1,33 @@
+# name  allowed-authority  exit  rule:node ...
+valid                 fs_write  0
+valid-depth2          fs_write  0
+valid                 -         1  authority:ledger
+not-json              -         1  tree-json:-
+requirement-field     fs_write  1  requirement-field:-
+requirement-dup       fs_write  1  requirement-field:R1
+module-field-brief    fs_write  1  module-field:api
+module-field-units    fs_write  1  module-field:api
+modules-empty         fs_write  1  module-field:ledger
+duplicate-module      fs_write  1  duplicate-module:ledger interface-self:ledger
+empty-claims          fs_write  1  coverage:R3 empty-claims:api
+unknown-claim         fs_write  1  unknown-claim:api
+coverage              fs_write  1  coverage:R3
+unknown-dep           fs_write  1  unknown-dep:api
+module-cycle          fs_write  1  module-cycle:ledger
+self-cycle            fs_write  1  module-cycle:ledger
+authority             fs_write  1  authority:api
+unknown-capability    fs_write  1  unknown-capability:api
+unknown-interface     fs_write  1  unknown-interface:api
+interface-self        fs_write  1  interface-self:ledger
+interface-order       fs_write  1  interface-order:api
+interface-unused      fs_write  1  interface-unused:I1
+interface-field       fs_write  1  interface-field:-
+interface-dup         fs_write  1  duplicate-interface:I1
+unknown-provider      fs_write  1  unknown-provider:I1
+module-too-big        fs_write  1  module-too-big:ledger
+fan-out               fs_write  1  fan-out:-
+too-many-units        fs_write  1  too-many-units:-
+too-deep              fs_write  1  too-deep:accounts
+sub-too-big           fs_write  1  module-too-big:accounts
+sub-authority-widens  fs_write,clock  1  authority-widens:accounts
+sub-claims            fs_write  1  coverage:R2 unknown-claim:accounts

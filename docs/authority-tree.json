@@ -1,0 +1,45 @@
+{
+  "bounded": true,
+  "unbounded_by": [],
+  "effects": [
+    "args",
+    "err_write",
+    "fs_read",
+    "heap",
+    "io_write"
+  ],
+  "labels": [
+    {
+      "name": "args",
+      "argument": null,
+      "bounded": true
+    },
+    {
+      "name": "err_write",
+      "argument": null,
+      "bounded": true
+    },
+    {
+      "name": "fs_read",
+      "argument": "",
+      "bounded": true
+    },
+    {
+      "name": "heap",
+      "argument": null,
+      "bounded": true
+    },
+    {
+      "name": "io_write",
+      "argument": null,
+      "bounded": true
+    }
+  ],
+  "never_touches": [
+    "the network",
+    "signals",
+    "other programs",
+    "foreign code"
+  ],
+  "foreign_symbols": []
+}
