@@ -1,6 +1,6 @@
 # A request that is too big: break it down, don't refuse it, don't build it blind
 
-Status: a proposal, not built. `docs/parity.md` already lists "plan *generation* by a model" as missing; this says how it should behave.
+Status: the acceptance checks are built (`treecheck`, [hierarchical.md](hierarchical.md)); the planner that proposes a tree, the tree build and the evaluation are not yet. `docs/parity.md` already lists "plan *generation* by a model" as missing; this says how it should behave.
 
 "Create software for a bank" has no signature, no examples and no oracle. The two easy answers are both wrong: refusing helps nobody, and building it
 produces code nobody can say is right. What fits cancho-code is the shape it already has: **the model proposes, a deterministic check disposes, and

@@ -1,0 +1,559 @@
+edition 7;
+
+module tree;
+
+// The module-tree check (docs/hierarchical.md): a request that is too big is split by a model into a tree of modules (depth 2 at most);
+// the split is accepted only if these rules hold. No model: the same tree and the same `allow` always get the same answer.
+//
+//   [TREE_ERROR]<TAB><rule><TAB><module id, interface id, requirement id, or - for the tree><TAB><message>
+//   [TREE_SUMMARY]<TAB>modules=N<TAB>units=U<TAB>depth=D   (only when valid)
+//   [TREE]<TAB>valid|invalid
+//
+// Every problem is reported, not the first. `allow` is the authority the requester allowed, a comma-separated list of capability names.
+
+import std.buffer;
+import std.bytes;
+import std.json;
+
+fn fan_max() -> [] int { return 8; }
+fn leaf_max() -> [] int { return 12; }
+fn units_max() -> [] int { return 60; }
+
+fn capabilities() -> [] &static [byte] {
+    return "fs_read,fs_write,net_out,net_in,process,clock,env,random";
+}
+
+fn emit[&h, &r, &u, &m](heap: &!h Heap, out: buffer.Buffer, rule: &r [byte], unit: &u [byte], msg: &m [byte]) -> [heap] buffer.Buffer {
+    var b = out;
+    b = buffer.append(heap, b, "[TREE_ERROR]\t");
+    b = buffer.append(heap, b, rule);
+    b = buffer.append(heap, b, "\t");
+    b = buffer.append(heap, b, unit);
+    b = buffer.append(heap, b, "\t");
+    b = buffer.append(heap, b, msg);
+    b = buffer.append(heap, b, "\n");
+    return b;
+}
+
+// A message in three pieces, the middle one in backquotes: `<a>` <x> `<z>`.
+fn note[&h, &r, &u, &a, &x, &z](heap: &!h Heap, out: buffer.Buffer, rule: &r [byte], unit: &u [byte], a: &a [byte], x: &x [byte], z: &z [byte]) -> [heap] buffer.Buffer {
+    var b = out;
+    var msg = buffer.append(heap, buffer.empty(heap, 160), a);
+    msg = buffer.append(heap, msg, "`");
+    msg = buffer.append(heap, msg, x);
+    msg = buffer.append(heap, msg, "`");
+    msg = buffer.append(heap, msg, z);
+    borrow msg as &mr in {
+        b = emit(heap, b, rule, unit, buffer.bytes(mr));
+    }
+    buffer.drop(heap, msg);
+    return b;
+}
+
+// Is `name` one of the comma-separated names of `list`?
+fn list_has[&l, &x](list: &l [byte], name: &x [byte]) -> [] bool {
+    var start = 0;
+    var i = 0;
+    while i <= len(list) {
+        if i == len(list) || int_of(list[i]) == 44 {
+            if i > start && bytes.equal(list[start..i], name) {
+                return true;
+            }
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+// An identifier of the tree: 1 to 40 of letters, digits, `_` and `-` (it becomes a directory name and a module name).
+fn id_ok[&t](t: &t [byte]) -> [] bool {
+    if len(t) < 1 || len(t) > 40 {
+        return false;
+    }
+    var i = 0;
+    while i < len(t) {
+        let c = int_of(t[i]);
+        if !(bytes.is_alpha(c) || bytes.is_digit(c) || c == 95 || c == 45) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn str_field[&s, &t, &k](src: &s [byte], tape: &t [int], obj: int, key: &k [byte]) -> [] &s [byte] {
+    if !json.is_object(tape, obj) {
+        return "";
+    }
+    let f = json.get(src, tape, obj, key);
+    if f < 0 || !json.is_string(tape, f) {
+        return "";
+    }
+    return json.string_view(src, tape, f);
+}
+
+// The array under `key`, or -1 when it is missing or not an array of strings.
+fn strs_field[&s, &t, &k](src: &s [byte], tape: &t [int], obj: int, key: &k [byte]) -> [] int {
+    let f = json.get(src, tape, obj, key);
+    if f < 0 || !json.is_array(tape, f) {
+        return 0 - 1;
+    }
+    var j = 0;
+    while j < json.count(tape, f) {
+        if !json.is_string(tape, json.at(tape, f, j)) {
+            return 0 - 1;
+        }
+        j = j + 1;
+    }
+    return f;
+}
+
+fn arr_has[&s, &t, &x](src: &s [byte], tape: &t [int], arr: int, text: &x [byte]) -> [] bool {
+    if arr < 0 {
+        return false;
+    }
+    var j = 0;
+    while j < json.count(tape, arr) {
+        if json.string_equals(src, tape, json.at(tape, arr, j), text) {
+            return true;
+        }
+        j = j + 1;
+    }
+    return false;
+}
+
+// The index in array `arr` of the object whose `id` is `id`, or -1.
+fn find_id[&s, &t, &x](src: &s [byte], tape: &t [int], arr: int, id: &x [byte]) -> [] int {
+    if arr < 0 || !json.is_array(tape, arr) {
+        return 0 - 1;
+    }
+    var j = 0;
+    while j < json.count(tape, arr) {
+        let e = json.at(tape, arr, j);
+        let v = str_field(src, tape, e, "id");
+        if len(v) > 0 && bytes.equal(v, id) {
+            return j;
+        }
+        j = j + 1;
+    }
+    return 0 - 1;
+}
+
+// The node of the module whose id is `id`: the top level first, then the submodules in order. -1 when there is none.
+fn module_node[&s, &t, &x](src: &s [byte], tape: &t [int], id: &x [byte]) -> [] int {
+    let mods = json.get(src, tape, 0, "modules");
+    let k = find_id(src, tape, mods, id);
+    if k >= 0 {
+        return json.at(tape, mods, k);
+    }
+    var a = 0;
+    while a < json.count(tape, mods) {
+        let sub = json.get(src, tape, json.at(tape, mods, a), "modules");
+        let q = find_id(src, tape, sub, id);
+        if q >= 0 {
+            return json.at(tape, sub, q);
+        }
+        a = a + 1;
+    }
+    return 0 - 1;
+}
+
+// A module with submodules (and so no work of its own).
+fn is_group[&s, &t](src: &s [byte], tape: &t [int], m: int) -> [] bool {
+    return json.is_object(tape, m) && json.get(src, tape, m, "modules") >= 0;
+}
+
+fn units_of[&s, &t](src: &s [byte], tape: &t [int], m: int) -> [] int {
+    let u = json.get(src, tape, m, "units");
+    if u < 0 || !json.is_int(tape, u) || !json.fits_int(src, tape, u) {
+        return 0;
+    }
+    return json.to_int(src, tape, u);
+}
+
+// The shape of a module. True when later rules can read it.
+fn module_shape[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], m: int) -> [heap] (buffer.Buffer, bool) {
+    var b = out;
+    var ok = true;
+    let shape = "a module is {\"id\": \"ledger\", \"brief\": \"what it must do, in the requester's words\", \"claims\": [\"R1\"], \"deps\": [], \"uses\": [], \"needs\": [], \"units\": 4}";
+    if !json.is_object(tape, m) {
+        b = emit(heap, b, "module-field", "-", shape);
+        return (b, false);
+    }
+    let id = str_field(src, tape, m, "id");
+    if !id_ok(id) {
+        b = emit(heap, b, "module-field", "-", "a module needs an `id`: 1 to 40 of letters, digits, `_` and `-`");
+        return (b, false);
+    }
+    if len(str_field(src, tape, m, "brief")) == 0 {
+        b = note(heap, b, "module-field", id, "module ", id, " needs a non-empty string `brief`: what it must do, which is all its own planner will be told");
+        ok = false;
+    }
+    if strs_field(src, tape, m, "claims") < 0 {
+        b = note(heap, b, "module-field", id, "module ", id, " needs `claims`: an array of requirement ids");
+        ok = false;
+    }
+    if json.get(src, tape, m, "deps") >= 0 && strs_field(src, tape, m, "deps") < 0 {
+        b = note(heap, b, "module-field", id, "module ", id, " has `deps` that is not an array of strings");
+        ok = false;
+    }
+    if json.get(src, tape, m, "uses") >= 0 && strs_field(src, tape, m, "uses") < 0 {
+        b = note(heap, b, "module-field", id, "module ", id, " has `uses` that is not an array of strings");
+        ok = false;
+    }
+    if json.get(src, tape, m, "needs") >= 0 && strs_field(src, tape, m, "needs") < 0 {
+        b = note(heap, b, "module-field", id, "module ", id, " has `needs` that is not an array of strings");
+        ok = false;
+    }
+    if json.get(src, tape, m, "modules") >= 0 {
+        if !json.is_array(tape, json.get(src, tape, m, "modules")) || json.count(tape, json.get(src, tape, m, "modules")) == 0 {
+            b = note(heap, b, "module-field", id, "module ", id, " has `modules` that is not a non-empty array");
+            ok = false;
+        }
+    } else if units_of(src, tape, m) < 1 {
+        b = note(heap, b, "module-field", id, "module ", id, " needs `units`: a whole number of at least 1, your estimate of the functions it takes");
+        ok = false;
+    }
+    return (b, ok);
+}
+
+// The rules of one module whose shape is sound. `depth` is 1 or 2; `parent` is the node of the enclosing module (depth 2) or -1.
+fn module_rules[&h, &s, &t, &a](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], m: int, depth: int, parent: int, allow: &a [byte]) -> [heap] buffer.Buffer {
+    var b = out;
+    let id = str_field(src, tape, m, "id");
+    if module_node(src, tape, id) != m {
+        b = note(heap, b, "duplicate-module", id, "the module id ", id, " is used twice (an id names exactly one module in the whole tree)");
+    }
+    // claims
+    let claims = strs_field(src, tape, m, "claims");
+    if json.count(tape, claims) == 0 {
+        b = note(heap, b, "empty-claims", id, "module ", id, " claims no requirement: a module that serves nothing is not part of the split");
+    }
+    var j = 0;
+    while j < json.count(tape, claims) {
+        let c = json.string_view(src, tape, json.at(tape, claims, j));
+        if depth == 1 {
+            if find_id(src, tape, json.get(src, tape, 0, "requirements"), c) < 0 {
+                b = note(heap, b, "unknown-claim", id, "a claim of this module is not a requirement id: ", c, "");
+            }
+        } else if !arr_has(src, tape, strs_field(src, tape, parent, "claims"), c) {
+            b = note(heap, b, "unknown-claim", id, "a submodule can claim only what its module claims: ", c, "");
+        }
+        j = j + 1;
+    }
+    // authority
+    let needs = strs_field(src, tape, m, "needs");
+    j = 0;
+    while needs >= 0 && j < json.count(tape, needs) {
+        let c = json.string_view(src, tape, json.at(tape, needs, j));
+        if !list_has(capabilities(), c) {
+            b = note(heap, b, "unknown-capability", id, "module needs a capability the report does not know: ", c, "");
+        } else if !list_has(allow, c) {
+            b = note(heap, b, "authority", id, "the requester did not allow the capability ", c, " (the split would need it)");
+        } else if depth == 2 && !arr_has(src, tape, strs_field(src, tape, parent, "needs"), c) {
+            b = note(heap, b, "authority-widens", id, "a submodule needs ", c, ", which its module does not (a submodule cannot hold more authority than its module)");
+        }
+        j = j + 1;
+    }
+    // interfaces used
+    let uses = strs_field(src, tape, m, "uses");
+    let deps = strs_field(src, tape, m, "deps");
+    let ifaces = json.get(src, tape, 0, "interfaces");
+    j = 0;
+    while uses >= 0 && j < json.count(tape, uses) {
+        let u = json.string_view(src, tape, json.at(tape, uses, j));
+        let q = find_id(src, tape, ifaces, u);
+        if q < 0 {
+            b = note(heap, b, "unknown-interface", id, "module uses an interface that is not declared: ", u, "");
+        } else {
+            let prov = str_field(src, tape, json.at(tape, ifaces, q), "provider");
+            if bytes.equal(prov, id) {
+                b = note(heap, b, "interface-self", id, "module uses the interface ", u, " that it provides itself");
+            } else if depth == 1 && find_id(src, tape, json.get(src, tape, 0, "modules"), prov) >= 0 && !arr_has(src, tape, deps, prov) {
+                b = note(heap, b, "interface-order", id, "module uses an interface of another module, so it depends on that module: add to `deps` ", prov, "");
+            }
+        }
+        j = j + 1;
+    }
+    // size
+    if !is_group(src, tape, m) {
+        if units_of(src, tape, m) > leaf_max() {
+            if depth == 1 {
+                b = note(heap, b, "module-too-big", id, "module ", id, " is estimated above 12 units: split it into `modules` (one more level) so each part is 12 units or fewer");
+            } else {
+                b = note(heap, b, "module-too-big", id, "submodule ", id, " is estimated above 12 units and cannot be split again (the depth ceiling is 2): this request is too large as it stands, and the breakdown has to be confirmed by the requester");
+            }
+        }
+    } else if depth == 2 {
+        b = note(heap, b, "too-deep", id, "submodule ", id, " has `modules` of its own: the depth ceiling is 2");
+    }
+    return b;
+}
+
+fn level_label[&s, &t](src: &s [byte], tape: &t [int], depth: int, parent: int) -> [] &s [byte] {
+    if depth == 2 {
+        return str_field(src, tape, parent, "id");
+    }
+    return "-";
+}
+
+// The id of element `r` of what a level must serve: a requirement object (depth 1) or a claim string (depth 2).
+fn need_id[&s, &t](src: &s [byte], tape: &t [int], need: int, r: int, depth: int) -> [] &s [byte] {
+    if depth == 1 {
+        return str_field(src, tape, json.at(tape, need, r), "id");
+    }
+    return json.string_view(src, tape, json.at(tape, need, r));
+}
+
+// The rules among the siblings of one level: fan-out, coverage of what the level must serve, dependencies (known, acyclic).
+fn level_rules[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], sibs: int, depth: int, parent: int) -> [heap] buffer.Buffer {
+    var b = out;
+    let n = json.count(tape, sibs);
+    let pid = level_label(src, tape, depth, parent);
+    if n > fan_max() {
+        b = emit(heap, b, "fan-out", pid, "a level holds at most 8 modules: group some of them under a module");
+    }
+    // coverage: every requirement (depth 1) or every claim of the parent (depth 2) is claimed by a sibling, by id
+    var need = json.get(src, tape, 0, "requirements");
+    if depth == 2 {
+        need = strs_field(src, tape, parent, "claims");
+    }
+    var r = 0;
+    while need >= 0 && r < json.count(tape, need) {
+        let rid = need_id(src, tape, need, r, depth);
+        var claimed = false;
+        var k = 0;
+        while k < n {
+            let e = json.at(tape, sibs, k);
+            if json.is_object(tape, e) && arr_has(src, tape, strs_field(src, tape, e, "claims"), rid) {
+                claimed = true;
+            }
+            k = k + 1;
+        }
+        if !claimed && len(rid) > 0 {
+            b = note(heap, b, "coverage", rid, "no module claims the requirement ", rid, ": every requirement must be served by at least one module");
+        }
+        r = r + 1;
+    }
+    // dependencies: known siblings; then a pass that resolves every module whose dependencies are resolved
+    let rb = box_slice(heap, n + 1, 0);
+    borrow mut rb as &!rw in {
+        let done = contents(rw);
+        var k = 0;
+        while k < n {
+            let e = json.at(tape, sibs, k);
+            let id = str_field(src, tape, e, "id");
+            let deps = strs_field(src, tape, e, "deps");
+            var q = 0;
+            while deps >= 0 && q < json.count(tape, deps) {
+                let d = json.string_view(src, tape, json.at(tape, deps, q));
+                if find_id(src, tape, sibs, d) < 0 {
+                    b = note(heap, b, "unknown-dep", id, "a dependency is not a module of this level: ", d, "");
+                    done[k] = 0;
+                }
+                q = q + 1;
+            }
+            k = k + 1;
+        }
+        var pass = 0;
+        while pass <= n {
+            k = 0;
+            while k < n {
+                if done[k] == 0 {
+                    let e = json.at(tape, sibs, k);
+                    let deps = strs_field(src, tape, e, "deps");
+                    var ready = true;
+                    var q = 0;
+                    while deps >= 0 && q < json.count(tape, deps) {
+                        let at = find_id(src, tape, sibs, json.string_view(src, tape, json.at(tape, deps, q)));
+                        if at >= 0 && done[at] == 0 {
+                            ready = false;
+                        }
+                        q = q + 1;
+                    }
+                    if ready {
+                        done[k] = 1;
+                    }
+                }
+                k = k + 1;
+            }
+            pass = pass + 1;
+        }
+        k = 0;
+        var reported = false;
+        while k < n {
+            if done[k] == 0 && !reported {
+                reported = true;
+                b = note(heap, b, "module-cycle", str_field(src, tape, json.at(tape, sibs, k), "id"), "module ", str_field(src, tape, json.at(tape, sibs, k), "id"), " depends, directly or through others, on itself (or on a module that does not resolve)");
+            }
+            k = k + 1;
+        }
+    }
+    unbox_slice(heap, rb);
+    return b;
+}
+
+// The rules of the interfaces: shape, one id each, a provider that is a top-level module, and a user.
+fn interface_rules[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int]) -> [heap] buffer.Buffer {
+    var b = out;
+    let ifaces = json.get(src, tape, 0, "interfaces");
+    let mods = json.get(src, tape, 0, "modules");
+    var i = 0;
+    while i < json.count(tape, ifaces) {
+        let e = json.at(tape, ifaces, i);
+        let id = str_field(src, tape, e, "id");
+        if !id_ok(id) || len(str_field(src, tape, e, "text")) == 0 || len(str_field(src, tape, e, "provider")) == 0 {
+            b = emit(heap, b, "interface-field", "-", "an interface is {\"id\": \"I1\", \"text\": \"the shared types and function signatures, written once\", \"provider\": \"ledger\"}");
+        } else {
+            if find_id(src, tape, ifaces, id) != i {
+                b = note(heap, b, "duplicate-interface", id, "the interface id ", id, " is used twice");
+            }
+            let prov = str_field(src, tape, e, "provider");
+            if find_id(src, tape, mods, prov) < 0 {
+                b = note(heap, b, "unknown-provider", id, "the provider of this interface is not a top-level module: ", prov, "");
+            }
+            var used = false;
+            var a = 0;
+            while a < json.count(tape, mods) {
+                let m = json.at(tape, mods, a);
+                if arr_has(src, tape, strs_field(src, tape, m, "uses"), id) {
+                    used = true;
+                }
+                let sub = json.get(src, tape, m, "modules");
+                var c = 0;
+                while sub >= 0 && json.is_array(tape, sub) && c < json.count(tape, sub) {
+                    if arr_has(src, tape, strs_field(src, tape, json.at(tape, sub, c), "uses"), id) {
+                        used = true;
+                    }
+                    c = c + 1;
+                }
+                a = a + 1;
+            }
+            if !used {
+                b = note(heap, b, "interface-unused", id, "nothing uses the interface ", id, ": an interface exists because two modules share it");
+            }
+        }
+        i = i + 1;
+    }
+    return b;
+}
+
+// Walk the whole tree: every module's shape and rules, every level's rules, the interfaces, the bounds. Returns the counts.
+fn walk[&h, &s, &t, &a](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], allow: &a [byte]) -> [heap] (buffer.Buffer, int, int, int) {
+    var b = out;
+    var modules = 0;
+    var units = 0;
+    var depth = 1;
+    let mods = json.get(src, tape, 0, "modules");
+    b = level_rules(heap, b, src, tape, mods, 1, 0 - 1);
+    var k = 0;
+    while k < json.count(tape, mods) {
+        let m = json.at(tape, mods, k);
+        let (b1, ok) = module_shape(heap, b, src, tape, m);
+        b = b1;
+        modules = modules + 1;
+        if ok {
+            b = module_rules(heap, b, src, tape, m, 1, 0 - 1, allow);
+            if is_group(src, tape, m) {
+                depth = 2;
+                let sub = json.get(src, tape, m, "modules");
+                if json.is_array(tape, sub) && json.count(tape, sub) > 0 {
+                    b = level_rules(heap, b, src, tape, sub, 2, m);
+                    var c = 0;
+                    while c < json.count(tape, sub) {
+                        let sm = json.at(tape, sub, c);
+                        let (b2, ok2) = module_shape(heap, b, src, tape, sm);
+                        b = b2;
+                        modules = modules + 1;
+                        if ok2 {
+                            b = module_rules(heap, b, src, tape, sm, 2, m, allow);
+                            units = units + units_of(src, tape, sm);
+                        }
+                        c = c + 1;
+                    }
+                }
+            } else {
+                units = units + units_of(src, tape, m);
+            }
+        }
+        k = k + 1;
+    }
+    if units > units_max() {
+        b = emit(heap, b, "too-many-units", "-", "the whole tree is estimated above 60 units: that is more than one confirmation can cover; narrow the request");
+    }
+    return (b, modules, units, depth);
+}
+
+fn requirement_rules[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int]) -> [heap] buffer.Buffer {
+    var b = out;
+    let reqs = json.get(src, tape, 0, "requirements");
+    var i = 0;
+    while i < json.count(tape, reqs) {
+        let e = json.at(tape, reqs, i);
+        let id = str_field(src, tape, e, "id");
+        if !id_ok(id) || len(str_field(src, tape, e, "text")) == 0 {
+            b = emit(heap, b, "requirement-field", "-", "a requirement is {\"id\": \"R1\", \"text\": \"one thing the whole must do\"}");
+        } else if find_id(src, tape, reqs, id) != i {
+            b = note(heap, b, "requirement-field", id, "the requirement id ", id, " is used twice");
+        }
+        i = i + 1;
+    }
+    return b;
+}
+
+pub fn check[&h, &s, &a](heap: &!h Heap, src: &s [byte], allow: &a [byte]) -> [heap] (buffer.Buffer, int) {
+    var out = buffer.empty(heap, 512);
+    var summary = false;
+    var modules = 0;
+    var units = 0;
+    var depth = 1;
+    let tb = box_slice(heap, json.tape_len(src), 0);
+    borrow mut tb as &!tw in {
+        let tape = contents(tw);
+        let nodes = json.parse(src, tape);
+        if nodes < 0 {
+            out = emit(heap, out, "tree-json", "-", json.error_message(json.error_code(nodes)));
+        } else {
+            let name = json.get(src, tape, 0, "name");
+            let reqs = json.get(src, tape, 0, "requirements");
+            let mods = json.get(src, tape, 0, "modules");
+            let ifaces = json.get(src, tape, 0, "interfaces");
+            if !json.is_object(tape, 0) || name < 0 || !json.is_string(tape, name) || reqs < 0 || !json.is_array(tape, reqs) || json.count(tape, reqs) == 0
+                || mods < 0 || !json.is_array(tape, mods) || json.count(tape, mods) == 0 || ifaces < 0 || !json.is_array(tape, ifaces) {
+                out = emit(heap, out, "tree-json", "-", "the root must be an object with a string `name`, a non-empty array `requirements`, an array `interfaces` (empty when no two modules share anything) and a non-empty array `modules`");
+            } else {
+                out = requirement_rules(heap, out, src, tape);
+                out = interface_rules(heap, out, src, tape);
+                let (o2, m2, u2, d2) = walk(heap, out, src, tape, allow);
+                out = o2;
+                modules = m2;
+                units = u2;
+                depth = d2;
+                summary = true;
+            }
+        }
+    }
+    unbox_slice(heap, tb);
+    var code = 0;
+    var bad = false;
+    borrow out as &o in {
+        bad = buffer.size(o) > 0;
+    }
+    if bad {
+        code = 1;
+        out = buffer.append(heap, out, "[TREE]\tinvalid\n");
+    } else {
+        if summary {
+            out = buffer.append(heap, out, "[TREE_SUMMARY]\tmodules=");
+            out = buffer.push_nat(heap, out, modules);
+            out = buffer.append(heap, out, "\tunits=");
+            out = buffer.push_nat(heap, out, units);
+            out = buffer.append(heap, out, "\tdepth=");
+            out = buffer.push_nat(heap, out, depth);
+            out = buffer.append(heap, out, "\n");
+        }
+        out = buffer.append(heap, out, "[TREE]\tvalid\n");
+    }
+    return (out, code);
+}
