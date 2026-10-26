@@ -198,7 +198,8 @@ pub fn copy_blobs[&h, &x, &c, &d, &w](heap: &!h Heap, exec: &x Exec(""), clock: 
 }
 
 // The absolute path of the running program, from its `argv[0]`: as it is when it is absolute, relative to the working directory when it has a
-// slash, else where the shell finds it on `PATH`. Empty when it cannot be told.
+// slash, else where the shell finds it on `PATH`, else (a program started by bare name under an empty environment, as Forge's adapter does:
+// alpibrusl/cancho-code#92) what Linux says the parent process is running (`/proc/$PPID/exe`). Empty when it cannot be told.
 pub fn self_path[&h, &x, &c, &a](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, argv0: &a [byte]) -> [heap, exec(""), clock, poll] buffer.Buffer {
     var cmd = buffer.append(heap, buffer.empty(heap, 256), "case '");
     cmd = buffer.append(heap, cmd, argv0);
@@ -206,9 +207,9 @@ pub fn self_path[&h, &x, &c, &a](heap: &!h Heap, exec: &x Exec(""), clock: &c Cl
     cmd = buffer.append(heap, cmd, argv0);
     cmd = buffer.append(heap, cmd, "' ;; */*) printf %s \"$PWD/");
     cmd = buffer.append(heap, cmd, argv0);
-    cmd = buffer.append(heap, cmd, "\" ;; *) command -v '");
+    cmd = buffer.append(heap, cmd, "\" ;; *) printf %s \"$(command -v '");
     cmd = buffer.append(heap, cmd, argv0);
-    cmd = buffer.append(heap, cmd, "' ;; esac #");
+    cmd = buffer.append(heap, cmd, "' || readlink /proc/$PPID/exe)\" ;; esac #");
     var path = buffer.empty(heap, 16);
     borrow cmd as &cb in {
         let r = acceptance.run(heap, exec, clock, buffer.bytes(cb), "", 1024, 10000);
