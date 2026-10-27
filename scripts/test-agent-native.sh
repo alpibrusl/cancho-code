@@ -14,6 +14,8 @@
 #             events; the key is in none of it
 #   hint      a `HINT:` line of the task (a person's words about a unit, from `--retry --hint`) reaches the model under its own heading and is not repeated
 #             as a task line; no HINT line, no heading
+#   opencode  `--provider opencode` posts to /zen/go/v1/messages with x-opencode-session (cancho-code unless --session names one); the anthropic
+#             provider sends no session header
 #   workspace the id is sent as anthropic-workspace-id only when named
 #   thinking  thinking and effort are sent only when named; a bad value is exit 2 and no request; an all-thinking reply says so
 #   cut off   a reply that stopped at max_tokens is retried, never written, and the next request has the bound doubled (at most 32000)
@@ -60,7 +62,7 @@ class H(http.server.BaseHTTPRequestHandler):
         open(out + "/headers.json", "w").write(json.dumps({
             "path": self.path, "key_matches": self.headers.get("x-api-key") == key,
             "version": self.headers.get("anthropic-version"), "content_type": self.headers.get("content-type"),
-            "workspace": self.headers.get("anthropic-workspace-id")}))
+            "workspace": self.headers.get("anthropic-workspace-id"), "session": self.headers.get("x-opencode-session")}))
         if self.headers.get("x-api-key") != key:
             data = json.dumps({"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}}).encode()
             self.send_response(401)
@@ -103,6 +105,7 @@ broken() { printf 'edition 7;\nfn broken() -> [] int { return true; }\n' > "$F";
 printf 'A PRIMER SENTENCE ABOUT CANCHO.\n' > "$d/primer.md"
 # the agent, with no environment at all; the flags a caller must name come first, `$@` adds or overrides nothing (first value wins for a repeated flag)
 agent() { env -i "$exe" --provider anthropic --model stub-model --key-file "${KEYFILE:-$d/key}" --host localhost --ip 127.0.0.1 --port "$port" --roots "${ROOTS:-$d/ca.pem}" "$@" "$F"; }
+agent_oc() { env -i "$exe" --provider opencode --model stub-model --key-file "$d/key" --host localhost --ip 127.0.0.1 --port "$port" --roots "$d/ca.pem" "$@" "$F"; }
 count() { cat "$d/count" 2>/dev/null || echo 0; }
 req() { python3 -c "import json; r = json.load(open('$d/request.json')); print(json.dumps([r.get('thinking'), r.get('output_config')]))"; }
 
@@ -120,6 +123,7 @@ expect "request: path" "$(printf '%s' "$h" | python3 -c "import json,sys; print(
 expect "request: the key from the file is sent as x-api-key" "$(printf '%s' "$h" | python3 -c "import json,sys; print(json.load(sys.stdin)['key_matches'])")" True
 expect "request: anthropic-version is sent" "$(printf '%s' "$h" | python3 -c "import json,sys; print(json.load(sys.stdin)['version'])")" 2023-06-01
 expect "request: content-type" "$(printf '%s' "$h" | python3 -c "import json,sys; print(json.load(sys.stdin)['content_type'])")" application/json
+expect "request: no x-opencode-session for the anthropic provider" "$(printf '%s' "$h" | python3 -c "import json,sys; print(json.load(sys.stdin)['session'])")" None
 parsed=$(python3 -c "
 import json
 r = json.load(open('$d/request.json'))
@@ -141,6 +145,18 @@ for f in out.txt err.txt raw.txt; do
 done
 [ -s "$d/raw.txt" ] || { echo "FAIL: key: the raw reply was not saved (--save-raw)" >&2; fail=1; }
 case "$(cat "$d/raw.txt" 2>/dev/null)" in *"input_tokens=11 output_tokens=22 cache_creation_input_tokens=33 cache_read_input_tokens=44"*) ;; *) echo "FAIL: usage: the saved reply does not record the token usage ($(head -c 200 "$d/raw.txt"))" >&2; fail=1 ;; esac
+# opencode: the same wire at another path, with the session header; the anthropic provider sends none
+h=$(cat "$d/headers.json" 2>/dev/null)
+expect "request: no x-opencode-session for the anthropic provider" "$(printf '%s' "$h" | python3 -c "import json,sys; print(json.load(sys.stdin)['session'])")" None
+broken
+agent_oc >"$d/out-oc.txt" 2>"$d/err-oc.txt"; rc=$?
+h=$(cat "$d/headers.json" 2>/dev/null)
+expect "opencode: exit code (stderr: $(head -c 300 "$d/err-oc.txt"))" "$rc" 0
+expect "opencode: path" "$(printf '%s' "$h" | python3 -c "import json,sys; print(json.load(sys.stdin)['path'])")" /zen/go/v1/messages
+expect "opencode: default session" "$(printf '%s' "$h" | python3 -c "import json,sys; print(json.load(sys.stdin)['session'])")" cancho-code
+broken
+agent_oc --session s-42 >/dev/null 2>&1
+expect "opencode: named session" "$(python3 -c "import json; print(json.load(open('$d/headers.json'))['session'])")" s-42
 # journal: the sidecars of a unit's call, and the key in none of them (the stub of the cases above is replaced by one per case, and one is left running)
 stop
 start; broken; rm -rf "$F.call"

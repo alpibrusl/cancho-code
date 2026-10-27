@@ -23,6 +23,8 @@ for a in "$@"; do
     prev="$a"
 done
 case "$provider" in
+    # opencode go speaks the Anthropic wire at /zen/go/v1/messages (the agent sets the path and the session header)
+    opencode) host="${CANCHO_AGENT_HOST:-opencode.ai}" ;;
     anthropic) host="${CANCHO_AGENT_HOST:-api.anthropic.com}" ;;
     # a local server needs no name service and no trust store: plain TCP to localhost, port 11434 (flags after these win)
     ollama) exec "$bin" --host localhost --ip 127.0.0.1 --tls off "$@" ;;
