@@ -18,7 +18,8 @@ edition 7;
 // is the thin wrapper that does it.
 //
 // Options (each `--name value`):
-//   --provider      anthropic | ollama                           required
+//   --provider      anthropic | opencode | ollama               required (opencode: the Anthropic wire at /zen/go/v1/messages, sent with `x-opencode-session`)
+//   --session       the opencode session id                      (cancho-code)
 //   --model         the model, as the API spells it              required
 //   --key-file      a file holding the API key                   required (anthropic)
 //   --host          the API's name (certificate and Host:)       required
@@ -568,8 +569,8 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
         return 2;
     }
     let local = bytes.equal(provider_name, "ollama");
-    if local == false && bytes.equal(provider_name, "anthropic") == false {
-        say(io, "--provider must be anthropic or ollama");
+    if local == false && bytes.equal(provider_name, "anthropic") == false && bytes.equal(provider_name, "opencode") == false {
+        say(io, "--provider must be anthropic, opencode or ollama");
         return 2;
     }
     if len(model) == 0 {
@@ -827,6 +828,11 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
         backoff_ms = number(opt(args, "--backoff-ms"));
     }
     let workspace = opt(args, "--workspace");
+    let opencode = bytes.equal(opt(args, "--provider"), "opencode");
+    var session = "cancho-code";
+    if len(opt(args, "--session")) > 0 {
+        session = opt(args, "--session");
+    }
     let raw_path = opt(args, "--save-raw");
     var body = buffer.empty(heap, 16);
     var headers = buffer.empty(heap, 16);
@@ -836,6 +842,12 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
             headers = ollama.headers(heap);
         } else {
             headers = anthropic.headers(heap, trimmed_key(buffer.bytes(kr)), workspace);
+            if opencode {
+                // opencode go routes by session: a request without one is refused (400 MissingSessionID)
+                headers = buffer.append(heap, headers, "x-opencode-session: ");
+                headers = buffer.append(heap, headers, session);
+                headers = buffer.append(heap, headers, "\r\n");
+            }
         }
     }
     var entropy = box_slice(heap, 32, byte_of(0));
@@ -851,7 +863,13 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
     if local {
         provider_label = "ollama";
     }
+    if opencode {
+        provider_label = "opencode";
+    }
     var path = "/v1/messages";
+    if opencode {
+        path = "/zen/go/v1/messages";
+    }
     if local {
         path = "/api/generate";
     }
