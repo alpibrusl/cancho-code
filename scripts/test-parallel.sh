@@ -150,6 +150,18 @@ expect "jobs 2: exit code" "$r" 0
 expect "jobs 2: never more than two in flight" "$($J "$wd" maxconc)" 2
 rm -rf "$wd" "$rc"
 
+# ---- bare name, empty environment: --jobs finds its own path (cancho-code#92: Forge's adapter starts the tool by name, with no PATH) -------------
+if command -v bash >/dev/null 2>&1 && [ -d /proc/self ]; then
+    set -- $(mk); wd=$1; rc=$2; lg=$3
+    rec "$rc/a.sh" 0.1 0.1 "$F_A"; rec "$rc/b.sh" 0.1 0.1 "$F_B"; rec "$rc/c.sh" 0.1 0.1 "$F_C"; rec "$rc/d.sh" 0.1 0.1 "$F_D"
+    out=$(cd "$d" && env -i bash -c 'exec -a project ./project "$@"' x "$CANCHO" "$T/plan-wide.json" "$wd" "sh $T/agent.sh $rc $lg" 4 60 --jobs 2 2>&1); r=$?
+    [ "$r" = 0 ] || printf "%s\n" "$out" | tail -8 >&2
+    expect "bare name, no PATH: exit code" "$r" 0
+    expect "bare name, no PATH: verdict" "$(verdict "$out")" done
+    expect "bare name, no PATH: the driver did not say it cannot tell where it is" "$(printf '%s\n' "$out" | grep -c 'cannot tell where it is')" 0
+    rm -rf "$wd" "$rc"
+fi
+
 # ---- jobs 1 is the sequential driver ----------------------------------------------------------------------------------------------------
 set -- $(mk); wd=$1; rc=$2; lg=$3
 rec_quiet "$rc/a.sh" 0 "$F_A"; rec_quiet "$rc/b.sh" 0 "$F_B"; rec_quiet "$rc/c.sh" 0 "$F_C"; rec_quiet "$rc/d.sh" 0 "$F_D"
