@@ -5,6 +5,10 @@
 #   happy       the agent writes the plan, the units are built in order: done, exit 0, verdict in stdout AND run.log, build.json complete
 #   args        the plan call gets --mode plan, the guide, the brief, the rounds, the usage log, the review flags; both calls get provider and model
 #   reuse       a valid plan.json already in the work directory is not asked for again; an invalid one is replaced
+#   replan      a valid plan.json whose own test was the dead end of the run before (failed twice on code that compiled, the run stuck) is asked
+#               for again, once per work directory, and the right code then verifies; not when the run before ended provider_error, stopped
+#               on a refusal or at the ceiling, failed on its test file not compiling, when the person edited the plan, with --retry, --patch
+#               or no --guide; units that verified are kept
 #   invalid     the agent "succeeds" with a plan the check refuses: its errors, plan_failed, exit 3, the project step never runs
 #   rejected    the agent gives up after its rounds (exit 1, the plan was rejected): plan_failed, exit 3, its stderr kept in plan.log
 #   questions   the model needs a decision (agent exit 3): plan_failed
@@ -126,6 +130,131 @@ printf '{"name":"broken","units":[' > "$wd/plan.json"
 out=$(run "$wd" "$rc" "$lg"); r=$?
 expect "reuse: an invalid plan.json is replaced: exit code" "$r" 0
 expect "reuse: an invalid plan.json is replaced: the agent was asked" "$(order "$lg")" "PLAN a b c"
+rm -rf "$wd" "$rc"
+
+# replan: a valid plan whose own test was the dead end of the run before (that test failed twice on code that compiled, the run ended stuck)
+# is asked for again, once per work directory; every other ending, and a run the person steers, reuses it as before
+GOODA='sed -i.bak "/fn double/d" "$1"; printf "\nfn double(x: int) -> [] int { return x * 2; }\n" >> "$1"'
+BROKENA='sed -i.bak "/fn double/d" "$1"; printf "\nfn double(x: int) -> [] int { return x * ; }\n" >> "$1"'
+# a work directory, its recipes and a plan.sh that writes <plan>, after <sed> made a test of it one the right code cannot pass; a's recipe is
+# the right code, written over the one before. echoes "<workdir> <recipes> <log>"
+mkdead() { # sed-expression [plan]
+    set -- "$1" "${2:-$P/plan.json}" $(mk)
+    sed "$1" "$2" > "$4/bad.json"
+    printf 'cp "%s" "$1"\n' "$4/bad.json" > "$4/plan.sh"
+    printf '%s\n' "$GOODA" > "$4/a.sh"
+    echo "$3 $4 $5"
+}
+DEADA='s/"double(2) == 4"/"double(2) == 5"/'
+plans() { grep -c '^PLAN$' "$1"; }
+stage() { grep '^\[BUILD_STAGE\]	plan' "$1/run.log" | tail -1 | tr '\t' ':'; }
+replaced() { grep -c '"kind":"plan_replaced"' "$1/journal/events.jsonl"; }
+# dead plan replaced: the next plan is right, and the same right code verifies
+set -- $(mkdead "$DEADA"); wd=$1; rc=$2; lg=$3
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "replan: the first run is stuck" "$(verdict "$out")" stuck
+expect "replan: the first run: a failed its test twice, c needs a" "$(order "$lg")" "PLAN a a b"
+printf 'cp "%s" "$1"\n' "$P/plan.json" > "$rc/plan.sh"
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "replan: exit code" "$r" 0
+expect "replan: verdict" "$(verdict "$out")" done
+expect "replan: run.log names the unit and the test" "$(grep '^\[BUILD_STAGE\]	plan	replaced' "$wd/run.log" | tr '\t' ':')" "[BUILD_STAGE]:plan:replaced:a:test_a_1"
+expect "replan: the plan was asked for again, then a and c (b verified and is kept)" "$(order "$lg")" "PLAN a a b PLAN a c"
+expect "replan: the units" "$(units "$out")" "b:kept a:building a:verified c:building c:verified"
+expect "replan: one plan_replaced in the journal" "$(replaced "$wd")" 1
+grep '"kind":"plan_replaced"' "$wd/journal/events.jsonl" | grep -q '"unit":"a","test":"test_a_1"' || { echo "FAIL: replan: the event lacks the unit and the test" >&2; fail=1; }
+cmp -s "$wd/plan.json" "$P/plan.json" || { echo "FAIL: replan: plan.json is not the new plan" >&2; fail=1; }
+rm -rf "$wd" "$rc"
+# the dead end is one of the unit's own tests (`tests`, the B1 shape), not an example's
+set -- $(mkdead 's/"examples":\["double(2) == 4"/"tests":["pub fn test_a_dead() -> [] int { test.assert(double(2) == 5); return 0; }"],"examples":["double(2) == 4"/'); wd=$1; rc=$2; lg=$3
+out=$(run "$wd" "$rc" "$lg")
+expect "replan own test: the first run is stuck" "$(verdict "$out")" stuck
+printf 'cp "%s" "$1"\n' "$P/plan.json" > "$rc/plan.sh"
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "replan own test: exit code" "$r" 0
+expect "replan own test: run.log names the unit and the test" "$(grep '^\[BUILD_STAGE\]	plan	replaced' "$wd/run.log" | cut -f4,5 | tr '\t' ':')" "a:test_a_dead"
+rm -rf "$wd" "$rc"
+# once only: the planner writes the same wrong test again; the run after that reuses it
+set -- $(mkdead "$DEADA"); wd=$1; rc=$2; lg=$3
+run "$wd" "$rc" "$lg" > /dev/null
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "replan once: the second run re-plans" "$(stage "$wd")" "[BUILD_STAGE]:plan"
+expect "replan once: ... and is stuck again" "$(verdict "$out")" stuck
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "replan once: the third run reuses the plan" "$(stage "$wd")" "[BUILD_STAGE]:plan:reused"
+expect "replan once: two plan calls in three runs" "$(plans "$lg")" 2
+expect "replan once: one plan_replaced in the journal" "$(replaced "$wd")" 1
+rm -rf "$wd" "$rc"
+# not replaced: the run before ended otherwise, the plan is the person's, or the person steers this run. Each second run reuses the plan.
+reused() { # name workdir recipes log [run options...]: the second run, which must reuse the plan
+    name=$1; w2=$2; r2=$3; l2=$4; shift 4
+    o=$(run "$w2" "$r2" "$l2" "$@")
+    expect "not replaced ($name): run.log says reused" "$(stage "$w2")" "[BUILD_STAGE]:plan:reused"
+    expect "not replaced ($name): one plan call" "$(plans "$l2")" 1
+    expect "not replaced ($name): no plan_replaced" "$(replaced "$w2")" 0
+    rm -rf "$w2" "$r2"
+}
+# the run before ended provider_error (b's agent away after a's dead end)
+set -- $(mkdead "$DEADA"); wd=$1; rc=$2; lg=$3
+mv "$rc/b.sh" "$rc/b.sh.later"
+out=$(run "$wd" "$rc" "$lg")
+expect "not replaced (provider_error): the first run" "$(verdict "$out")" provider_error
+mv "$rc/b.sh.later" "$rc/b.sh"
+reused provider_error "$wd" "$rc" "$lg"
+# the stop was `refused`: the same compile error twice
+set -- $(mkdead "$DEADA"); wd=$1; rc=$2; lg=$3
+printf '%s\n' "$BROKENA" > "$rc/a.sh"
+out=$(run "$wd" "$rc" "$lg")
+expect "not replaced (refused): the first run" "$(verdict "$out")" stuck
+grep '"kind":"attempt"' "$wd/journal/events.jsonl" | grep '"unit":"a"' | tail -1 | grep -q '"outcome":"refused","decision":"signature"' || { echo "FAIL: not replaced (refused): a's last attempt is not a refusal stop" >&2; fail=1; }
+reused refused "$wd" "$rc" "$lg"
+# the stop was the ceiling, the plan's test and a compile error taking turns (the last attempt failed the test)
+set -- $(mkdead "$DEADA"); wd=$1; rc=$2; lg=$3
+rm -f "$rc/a.sh"; printf '%s\n' "$BROKENA" > "$rc/a.1.sh"; printf '%s\n' "$GOODA" > "$rc/a.2.sh"; printf '%s\n' "$BROKENA" > "$rc/a.3.sh"; printf '%s\n' "$GOODA" > "$rc/a.4.sh"
+out=$(run "$wd" "$rc" "$lg")
+expect "not replaced (ceiling): the first run" "$(verdict "$out")" stuck
+grep '"kind":"attempt"' "$wd/journal/events.jsonl" | grep '"unit":"a"' | tail -1 | grep -q '"outcome":"acceptance_failed","decision":"ceiling","signature":"acceptance:test test_a_1' || { echo "FAIL: not replaced (ceiling): a's last attempt is not a test failure at the ceiling" >&2; fail=1; }
+printf '%s\n' "$GOODA" > "$rc/a.sh"
+reused ceiling "$wd" "$rc" "$lg"
+# the failing signature is the unit's test file that did not compile, not a test of the plan
+set -- $(mkdead 's/"double(2) == 4"/"double(2) == true"/'); wd=$1; rc=$2; lg=$3
+out=$(run "$wd" "$rc" "$lg")
+expect "not replaced (test file): the first run" "$(verdict "$out")" stuck
+grep '"kind":"attempt"' "$wd/journal/events.jsonl" | grep '"unit":"a"' | tail -1 | grep -q '"outcome":"acceptance_failed","decision":"signature","signature":"acceptance:/' || { echo "FAIL: not replaced (test file): a's last attempt is not the test file's compile error" >&2; fail=1; }
+reused "test file" "$wd" "$rc" "$lg"
+# the person edited plan.json between the runs
+set -- $(mkdead "$DEADA"); wd=$1; rc=$2; lg=$3
+run "$wd" "$rc" "$lg" > /dev/null
+sed -i.bak 's/"is_big(3) == false"/"is_big(4) == false"/' "$wd/plan.json"; rm -f "$wd/plan.json.bak"
+reused edited "$wd" "$rc" "$lg"
+# the person continues the unit: --retry, --patch
+set -- $(mkdead "$DEADA"); wd=$1; rc=$2; lg=$3
+run "$wd" "$rc" "$lg" > /dev/null
+reused retry "$wd" "$rc" "$lg" --retry a --hint "multiply"
+set -- $(mkdead "$DEADA"); wd=$1; rc=$2; lg=$3
+run "$wd" "$rc" "$lg" > /dev/null
+printf 'fn double(x: int) -> [] int { return x * 2; }\n' > "$rc/patch.txt"
+reused patch "$wd" "$rc" "$lg" --patch a "$rc/patch.txt"
+# no --guide: nothing to ask, the plan is reused as before (not a usage error)
+set -- $(mkdead "$DEADA"); wd=$1; rc=$2; lg=$3
+run "$wd" "$rc" "$lg" > /dev/null
+out=$("$exe" "$CANCHO" "$B/brief.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --attempts 4 --agent-seconds 60 --jobs 1 2>&1); r=$?
+expect "not replaced (no --guide): exit code" "$r" 1
+expect "not replaced (no --guide): run.log says reused" "$(stage "$wd")" "[BUILD_STAGE]:plan:reused"
+expect "not replaced (no --guide): one plan call" "$(plans "$lg")" 1
+rm -rf "$wd" "$rc"
+# verified work kept: a and b verify, c's test is the dead end; after the re-plan a and b are re-checked and kept, only c is built
+set -- $(mkdead 's/"big_double(6) == true"/"big_double(6) == false"/'); wd=$1; rc=$2; lg=$3
+printf '%s\n' "$GOODA" > "$rc/a.sh"
+printf 'sed -i.bak "/fn big_double/d" "$1"; printf "\\nfn big_double(x: int) -> [] bool { return is_big(double(x)); }\\n" >> "$1"\n' > "$rc/c.sh"
+out=$(run "$wd" "$rc" "$lg")
+expect "replan kept: the first run is stuck on c" "$(units "$out")" "a:building a:verified b:building b:verified c:building c:failed"
+printf 'cp "%s" "$1"\n' "$P/plan.json" > "$rc/plan.sh"
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "replan kept: exit code" "$r" 0
+expect "replan kept: run.log names the unit and the test" "$(grep '^\[BUILD_STAGE\]	plan	replaced' "$wd/run.log" | cut -f4,5 | tr '\t' ':')" "c:test_c_1"
+expect "replan kept: a and b kept, c built" "$(units "$out")" "a:kept b:kept c:building c:verified"
+expect "replan kept: the agent calls" "$(order "$lg")" "PLAN a b c c PLAN c"
 rm -rf "$wd" "$rc"
 
 # invalid: the agent exits 0 with a plan the check refuses

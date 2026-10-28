@@ -787,6 +787,15 @@ pub fn plan_final[&h, &c, &z, &d, &p](heap: &!h Heap, clock: &c Clock, fs: &z Fs
     return end_event(heap, fs, dir, w);
 }
 
+// `plan_replaced`: the valid plan.json of the work directory is not reused, because `test` of unit `unit` was the dead end of the run before
+// (docs/build.md, "A plan whose own test is the dead end"); the plan agent is asked again. At most one per work directory.
+pub fn plan_replaced[&h, &c, &z, &d, &u, &t](heap: &!h Heap, clock: &c Clock, fs: &z Fs(""), dir: &d [byte], unit: &u [byte], test: &t [byte]) -> [heap, clock, fs_read(""), fs_write("")] int {
+    var w = begin_event(heap, clock_unix_ms(clock), "plan_replaced");
+    w = put_str(heap, w, "unit", unit);
+    w = put_str(heap, w, "test", test);
+    return end_event(heap, fs, dir, w);
+}
+
 // The number of records the unit's trail holds so far: its 
 pub fn attempts_so_far[&z, &p](fs: &z Fs(""), trail_path: &p [byte]) -> [fs_read("")] int {
     var n = 0;
