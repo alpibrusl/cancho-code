@@ -82,6 +82,12 @@ pub fn run[&h, &x, &c, &f, &m](heap: &!h Heap, exec: &x Exec(""), clock: &c Cloc
 // `run`, and the checker's whole answer too (what it printed, at most `most` bytes: a longer answer is an outage, never a cut one). The journal
 // (docs/journal.md) keeps it; the loop decides on the `Answer`.
 pub fn run_said[&h, &x, &c, &f, &m](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, file: &f [byte], cmd: &m [byte], most: int, timeout: int) -> [heap, exec(""), clock, poll] (Answer, buffer.Buffer) {
+    return run_said_as(heap, exec, clock, file, cmd, most, timeout, "rule", "\"refused\": []");
+}
+
+// `run_said` for a checker of another language (docs/profile.md `findings`): its refusals carry their rule under `key`, and a clean answer
+// (with exit 0) holds `clean`. `run_said` is this with cancho's `rule` and `"refused": []`.
+pub fn run_said_as[&h, &x, &c, &f, &m, &k, &v](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, file: &f [byte], cmd: &m [byte], most: int, timeout: int, key: &k [byte], clean_text: &v [byte]) -> [heap, exec(""), clock, poll] (Answer, buffer.Buffer) {
     region a {
         // The command is one shell invocation: `sh` is what the Exec
         // capability names, and the command string is the caller's.
@@ -111,7 +117,7 @@ pub fn run_said[&h, &x, &c, &f, &m](heap: &!h Heap, exec: &x Exec(""), clock: &c
                                 // is empty exactly when there was no
                                 // refusal — which is the verified case.
                                 borrow out as &o in {
-                                    sig = signature.of(heap, sig, buffer.bytes(o));
+                                    sig = signature.of_key(heap, sig, buffer.bytes(o), key);
                                 }
                                 // A refusal in the answer is a refusal. No refusal is
                                 // "verified" ONLY when the checker said so: exit 0 and
@@ -124,7 +130,7 @@ pub fn run_said[&h, &x, &c, &f, &m](heap: &!h Heap, exec: &x Exec(""), clock: &c
                                 // gate, docs/parity.md P2).
                                 var clean = false;
                                 borrow out as &o2 in {
-                                    clean = n == 0 && bytes.find(buffer.bytes(o2), "\"refused\": []") >= 0;
+                                    clean = n == 0 && bytes.find(buffer.bytes(o2), clean_text) >= 0;
                                 }
                                 borrow sig as &s in {
                                     if buffer.size(s) > 0 {

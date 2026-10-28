@@ -69,18 +69,33 @@ fn value_end[&h](hay: &h [byte], from: int) -> [] int {
 // empty; the driver reads an empty signature as `Outcome::Verified`, not
 // as a failure with a strange signature.
 pub fn of[&h, &j](heap: &!h Heap, out: buffer.Buffer, json: &j [byte]) -> [heap] buffer.Buffer {
+    return of_key(heap, out, json, "rule");
+}
+
+// `of`, with the rule read under `key` instead of `rule` (docs/profile.md `findings.key`: cancho-ui's findings say `code`). The scan is the
+// same: the literal `"<key>": "`, then `"message": "` after it.
+pub fn of_key[&h, &j, &k](heap: &!h Heap, out: buffer.Buffer, json: &j [byte], key: &k [byte]) -> [heap] buffer.Buffer {
     var b = out;
-    let rule_at = find(json, "\"rule\": \"", 0);
+    var needle = buffer.push(heap, buffer.empty(heap, len(key) + 8), byte_of(34));
+    needle = buffer.append(heap, needle, key);
+    needle = buffer.append(heap, needle, "\": \"");
+    var rule_at = -1;
+    var skip = 0;
+    borrow needle as &nq in {
+        skip = len(buffer.bytes(nq));
+        rule_at = find(json, buffer.bytes(nq), 0);
+    }
+    buffer.drop(heap, needle);
     if rule_at < 0 {
         return b;
     }
-    let rule_end = value_end(json, rule_at + 9);
+    let rule_end = value_end(json, rule_at + skip);
     let message_at = find(json, "\"message\": \"", rule_end);
     if message_at < 0 {
         return b;
     }
     let message_end = value_end(json, message_at + 12);
-    b = buffer.append(heap, b, json[rule_at + 9..rule_end]);
+    b = buffer.append(heap, b, json[rule_at + skip..rule_end]);
     b = buffer.push(heap, b, byte_of(58));
     // The message, normalised in place: backticked spans are kept verbatim
     // (the design says the direction matters — "expected `int`, found

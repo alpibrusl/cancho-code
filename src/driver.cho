@@ -151,18 +151,23 @@ fn agent_note[&h, &z, &e, &l, &w](heap: &!h Heap, fs: &z Fs(""), errp: &e [byte]
 // verified unit (the §4 contract), so a later regression has a clean
 // copy to restore from.
 pub fn run_issue[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int, accept: &q [byte], accept_timeout_ms: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
-    return run_core(heap, exec, clock, io, fs, file, agent, check_cmd, snap_prefix, max_attempts, k_signature, agent_timeout_ms, accept, accept_timeout_ms, "", "", 0, "", false);
+    return run_core(heap, exec, clock, io, fs, file, agent, check_cmd, snap_prefix, max_attempts, k_signature, agent_timeout_ms, accept, accept_timeout_ms, "", "", 0, "", false, "rule", "\"refused\": []");
 }
 
 // `run_issue` for a unit of a project, with the journal (docs/journal.md): every attempt of `unit` is recorded in `jdir` (the journal directory,
 // `<workdir>/journal`, which exists): the code, the checker's whole answer, the acceptance output, the diff, the agent's stderr (a copy of `<file>.agent.err`, which
 // the project driver's agent command writes) and what the agent left in `<file>.call/`; nothing else about the loop changes.
 pub fn run_issue_journal[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u, &ht](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int, accept: &q [byte], accept_timeout_ms: int, jdir: &j [byte], unit: &u [byte], base: int, hint: &ht [byte], human: bool) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
-    trail.make_call_dir(heap, exec, clock, file);
-    return run_core(heap, exec, clock, io, fs, file, agent, check_cmd, snap_prefix, max_attempts, k_signature, agent_timeout_ms, accept, accept_timeout_ms, jdir, unit, base, hint, human);
+    return run_issue_journal_as(heap, exec, clock, io, fs, file, agent, check_cmd, snap_prefix, max_attempts, k_signature, agent_timeout_ms, accept, accept_timeout_ms, jdir, unit, base, hint, human, "rule", "\"refused\": []");
 }
 
-fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u, &ht](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int, accept: &q [byte], accept_timeout_ms: int, jdir: &j [byte], unit: &u [byte], base: int, hint: &ht [byte], human: bool) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
+// `run_issue_journal` for a checker whose refusals carry their rule under `key` and whose clean answer holds `clean_text` (docs/profile.md `findings`).
+pub fn run_issue_journal_as[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u, &ht, &fk, &fc](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int, accept: &q [byte], accept_timeout_ms: int, jdir: &j [byte], unit: &u [byte], base: int, hint: &ht [byte], human: bool, key: &fk [byte], clean_text: &fc [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
+    trail.make_call_dir(heap, exec, clock, file);
+    return run_core(heap, exec, clock, io, fs, file, agent, check_cmd, snap_prefix, max_attempts, k_signature, agent_timeout_ms, accept, accept_timeout_ms, jdir, unit, base, hint, human, key, clean_text);
+}
+
+fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u, &ht, &fk, &fc](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), file: &f [byte], agent: &a [byte], check_cmd: &k [byte], snap_prefix: &p [byte], max_attempts: int, k_signature: int, agent_timeout_ms: int, accept: &q [byte], accept_timeout_ms: int, jdir: &j [byte], unit: &u [byte], base: int, hint: &ht [byte], human: bool, key: &fk [byte], clean_text: &fc [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] Ended {
     var tpath = buffer.append(heap, buffer.empty(heap, 256), file);
     tpath = buffer.append(heap, tpath, ".trail.jsonl");
     // A re-opened unit (`base` > 0, docs/build.md `--retry`) continues the unit's trail: the earlier records stay and the attempt numbers go on
@@ -292,7 +297,7 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u, &ht](heap: &!h Heap,
                                 var oc = loop_check.Outcome::Retryable;
                                 var sg = buffer.append(heap, buffer.empty(heap, 64), gave);
                                 if n == 0 {
-                                    let (answer, said_by_checker) = checker.run_said(heap, exec, clock, file, check_cmd, 4096, 30000);
+                                    let (answer, said_by_checker) = checker.run_said_as(heap, exec, clock, file, check_cmd, 4096, 30000, key, clean_text);
                                     buffer.drop(heap, jchk);
                                     jchk = said_by_checker;
                                     let checker.Answer { outcome, sig } = answer;
@@ -365,7 +370,8 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u, &ht](heap: &!h Heap,
                                         // stops checking between the two
                                         // runs is a regression the single
                                         // check would have certified.
-                                        let again = checker.run(heap, exec, clock, file, check_cmd, 4096, 30000);
+                                        let (again, again_said) = checker.run_said_as(heap, exec, clock, file, check_cmd, 4096, 30000, key, clean_text);
+                                        buffer.drop(heap, again_said);
                                         let checker.Answer { outcome, sig } = again;
                                         buffer.drop(heap, sig);
                                         match outcome {
