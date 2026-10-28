@@ -8,8 +8,8 @@ module build;
 //
 // Nothing here is new machinery: the plan agent is run the way the acceptance command is (`acceptance.run`: a shell command with
 // the file appended, a deadline, bounded output), the plan is checked by `plan.check`, the build is `project.run_logged`. A killed
-// run resumes because both steps leave their result in the work directory: a valid `plan.json` is not asked for again, `state.txt`
-// keeps the units that verified.
+// run resumes because both steps leave their result in the work directory: a valid `plan.json` is not asked for again (but for a plan whose
+// own test was the dead end of the run before, asked again once: dead_plan_test), `state.txt` keeps the units that verified.
 
 import acceptance;
 import plan;
@@ -309,6 +309,234 @@ fn ask_plan[&h, &x, &c, &z, &w, &k, &y](heap: &!h Heap, exec: &x Exec(""), clock
     return status;
 }
 
+// ---- a plan whose own test was the dead end ---------------------------------
+
+// Whether `name` is a test the plan `src` gives unit `unit`: one of the unit's own `tests` (`pub fn <name>(` or `pub fn <name>[`), or, for a unit
+// without them, the test the project driver writes for its k-th example (`test_<id>_<k>`, src/project.cho `write_tests`).
+fn plan_has_test[&h, &s, &u, &n](heap: &!h Heap, src: &s [byte], unit: &u [byte], name: &n [byte]) -> [heap] bool {
+    var found = false;
+    var paren = buffer.append(heap, buffer.empty(heap, 64), "pub fn ");
+    paren = buffer.append(heap, paren, name);
+    var bracket = buffer.append(heap, buffer.empty(heap, 64), "pub fn ");
+    bracket = buffer.append(heap, bracket, name);
+    paren = buffer.append(heap, paren, "(");
+    bracket = buffer.append(heap, bracket, "[");
+    // the example tests' prefix: `test_`, the id with every byte but a letter, a digit or `_` made `_`, and `_`
+    var prefix = buffer.append(heap, buffer.empty(heap, 32), "test_");
+    var q = 0;
+    while q < len(unit) {
+        let c = int_of(unit[q]);
+        if bytes.is_alpha(c) || bytes.is_digit(c) || c == 95 {
+            prefix = buffer.push(heap, prefix, unit[q]);
+        } else {
+            prefix = buffer.push(heap, prefix, byte_of(95));
+        }
+        q = q + 1;
+    }
+    prefix = buffer.append(heap, prefix, "_");
+    let tb = box_slice(heap, json.tape_len(src), 0);
+    borrow mut tb as &!tw in {
+        let tape = contents(tw);
+        if json.parse(src, tape) > 0 {
+            let us = json.get(src, tape, 0, "units");
+            var j = us + 1;
+            var left = json.count(tape, us);
+            while left > 0 {
+                if json.string_equals(src, tape, json.get(src, tape, j, "id"), unit) {
+                    let rt = json.get(src, tape, j, "tests");
+                    var raw = 0;
+                    if rt >= 0 {
+                        raw = json.count(tape, rt);
+                    }
+                    if raw > 0 {
+                        var k = rt + 1;
+                        var rl = raw;
+                        while rl > 0 {
+                            let t = trail.add_string(heap, buffer.empty(heap, 128), src, tape, k);
+                            borrow t as &tq in {
+                                borrow paren as &pq in {
+                                    borrow bracket as &bq in {
+                                        if bytes.find(buffer.bytes(tq), buffer.bytes(pq)) >= 0 || bytes.find(buffer.bytes(tq), buffer.bytes(bq)) >= 0 {
+                                            found = true;
+                                        }
+                                    }
+                                }
+                            }
+                            buffer.drop(heap, t);
+                            k = json.skip(tape, k);
+                            rl = rl - 1;
+                        }
+                    } else {
+                        let examples = json.count(tape, json.get(src, tape, j, "examples"));
+                        borrow prefix as &xq in {
+                            let px = buffer.bytes(xq);
+                            if len(name) > len(px) && bytes.starts_with(name, px) {
+                                var n = 0;
+                                var digits = true;
+                                var p = len(px);
+                                while p < len(name) {
+                                    let d = bytes.digit_of(int_of(name[p]));
+                                    if d < 0 || n > 100000 {
+                                        digits = false;
+                                    } else {
+                                        n = n * 10 + d;
+                                    }
+                                    p = p + 1;
+                                }
+                                if digits && n >= 1 && n <= examples {
+                                    found = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                j = json.skip(tape, j);
+                left = left - 1;
+            }
+        }
+    }
+    unbox_slice(heap, tb);
+    buffer.drop(heap, paren);
+    buffer.drop(heap, bracket);
+    buffer.drop(heap, prefix);
+    return found;
+}
+
+// `<unit><TAB><test>` when the plan about to be reused (`plan_src`) was the dead end of the run before, else empty. All of, for the last run the
+// journal (`jdir`) holds before this one (its `run_start` .. this run's `run_start`): it ended `stuck`; a unit's last attempt failed a test of
+// this plan (signature `acceptance:test <name> ... FAILED`, not a test file that did not compile) on code that compiled (`acceptance_failed`),
+// the same way twice (decision `signature`); that run built exactly this plan (its `plan_final` blob is these bytes: a plan the person edited
+// since is theirs); and no plan of this work directory was replaced before (`plan_replaced`: one re-plan per work directory).
+fn dead_plan_test[&h, &z, &d, &s](heap: &!h Heap, fs: &z Fs(""), jdir: &d [byte], plan_src: &s [byte]) -> [heap, fs_read("")] buffer.Buffer {
+    var out = buffer.empty(heap, 64);
+    var stuck = false;
+    var cand_unit = buffer.empty(heap, 32);
+    var cand_test = buffer.empty(heap, 32);
+    var plan_blob = buffer.empty(heap, 32);
+    let ep = trail.path_under(heap, jdir, "events.jsonl", "");
+    borrow ep as &eq in {
+        // the journal stops growing at 2 MiB (trail.journal_emit); a run may add one line past it
+        let (evs, evs_ok) = slurp(heap, fs, buffer.bytes(eq), 4194304);
+        borrow evs as &evb in {
+            let all = buffer.bytes(evb);
+            // where the last two runs began: the one before this, and this one (its run_start was just written)
+            var prev_rs = 0 - 1;
+            var cur_rs = 0 - 1;
+            var i = 0;
+            while evs_ok && i < len(all) {
+                var e = i;
+                while e < len(all) && int_of(all[e]) != 10 {
+                    e = e + 1;
+                }
+                if bytes.find(all[i..e], "\"kind\":\"run_start\"") >= 0 {
+                    prev_rs = cur_rs;
+                    cur_rs = i;
+                }
+                i = e + 1;
+            }
+            if evs_ok && prev_rs >= 0 && bytes.find(all, "\"kind\":\"plan_replaced\"") < 0 {
+                i = prev_rs;
+                while i < cur_rs {
+                    var e = i;
+                    while e < cur_rs && int_of(all[e]) != 10 {
+                        e = e + 1;
+                    }
+                    let line = all[i..e];
+                    let is_end = bytes.find(line, "\"kind\":\"run_end\"") >= 0;
+                    let is_plan = bytes.find(line, "\"kind\":\"plan_final\"") >= 0;
+                    let is_attempt = bytes.find(line, "\"kind\":\"attempt\"") >= 0;
+                    if is_end || is_plan || is_attempt {
+                        let tb = box_slice(heap, json.tape_len(line), 0);
+                        borrow mut tb as &!tw in {
+                            let tape = contents(tw);
+                            if json.parse(line, tape) > 0 {
+                                if is_end {
+                                    stuck = json.string_equals(line, tape, json.get(line, tape, 0, "verdict"), "stuck");
+                                } else if is_plan {
+                                    buffer.drop(heap, plan_blob);
+                                    plan_blob = trail.add_string(heap, buffer.empty(heap, 32), line, tape, json.get(line, tape, 0, "plan"));
+                                } else {
+                                    let un = json.get(line, tape, 0, "unit");
+                                    // a later attempt of the candidate's unit is its last one now
+                                    var same = false;
+                                    borrow cand_unit as &cu in {
+                                        same = len(buffer.bytes(cu)) > 0 && json.string_equals(line, tape, un, buffer.bytes(cu));
+                                    }
+                                    if same {
+                                        buffer.drop(heap, cand_unit);
+                                        buffer.drop(heap, cand_test);
+                                        cand_unit = buffer.empty(heap, 32);
+                                        cand_test = buffer.empty(heap, 32);
+                                    }
+                                    let sig = trail.add_string(heap, buffer.empty(heap, 64), line, tape, json.get(line, tape, 0, "signature"));
+                                    var name_at = 0 - 1;
+                                    var name_end = 0 - 1;
+                                    borrow sig as &sq in {
+                                        let s = buffer.bytes(sq);
+                                        let head = "acceptance:test ";
+                                        if json.string_equals(line, tape, json.get(line, tape, 0, "outcome"), "acceptance_failed")
+                                            && json.string_equals(line, tape, json.get(line, tape, 0, "decision"), "signature")
+                                            && bytes.starts_with(s, head) && bytes.ends_with(s, " FAILED") {
+                                            name_at = len(head);
+                                            name_end = name_at;
+                                            while name_end < len(s) && int_of(s[name_end]) != 32 {
+                                                name_end = name_end + 1;
+                                            }
+                                        }
+                                    }
+                                    if name_end > name_at && name_at > 0 {
+                                        buffer.drop(heap, cand_unit);
+                                        buffer.drop(heap, cand_test);
+                                        cand_unit = trail.add_string(heap, buffer.empty(heap, 32), line, tape, un);
+                                        borrow sig as &sq2 in {
+                                            cand_test = buffer.append(heap, buffer.empty(heap, 32), buffer.bytes(sq2)[name_at..name_end]);
+                                        }
+                                    }
+                                    buffer.drop(heap, sig);
+                                }
+                            }
+                        }
+                        unbox_slice(heap, tb);
+                    }
+                    i = e + 1;
+                }
+            }
+        }
+        buffer.drop(heap, evs);
+    }
+    buffer.drop(heap, ep);
+    // the rule's last two parts: the unit's test is one of this plan's, and that run's plan is this one, byte for byte
+    var holds = false;
+    borrow cand_unit as &cu in {
+        borrow cand_test as &ct in {
+            borrow plan_blob as &pb in {
+                let u = buffer.bytes(cu);
+                let t = buffer.bytes(ct);
+                if stuck && len(u) > 0 && len(t) > 0 && len(buffer.bytes(pb)) > 0 && plan_has_test(heap, plan_src, u, t) {
+                    let bp = trail.blob_path(heap, jdir, buffer.bytes(pb));
+                    borrow bp as &bpq in {
+                        let (was, was_ok) = slurp(heap, fs, buffer.bytes(bpq), 1048576);
+                        borrow was as &wq in {
+                            holds = was_ok && bytes.equal(buffer.bytes(wq), plan_src);
+                        }
+                        buffer.drop(heap, was);
+                    }
+                    buffer.drop(heap, bp);
+                }
+                if holds {
+                    out = buffer.append(heap, out, u);
+                    out = buffer.push(heap, out, byte_of(9));
+                    out = buffer.append(heap, out, t);
+                }
+            }
+        }
+    }
+    buffer.drop(heap, cand_unit);
+    buffer.drop(heap, cand_test);
+    buffer.drop(heap, plan_blob);
+    return out;
+}
+
 // ---- the run --------------------------------------------------------------
 
 // What a verdict word is as an exit code.
@@ -344,7 +572,8 @@ fn finish[&h, &i, &z, &l, &w, &b, &p, &m, &rt, &pt](heap: &!h Heap, io: &!i Io, 
 }
 
 // Build `brief` in `wd`: 0 done, 1 stuck or the final gate failed, 2 usage, 3 plan_failed, 4 provider_error. `guide` and `review_guide`
-// are the plan agent's (empty: none); an empty `contract` is none. With a valid plan.json already in `wd` the plan agent is not asked.
+// are the plan agent's (empty: none); an empty `contract` is none. With a valid plan.json already in `wd` the plan agent is not asked, unless
+// that plan's own test was the dead end of the run before (dead_plan_test; once per work directory).
 pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q, &rt, &ht, &pt, &pf, &av](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), checker: &k [byte], brief: &b [byte], wd: &w [byte], agent: &a [byte], provider: &p [byte], model: &m [byte], guide: &g [byte], review_guide: &r [byte], contract: &q [byte], review: bool, rounds: int, attempts: int, agent_ms: int, plan_ms: int, retry: &rt [byte], hint: &ht [byte], patch: &pt [byte], pfile: &pf [byte], jobs: int, argv0: &av [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write, err_write, pipe_read, child_signal] int {
     let started = clock_unix_ms(clock);
     let logp = project.in_wd(heap, wd, "run.log", "", "");
@@ -389,12 +618,36 @@ pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q, &rt, &ht, &pt
                     trail.run_start(heap, clock, fs, buffer.bytes(jq), brief, provider, model, review, rounds, attempts, agent_ms, plan_ms);
                 }
                 buffer.drop(heap, jd);
-                // A plan.json from an earlier run that the check accepts is kept.
+                // A plan.json from an earlier run that the check accepts is kept, unless its own test was the dead end of the run before:
+                // then, once per work directory, the plan agent is asked again (dead_plan_test). Not when the person continues a unit
+                // (`--retry`, `--patch`), and not without a guide to ask with.
                 let (old, readable) = slurp(heap, fs, pp, 1048576);
                 var units = 0 - 1;
                 if readable {
                     borrow old as &ob in {
                         units = judge(heap, io, fs, lg, buffer.bytes(ob), bt, false);
+                        if units >= 0 && len(retry) == 0 && len(patch) == 0 && len(guide) > 0 {
+                            let jd3 = trail.journal_dir(heap, wd);
+                            borrow jd3 as &jq3 in {
+                                let dead = dead_plan_test(heap, fs, buffer.bytes(jq3), buffer.bytes(ob));
+                                borrow dead as &dq in {
+                                    let dt = buffer.bytes(dq);
+                                    if len(dt) > 0 {
+                                        var said = buffer.append(heap, buffer.empty(heap, 96), "[BUILD_STAGE]\tplan\treplaced\t");
+                                        said = buffer.append(heap, said, dt);
+                                        said = buffer.append(heap, said, "\n");
+                                        borrow said as &sq in {
+                                            project.tell(heap, io, fs, lg, buffer.bytes(sq));
+                                        }
+                                        buffer.drop(heap, said);
+                                        trail.plan_replaced(heap, clock, fs, buffer.bytes(jq3), bytes.field(dt, 9, 1), bytes.field(dt, 9, 2));
+                                        units = 0 - 1;
+                                    }
+                                }
+                                buffer.drop(heap, dead);
+                            }
+                            buffer.drop(heap, jd3);
+                        }
                     }
                 }
                 buffer.drop(heap, old);
