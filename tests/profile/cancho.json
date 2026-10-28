@@ -1,0 +1,39 @@
+{
+ "profile": "cancho-build-profile/1",
+ "name": "cancho",
+ "ext": ".cho",
+ "files": {
+  "entry": "project.cho",
+  "main": "main.cho",
+  "tests": "tests-{id}.cho"
+ },
+ "commands": {
+  "check": [
+   "check",
+   "--std",
+   "--output",
+   "json",
+   "--backend",
+   "cranelift"
+  ],
+  "compile": [
+   "check",
+   "--std",
+   "--backend",
+   "cranelift"
+  ],
+  "test": [
+   "test",
+   "--std",
+   "--backend",
+   "cranelift"
+  ]
+ },
+ "units": "functions",
+ "unit_tests": "examples",
+ "findings": {
+  "key": "rule",
+  "clean": "\"refused\": []"
+ },
+ "primer": ""
+}
