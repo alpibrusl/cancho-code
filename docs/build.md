@@ -19,6 +19,7 @@ build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m>
 | `--plan-seconds N` | the cap on the whole plan call (900) |
 | `--memory <dir>` | an absolute directory with `lessons.jsonl` (mined from past journals by `scripts/cancho-lessons.sh`) and/or `facts.txt`; the unit agent adds what it knows about the refusal a unit just got, and your facts, to its prompt, and the journal records it ([memory.md](memory.md)). Without it the agent is exactly as before |
 | `--remember <text>` | with `--memory`: one line of your own (at most 160 bytes, no newline) appended to `<dir>/facts.txt` before the run; ten facts are the most a prompt carries. Nothing is written by the model |
+| `--profile <file>` | the language profile ([profile.md](profile.md)): the file names, the words after the checker for check and test, the findings key, the primer. Without it, the default: cancho, exactly as this page says. A malformed profile is exit 2 with `[PROFILE_ERROR]` lines and nothing run; under a profile other than the default the units are built one at a time (`--jobs 1`), `--patch` is refused, and a plan with `files` is `plan_failed` |
 
 Paths, provider and model go into shell command lines, so they may hold only letters, digits and `. _ / + : = @ % , -`. A path with `..` in it is refused (the file capability traps on it).
 
@@ -63,7 +64,7 @@ Exit 2 is a usage error (nothing was run). A killed run is resumed by running th
 | `trail-<id>.jsonl` | the unit's trail, kept whatever its outcome |
 | `agent-<id>.log` | the unit agent's standard error, per attempt, kept whatever the outcome ([docs/project.md](project.md)): where to look when a unit ends `provider_error` or `stuck` |
 | `usage.jsonl` | one JSON line per API call, plan and units, written by the agent |
-| `project.cho`, `main.cho`, `tests-<id>.cho`, ... | the project driver's files ([docs/project.md](project.md)); for a plan with `files` also every file of the plan beside `project.cho` (`<workdir>/tokens.cho`, ...: [multi-file.md](multi-file.md)) |
+| `project.cho`, `main.cho`, `tests-<id>.cho`, ... | the project driver's files ([docs/project.md](project.md)); for a plan with `files` also every file of the plan beside `project.cho` (`<workdir>/tokens.cho`, ...: [multi-file.md](multi-file.md)). Under `--profile` they are the profile's `files.entry`, `files.main` and `files.tests` ([profile.md](profile.md)) |
 | `journal/` | the whole story of the run: `events.jsonl` and `blobs/` ([journal.md](journal.md)) |
 | `run.log` | the lines below, appended by every run |
 | `build.json` | the run as a whole, rewritten after each stage and at the end |
@@ -105,7 +106,7 @@ The board ([dashboard.md](dashboard.md)) shows this command, ready to copy, in t
 
 ## Gate and authority
 
-`scripts/test-build.sh` runs the whole chain against a stand-in agent (no network, no key, no model): the happy path, the arguments each call gets, plan reuse, an invalid plan, a plan the agent gave up on, an unreachable agent, a build killed with SIGKILL and resumed, a failing unit, a stuck unit, a stuck unit continued with `--retry` and `--patch`, usage errors, and the fields of `build.json`. The authority report is pinned in [authority-build.json](authority-build.json) (`scripts/check-authority.sh --build`): the tool spawns processes and reads and writes files; it has no network.
+`scripts/test-build.sh` runs the whole chain against a stand-in agent (no network, no key, no model): the happy path, the arguments each call gets, plan reuse, an invalid plan, a plan the agent gave up on, an unreachable agent, a build killed with SIGKILL and resumed, a failing unit, a stuck unit, a stuck unit continued with `--retry` and `--patch`, usage errors, and the fields of `build.json`. `scripts/test-profile.sh` runs the same chain under `--profile` ([profile.md](profile.md)): every malformed profile refused with its tag, the profile that states the default being the default, and a renamed profile (other files, findings under `code`) that builds. The authority report is pinned in [authority-build.json](authority-build.json) (`scripts/check-authority.sh --build`): the tool spawns processes and reads and writes files; it has no network.
 
 ## The brief's names are the plan's names
 

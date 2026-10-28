@@ -4,7 +4,7 @@ edition 7;
 //
 //     build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [options]
 //
-// `--jobs N` (default 4) builds up to N units at once (docs/parallel.md; 1 is one at a time). Started again as `build --unit-worker ...` it is one such
+// `--profile <file>` is the language profile (docs/profile.md; without it, the default: cancho). `--jobs N` (default 4) builds up to N units at once (docs/parallel.md; 1 is one at a time). Started again as `build --unit-worker ...` it is one such
 // unit's worker, which the driver itself starts (not for people).
 //
 // Exit codes: 0 done, 1 stuck or the final gate failed, 2 usage, 3 plan_failed, 4 provider_error.
@@ -74,7 +74,7 @@ fn known[&a](name: &a [byte]) -> [] bool {
         || bytes.equal(name, "--review") || bytes.equal(name, "--contract") || bytes.equal(name, "--rounds") || bytes.equal(name, "--attempts")
         || bytes.equal(name, "--agent-seconds") || bytes.equal(name, "--plan-seconds")
         || bytes.equal(name, "--retry") || bytes.equal(name, "--hint") || bytes.equal(name, "--patch") || bytes.equal(name, "--jobs")
-        || bytes.equal(name, "--memory") || bytes.equal(name, "--remember");
+        || bytes.equal(name, "--memory") || bytes.equal(name, "--remember") || bytes.equal(name, "--profile");
 }
 
 // A word that goes into a shell command line: letters, digits and . _ / + : = @ % , - only.
@@ -175,6 +175,8 @@ fn main(world: World) -> [] int {
     var worker = false;
     var memory = "";
     var fact = "";
+    var profile = "";
+    var jobs_given = false;
     var given = false;
     borrow args as &g0 in {
         if arg_count(g0) >= 2 && bytes.equal(arg(g0, 1), "--unit-worker") {
@@ -186,7 +188,7 @@ fn main(world: World) -> [] int {
             if worker {
                 given = false;
             } else if arg_count(g) < 5 {
-                io.error_all(ci, "usage: build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [--guide <file>] [--review on --review-guide <file>] [--contract <file>] [--rounds N] [--attempts N] [--agent-seconds N] [--plan-seconds N] [--retry <unit> [--hint <text>]] [--patch <unit> <file>] [--memory <dir> [--remember <text>]] [--jobs N]\n");
+                io.error_all(ci, "usage: build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [--guide <file>] [--review on --review-guide <file>] [--contract <file>] [--rounds N] [--attempts N] [--agent-seconds N] [--plan-seconds N] [--retry <unit> [--hint <text>]] [--patch <unit> <file>] [--memory <dir> [--remember <text>]] [--jobs N] [--profile <file>]\n");
             } else {
                 given = true;
                 argv0 = arg(g, 0);
@@ -287,7 +289,14 @@ fn main(world: World) -> [] int {
                 if len(n_agent) > 0 {
                     agent_seconds = digits_of(n_agent);
                 }
+                // --profile <file> (docs/profile.md): read below, before anything is run or written
+                profile = opt(g, "--profile");
+                if given_opt(g, "--profile") && (len(profile) == 0 || bytes.find(profile, "..") >= 0 || plain(profile) == false) {
+                    io.error_all(ci, "build: --profile needs a file (letters, digits and . _ / + : = @ % , - only, no ..)\n");
+                    given = false;
+                }
                 let n_jobs = opt(g, "--jobs");
+                jobs_given = given_opt(g, "--jobs");
                 if given_opt(g, "--jobs") {
                     jobs = digits_of(n_jobs);
                     if jobs < 1 || jobs > 64 {
@@ -321,6 +330,35 @@ fn main(world: World) -> [] int {
                 borrow clock as &c in {
                     borrow mut console as &!i in {
                         borrow mut h as &!hh in {
+                            // The profile (docs/profile.md) is read before anything is run or written: a refused one is exit 2 with its lines.
+                            var tool = buffer.append(hh, buffer.empty(hh, 64), checker);
+                            var profiled = false;
+                            if given && len(profile) > 0 {
+                                let (t2, pstatus) = build.profile_tool(hh, i, fz, profile, checker);
+                                buffer.drop(hh, tool);
+                                tool = t2;
+                                if pstatus != 0 {
+                                    given = false;
+                                    remembered = false;
+                                }
+                                borrow tool as &tq0 in {
+                                    profiled = project.tool_profiled(buffer.bytes(tq0));
+                                }
+                            }
+                            // The parallel path and the patch splicer still name cancho's files and items (docs/profile.md, the next slices).
+                            if given && profiled && jobs_given && jobs > 1 {
+                                io.error_all(i, "[PROFILE_ERROR]\tprofile-jobs\t--jobs\tunder a profile other than the default the units are built one at a time (--jobs 1)\n");
+                                given = false;
+                                remembered = false;
+                            }
+                            if given && profiled && len(patch) > 0 {
+                                io.error_all(i, "[PROFILE_ERROR]\tprofile-patch\t--patch\t--patch splices cancho items: it runs only under the default profile\n");
+                                given = false;
+                                remembered = false;
+                            }
+                            if profiled {
+                                jobs = 1;
+                            }
                             if given && len(fact) > 0 && remember(hh, fz, i, memory, bytes.trim(fact)) != 0 {
                                 given = false;
                                 remembered = false;
@@ -331,13 +369,24 @@ fn main(world: World) -> [] int {
                                     agent2 = buffer.append(hh, agent2, " --memory ");
                                     agent2 = buffer.append(hh, agent2, memory);
                                 }
+                                // the profile's primer, for the plan agent and every unit's
+                                borrow tool as &tq1 in {
+                                    let primer = project.tool_get(buffer.bytes(tq1), "primer", "");
+                                    if len(primer) > 0 {
+                                        agent2 = buffer.append(hh, agent2, " --primer ");
+                                        agent2 = buffer.append(hh, agent2, primer);
+                                    }
+                                }
                                 borrow agent2 as &a2 in {
-                                status = build.run(hh, x, c, i, fz, checker, brief, wd, buffer.bytes(a2), provider, model, guide, review_guide, contract, review, rounds, attempts, agent_seconds * 1000, plan_seconds * 1000, retry, hint, patch, pfile, jobs, argv0);
+                                borrow tool as &tq in {
+                                status = build.run(hh, x, c, i, fz, buffer.bytes(tq), brief, wd, buffer.bytes(a2), provider, model, guide, review_guide, contract, review, rounds, attempts, agent_seconds * 1000, plan_seconds * 1000, retry, hint, patch, pfile, jobs, argv0);
+                                }
                                 }
                                 buffer.drop(hh, agent2);
                             } else if remembered {
                                 io.error_all(i, "build: the brief cannot be read\n");
                             }
+                            buffer.drop(hh, tool);
                         }
                     }
                 }

@@ -123,8 +123,7 @@ out=$(run "$wrap" "$wd" "$rc" "$lg" --profile "$T/renamed.json"); r=$?
 expect "key in use: exit code" "$r" 0
 expect "key in use: verdict" "$(verdict "$out")" done
 expect "key in use: a took two attempts" "$(grep -c '^a$' "$lg")" 2
-grep -q '"signature":"type-mismatch:expected `int`, found `bool`"' "$wd/trail-a.jsonl" \
-    || { echo "FAIL: key in use: the trail of a has no type-mismatch signature" >&2; fail=1; }
+expect "key in use: the trail of a" "$(grep -o '"outcome":"[a-z]*","sig":"[^"]*"' "$wd/trail-a.jsonl" | tr '\n' ' ')" '"outcome":"refused","sig":"type-mismatch:expected `int`, found `bool`" "outcome":"verified","sig":"" '
 # the mutant: the same profile reading `rule`
 sed 's/"key": "code"/"key": "rule"/' "$T/renamed.json" > "$tmp/renamed-rule.json"
 set -- $(mk); wd=$1; rc=$2; lg=$3
@@ -132,6 +131,7 @@ refused_first "$rc"
 out=$(run "$wrap" "$wd" "$rc" "$lg" --profile "$tmp/renamed-rule.json"); r=$?
 expect "key mutant: exit code" "$r" 4
 expect "key mutant: verdict" "$(verdict "$out")" provider_error
+expect "key mutant: the trail of a" "$(grep -o '"outcome":"[a-z]*"' "$wd/trail-a.jsonl" | head -1)" '"outcome":"outage"'
 
 # primer
 printf 'a primer\n' > "$tmp/primer.md"
@@ -159,6 +159,6 @@ expect "combo files: verdict" "$(verdict "$out")" plan_failed
 expect "combo files: the refusal" "$(printf '%s\n' "$out" | grep '^\[PLAN_ERROR\]' | cut -f2 | sort -u)" profile-files
 expect "combo files: no unit agent" "$(cat "$lg")" PLAN
 
-rm -rf "$tmp"
+[ -n "${KEEP:-}" ] || rm -rf "$tmp"
 [ "$fail" = 0 ] && echo "profile gate: every case held"
 exit $fail

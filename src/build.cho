@@ -40,7 +40,7 @@ fn slurp[&h, &f, &p](heap: &!h Heap, fs: &f Fs(""), path: &p [byte], cap: int) -
 
 // How the plan in `src` stands: -1 when the plan check refuses it, else the number of units. With `show`, the check's report
 // (its `[PLAN_ERROR]` lines and `[PLAN]` line) goes to the console and the log.
-fn judge[&h, &i, &z, &l, &s, &b](heap: &!h Heap, io: &!i Io, fs: &z Fs(""), log: &l [byte], src: &s [byte], brief: &b [byte], show: bool) -> [heap, io_write, fs_read(""), fs_write("")] int {
+fn judge[&h, &i, &z, &l, &s, &b, &k](heap: &!h Heap, io: &!i Io, fs: &z Fs(""), log: &l [byte], src: &s [byte], brief: &b [byte], show: bool, tool: &k [byte]) -> [heap, io_write, fs_read(""), fs_write("")] int {
     let (out, code) = plan.check(heap, src);
     if show {
         borrow out as &o in {
@@ -50,6 +50,23 @@ fn judge[&h, &i, &z, &l, &s, &b](heap: &!h Heap, io: &!i Io, fs: &z Fs(""), log:
     buffer.drop(heap, out);
     if code != 0 {
         return 0 - 1;
+    }
+    // A plan with `files` is cancho's module system (docs/multi-file.md): under a profile other than the default it is refused (docs/profile.md).
+    if project.tool_profiled(tool) {
+        var declared = 0;
+        let pb = box_slice(heap, json.tape_len(src), 0);
+        borrow mut pb as &!pw in {
+            let ptape = contents(pw);
+            json.parse(src, ptape);
+            declared = plan.files_declared(src, ptape);
+        }
+        unbox_slice(heap, pb);
+        if declared > 0 {
+            if show {
+                project.tell(heap, io, fs, log, "[PLAN_ERROR]\tprofile-files\tfiles\ta plan with `files` is built only under the default profile (docs/profile.md): write every unit into the one entry file\n");
+            }
+            return 0 - 1;
+        }
     }
     // The names the brief states must be the plan's: a plan that renames them builds a different API than the one asked for. The plan agent runs the
     // same check in each of its rounds (src/cancho_agent.cho); this one is the backstop for a plan.json that was not written by this run.
@@ -127,9 +144,9 @@ fn scaffold[&h, &s](heap: &!h Heap, src: &s [byte]) -> [heap] buffer.Buffer {
     return b;
 }
 
-// Create project.cho from the scaffold when there is none (a resumed run keeps the one it has).
-fn make_project[&h, &z, &w, &s](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], src: &s [byte]) -> [heap, fs_read(""), fs_write("")] int {
-    let path = project.in_wd(heap, wd, "project.cho", "", "");
+// Create project.cho (the profile's entry) from the scaffold when there is none (a resumed run keeps the one it has).
+fn make_project[&h, &z, &w, &s, &k](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], src: &s [byte], tool: &k [byte]) -> [heap, fs_read(""), fs_write("")] int {
+    let path = project.in_wd(heap, wd, project.tool_entry(tool), "", "");
     var r = 0;
     borrow path as &pb in {
         let (old, ok) = slurp(heap, fs, buffer.bytes(pb), 16777216);
@@ -309,6 +326,389 @@ fn ask_plan[&h, &x, &c, &z, &w, &k, &y](heap: &!h Heap, exec: &x Exec(""), clock
     return status;
 }
 
+// ---- the language profile (docs/profile.md) -------------------------------
+//
+// `--profile <file>` is read here, before anything else, and turned into the project driver's toolchain (`src/project.cho` `tool_get`): the
+// checker's path, then one `key<TAB>value` line per field that differs from the default. A profile that states the default is the default:
+// its toolchain is the checker's path alone.
+
+// One `[PROFILE_ERROR]<TAB><tag><TAB><where><TAB><message>` line appended to `b`.
+fn perr[&h, &w](heap: &!h Heap, b: buffer.Buffer, tag: &static [byte], at: &w [byte], msg: &static [byte]) -> [heap] buffer.Buffer {
+    var r = buffer.append(heap, b, "[PROFILE_ERROR]\t");
+    r = buffer.append(heap, r, tag);
+    r = buffer.push(heap, r, byte_of(9));
+    r = buffer.append(heap, r, at);
+    r = buffer.push(heap, r, byte_of(9));
+    r = buffer.append(heap, r, msg);
+    return buffer.push(heap, r, byte_of(10));
+}
+
+// A byte of a word that goes into a shell command line: letters, digits and . _ + : = @ % , - (and `/` when `slash`).
+fn word_byte(c: int, slash: bool) -> [] bool {
+    return bytes.is_alpha(c) || bytes.is_digit(c) || c == 46 || c == 95 || c == 43 || c == 58 || c == 61 || c == 64 || c == 37 || c == 44 || c == 45 || (slash && c == 47);
+}
+
+fn word_ok[&a](text: &a [byte], slash: bool) -> [] bool {
+    if len(text) == 0 {
+        return false;
+    }
+    var i = 0;
+    while i < len(text) {
+        if word_byte(int_of(text[i]), slash) == false {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+// Is `name` one of the space-separated words of `list`?
+fn listed[&n](list: &static [byte], name: &n [byte]) -> [] bool {
+    var a = 0;
+    while a < len(list) {
+        var e = a;
+        while e < len(list) && int_of(list[e]) != 32 {
+            e = e + 1;
+        }
+        if bytes.equal(list[a..e], name) {
+            return true;
+        }
+        a = e + 1;
+    }
+    return false;
+}
+
+// The closed shape of the object at `obj`: a key `allowed` does not list is `profile-unknown-key`, a key it lists that is absent is
+// `profile-missing-key`.
+fn closed[&h, &s, &t](heap: &!h Heap, errs: buffer.Buffer, src: &s [byte], tape: &t [int], obj: int, allowed: &static [byte]) -> [heap] buffer.Buffer {
+    var b = errs;
+    var j = obj + 1;
+    var left = json.count(tape, obj);
+    while left > 0 {
+        let k = json.string_view(src, tape, j);
+        if listed(allowed, k) == false {
+            b = perr(heap, b, "profile-unknown-key", k, "the schema has no such key (docs/profile.md)");
+        }
+        j = json.skip(tape, j + 1);
+        left = left - 1;
+    }
+    var a = 0;
+    while a < len(allowed) {
+        var e = a;
+        while e < len(allowed) && int_of(allowed[e]) != 32 {
+            e = e + 1;
+        }
+        if json.get(src, tape, obj, allowed[a..e]) < 0 {
+            b = perr(heap, b, "profile-missing-key", allowed[a..e], "every key of the schema is required (docs/profile.md)");
+        }
+        a = e + 1;
+    }
+    return b;
+}
+
+// The string under `key` of `obj` as written (an escaped string is not plain and never a word), and whether it is a string at all. A key that is
+// absent is already `profile-missing-key`; one that is not a string is `profile-type` here.
+fn text_of[&h, &s, &t](heap: &!h Heap, errs: buffer.Buffer, src: &s [byte], tape: &t [int], obj: int, key: &static [byte]) -> [heap] (buffer.Buffer, &s [byte], bool) {
+    let n = json.get(src, tape, obj, key);
+    if n < 0 {
+        return (errs, src[0..0], false);
+    }
+    if json.is_string(tape, n) == false {
+        return (perr(heap, errs, "profile-type", key, "a string is wanted"), src[0..0], false);
+    }
+    return (errs, json.string_view(src, tape, n), true);
+}
+
+// The words of the list under `key` of `obj`, joined by spaces, appended to `out` (empty when the list is not a list of words; the refusal is in `errs`).
+fn words_of[&h, &s, &t](heap: &!h Heap, errs: buffer.Buffer, out: buffer.Buffer, src: &s [byte], tape: &t [int], obj: int, key: &static [byte]) -> [heap] (buffer.Buffer, buffer.Buffer) {
+    var b = errs;
+    var o = out;
+    let n = json.get(src, tape, obj, key);
+    if n < 0 {
+        return (b, o);
+    }
+    if json.is_array(tape, n) == false || json.count(tape, n) == 0 {
+        return (perr(heap, b, "profile-type", key, "a list of one or more words is wanted"), o);
+    }
+    var j = n + 1;
+    var left = json.count(tape, n);
+    var first = true;
+    while left > 0 {
+        if json.is_string(tape, j) == false {
+            b = perr(heap, b, "profile-type", key, "every element is a string");
+        } else if json.string_plain(tape, j) == false || word_ok(json.string_view(src, tape, j), false) == false {
+            b = perr(heap, b, "profile-word", key, "a word holds only letters, digits and . _ + : = @ % , -");
+        } else {
+            if first == false {
+                o = buffer.push(heap, o, byte_of(32));
+            }
+            o = buffer.append(heap, o, json.string_view(src, tape, j));
+            first = false;
+        }
+        j = json.skip(tape, j);
+        left = left - 1;
+    }
+    return (b, o);
+}
+
+// A file name of the profile: plain, no `/`, no `..`.
+fn name_ok[&a](name: &a [byte]) -> [] bool {
+    return word_ok(name, false) && bytes.find(name, "..") < 0;
+}
+
+// `key<TAB>value` on a line of its own after `tool`, when `value` is not the default `dflt`.
+fn put_field[&h, &v](heap: &!h Heap, tool: buffer.Buffer, key: &static [byte], value: &v [byte], dflt: &static [byte]) -> [heap] buffer.Buffer {
+    if bytes.equal(value, dflt) {
+        return tool;
+    }
+    var r = buffer.push(heap, tool, byte_of(10));
+    r = buffer.append(heap, r, key);
+    r = buffer.push(heap, r, byte_of(9));
+    return buffer.append(heap, r, value);
+}
+
+// Check the profile in `src` (docs/profile.md) and build the toolchain for `checker` from it: (toolchain, refusals). The refusals are empty
+// exactly when the profile is good.
+fn profile_parse[&h, &z, &s, &k](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], checker: &k [byte]) -> [heap, fs_read("")] (buffer.Buffer, buffer.Buffer) {
+    var errs = buffer.empty(heap, 256);
+    var tool = buffer.append(heap, buffer.empty(heap, 256), checker);
+    let tb = box_slice(heap, json.tape_len(src), 0);
+    borrow mut tb as &!tw in {
+        let tape = contents(tw);
+        if json.parse(src, tape) < 0 || json.is_object(tape, 0) == false {
+            errs = perr(heap, errs, "profile-json", "-", "a profile is one JSON object");
+        } else {
+            errs = closed(heap, errs, src, tape, 0, "profile name ext files commands units unit_tests findings primer");
+            let (e1, version, v_ok) = text_of(heap, errs, src, tape, 0, "profile");
+            errs = e1;
+            if v_ok && bytes.equal(version, "cancho-build-profile/1") == false {
+                errs = perr(heap, errs, "profile-version", "profile", "this build reads \"cancho-build-profile/1\"");
+            }
+            let (e2, pname, n_ok) = text_of(heap, errs, src, tape, 0, "name");
+            errs = e2;
+            if n_ok && word_ok(pname, false) == false {
+                errs = perr(heap, errs, "profile-value", "name", "a non-empty word of letters, digits and . _ + : = @ % , -");
+            }
+            // units and unit_tests: words of the schema, of which this build runs the cancho ones
+            let (e3, units, u_ok) = text_of(heap, errs, src, tape, 0, "units");
+            errs = e3;
+            if u_ok && bytes.equal(units, "components") {
+                errs = perr(heap, errs, "profile-not-implemented", "units", "\"components\" is in the schema and not built yet (docs/profile.md, the next slices)");
+            } else if u_ok && bytes.equal(units, "functions") == false {
+                errs = perr(heap, errs, "profile-value", "units", "\"functions\" or \"components\"");
+            }
+            let (e4, ut, ut_ok) = text_of(heap, errs, src, tape, 0, "unit_tests");
+            errs = e4;
+            var trace = false;
+            if ut_ok && bytes.equal(ut, "trace") {
+                trace = true;
+                errs = perr(heap, errs, "profile-not-implemented", "unit_tests", "\"trace\" is in the schema and not built yet (docs/profile.md, the next slices)");
+            } else if ut_ok && bytes.equal(ut, "examples") == false {
+                errs = perr(heap, errs, "profile-value", "unit_tests", "\"examples\" or \"trace\"");
+            }
+            // ext
+            let (e5, ext, x_ok) = text_of(heap, errs, src, tape, 0, "ext");
+            errs = e5;
+            var ext_good = false;
+            if x_ok {
+                ext_good = len(ext) >= 2 && len(ext) <= 9 && int_of(ext[0]) == 46;
+                var xi = 1;
+                while ext_good && xi < len(ext) {
+                    if bytes.is_alpha(int_of(ext[xi])) == false && bytes.is_digit(int_of(ext[xi])) == false {
+                        ext_good = false;
+                    }
+                    xi = xi + 1;
+                }
+                if ext_good == false {
+                    errs = perr(heap, errs, "profile-name", "ext", "`.` and 1 to 8 letters or digits");
+                }
+            }
+            // files
+            let fo = json.get(src, tape, 0, "files");
+            if fo >= 0 && json.is_object(tape, fo) == false {
+                errs = perr(heap, errs, "profile-type", "files", "an object is wanted");
+            } else if fo >= 0 {
+                errs = closed(heap, errs, src, tape, fo, "entry main tests");
+                let (e6, entry, en_ok) = text_of(heap, errs, src, tape, fo, "entry");
+                errs = e6;
+                let (e7, mainf, m_ok) = text_of(heap, errs, src, tape, fo, "main");
+                errs = e7;
+                let (e8, tests, t_ok) = text_of(heap, errs, src, tape, fo, "tests");
+                errs = e8;
+                if en_ok {
+                    if name_ok(entry) == false {
+                        errs = perr(heap, errs, "profile-word", "entry", "a file name of letters, digits and . _ + : = @ % , -, no `/`, no `..`");
+                    } else if ext_good && bytes.ends_with(entry, ext) == false {
+                        errs = perr(heap, errs, "profile-name", "entry", "the entry ends in `ext`");
+                    }
+                }
+                if m_ok && len(mainf) == 0 {
+                    errs = perr(heap, errs, "profile-not-implemented", "main", "\"\" (no main file) is in the schema and not built yet (docs/profile.md, the next slices)");
+                } else if m_ok {
+                    if name_ok(mainf) == false {
+                        errs = perr(heap, errs, "profile-word", "main", "a file name of letters, digits and . _ + : = @ % , -, no `/`, no `..` (or \"\": none)");
+                    } else if ext_good && bytes.ends_with(mainf, ext) == false {
+                        errs = perr(heap, errs, "profile-name", "main", "the main file ends in `ext`");
+                    } else if en_ok && bytes.equal(mainf, entry) {
+                        errs = perr(heap, errs, "profile-name", "main", "the main file and the entry are two files");
+                    }
+                }
+                if t_ok {
+                    let at = bytes.find(tests, "{id}");
+                    if at < 0 || bytes.find(tests[at + 4..len(tests)], "{id}") >= 0 {
+                        errs = perr(heap, errs, "profile-name", "tests", "`{id}` exactly once: it is the unit's id");
+                    } else if (at > 0 && name_ok(tests[0..at]) == false) || (at + 4 < len(tests) && name_ok(tests[at + 4..len(tests)]) == false) {
+                        errs = perr(heap, errs, "profile-word", "tests", "a file name of letters, digits and . _ + : = @ % , -, no `/`, no `..`, and `{id}`");
+                    } else if trace && bytes.ends_with(tests, ".json") == false {
+                        errs = perr(heap, errs, "profile-name", "tests", "a trace ends in `.json`");
+                    } else if trace == false && ext_good && bytes.ends_with(tests, ext) == false {
+                        errs = perr(heap, errs, "profile-name", "tests", "the tests file ends in `ext`");
+                    } else {
+                        tool = put_field(heap, tool, "tests_pre", tests[0..at], "tests-");
+                        tool = put_field(heap, tool, "tests_suf", tests[at + 4..len(tests)], ".cho");
+                    }
+                }
+                if en_ok {
+                    tool = put_field(heap, tool, "entry", entry, "project.cho");
+                }
+                if m_ok {
+                    tool = put_field(heap, tool, "main", mainf, "main.cho");
+                }
+            }
+            // commands
+            let co = json.get(src, tape, 0, "commands");
+            if co >= 0 && json.is_object(tape, co) == false {
+                errs = perr(heap, errs, "profile-type", "commands", "an object is wanted");
+            } else if co >= 0 {
+                errs = closed(heap, errs, src, tape, co, "check compile test");
+                let (e9, wc) = words_of(heap, errs, buffer.empty(heap, 64), src, tape, co, "check");
+                errs = e9;
+                borrow wc as &wcq in {
+                    if len(buffer.bytes(wcq)) > 0 {
+                        tool = put_field(heap, tool, "check", buffer.bytes(wcq), "check --std --output json --backend cranelift");
+                    }
+                }
+                buffer.drop(heap, wc);
+                let (e10, wp) = words_of(heap, errs, buffer.empty(heap, 64), src, tape, co, "compile");
+                errs = e10;
+                borrow wp as &wpq in {
+                    if len(buffer.bytes(wpq)) > 0 {
+                        tool = put_field(heap, tool, "compile", buffer.bytes(wpq), "check --std --backend cranelift");
+                    }
+                }
+                buffer.drop(heap, wp);
+                let (e11, wt) = words_of(heap, errs, buffer.empty(heap, 64), src, tape, co, "test");
+                errs = e11;
+                borrow wt as &wtq in {
+                    if len(buffer.bytes(wtq)) > 0 {
+                        tool = put_field(heap, tool, "test", buffer.bytes(wtq), "test --std --backend cranelift");
+                    }
+                }
+                buffer.drop(heap, wt);
+            }
+            // findings
+            let ko = json.get(src, tape, 0, "findings");
+            if ko >= 0 && json.is_object(tape, ko) == false {
+                errs = perr(heap, errs, "profile-type", "findings", "an object is wanted");
+            } else if ko >= 0 {
+                errs = closed(heap, errs, src, tape, ko, "key clean");
+                let (e12, fkey, k_ok) = text_of(heap, errs, src, tape, ko, "key");
+                errs = e12;
+                if k_ok {
+                    var kg = len(fkey) >= 1 && len(fkey) <= 32;
+                    var ki = 0;
+                    while kg && ki < len(fkey) {
+                        if bytes.is_lower(int_of(fkey[ki])) == false && int_of(fkey[ki]) != 95 {
+                            kg = false;
+                        }
+                        ki = ki + 1;
+                    }
+                    if kg {
+                        tool = put_field(heap, tool, "key", fkey, "rule");
+                    } else {
+                        errs = perr(heap, errs, "profile-value", "findings.key", "1 to 32 of a-z and _");
+                    }
+                }
+                let cn = json.get(src, tape, ko, "clean");
+                if cn >= 0 && json.is_string(tape, cn) == false {
+                    errs = perr(heap, errs, "profile-type", "clean", "a string is wanted");
+                } else if cn >= 0 {
+                    let cl = json.string_length(src, tape, cn);
+                    if cl <= 0 || cl > 256 {
+                        errs = perr(heap, errs, "profile-value", "findings.clean", "1 to 256 bytes, no tab, no newline");
+                    } else {
+                        let cb = box_slice(heap, cl, byte_of(0));
+                        borrow mut cb as &!cw in {
+                            json.string_into(src, tape, cn, contents(cw));
+                            let ct = contents(cw);
+                            if bytes.find(ct, "\t") >= 0 || bytes.find(ct, "\n") >= 0 || bytes.find(ct, "\r") >= 0 {
+                                errs = perr(heap, errs, "profile-value", "findings.clean", "1 to 256 bytes, no tab, no newline");
+                            } else {
+                                tool = put_field(heap, tool, "clean", ct, "\"refused\": []");
+                            }
+                        }
+                        unbox_slice(heap, cb);
+                    }
+                }
+            }
+            // primer
+            let (e13, primer, p_ok) = text_of(heap, errs, src, tape, 0, "primer");
+            errs = e13;
+            if p_ok && len(primer) > 0 {
+                if int_of(primer[0]) != 47 || word_ok(primer, true) == false || bytes.find(primer, "..") >= 0 {
+                    errs = perr(heap, errs, "profile-value", "primer", "\"\" or an absolute path of letters, digits and . _ / + : = @ % , -, no `..`");
+                } else {
+                    let (pt, pread) = slurp(heap, fs, primer, 16777216);
+                    buffer.drop(heap, pt);
+                    if pread == false {
+                        errs = perr(heap, errs, "profile-primer", "primer", "the primer cannot be read");
+                    } else {
+                        tool = put_field(heap, tool, "primer", primer, "");
+                    }
+                }
+            }
+        }
+    }
+    unbox_slice(heap, tb);
+    return (tool, errs);
+}
+
+// The toolchain for `checker` under the profile in the file `path`: (toolchain, 0); or (the checker's path, 2) when the profile is refused, its
+// `[PROFILE_ERROR]` lines on standard error. Nothing is written.
+pub fn profile_tool[&h, &i, &z, &p, &k](heap: &!h Heap, io: &!i Io, fs: &z Fs(""), path: &p [byte], checker: &k [byte]) -> [heap, fs_read(""), err_write] (buffer.Buffer, int) {
+    let (text, ok) = slurp(heap, fs, path, 65537);
+    var tool = buffer.empty(heap, 8);
+    var errs = buffer.empty(heap, 64);
+    var size = 0;
+    borrow text as &tq in {
+        size = len(buffer.bytes(tq));
+        if ok && size > 0 && size <= 65536 {
+            let (t2, e2) = profile_parse(heap, fs, buffer.bytes(tq), checker);
+            buffer.drop(heap, tool);
+            buffer.drop(heap, errs);
+            tool = t2;
+            errs = e2;
+        }
+    }
+    buffer.drop(heap, text);
+    if ok == false || size == 0 || size > 65536 {
+        errs = perr(heap, errs, "profile-unreadable", path, "the profile cannot be read, is empty, or is larger than 64 KiB");
+    }
+    var status = 0;
+    borrow errs as &eq in {
+        if len(buffer.bytes(eq)) > 0 {
+            io.error_all(io, buffer.bytes(eq));
+            status = 2;
+        }
+    }
+    buffer.drop(heap, errs);
+    if status != 0 {
+        buffer.drop(heap, tool);
+        return (buffer.append(heap, buffer.empty(heap, 64), checker), 2);
+    }
+    return (tool, 0);
+}
+
 // ---- the run --------------------------------------------------------------
 
 // What a verdict word is as an exit code.
@@ -365,7 +765,7 @@ pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q, &rt, &ht, &pt
                 var prior_units = 0 - 1;
                 if prior_ok {
                     borrow prior as &prb in {
-                        prior_units = judge(heap, io, fs, lg, buffer.bytes(prb), bt, false);
+                        prior_units = judge(heap, io, fs, lg, buffer.bytes(prb), bt, false, checker);
                         if prior_units >= 0 && project.redo_check(heap, io, fs, buffer.bytes(prb), retry, patch, pfile) != 0 {
                             redo_bad = true;
                         }
@@ -394,7 +794,7 @@ pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q, &rt, &ht, &pt
                 var units = 0 - 1;
                 if readable {
                     borrow old as &ob in {
-                        units = judge(heap, io, fs, lg, buffer.bytes(ob), bt, false);
+                        units = judge(heap, io, fs, lg, buffer.bytes(ob), bt, false, checker);
                     }
                 }
                 buffer.drop(heap, old);
@@ -430,7 +830,7 @@ pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q, &rt, &ht, &pt
                         let (fresh, readable2) = slurp(heap, fs, pp, 1048576);
                         if readable2 && asked_status == 0 {
                             borrow fresh as &fb in {
-                                units = judge(heap, io, fs, lg, buffer.bytes(fb), bt, true);
+                                units = judge(heap, io, fs, lg, buffer.bytes(fb), bt, true, checker);
                             }
                         }
                         buffer.drop(heap, fresh);
@@ -456,7 +856,7 @@ pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q, &rt, &ht, &pt
                     let (text, readable3) = slurp(heap, fs, pp, 1048576);
                     borrow text as &tb in {
                         let src = buffer.bytes(tb);
-                        if make_project(heap, fs, wd, src) < 0 {
+                        if make_project(heap, fs, wd, src, checker) < 0 {
                             io.error_all(io, "build: the work directory cannot be written\n");
                         } else {
                             write_state(heap, fs, wd, brief, "build", true, units, count_verified(heap, fs, wd), "", started, clock_unix_ms(clock), provider, model, retry, patch);
