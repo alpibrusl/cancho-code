@@ -1,0 +1,59 @@
+edition 6;
+
+module signature_key_test;
+
+// The gates for `signature.of_key` (docs/profile.md, `findings.key`): the signature of a refusal read under the key a profile names. A
+// cancho answer has the rule under `rule`; a checker that says `code` (cancho-ui) signs the same way under `code`. `of` is `of_key` with
+// "rule", so the default profile's signatures are the ones `tests/signature_test.cho` pins.
+
+import std.bytes;
+import std.buffer;
+import std.test;
+import signature;
+
+pub fn test_code_key_signs_like_rule[&h](heap: &!h Heap) -> [heap] int {
+    let a = signature.of(heap, buffer.empty(heap, 64), RULE_ANSWER);
+    let b = signature.of_key(heap, buffer.empty(heap, 64), CODE_ANSWER, "code");
+    borrow a as &ba in {
+        borrow b as &bb in {
+            test.assert(bytes.equal(buffer.bytes(ba), "type-mismatch:expected `int`, found `bool` at line #"));
+            test.assert(bytes.equal(buffer.bytes(ba), buffer.bytes(bb)));
+        }
+    }
+    buffer.drop(heap, a);
+    buffer.drop(heap, b);
+    return 0;
+}
+
+pub fn test_of_is_of_key_rule[&h](heap: &!h Heap) -> [heap] int {
+    let a = signature.of(heap, buffer.empty(heap, 64), RULE_ANSWER);
+    let b = signature.of_key(heap, buffer.empty(heap, 64), RULE_ANSWER, "rule");
+    borrow a as &ba in {
+        borrow b as &bb in {
+            test.assert(bytes.equal(buffer.bytes(ba), buffer.bytes(bb)));
+        }
+    }
+    buffer.drop(heap, a);
+    buffer.drop(heap, b);
+    return 0;
+}
+
+pub fn test_the_wrong_key_finds_nothing[&h](heap: &!h Heap) -> [heap] int {
+    // A profile that reads `rule` from an answer that says `code` finds no refusal: the driver then sees no refusal and no clean answer,
+    // which is the checker being away, never a pass (src/checker.cho).
+    let a = signature.of(heap, buffer.empty(heap, 64), CODE_ANSWER);
+    let b = signature.of_key(heap, buffer.empty(heap, 64), RULE_ANSWER, "code");
+    borrow a as &ba in {
+        borrow b as &bb in {
+            test.assert(len(buffer.bytes(ba)) == 0);
+            test.assert(len(buffer.bytes(bb)) == 0);
+        }
+    }
+    buffer.drop(heap, a);
+    buffer.drop(heap, b);
+    return 0;
+}
+
+static RULE_ANSWER: [byte] { return "{\n  \"refused\": [\n    {\n      \"rule\": \"type-mismatch\",\n      \"message\": \"expected `int`, found `bool` at line 12\",\n      \"position\": { \"file\": \"a.cho\", \"line\": 1, \"column\": 32 }\n    }\n  ]\n}"; }
+
+static CODE_ANSWER: [byte] { return "{\n  \"refused\": [\n    {\n      \"code\": \"type-mismatch\",\n      \"message\": \"expected `int`, found `bool` at line 12\",\n      \"position\": { \"file\": \"a.cho\", \"line\": 1, \"column\": 32 }\n    }\n  ]\n}"; }

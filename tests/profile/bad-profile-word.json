@@ -1,0 +1,36 @@
+{
+ "profile": "cancho-build-profile/1",
+ "name": "renamed",
+ "ext": ".cn",
+ "files": {
+  "entry": "app.cn",
+  "main": "entry.cn",
+  "tests": "t-{id}.cn"
+ },
+ "commands": {
+  "check": [
+   "check",
+   "--std;",
+   "rm"
+  ],
+  "compile": [
+   "check",
+   "--std",
+   "--backend",
+   "cranelift"
+  ],
+  "test": [
+   "test",
+   "--std",
+   "--backend",
+   "cranelift"
+  ]
+ },
+ "units": "functions",
+ "unit_tests": "examples",
+ "findings": {
+  "key": "code",
+  "clean": "\"refused\": []"
+ },
+ "primer": ""
+}
