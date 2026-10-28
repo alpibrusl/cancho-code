@@ -11,7 +11,7 @@ build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m>
 | option | |
 |---|---|
 | `--provider`, `--model` | required |
-| `--guide <file>` | how to write a plan ([plan-guide.md](plan-guide.md)); required unless the work directory already holds a valid `plan.json` |
+| `--guide <file>` | how to write a plan ([plan-guide.md](plan-guide.md)); required unless the work directory already holds a valid `plan.json`; without it that plan is always reused, even one whose own test was the dead end of the run before ([below](#a-plan-whose-own-test-is-the-dead-end)) |
 | `--review on --review-guide <file>` | the blind re-derivation of every case ([review-guide.md](review-guide.md)) |
 | `--contract <file>` | exact public signatures the plan must keep |
 | `--rounds N` | the plan agent's own retry rounds (3). A round whose reply was cut off by the output bound (a model that thinks first can use all of it before the first byte) is asked again with the bound doubled, at most 32000, and told which case it was; the unit agent does the same for a patch cut off (`agent-<id>.log` shows `a sample was cut off` and `the bound for the next round is N`) |
@@ -49,7 +49,7 @@ The last line is `[BUILD_VERDICT]<TAB><word>`; the exit code follows the word.
 | `plan_failed` | 3 | no valid plan: the agent used its rounds up, needs a decision (`plan.json.questions.json`), or wrote a plan the check refuses (its `[PLAN_ERROR]` lines are printed). **The project step does not run.** |
 | `provider_error` | 4 | the agent could not be reached (or crashed, or timed out), in the plan or in a unit; what verified is kept |
 
-Exit 2 is a usage error (nothing was run). A killed run is resumed by running the same command: a valid `plan.json` is not asked for again, and `state.txt` keeps the units that verified (they are re-checked, as in `project`).
+Exit 2 is a usage error (nothing was run). A killed run is resumed by running the same command: a valid `plan.json` is not asked for again (one exception, once per work directory: a plan whose own test was the dead end of the run before, [below](#a-plan-whose-own-test-is-the-dead-end)), and `state.txt` keeps the units that verified (they are re-checked, as in `project`).
 
 ## The run directory
 
@@ -68,7 +68,7 @@ Exit 2 is a usage error (nothing was run). A killed run is resumed by running th
 | `run.log` | the lines below, appended by every run |
 | `build.json` | the run as a whole, rewritten after each stage and at the end |
 
-`run.log` holds `[BUILD_STAGE]<TAB>plan|plan<TAB>reused|build`, `[PLAN]` and `[PLAN_ERROR]`, `[PLAN_REVIEW]<TAB>reviewed|unreviewed` (only when the plan agent ran with `--review on`: `unreviewed` means the review gave no usable answer twice, so the plan's cases were kept without a second reader; the plan agent's words are in `plan.log`), `[UNIT]<TAB><id><TAB>building|verified|kept|regressed|failed|skipped|unavailable`, `[AGENT_LOG]<TAB><id><TAB>agent-<id>.log` (after a unit that did not verify), `[UNIT_WHY]<TAB><id><TAB>agent:gave-up:<why>` (only when the unit's last attempt was the agent giving up), `[INTEGRATE]<TAB><id><TAB>fast|merge` or `requeued|failed<TAB><why>` (only with `--jobs` above 1: a verified unit's work went into `project.cho`, or did not fit it; [parallel.md](parallel.md)), `[PROJECT_VERDICT]` and `[BUILD_VERDICT]`. The loop's per-attempt `[ACCEPTANCE]` and `[ISSUE_VERDICT]` lines go to the console only; the attempts are in the trails.
+`run.log` holds `[BUILD_STAGE]<TAB>plan|plan<TAB>reused|plan<TAB>replaced<TAB><unit><TAB><test>|build` (`replaced`: the valid plan was not reused because that test of that unit was the dead end of the run before; the `plan` line of the new plan call follows it), `[PLAN]` and `[PLAN_ERROR]`, `[PLAN_REVIEW]<TAB>reviewed|unreviewed` (only when the plan agent ran with `--review on`: `unreviewed` means the review gave no usable answer twice, so the plan's cases were kept without a second reader; the plan agent's words are in `plan.log`), `[UNIT]<TAB><id><TAB>building|verified|kept|regressed|failed|skipped|unavailable`, `[AGENT_LOG]<TAB><id><TAB>agent-<id>.log` (after a unit that did not verify), `[UNIT_WHY]<TAB><id><TAB>agent:gave-up:<why>` (only when the unit's last attempt was the agent giving up), `[INTEGRATE]<TAB><id><TAB>fast|merge` or `requeued|failed<TAB><why>` (only with `--jobs` above 1: a verified unit's work went into `project.cho`, or did not fit it; [parallel.md](parallel.md)), `[PROJECT_VERDICT]` and `[BUILD_VERDICT]`. The loop's per-attempt `[ACCEPTANCE]` and `[ISSUE_VERDICT]` lines go to the console only; the attempts are in the trails.
 
 `build.json`, one line:
 
@@ -103,9 +103,21 @@ build "$CANCHO" brief.txt "$PWD/runs/sortedmap" "$AGENT" --provider anthropic --
 
 The board ([dashboard.md](dashboard.md)) shows this command, ready to copy, in the panel of a stuck unit.
 
+## A plan whose own test is the dead end
+
+A valid `plan.json` is normally reused as it is: "valid" means it parses, passes the plan check and declares the brief's names, and says nothing about how the plan fared before. A plan can carry a test that no right code passes (an expected value the brief does not give), and then every run of the same command builds that unit, fails that test, and ends `stuck` again. So `build` reads its own journal ([journal.md](journal.md)) before reusing a plan, and asks the plan agent again, instead of reusing it, when **all** of these hold for the last run in the work directory:
+
+1. it ended `stuck`;
+2. a unit's last attempt compiled and failed a test of the plan (`outcome` `acceptance_failed`, signature `acceptance:test <name> ... FAILED`), the same way twice (`decision` `signature`): the loop's same-failure stop;
+3. `<name>` is that unit's test in the plan about to be reused: one of its own `tests`, or the test of one of its `examples` (`test_<unit>_<k>`). A test file that did not compile (signature `acceptance:<path>:<line>: ...`) is not one;
+4. that run built exactly this plan (its `plan_final` blob is the same bytes as `plan.json`): a plan the person edited since is theirs, and is reused;
+5. no plan of this work directory was replaced before: at most one re-plan per work directory, so a planner that writes the same wrong test again costs one more plan call, not one per run.
+
+`run.log` says `[BUILD_STAGE]<TAB>plan<TAB>replaced<TAB><unit><TAB><test>`, the journal records a `plan_replaced` event, and the run goes on as one without a valid plan: `plan.json` is emptied, the plan agent is asked (with the same brief and guide; it is not told which test failed), and the new plan is checked. `state.txt` is kept: the units that verified and that the new plan still has are re-checked, as on any resume, not rebuilt. It never happens with `--retry` or `--patch` (the person continues a unit of this plan), or without `--guide` (there is nothing to ask with: the plan is reused, not a usage error), and not when the last run ended any other way: `provider_error`, `plan_failed`, `gate_failed` or killed (no verdict), or `stuck` with no unit whose last attempt was that same-test stop (a unit stopped by the same compiler refusal twice, at the attempt ceiling, by its test file not compiling, or by an agent that failed or gave up).
+
 ## Gate and authority
 
-`scripts/test-build.sh` runs the whole chain against a stand-in agent (no network, no key, no model): the happy path, the arguments each call gets, plan reuse, an invalid plan, a plan the agent gave up on, an unreachable agent, a build killed with SIGKILL and resumed, a failing unit, a stuck unit, a stuck unit continued with `--retry` and `--patch`, usage errors, and the fields of `build.json`. The authority report is pinned in [authority-build.json](authority-build.json) (`scripts/check-authority.sh --build`): the tool spawns processes and reads and writes files; it has no network.
+`scripts/test-build.sh` runs the whole chain against a stand-in agent (no network, no key, no model): the happy path, the arguments each call gets, plan reuse, a plan whose own test was the dead end asked for again (once, and not in the cases listed below), an invalid plan, a plan the agent gave up on, an unreachable agent, a build killed with SIGKILL and resumed, a failing unit, a stuck unit, a stuck unit continued with `--retry` and `--patch`, usage errors, and the fields of `build.json`. The authority report is pinned in [authority-build.json](authority-build.json) (`scripts/check-authority.sh --build`): the tool spawns processes and reads and writes files; it has no network.
 
 ## The brief's names are the plan's names
 
