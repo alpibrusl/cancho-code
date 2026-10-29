@@ -15,6 +15,8 @@
 #   option      a unit whose examples are Option results: run as a match; a wrong Some value is refused, the right answer accepted
 #   described   a unit's description reaches the agent in the task, decoded, with the instruction not to write tests
 #   rawtests    a unit's own `tests` replace the example-derived ones; region parameters in a signature are accepted
+#   rawtests import  a unit's own `tests` that import a module its file binds (std.option for an Option signature): that line is left out of the
+#               tests file (else `already bound`), an import the file does not bind is kept; both units verify on the first answer (#83)
 #   service     a plan with an `integration` unit (docs/plan.md): the pure unit is tested with the lib files beside it, the integration unit has no
 #               examples and is judged by the acceptance command (builds the whole thing with a fixed main), its scenario output reaches the agent
 #               as feedback, a failing scenario is retried within the attempt ceiling, never-satisfied is `stuck`, a rerun keeps both units
@@ -232,6 +234,21 @@ expect "rawtests: exit code" "$r" 0
 expect "rawtests: verdict" "$(verdict "$out")" done
 expect "rawtests: the empty-string test refused the first answer" "$(order "$lg")" "a a"
 grep -q 'test_a_raw_2' "$wd/tests-a.cho" || { echo "FAIL: rawtests: the unit's own test is not in its tests file" >&2; fail=1; }
+rm -rf "$wd" "$rc"
+
+# rawtests import (#83): a unit's own `tests` that import a module the unit's file must import too (its signature names `option.`) would be
+# refused with `option` already bound (files compiled together share their imports: the sortedmap `get` run). The driver leaves that import
+# out of the tests file; an import the file does not need (std.bytes here) is kept, alone or as a line of a test with the function after it
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf 'printf "edition 7;\\nimport std.option;\\n\\nfn pick(x: int) -> [] option.Option[int] {\\n    if x > 0 {\\n        return option.Option::Some(x * 2);\\n    }\\n    return option.Option::None;\\n}\\n" > "$1"\n' > "$rc/p.sh"
+printf 'printf "\\nfn half(x: int) -> [] option.Option[int] {\\n    if x - (x / 2) * 2 == 0 {\\n        return option.Option::Some(x / 2);\\n    }\\n    return option.Option::None;\\n}\\n" >> "$1"\n' > "$rc/q.sh"
+out=$(run "$T/plan-rawtests-import.json" "$wd" "$rc" "$lg"); r=$?
+expect "rawtests import: exit code" "$r" 0
+expect "rawtests import: verdict" "$(verdict "$out")" done
+expect "rawtests import: one answer per unit" "$(order "$lg")" "p q"
+expect "rawtests import: tests-p.cho has no import of std.option" "$(grep -c '^import std.option;' "$wd/tests-p.cho")" 0
+expect "rawtests import: tests-q.cho keeps std.bytes" "$(grep -c '^import std.bytes;' "$wd/tests-q.cho")" 1
+grep -q 'test_q_raw_1' "$wd/tests-q.cho" || { echo "FAIL: rawtests import: the test after the import lines is not in tests-q.cho" >&2; fail=1; }
 rm -rf "$wd" "$rc"
 
 # service: the integration unit. The acceptance command and the lib files are the driver's 7th and 8th arguments (as `fix` takes them)
