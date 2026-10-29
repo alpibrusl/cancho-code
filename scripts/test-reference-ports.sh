@@ -21,7 +21,7 @@ check 02-glob 87 glob.cho globtest.cho
 check 03-csv 50 csv_test.cho
 check 04-jsonptr 134 jsonptr.cho jsonptr_tests.cho
 check 05-duration 66 oracle_tests.cho duration.cho
-check 06-editdistance 49 tests.cho editdistance.cho --backend cranelift
+check 06-editdistance 49 tests.cho editdistance.cho
 check 08-ini 49 oracle_test.cho ini.cho
 
 [ "$fail" = 0 ] && echo "reference ports: ok" || { echo "reference ports: FAILED" >&2; exit 1; }

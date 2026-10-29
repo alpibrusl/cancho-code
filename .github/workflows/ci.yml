@@ -86,7 +86,7 @@ jobs:
           scripts/check-authority.sh --lessons --prove
 
       - name: Unit tests (the loop's decisions, the failure signature)
-        run: $HOME/cancho-bin/cancho test tests/loop_check_test.cho tests/signature_test.cho src/loop_check.cho src/signature.cho --std --backend cranelift
+        run: $HOME/cancho-bin/cancho test tests/loop_check_test.cho tests/signature_test.cho src/loop_check.cho src/signature.cho --std
 
       - name: The gates (checker, snapshot ring, trail, agent contract, Ollama agent, driver loop, provider)
         run: |

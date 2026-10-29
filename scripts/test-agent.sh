@@ -19,7 +19,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 exe=$(mktemp -t cc-agent-XXXXXX)
 "$CANCHO" build "$root/tests/programs/driver_gate.cho" "$root/src/driver.cho" "$root/src/checker.cho" \
     "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" "$root/src/acceptance.cho" \
-    --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
+    --std -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }
@@ -118,7 +118,7 @@ rm -rf "$d"
 # what the compiler refused. Turn 0 already has it (the driver checks the seed before the first turn); a stuck agent runs twice.
 d=$(fresh)
 "$exe" custom "$CANCHO" "$d" "cat $d/project.cho.feedback >> $d/probe.txt" >/dev/null 2>&1
-want=$("$CANCHO" check --output json --backend cranelift "$d/project.cho" 2>&1); want="$want
+want=$("$CANCHO" check --output json "$d/project.cho" 2>&1); want="$want
 $want"
 got=$(cat "$d/probe.txt" 2>/dev/null)
 [ -n "$got" ] || { echo "FAIL: feedback: the agent saw nothing" >&2; fail=1; }
