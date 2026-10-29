@@ -1,0 +1,10 @@
+Build a small library named "fuzzy". Every function takes and returns plain values.
+
+- edit_distance(a, b) : the Levenshtein distance. Inputs: a and b are text. Result: an integer.
+- similarity_pct(a, b) : a whole number from 0 to 100. Result: an integer.
+- closest(query) : the best match, as owned text, or nothing. Result: text, or nothing.
+- fz_free_count(parts) : how many parts, freeing the list it is given. Result: an integer.
+- from_roman(text) : the integer a numeral stands for, or Err(message). Result: an integer, or an error.
+
+Worked examples: edit_distance("kitten", "sitting") is 3; similarity_pct("kitten", "sitting") is 57.
+- levenshtein(a, b) : another name for the distance. Result: an integer.

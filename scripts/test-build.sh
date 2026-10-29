@@ -18,7 +18,8 @@
 #   provider    the unit agent fails: provider_error, exit 4, the state keeps what verified, build.json agrees; run.log names the unit's agent log (`[AGENT_LOG]`), which holds the turn's header and the agent's standard error
 #   gave up     the unit agent exits with a documented gave-up code (10): stuck, exit 1, not provider_error; run.log has `[UNIT_WHY]` and `[AGENT_LOG]`
 #   stuck       a unit never verifies: stuck, exit 1, build.json counts the verified ones
-#   names       the brief names its public functions (`- name(...) : ...`): a plan that does not declare one is refused (`brief-name`), plan_failed, exit 3; a plan that does is built; a valid plan.json that lacks one is not reused
+#   names       the brief names its public functions (`- name(...) : ...`): a plan that does not declare one is refused (`brief-name`), plan_failed, exit 3; a plan that does is built; a valid plan.json that lacks one is not reused;
+#               a plan that gives one of them a heap while its result owns nothing is refused (`brief-heap`), plan_failed, exit 3
 #   retry       `--retry <unit> --hint "..."` on a stuck run: the plan is not asked for again, only that unit and the ones that need it are worked
 #               on, the hint is in the unit agent's task, run.log has `[RETRY]`, build.json names the unit (`retry`) and ends `done`
 #   patch       `--patch <unit> <file>`: no agent call for the unit, run.log has `[PATCH]`, build.json names it (`patch`)
@@ -550,6 +551,16 @@ set -- $(mk); wd=$1; rc=$2; lg=$3
 cp "$P/plan.json" "$wd/plan.json"
 out=$("$exe" "$CANCHO" "$B/brief-renamed.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 --jobs 1 2>&1); r=$?
 expect "names reuse: the plan was asked for again" "$(order "$lg")" PLAN
+rm -rf "$wd" "$rc"
+
+# a function the brief names whose result owns nothing, planned with a heap (`brief-heap`, docs/plan.md "The call shape"): refused before any unit
+set -- $(mk "$B/plan-heap.json"); wd=$1; rc=$2; lg=$3
+out=$("$exe" "$CANCHO" "$B/brief-names.txt" "$wd" "sh $B/agent.sh $rc $lg" --provider stand --model m1 --guide "$B/guide.txt" --attempts 4 --agent-seconds 60 --jobs 1 2>&1); r=$?
+expect "brief heap: exit code" "$r" 3
+expect "brief heap: verdict" "$(verdict "$out")" plan_failed
+expect "brief heap: the unit" "$(printf '%s\n' "$out" | grep '^\[PLAN_ERROR\]' | cut -f2,3 | tr '\t' ':')" "brief-heap:a"
+expect "brief heap: only the plan was asked" "$(order "$lg")" PLAN
+[ -f "$wd/main.cho" ] && { echo "FAIL: brief heap: the project step ran" >&2; fail=1; }
 rm -rf "$wd" "$rc"
 
 # a name that is only the start of a declared name is not declared (`doub` against `fn double`)

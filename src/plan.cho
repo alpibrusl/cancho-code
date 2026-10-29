@@ -1460,6 +1460,20 @@ fn is_name_byte(c: int) -> [] bool {
     return (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95;
 }
 
+// A brief's bullet `- name(...) : ...` (or `- name(...) -> Type : ...`): the byte range of the name in the line, or (-1, -1).
+fn bullet_name[&l](line: &l [byte]) -> [] (int, int) {
+    if len(line) > 3 && int_of(line[0]) == 45 && int_of(line[1]) == 32 && int_of(line[2]) >= 97 && int_of(line[2]) <= 122 {
+        var j = 2;
+        while j < len(line) && is_name_byte(int_of(line[j])) {
+            j = j + 1;
+        }
+        if j < len(line) && int_of(line[j]) == 40 && (bytes.find(line, ") :") >= 0 || bytes.find(line, ") ->") >= 0) {
+            return (2, j);
+        }
+    }
+    return (0 - 1, 0 - 1);
+}
+
 pub fn brief_gaps[&h, &b, &s](heap: &!h Heap, brief: &b [byte], plan: &s [byte]) -> [heap] buffer.Buffer {
     var gaps = buffer.append(heap, buffer.empty(heap, 16), "\n");
     var pos = 0;
@@ -1469,46 +1483,41 @@ pub fn brief_gaps[&h, &b, &s](heap: &!h Heap, brief: &b [byte], plan: &s [byte])
             e = e + 1;
         }
         let line = brief[pos..e];
-        if len(line) > 3 && int_of(line[0]) == 45 && int_of(line[1]) == 32 && int_of(line[2]) >= 97 && int_of(line[2]) <= 122 {
-            var j = 2;
-            while j < len(line) && is_name_byte(int_of(line[j])) {
-                j = j + 1;
-            }
-            if j < len(line) && int_of(line[j]) == 40 && (bytes.find(line, ") :") >= 0 || bytes.find(line, ") ->") >= 0) {
-                let name = line[2..j];
-                // `fn name` must end at the name: the next byte is `(` or `[`.
-                var exact = false;
-                var rest = plan;
-                var look = true;
-                while look {
-                    let k = bytes.find(rest, "fn ");
-                    if k < 0 {
+        let (ns, ne) = bullet_name(line);
+        if ns >= 0 {
+            let name = line[ns..ne];
+            // `fn name` must end at the name: the next byte is `(` or `[`.
+            var exact = false;
+            var rest = plan;
+            var look = true;
+            while look {
+                let k = bytes.find(rest, "fn ");
+                if k < 0 {
+                    look = false;
+                } else {
+                    let from = k + 3;
+                    if from + len(name) < len(rest) && bytes.equal(rest[from..from + len(name)], name) && (int_of(rest[from + len(name)]) == 40 || int_of(rest[from + len(name)]) == 91) {
+                        exact = true;
                         look = false;
                     } else {
-                        let from = k + 3;
-                        if from + len(name) < len(rest) && bytes.equal(rest[from..from + len(name)], name) && (int_of(rest[from + len(name)]) == 40 || int_of(rest[from + len(name)]) == 91) {
-                            exact = true;
-                            look = false;
-                        } else {
-                            rest = rest[from..len(rest)];
-                        }
+                        rest = rest[from..len(rest)];
                     }
                 }
-                if !exact {
-                    var seen = false;
-                    borrow gaps as &gb in {
-                        var probe = buffer.append(heap, buffer.empty(heap, 32), "\n");
-                        probe = buffer.append(heap, probe, name);
-                        probe = buffer.append(heap, probe, "\n");
-                        borrow probe as &pb in {
-                            seen = bytes.find(buffer.bytes(gb), buffer.bytes(pb)) >= 0;
-                        }
-                        buffer.drop(heap, probe);
+            }
+            if !exact {
+                var seen = false;
+                borrow gaps as &gb in {
+                    var probe = buffer.append(heap, buffer.empty(heap, 32), "\n");
+                    probe = buffer.append(heap, probe, name);
+                    probe = buffer.append(heap, probe, "\n");
+                    borrow probe as &pb in {
+                        seen = bytes.find(buffer.bytes(gb), buffer.bytes(pb)) >= 0;
                     }
-                    if !seen {
-                        gaps = buffer.append(heap, gaps, name);
-                        gaps = buffer.append(heap, gaps, "\n");
-                    }
+                    buffer.drop(heap, probe);
+                }
+                if !seen {
+                    gaps = buffer.append(heap, gaps, name);
+                    gaps = buffer.append(heap, gaps, "\n");
                 }
             }
         }
@@ -1517,8 +1526,178 @@ pub fn brief_gaps[&h, &b, &s](heap: &!h Heap, brief: &b [byte], plan: &s [byte])
     return gaps;
 }
 
-// The report for the names the plan lacks: one `[PLAN_ERROR]<TAB>brief-name<TAB><name><TAB><the action>` line per missing name (ALL of them, so the model fixes
-// them in one round), then `[PLAN]<TAB>invalid`; and how many were missing (0: the report is empty).
+// Does a result type own nothing? Only `int`, `bool`, `byte`, borrowed references (`&r [byte]`, `&static [byte]`: the name after `&` is a
+// region), tuples, and `option.Option` / `result.Result` of those. Any other name (a buffer, a Box, a list, a vec, a record) answers false:
+// such a result may need the caller's heap, and `brief-heap` says nothing about it.
+fn plain_type[&t](ty: &t [byte]) -> [] bool {
+    if len(ty) == 0 {
+        return false;
+    }
+    var i = 0;
+    var region_next = false;
+    while i < len(ty) {
+        let c = int_of(ty[i]);
+        if is_start(c) {
+            let e = ident_end(ty, i);
+            let w = ty[i..e];
+            let known = bytes.equal(w, "int") || bytes.equal(w, "bool") || bytes.equal(w, "byte") || bytes.equal(w, "option") || bytes.equal(w, "Option") || bytes.equal(w, "result") || bytes.equal(w, "Result");
+            if !region_next && !known {
+                return false;
+            }
+            region_next = false;
+            i = e;
+        } else if c == 38 {
+            region_next = true;
+            i = i + 1;
+        } else if c == 33 || c == 32 || c == 46 || c == 91 || c == 93 || c == 44 || c == 40 || c == 41 {
+            i = i + 1;
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Does a parameter list (the text between the parentheses) take something owned, other than the heap: a parameter whose type is neither a
+// reference (`&...`) nor `plain_type`? A function given a buffer, a Box or a list by value frees it, and freeing takes the heap.
+fn owned_param[&t](params: &t [byte]) -> [] bool {
+    var depth = 0;
+    var from = 0;
+    var i = 0;
+    while i <= len(params) {
+        var c = 44;
+        if i < len(params) {
+            c = int_of(params[i]);
+        }
+        if c == 91 || c == 40 {
+            depth = depth + 1;
+        } else if c == 93 || c == 41 {
+            depth = depth - 1;
+        } else if c == 44 && depth == 0 {
+            let one = params[from..i];
+            let colon = bytes.find(one, ":");
+            if colon >= 0 {
+                let ty = bytes.trim(one[colon + 1..len(one)]);
+                if len(ty) > 0 && int_of(ty[0]) != 38 && !plain_type(ty) {
+                    return true;
+                }
+            }
+            from = i + 1;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+// Whether a bullet of `before` (the brief's lines above the current one) already names `name`: a name the brief repeats is reported once.
+fn named_before[&b, &n](before: &b [byte], name: &n [byte]) -> [] bool {
+    var pos = 0;
+    while pos < len(before) {
+        var e = pos;
+        while e < len(before) && int_of(before[e]) != 10 {
+            e = e + 1;
+        }
+        let line = before[pos..e];
+        let (ns, ne) = bullet_name(line);
+        if ns >= 0 && bytes.equal(line[ns..ne], name) {
+            return true;
+        }
+        pos = e + 1;
+    }
+    return false;
+}
+
+// `brief-heap` (docs/plan.md, "The call shape"): a function the brief names is called with the brief's arguments only (the audit, a user, the
+// brief's own worked examples), and a caller passes a heap only to a function whose result owns memory it must allocate. So a unit that declares
+// a brief's function with a `Heap` parameter while its result owns nothing (`plain_type`) is refused, with what to change. One line per unit,
+// appended to `out`; and how many.
+fn brief_heaps[&h, &b, &s](heap: &!h Heap, out: buffer.Buffer, brief: &b [byte], plan: &s [byte]) -> [heap] (buffer.Buffer, int) {
+    var r = out;
+    var count = 0;
+    let tb = box_slice(heap, json.tape_len(plan), 0);
+    borrow mut tb as &!tw in {
+        let tape = contents(tw);
+        let nodes = json.parse(plan, tape);
+        var units = 0 - 1;
+        if nodes >= 0 && json.is_object(tape, 0) {
+            units = json.get(plan, tape, 0, "units");
+        }
+        if units >= 0 && json.is_array(tape, units) {
+            var pos = 0;
+            while pos < len(brief) {
+                var e = pos;
+                while e < len(brief) && int_of(brief[e]) != 10 {
+                    e = e + 1;
+                }
+                let line = brief[pos..e];
+                let (ns, ne) = bullet_name(line);
+                if ns >= 0 && !named_before(brief[0..pos], line[ns..ne]) {
+                    let name = line[ns..ne];
+                    var call = line[ns..ne];
+                    let cp = bytes.find(line, ")");
+                    if cp > ne {
+                        call = line[ns..cp + 1];
+                    }
+                    var j = units + 1;
+                    var left = json.count(tape, units);
+                    while left > 0 {
+                        if json.is_object(tape, j) {
+                            let sg = json.get(plan, tape, j, "signature");
+                            let ig = json.get(plan, tape, j, "id");
+                            if sg >= 0 && json.is_string(tape, sg) {
+                                let sig = node_text(plan, tape, sg);
+                                let (a, z) = sig_name(sig);
+                                if a >= 0 && bytes.equal(sig[a..z], name) {
+                                    let arrow = bytes.find(sig, "->");
+                                    let close = bytes.find(sig[arrow..len(sig)], "]");
+                                    let ty = bytes.trim(sig[arrow + close + 1..len(sig)]);
+                                    let open = bytes.find(sig, "(");
+                                    var shut = arrow - 1;
+                                    while shut > 0 && byte_at(sig, shut) == 32 {
+                                        shut = shut - 1;
+                                    }
+                                    var owned = true;
+                                    if open >= 0 && shut > open {
+                                        owned = owned_param(sig[open + 1..shut]);
+                                    }
+                                    if close >= 0 && bytes.find(sig[0..arrow], "Heap") >= 0 && plain_type(ty) && !owned {
+                                        var msg = buffer.append(heap, buffer.empty(heap, 512), "the brief names `");
+                                        msg = buffer.append(heap, msg, call);
+                                        msg = buffer.append(heap, msg, "` and this signature of `");
+                                        msg = buffer.append(heap, msg, name);
+                                        msg = buffer.append(heap, msg, "` takes a heap, but its result `");
+                                        msg = buffer.append(heap, msg, ty);
+                                        msg = buffer.append(heap, msg, "` owns no memory: a caller calls the brief's functions with the brief's arguments only, no heap, so every call written as the brief writes it would be refused (\"takes N arguments\"). Remove the heap parameter and `heap` from the effect row (`-> [] ");
+                                        msg = buffer.append(heap, msg, ty);
+                                        msg = buffer.append(heap, msg, "`); take scratch memory from a region inside the function (`region w { let row = alloc_slice[w](n + 1, 0); ... }`), call no helper that takes a heap from it, and write its tests and examples without a heap");
+                                        borrow msg as &mr in {
+                                            if ig >= 0 && json.is_string(tape, ig) {
+                                                r = emit(heap, r, "brief-heap", node_text(plan, tape, ig), buffer.bytes(mr));
+                                            } else {
+                                                r = emit(heap, r, "brief-heap", "-", buffer.bytes(mr));
+                                            }
+                                        }
+                                        buffer.drop(heap, msg);
+                                        count = count + 1;
+                                    }
+                                }
+                            }
+                        }
+                        j = json.skip(tape, j);
+                        left = left - 1;
+                    }
+                }
+                pos = e + 1;
+            }
+        }
+    }
+    unbox_slice(heap, tb);
+    return (r, count);
+}
+
+// The report of the brief's own rules: one `[PLAN_ERROR]<TAB>brief-name<TAB><name><TAB><the action>` line per name the plan lacks (ALL of them, so the
+// model fixes them in one round), then one `[PLAN_ERROR]<TAB>brief-heap<TAB><unit id><TAB><the action>` line per brief function with a needless heap
+// (`brief_heaps`), then `[PLAN]<TAB>invalid`; and how many lines (0: the report is empty).
 pub fn brief_report[&h, &b, &s](heap: &!h Heap, brief: &b [byte], plan: &s [byte]) -> [heap] (buffer.Buffer, int) {
     var out = buffer.empty(heap, 16);
     var count = 0;
@@ -1541,6 +1720,9 @@ pub fn brief_report[&h, &b, &s](heap: &!h Heap, brief: &b [byte], plan: &s [byte
         }
     }
     buffer.drop(heap, gaps);
+    let (withheaps, heaps) = brief_heaps(heap, out, brief, plan);
+    out = withheaps;
+    count = count + heaps;
     if count > 0 {
         out = buffer.append(heap, out, "[PLAN]\tinvalid\n");
     }
