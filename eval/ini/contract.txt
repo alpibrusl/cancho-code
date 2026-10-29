@@ -1,0 +1,2 @@
+pub fn ini_parse[&h, &t](heap: &!h Heap, text: &t [byte]) -> [heap] result.Result[buffer.Buffer, int]
+pub fn ini_get[&h, &t, &s, &k](heap: &!h Heap, text: &t [byte], section: &s [byte], key: &k [byte]) -> [heap] result.Result[option.Option[buffer.Buffer], int]

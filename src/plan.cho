@@ -1278,6 +1278,126 @@ pub fn file_of_module[&s, &t, &x](src: &s [byte], tape: &t [int], name: &x [byte
     return entry_text(src, tape, k, "file");
 }
 
+// ---- a unit's own tests in its tests file (#83) ---------------------------------------------------------------------------------------------
+// The tests file is compiled with the unit's file, and files compiled together share their imports: a test line `import std.option;` next to a
+// file that imports std.option too is refused (`option` is already bound to another import here). A line that is only such an import, of a name
+// the unit's file is known to bind, is left out; every other line, and every other import, is kept as written.
+
+// `import a.b.c;` alone on the line (spaces around it allowed, no `as`): the range of the name the import binds (`c`), or (-1, -1).
+fn import_binds[&t](t: &t [byte]) -> [] (int, int) {
+    var p = skip_sp(t, 0);
+    if !bytes.starts_with(t[p..len(t)], "import ") {
+        return (0 - 1, 0 - 1);
+    }
+    p = skip_sp(t, p + 7);
+    var a = p;
+    var e = ident_end(t, p);
+    if e == p {
+        return (0 - 1, 0 - 1);
+    }
+    while byte_at(t, e) == 46 {
+        let n = ident_end(t, e + 1);
+        if n == e + 1 {
+            return (0 - 1, 0 - 1);
+        }
+        a = e + 1;
+        e = n;
+    }
+    var q = skip_sp(t, e);
+    if byte_at(t, q) != 59 {
+        return (0 - 1, 0 - 1);
+    }
+    q = skip_sp(t, q + 1);
+    if byte_at(t, q) == 13 {
+        q = q + 1;
+    }
+    if q != len(t) {
+        return (0 - 1, 0 - 1);
+    }
+    return (a, e);
+}
+
+// Does `sig` name `word.` (`option.Option[int]`), with no identifier byte before it?
+fn names_module[&t, &w](sig: &t [byte], word: &w [byte]) -> [] bool {
+    let n = len(word);
+    var p = 0;
+    while p + n < len(sig) {
+        if byte_at(sig, p + n) == 46 && bytes.equal(sig[p..p + n], word) && !is_part(byte_at(sig, p - 1)) {
+            return true;
+        }
+        p = p + 1;
+    }
+    return false;
+}
+
+// Does the file `name` bind `word` for its tests? When the plan declares an import of that name for the file, or a signature of one of the
+// file's units names `word.`: the file has to import it for that signature to exist (`build`'s scaffold rule).
+fn file_binds[&s, &t, &n, &w](src: &s [byte], tape: &t [int], name: &n [byte], word: &w [byte]) -> [] bool {
+    let k = find_entry(src, tape, name);
+    if k >= 0 {
+        let ni = import_count(src, tape, k);
+        var q = 0;
+        while q < ni {
+            let im = import_at(src, tape, k, q);
+            var d = len(im);
+            while d > 0 && byte_at(im, d - 1) != 46 {
+                d = d - 1;
+            }
+            if bytes.equal(im[d..len(im)], word) {
+                return true;
+            }
+            q = q + 1;
+        }
+    }
+    let units = json.get(src, tape, 0, "units");
+    var j = units + 1;
+    var left = json.count(tape, units);
+    while left > 0 {
+        if bytes.equal(unit_file(src, tape, j), name) {
+            let sg = json.get(src, tape, j, "signature");
+            if sg >= 0 && json.is_string(tape, sg) && names_module(json.string_view(src, tape, sg), word) {
+                return true;
+            }
+        }
+        j = json.skip(tape, j);
+        left = left - 1;
+    }
+    return false;
+}
+
+// Append the decoded test at node `i` of a unit of file `name`, without its lines that import a name the file binds.
+pub fn add_unit_test[&h, &s, &t, &n](heap: &!h Heap, b: buffer.Buffer, src: &s [byte], tape: &t [int], name: &n [byte], i: int) -> [heap] buffer.Buffer {
+    var r = b;
+    let n = json.string_length(src, tape, i);
+    if n > 0 {
+        region dr {
+            let out = alloc_slice[dr](n + 1, byte_of(0));
+            let w = json.string_into(src, tape, i, out);
+            var p = 0;
+            while p < w {
+                var e = p;
+                while e < w && int_of(out[e]) != 10 {
+                    e = e + 1;
+                }
+                let (a, z) = import_binds(out[p..e]);
+                var keep = true;
+                if a >= 0 && file_binds(src, tape, name, out[p + a..p + z]) {
+                    keep = false;
+                }
+                var next = e;
+                if e < w {
+                    next = e + 1;
+                }
+                if keep {
+                    r = buffer.append(heap, r, out[p..next]);
+                }
+                p = next;
+            }
+        }
+    }
+    return r;
+}
+
 // The names of the declared files other than `project.cho`, separated by a space (empty for a single-file plan).
 pub fn extra_files[&h, &s, &t](heap: &!h Heap, src: &s [byte], tape: &t [int]) -> [heap] buffer.Buffer {
     var b = buffer.empty(heap, 64);

@@ -1,0 +1,3 @@
+pub fn edit_distance[&r, &s](a: &r [byte], b: &s [byte]) -> [] int
+pub fn similarity_pct[&r, &s](a: &r [byte], b: &s [byte]) -> [] int
+pub fn closest[&q, &v, &s](query: &q [byte], candidates: &v vec.Vec[&s [byte]]) -> [] option.Option[&s [byte]]

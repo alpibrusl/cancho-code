@@ -1,0 +1,8 @@
+{"name":"dupimport","units":[
+ {"id":"p","signature":"fn pick(x: int) -> [] option.Option[int]","description":"Some(2x) for a positive x, else None.",
+  "tests":["import std.option;","pub fn test_p_raw_1() -> [] int { match pick(5) { option.Option::Some(v) => { test.assert(v == 10); } option.Option::None => { test.assert(false); } } return 0; }"],
+  "examples":["pick(5) == option.Option::Some(10)"],"deps":[]},
+ {"id":"q","signature":"fn half(x: int) -> [] option.Option[int]","description":"Some(x/2) for an even x, else None; checks a byte with std.bytes in its test.",
+  "tests":["import std.option;\nimport std.bytes;\npub fn test_q_raw_1() -> [] int { match half(4) { option.Option::Some(v) => { test.assert(v == 2); } option.Option::None => { test.assert(false); } } test.assert(bytes.is_digit(48)); return 0; }"],
+  "examples":["half(4) == option.Option::Some(2)"],"deps":[]}
+]}

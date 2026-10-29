@@ -624,7 +624,7 @@ fn write_tests[&h, &z, &s, &t, &w, &k](heap: &!h Heap, fs: &z Fs(""), src: &s [b
         var rj = rt + 1;
         var rleft = raw;
         while rleft > 0 {
-            tests = add_decoded(heap, tests, src, tape, rj);
+            tests = plan.add_unit_test(heap, tests, src, tape, plan.unit_file(src, tape, node), rj);
             tests = buffer.append(heap, tests, "\n");
             legend = buffer.append(heap, legend, "(the unit's own test, named in the output above)\n");
             rj = json.skip(tape, rj);
