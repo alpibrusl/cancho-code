@@ -41,7 +41,7 @@ fn slurp[&h, &f, &p](heap: &!h Heap, fs: &f Fs(""), path: &p [byte], cap: int) -
 // How the plan in `src` stands: -1 when the plan check refuses it, else the number of units. With `show`, the check's report
 // (its `[PLAN_ERROR]` lines and `[PLAN]` line) goes to the console and the log.
 fn judge[&h, &i, &z, &l, &s, &b, &k](heap: &!h Heap, io: &!i Io, fs: &z Fs(""), log: &l [byte], src: &s [byte], brief: &b [byte], show: bool, tool: &k [byte]) -> [heap, io_write, fs_read(""), fs_write("")] int {
-    let (out, code) = plan.check(heap, src);
+    let (out, code) = plan.check_as(heap, src, project.tool_components(tool));
     if show {
         borrow out as &o in {
             project.tell(heap, io, fs, log, buffer.bytes(o));
@@ -70,7 +70,12 @@ fn judge[&h, &i, &z, &l, &s, &b, &k](heap: &!h Heap, io: &!i Io, fs: &z Fs(""), 
     }
     // The names the brief states must be the plan's: a plan that renames them builds a different API than the one asked for. The plan agent runs the
     // same check in each of its rounds (src/cancho_agent.cho); this one is the backstop for a plan.json that was not written by this run.
-    let (brep, missing_count) = plan.brief_report(heap, brief, src);
+    // The brief's names are functions (`- name(...) : ...` bullets, declared `fn name`): a plan of components declares none, and is not held to them.
+    var brief_len = len(brief);
+    if project.tool_components(tool) {
+        brief_len = 0;
+    }
+    let (brep, missing_count) = plan.brief_report(heap, brief[0..brief_len], src);
     if missing_count > 0 && show {
         borrow brep as &bq in {
             project.tell(heap, io, fs, log, buffer.bytes(bq));
@@ -144,14 +149,17 @@ fn scaffold[&h, &s](heap: &!h Heap, src: &s [byte]) -> [heap] buffer.Buffer {
     return b;
 }
 
-// Create project.cho (the profile's entry) from the scaffold when there is none (a resumed run keeps the one it has).
+// Create project.cho (the profile's entry) from the scaffold when there is none (a resumed run keeps the one it has). The scaffold is cancho's:
+// a profile whose units are components (another language, docs/profile.md) starts from an empty entry.
 fn make_project[&h, &z, &w, &s, &k](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], src: &s [byte], tool: &k [byte]) -> [heap, fs_read(""), fs_write("")] int {
     let path = project.in_wd(heap, wd, project.tool_entry(tool), "", "");
     var r = 0;
     borrow path as &pb in {
         let (old, ok) = slurp(heap, fs, buffer.bytes(pb), 16777216);
         buffer.drop(heap, old);
-        if ok == false {
+        if ok == false && project.tool_components(tool) {
+            r = project.put(heap, fs, buffer.bytes(pb), buffer.empty(heap, 8));
+        } else if ok == false {
             r = project.put(heap, fs, buffer.bytes(pb), scaffold(heap, src));
         }
     }
@@ -488,12 +496,18 @@ fn profile_parse[&h, &z, &s, &k](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], 
             errs = e2;
             if n_ok && word_ok(pname, false) == false {
                 errs = perr(heap, errs, "profile-value", "name", "a non-empty word of letters, digits and . _ + : = @ % , -");
+            } else if n_ok {
+                // the language the task and the prompt name (src/project.cho `write_task`)
+                tool = put_field(heap, tool, "name", pname, "cancho");
             }
-            // units and unit_tests: words of the schema, of which this build runs the cancho ones
+            // units and unit_tests: words of the schema. This build runs two pairs: functions with examples (cancho's) and components with
+            // traces (with no main file, below); the two mixed pairs are refused as not built yet.
             let (e3, units, u_ok) = text_of(heap, errs, src, tape, 0, "units");
             errs = e3;
+            var comps = false;
             if u_ok && bytes.equal(units, "components") {
-                errs = perr(heap, errs, "profile-not-implemented", "units", "\"components\" is in the schema and not built yet (docs/profile.md, the next slices)");
+                comps = true;
+                tool = put_field(heap, tool, "units", units, "functions");
             } else if u_ok && bytes.equal(units, "functions") == false {
                 errs = perr(heap, errs, "profile-value", "units", "\"functions\" or \"components\"");
             }
@@ -502,9 +516,15 @@ fn profile_parse[&h, &z, &s, &k](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], 
             var trace = false;
             if ut_ok && bytes.equal(ut, "trace") {
                 trace = true;
-                errs = perr(heap, errs, "profile-not-implemented", "unit_tests", "\"trace\" is in the schema and not built yet (docs/profile.md, the next slices)");
+                tool = put_field(heap, tool, "unit_tests", ut, "examples");
             } else if ut_ok && bytes.equal(ut, "examples") == false {
                 errs = perr(heap, errs, "profile-value", "unit_tests", "\"examples\" or \"trace\"");
+            }
+            if comps && ut_ok && trace == false && bytes.equal(ut, "examples") {
+                errs = perr(heap, errs, "profile-not-implemented", "unit_tests", "\"components\" is built with \"trace\" only: a component has no examples (docs/profile.md, the next slices)");
+            }
+            if trace && u_ok && comps == false && bytes.equal(units, "functions") {
+                errs = perr(heap, errs, "profile-not-implemented", "units", "\"trace\" is built with \"components\" only: a function unit has no trace (docs/profile.md, the next slices)");
             }
             // ext
             let (e5, ext, x_ok) = text_of(heap, errs, src, tape, 0, "ext");
@@ -542,9 +562,11 @@ fn profile_parse[&h, &z, &s, &k](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], 
                         errs = perr(heap, errs, "profile-name", "entry", "the entry ends in `ext`");
                     }
                 }
-                if m_ok && len(mainf) == 0 {
-                    errs = perr(heap, errs, "profile-not-implemented", "main", "\"\" (no main file) is in the schema and not built yet (docs/profile.md, the next slices)");
-                } else if m_ok {
+                if m_ok && len(mainf) == 0 && comps == false {
+                    errs = perr(heap, errs, "profile-not-implemented", "main", "\"\" (no main file) is built with \"components\" only: a cancho program is checked beside its fixed main (docs/profile.md, the next slices)");
+                } else if m_ok && comps && len(mainf) > 0 {
+                    errs = perr(heap, errs, "profile-not-implemented", "main", "\"components\" is built with no main file (\"\") only: the fixed main the build writes is cancho's (docs/profile.md, the next slices)");
+                } else if m_ok && len(mainf) > 0 {
                     if name_ok(mainf) == false {
                         errs = perr(heap, errs, "profile-word", "main", "a file name of letters, digits and . _ + : = @ % , -, no `/`, no `..` (or \"\": none)");
                     } else if ext_good && bytes.ends_with(mainf, ext) == false {

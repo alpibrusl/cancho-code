@@ -67,6 +67,8 @@ Exit 0 valid, 1 invalid, 2 usage (no argument, or the file cannot be read). **Ev
 | `file-cycle` | the files need each other in a circle: the graph of the declared imports and of the dependencies between units of different files must have no cycle (reported on the plan) |
 | `empty-file` | a file in `files`, other than `project.cho`, has no unit (reported on the plan) |
 
+These are the rules of a plan of functions, cancho's. Under a build profile whose units are components (`build --profile`, `units: "components"`), a unit is a `component` and its `trace` instead, and the rules are `unit-field`, `duplicate-id`, `bad-component`, `bad-trace`, `unknown-dep`, `cycle` and the `integration` ones ([profile.md](profile.md), "How the plan check treats `fn` signatures"; `plan.check_as`).
+
 The message of a rule is what the model reads on its next round, so it names what to change (`tests/plans/messages.txt`, asserted by `scripts/test-plan.sh`): `unit-field` names each missing or mistyped field and the form it takes; `no-example` and `example-own` name the function the example must call (the whole name, prefix included); `example-callee` names the callee no unit declares.
 
 ## What this does not check

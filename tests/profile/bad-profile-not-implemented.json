@@ -5,7 +5,7 @@
  "files": {
   "entry": "app.cui",
   "main": "",
-  "tests": "trace-{id}.json"
+  "tests": "t-{id}.cui"
  },
  "commands": {
   "check": [
@@ -21,7 +21,7 @@
   ]
  },
  "units": "components",
- "unit_tests": "trace",
+ "unit_tests": "examples",
  "findings": {
   "key": "code",
   "clean": "[]"
