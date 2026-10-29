@@ -47,7 +47,7 @@ expect "acceptance: the reference holds (exit)" "$rc" 0
 expect "acceptance: the reference prints nothing" "$out" ""
 out=$($acc "$root/eval/tokenbucket/fixtures/model-int-shapes.cho" 2>&1); rc=$?
 [ "$rc" != 0 ] || { echo "FAIL: acceptance: exit 0 for the wrong shapes" >&2; fail=1; }
-case "$out" in "does not build in the brief's shapes: "*"cannot be matched"*"while checking: bucket_take(5000, 5) is Some(0)"*) ;; *) echo "FAIL: acceptance: the wrong-shape message does not name the example in the brief's words: $out" >&2; fail=1 ;; esac
+case "$out" in "does not build in the brief's shapes: "*"match-on-a-non-enum"*"while checking: bucket_take(5000, 5) is Some(0)"*) ;; *) echo "FAIL: acceptance: the wrong-shape message does not name the example in the brief's words: $out" >&2; fail=1 ;; esac
 case "$out" in *test_e0*|*"pub fn"*) echo "FAIL: acceptance: the message shows the harness's own code, which a model pastes into its program (then the harness defines it twice): $out" >&2; fail=1 ;; esac
 out=$($acc "$d/mutated.cho" 2>&1); rc=$?
 [ "$rc" != 0 ] || { echo "FAIL: acceptance: exit 0 for a broken implementation" >&2; fail=1; }

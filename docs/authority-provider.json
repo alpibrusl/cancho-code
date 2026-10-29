@@ -1,6 +1,8 @@
 {
-  "bounded": true,
-  "unbounded_by": [],
+  "bounded": false,
+  "unbounded_by": [
+    "net_out(\"\")"
+  ],
   "effects": [
     "args",
     "clock",
@@ -57,7 +59,7 @@
     {
       "name": "net_out",
       "argument": "",
-      "bounded": true
+      "bounded": false
     },
     {
       "name": "poll",
