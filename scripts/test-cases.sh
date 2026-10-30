@@ -21,9 +21,9 @@ command -v python3 >/dev/null 2>&1 || { echo "no python3 on PATH" >&2; exit 2; }
 root=$(cd "$(dirname "$0")/.." && pwd)
 src="${CASES_SRC:-$root/src/cases.cho}"
 d=$(mktemp -d -t cc-cases-XXXXXX)
-"$CANCHO" build "$root/tests/programs/cases_gate.cho" "$src" --std --backend cranelift -o "$d/gate" >/dev/null 2>"$d/build.err" \
+"$CANCHO" build "$root/tests/programs/cases_gate.cho" "$src" --std -o "$d/gate" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }
-"$CANCHO" build "$root/tests/programs/plancheck.cho" "$root/src/plan.cho" --std --backend cranelift -o "$d/plancheck" >/dev/null 2>"$d/build.err" \
+"$CANCHO" build "$root/tests/programs/plancheck.cho" "$root/src/plan.cho" --std -o "$d/plancheck" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "plancheck did not build" >&2; exit 2; }
 
 python3 - "$d" "$root" "$CANCHO" <<'PY' || { echo "cases gate: FAILED" >&2; exit 1; }

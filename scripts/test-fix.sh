@@ -16,7 +16,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 exe=$(mktemp -t cc-fix-XXXXXX)
 "$CANCHO" build "$root/tests/programs/fix.cho" "$root/src/driver.cho" "$root/src/checker.cho" \
     "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" "$root/src/acceptance.cho" \
-    --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
+    --std -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }

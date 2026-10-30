@@ -18,8 +18,8 @@ export CANCHO_PACKAGES="$pk"
 exe=$(mktemp -t cc-svcplan-XXXXXX); pc=$(mktemp -t cc-svcplan-pc-XXXXXX)
 "$CANCHO" build "$root/tests/programs/project.cho" "$root/src/project.cho" "$root/src/plan.cho" "$root/src/driver.cho" \
     "$root/src/checker.cho" "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" \
-    "$root/src/acceptance.cho" "$root/src/splice.cho" "$root/src/pool.cho" "$root/src/parallel.cho" --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
-"$CANCHO" build "$root/tests/programs/plancheck.cho" "$root/src/plan.cho" --std --backend cranelift -o "$pc" || { echo "plancheck did not build" >&2; exit 2; }
+    "$root/src/acceptance.cho" "$root/src/splice.cho" "$root/src/pool.cho" "$root/src/parallel.cho" --std -o "$exe" || { echo "gate did not build" >&2; exit 2; }
+"$CANCHO" build "$root/tests/programs/plancheck.cho" "$root/src/plan.cho" --std -o "$pc" || { echo "plancheck did not build" >&2; exit 2; }
 
 fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }

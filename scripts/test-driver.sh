@@ -27,7 +27,7 @@ exe=$(mktemp -t cc-drv-XXXXXX)
 "$CANCHO" build "$root/tests/programs/driver_gate.cho" "$root/src/driver.cho" \
     "$root/src/checker.cho" "$root/src/signature.cho" "$root/src/loop_check.cho" \
     "$root/src/snapshot.cho" "$root/src/trail.cho" "$root/src/acceptance.cho" \
-    --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
+    --std -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 fail=0
 
