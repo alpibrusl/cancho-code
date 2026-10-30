@@ -31,7 +31,7 @@ files=""
 for f in build project plan driver checker signature loop_check snapshot trail acceptance splice pool parallel library cases; do
     [ -f "$SRC/$f.cho" ] && files="$files $SRC/$f.cho"
 done
-"$CANCHO" build "$root/tests/programs/build.cho" $files --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
+"$CANCHO" build "$root/tests/programs/build.cho" $files --std -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }

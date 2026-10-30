@@ -37,7 +37,7 @@ d=$(mktemp -d -t cc-parallel-XXXXXX)
 exe="$d/project"
 "$CANCHO" build "$root/tests/programs/project.cho" "$SRC/project.cho" "$SRC/plan.cho" "$SRC/driver.cho" \
     "$SRC/checker.cho" "$SRC/signature.cho" "$SRC/loop_check.cho" "$SRC/snapshot.cho" "$SRC/trail.cho" \
-    "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" --std --backend cranelift -o "$exe" >/dev/null 2>"$d/build.err" \
+    "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" --std -o "$exe" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }
 
 fail=0
@@ -84,7 +84,7 @@ F_C='fn triple(x: int) -> [] int { return x * 3; }'
 F_D='fn total(x: int) -> [] int { return double(x) + triple(x); }'
 
 # ---- pool: several children at once -------------------------------------------------------------------------------------------------
-"$CANCHO" build "$root/tests/programs/pool_gate.cho" "$SRC/pool.cho" --std --backend cranelift -o "$d/pool" >/dev/null 2>"$d/pool.err" || { cat "$d/pool.err" >&2; echo "pool gate did not build" >&2; exit 2; }
+"$CANCHO" build "$root/tests/programs/pool_gate.cho" "$SRC/pool.cho" --std -o "$d/pool" >/dev/null 2>"$d/pool.err" || { cat "$d/pool.err" >&2; echo "pool gate did not build" >&2; exit 2; }
 out=$("$d/pool" 2>&1); r=$?
 expect "pool: exit code" "$r" 0
 expect "pool: all seven are live right after the starts" "$(printf '%s\n' "$out" | grep '^live')" "live 7"
@@ -96,7 +96,7 @@ wall=$(printf '%s\n' "$out" | sed -n 's/^wall //p')
 [ "$wall" -lt 3000 ] 2>/dev/null || { echo "FAIL: pool: four one-second children took ${wall} ms together (not at once)" >&2; fail=1; }
 
 # ---- merge: what a unit built beside the file, put into the file ---------------------------------------------------------------------
-"$CANCHO" build "$root/tests/programs/merge_gate.cho" "$SRC/splice.cho" --std --backend cranelift -o "$d/merge" >/dev/null 2>"$d/merge.err" || { cat "$d/merge.err" >&2; echo "merge gate did not build" >&2; exit 2; }
+"$CANCHO" build "$root/tests/programs/merge_gate.cho" "$SRC/splice.cho" --std -o "$d/merge" >/dev/null 2>"$d/merge.err" || { cat "$d/merge.err" >&2; echo "merge gate did not build" >&2; exit 2; }
 printf 'edition 7;\nimport std.option;\n\nfn a() -> [] int { return 1; }\n' > "$d/base.cho"
 printf 'edition 7;\nimport std.option;\n\nfn a() -> [] int { return 1; }\n\nfn c() -> [] int { return 3; }\n' > "$d/ours.cho"
 printf 'edition 7;\nimport std.option;\nimport std.buffer;\n\nfn a() -> [] int { return 1; }\n\nfn b() -> [] int { return 2; }\n' > "$d/theirs.cho"
@@ -398,7 +398,7 @@ rm -rf "$wd" "$rc"
 bexe="$d/build"
 "$CANCHO" build "$root/tests/programs/build.cho" "$SRC/build.cho" "$SRC/project.cho" "$SRC/plan.cho" "$SRC/driver.cho" \
     "$SRC/checker.cho" "$SRC/signature.cho" "$SRC/loop_check.cho" "$SRC/snapshot.cho" "$SRC/trail.cho" \
-    "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" "$SRC/library.cho" "$SRC/cases.cho" --std --backend cranelift -o "$bexe" >/dev/null 2>"$d/bbuild.err" \
+    "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" "$SRC/library.cho" "$SRC/cases.cho" --std -o "$bexe" >/dev/null 2>"$d/bbuild.err" \
     || { cat "$d/bbuild.err" >&2; echo "build gate did not build" >&2; exit 2; }
 B="$root/tests/buildcmd"
 runb() { # wd recipes log [more options...]
@@ -439,7 +439,7 @@ C="${CANCHO_PACKAGES:-}"
 [ -d "$C" ] || { echo "no cancho packages found; set CANCHO_PACKAGES" >&2; exit 2; }
 aexe="$d/agent"
 "$CANCHO" build "$root/src/cancho_agent.cho" "$SRC/anthropic.cho" "$SRC/ollama.cho" "$SRC/prompt.cho" "$SRC/planprompt.cho" "$SRC/plan.cho" "$SRC/cases.cho" "$SRC/review.cho" "$SRC/splice.cho" "$SRC/provider.cho" "$SRC/reply.cho" "$SRC/calls.cho" "$SRC/memory.cho" "$SRC/signature.cho" \
-    "$root/vendor/fetch_io.cho" "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho --std --backend cranelift -o "$aexe" >/dev/null 2>"$d/abuild.err" \
+    "$root/vendor/fetch_io.cho" "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho --std -o "$aexe" >/dev/null 2>"$d/abuild.err" \
     || { cat "$d/abuild.err" >&2; echo "agent did not build" >&2; exit 2; }
 cat > "$d/stub.py" <<'PY'
 import http.server, json, sys

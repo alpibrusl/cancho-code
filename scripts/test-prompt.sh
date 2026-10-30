@@ -16,10 +16,10 @@ command -v "$CANCHO" >/dev/null 2>&1 || { echo "no cancho on PATH; set CANCHO=" 
 command -v python3 >/dev/null 2>&1 || { echo "no python3 on PATH" >&2; exit 2; }
 root=$(cd "$(dirname "$0")/.." && pwd)
 d=$(mktemp -d -t cc-prompt-XXXXXX)
-"$CANCHO" build "$root/tests/programs/prompt_gate.cho" "$root/src/prompt.cho" --std --backend cranelift -o "$d/gate" >/dev/null 2>"$d/build.err" \
+"$CANCHO" build "$root/tests/programs/prompt_gate.cho" "$root/src/prompt.cho" --std -o "$d/gate" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }
 
-"$CANCHO" build "$root/tests/programs/planprompt_gate.cho" "$root/src/planprompt.cho" --std --backend cranelift -o "$d/pgate" >/dev/null 2>"$d/build2.err" \
+"$CANCHO" build "$root/tests/programs/planprompt_gate.cho" "$root/src/planprompt.cho" --std -o "$d/pgate" >/dev/null 2>"$d/build2.err" \
     || { cat "$d/build2.err" >&2; echo "planprompt gate did not build" >&2; exit 2; }
 
 python3 - "$d" "$root" <<'PY'

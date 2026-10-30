@@ -85,15 +85,15 @@ expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail
 fails() { echo "FAIL: $1" >&2; fail=1; }
 
 # ---- the class of a refusal --------------------------------------------------------------------------------------------------------------
-"$CANCHO" test "$root/tests/memory_test.cho" "$memory_src" "$root/src/signature.cho" --std --backend cranelift >"$work/unit.out" 2>&1 \
+"$CANCHO" test "$root/tests/memory_test.cho" "$memory_src" "$root/src/signature.cho" --std >"$work/unit.out" 2>&1 \
     || { fails "class: the unit tests of the normalisation fail"; grep -E "FAILED|error" "$work/unit.out" | head -5 >&2; }
 
 # ---- the tool and the recall gate program -----------------------------------------------------------------------------------------------
 tool="$work/lessons"
-"$CANCHO" build "$root/tests/programs/lessons.cho" "$lessons_src" "$memory_src" "$root/src/signature.cho" --std --backend cranelift -o "$tool" >/dev/null 2>"$work/build.err" \
+"$CANCHO" build "$root/tests/programs/lessons.cho" "$lessons_src" "$memory_src" "$root/src/signature.cho" --std -o "$tool" >/dev/null 2>"$work/build.err" \
     || { cat "$work/build.err" >&2; echo "gate did not build the tool" >&2; exit 2; }
 rgate="$work/memory_gate"
-"$CANCHO" build "$root/tests/programs/memory_gate.cho" "$memory_src" "$root/src/prompt.cho" "$root/src/signature.cho" --std --backend cranelift -o "$rgate" >/dev/null 2>"$work/build2.err" \
+"$CANCHO" build "$root/tests/programs/memory_gate.cho" "$memory_src" "$root/src/prompt.cho" "$root/src/signature.cho" --std -o "$rgate" >/dev/null 2>"$work/build2.err" \
     || { cat "$work/build2.err" >&2; echo "gate did not build the recall program" >&2; exit 2; }
 
 ref="$root/tests/reference/lessons_ref.py"

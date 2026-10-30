@@ -23,11 +23,11 @@ bexe=$(mktemp -t cc-library-build-XXXXXX)
 "$CANCHO" build "$root/tests/programs/library.cho" "$root/src/library.cho" "$root/src/plan.cho" "$root/src/project.cho" "$root/src/cases.cho" \
     "$root/src/acceptance.cho" "$root/src/driver.cho" "$root/src/checker.cho" "$root/src/signature.cho" "$root/src/loop_check.cho" \
     "$root/src/snapshot.cho" "$root/src/trail.cho" "$root/src/splice.cho" "$root/src/pool.cho" "$root/src/parallel.cho" \
-    --std --backend cranelift -o "$exe" >/dev/null || { echo "gate did not build" >&2; exit 2; }
+    --std -o "$exe" >/dev/null || { echo "gate did not build" >&2; exit 2; }
 "$CANCHO" build "$root/tests/programs/build.cho" "$root/src/build.cho" "$root/src/project.cho" "$root/src/plan.cho" "$root/src/driver.cho" \
     "$root/src/checker.cho" "$root/src/signature.cho" "$root/src/loop_check.cho" "$root/src/snapshot.cho" "$root/src/trail.cho" \
     "$root/src/acceptance.cho" "$root/src/splice.cho" "$root/src/pool.cho" "$root/src/parallel.cho" "$root/src/library.cho" "$root/src/cases.cho" \
-    --std --backend cranelift -o "$bexe" >/dev/null || { echo "gate did not build the command" >&2; exit 2; }
+    --std -o "$bexe" >/dev/null || { echo "gate did not build the command" >&2; exit 2; }
 
 fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }
@@ -67,7 +67,7 @@ expect "good: module line" "$(sed -n 2p "$d/src/diff.cho")" "module diff;"
 expect "good: pub on exactly the contract" "$(grep -c '^pub fn ' "$d/src/diff.cho")" "3"
 expect "good: pub names" "$(grep '^pub fn ' "$d/src/diff.cho" | sed 's/^pub fn \([a-z_]*\).*/\1/' | sort | tr '\n' ' ')" "apply edit_count unified "
 "$CANCHO" fmt --check "$d/src/diff.cho" "$d/tests/diff_test.cho" >/dev/null 2>&1; expect "good: fmt --check" "$?" "0"
-res=$(env -i PATH="$PATH" "$CANCHO" test --std --backend cranelift "$d/tests/diff_test.cho" "$d/src/diff.cho" 2>&1 | grep 'test result')
+res=$(env -i PATH="$PATH" "$CANCHO" test --std "$d/tests/diff_test.cho" "$d/src/diff.cho" 2>&1 | grep 'test result')
 expect "good: the generated tests pass" "$res" "test result: ok. $n passed; 0 failed"
 expect "good: tests are written against the module" "$(grep -c 'diff\.\(edit_count\|unified\|apply\)(' "$d/tests/diff_test.cho" | awk '{print ($1 > 0)}')" "1"
 expect "good: no unqualified call of a contract function" "$(grep -c '[^.a-z_]\(edit_count\|unified\|apply\)(' "$d/tests/diff_test.cho")" "0"
