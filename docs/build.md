@@ -116,6 +116,18 @@ A valid `plan.json` is normally reused as it is: "valid" means it parses, passes
 
 `run.log` says `[BUILD_STAGE]<TAB>plan<TAB>replaced<TAB><unit><TAB><test>`, the journal records a `plan_replaced` event, and the run goes on as one without a valid plan: `plan.json` is emptied, the plan agent is asked (with the same brief and guide; it is not told which test failed), and the new plan is checked. `state.txt` is kept: the units that verified and that the new plan still has are re-checked, as on any resume, not rebuilt. It never happens with `--retry` or `--patch` (the person continues a unit of this plan), or without `--guide` (there is nothing to ask with: the plan is reused, not a usage error), and not when the last run ended any other way: `provider_error`, `plan_failed`, `gate_failed` or killed (no verdict), or `stuck` with no unit whose last attempt was that same-test stop (a unit stopped by the same compiler refusal twice, at the attempt ceiling, by its test file not compiling, or by an agent that failed or gave up).
 
+### What the rule looks at, and what it does not (measured on the first cancho-diff build)
+
+The rule reads each unit's **last** attempt only. An attempt in between that failed otherwise (a test file or code that did not compile) does not reset anything: the first
+cancho-diff build (2026-10-30, `--attempts 6`) failed the wrong test `test_script_7` at attempts 0, 2 and 3 with a compile error at attempt 1; its last attempt was that test failing the
+same way as the one before (decision `signature`), and the run ended `stuck`. Run again as it was, `build` says `[BUILD_STAGE]<TAB>plan<TAB>replaced<TAB>script<TAB>test_script_7` and asks the planner for
+the plan again (checked: that run's journal, its original `plan.json` and the command, with the planner replaced by a program that fails). It did not happen in that project because the person edited
+`plan.json` by hand before running again: an edited plan is the person's (the `plan_final` blob is no longer these bytes) and is kept. `scripts/test-build.sh` has that shape
+("replan after a compile error between"). It is a guard, not a fix: it passed before and after.
+
+Two endings are still not replaced, by design: a unit stopped by the attempt ceiling, even when its last attempts failed that test (`--attempts` 4 with the shape above ends at the ceiling at attempt 3, decision `ceiling`,
+so it is reused; with the same shape and `--attempts 6` it is replaced), and a run whose plan the person has edited. The new plan is asked for with the same brief and guide and is not told which test failed.
+
 ## Gate and authority
 
 `scripts/test-build.sh` runs the whole chain against a stand-in agent (no network, no key, no model): the happy path, the arguments each call gets, plan reuse, a plan whose own test was the dead end asked for again (once, and not in the cases listed below), an invalid plan, a plan the agent gave up on, an unreachable agent, a build killed with SIGKILL and resumed, a failing unit, a stuck unit, a stuck unit continued with `--retry` and `--patch`, usage errors, and the fields of `build.json`. `scripts/test-profile.sh` runs the same chain under `--profile` ([profile.md](profile.md)): every malformed profile refused with its tag, the profile that states the default being the default, and a renamed profile (other files, findings under `code`) that builds. The authority report is pinned in [authority-build.json](authority-build.json) (`scripts/check-authority.sh --build`): the tool spawns processes and reads and writes files; it has no network.
