@@ -1,0 +1,3 @@
+pub fn edit_count[&h, &ra, &rb](heap: &!h Heap, a: &ra [byte], b: &rb [byte]) -> [heap] int
+pub fn unified[&h, &rn, &rm, &ra, &rb](heap: &!h Heap, a_name: &rn [byte], b_name: &rm [byte], a: &ra [byte], b: &rb [byte], context: int) -> [heap] buffer.Buffer
+pub fn apply[&h, &rp, &ra](heap: &!h Heap, patch: &rp [byte], a: &ra [byte]) -> [heap] result.Result[buffer.Buffer, int]

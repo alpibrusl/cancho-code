@@ -1,0 +1,52 @@
+edition 7;
+
+// library <checker> <workdir> <name> <contract>: the library step of `build --library` on its own (docs/library.md), over a work directory that
+// already holds a finished build (project.cho, plan.json). Exit 0 ok, 6 refused (`[LIBRARY_ERROR]`), 2 usage.
+
+import library;
+import std.buffer;
+import std.io;
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(net);
+    release(signals);
+    var console = io;
+    var h = heap;
+    var checker = "";
+    var wd = "";
+    var name = "";
+    var contract = "";
+    var given = false;
+    borrow args as &g in {
+        if arg_count(g) >= 5 {
+            given = true;
+            checker = arg(g, 1);
+            wd = arg(g, 2);
+            name = arg(g, 3);
+            contract = arg(g, 4);
+        }
+    }
+    var status = 2;
+    if given {
+        borrow fs as &fz in {
+            borrow exec as &x in {
+                borrow clock as &c in {
+                    borrow mut console as &!i in {
+                        borrow mut h as &!hh in {
+                            status = library.emit(hh, x, c, i, fz, checker, wd, name, contract);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    release(fs);
+    release(exec);
+    release(clock);
+    release(console);
+    release(h);
+    release(args);
+    return status;
+}

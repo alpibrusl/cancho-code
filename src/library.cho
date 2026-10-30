@@ -1,0 +1,568 @@
+edition 7;
+
+module library;
+
+// `library` -- `build --library NAME` (docs/library.md): what a finished build becomes as a package. The build leaves one file, `project.cho`,
+// whose functions are all private and whose tests live beside the units that made them; a library is a module other programs import. This turns
+// the one into the other, with no hand edit: `src/NAME.cho` is the project with `module NAME;` after its `edition` line and `pub` on exactly the
+// functions the contract file names, and `tests/NAME_test.cho` is the plan's own tests for those functions, written against `NAME.fn(...)`.
+// Both are formatted by the checker's `fmt` and then compiled and run by it; what does not hold is a `[LIBRARY_ERROR]`, never a silent skip.
+
+import acceptance;
+import cases;
+import plan;
+import project;
+import std.buffer;
+import std.bytes;
+import std.io;
+import std.json;
+
+fn word_byte(c: int) -> [] bool {
+    return bytes.is_alpha(c) || bytes.is_digit(c) || c == 95;
+}
+
+// A module name: a lowercase letter or `_`, then lowercase letters, digits and `_`; not one the driver's own files bind.
+pub fn name_ok[&n](name: &n [byte]) -> [] bool {
+    if len(name) == 0 || len(name) > 64 || bytes.equal(name, "std") || bytes.equal(name, "test") {
+        return false;
+    }
+    var i = 0;
+    while i < len(name) {
+        let c = int_of(name[i]);
+        let low = c >= 97 && c <= 122;
+        let dig = c >= 48 && c <= 57;
+        if !(low || c == 95 || dig && i > 0) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+// The name a line declares with `fn NAME` or `pub fn NAME`: its range in `line` (and `pub` is where the range starts, 7), or (-1, -1).
+fn declared[&t](line: &t [byte]) -> [] (int, int) {
+    var p = 0;
+    if bytes.starts_with(line, "pub fn ") {
+        p = 7;
+    } else if bytes.starts_with(line, "fn ") {
+        p = 3;
+    } else {
+        return (0 - 1, 0 - 1);
+    }
+    var e = p;
+    while e < len(line) && word_byte(int_of(line[e])) {
+        e = e + 1;
+    }
+    if e == p {
+        return (0 - 1, 0 - 1);
+    }
+    return (p, e);
+}
+
+// Is `name` one line of `list` (names, a line feed after each)?
+fn listed[&l, &n](list: &l [byte], name: &n [byte]) -> [] bool {
+    var pos = 0;
+    while pos < len(list) {
+        var e = pos;
+        while e < len(list) && int_of(list[e]) != 10 {
+            e = e + 1;
+        }
+        if bytes.equal(list[pos..e], name) {
+            return true;
+        }
+        pos = e + 1;
+    }
+    return false;
+}
+
+// The names the contract file declares, one per line.
+pub fn contract_names[&h, &c](heap: &!h Heap, contract: &c [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 64);
+    var pos = 0;
+    while pos < len(contract) {
+        var e = pos;
+        while e < len(contract) && int_of(contract[e]) != 10 {
+            e = e + 1;
+        }
+        let line = contract[pos..e];
+        let (a, z) = declared(line);
+        if a >= 0 && a == 7 {
+            out = buffer.append(heap, out, line[a..z]);
+            out = buffer.push(heap, out, byte_of(10));
+        }
+        pos = e + 1;
+    }
+    return out;
+}
+
+// Does a line of `project` declare `name`?
+fn has_decl[&p, &n](body: &p [byte], name: &n [byte]) -> [] bool {
+    var pos = 0;
+    while pos < len(body) {
+        var e = pos;
+        while e < len(body) && int_of(body[e]) != 10 {
+            e = e + 1;
+        }
+        let (a, z) = declared(body[pos..e]);
+        if a >= 0 && bytes.equal(body[pos + a..pos + z], name) {
+            return true;
+        }
+        pos = e + 1;
+    }
+    return false;
+}
+
+// The first contract name no line of `project` declares, or "".
+fn missing_name[&h, &p, &n](heap: &!h Heap, body: &p [byte], names: &n [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 32);
+    var found = false;
+    var pos = 0;
+    while pos < len(names) && !found {
+        var e = pos;
+        while e < len(names) && int_of(names[e]) != 10 {
+            e = e + 1;
+        }
+        if e > pos && !has_decl(body, names[pos..e]) {
+            out = buffer.append(heap, out, names[pos..e]);
+            found = true;
+        }
+        pos = e + 1;
+    }
+    return out;
+}
+
+// `src/NAME.cho`: the project with `module NAME;` after its `edition` line and `pub` on the functions of `names`. 0 ok, 1 the project already
+// declares a module, 2 it has no `edition` line.
+fn source[&h, &p, &n, &m](heap: &!h Heap, body: &p [byte], names: &n [byte], modname: &m [byte]) -> [heap] (buffer.Buffer, int) {
+    var out = buffer.empty(heap, len(body) + 64);
+    var status = 2;
+    var pos = 0;
+    while pos < len(body) {
+        var e = pos;
+        while e < len(body) && int_of(body[e]) != 10 {
+            e = e + 1;
+        }
+        let line = body[pos..e];
+        if bytes.starts_with(line, "module ") {
+            status = 1;
+        }
+        let (a, z) = declared(line);
+        if a == 3 && listed(names, line[a..z]) {
+            out = buffer.append(heap, out, "pub ");
+        }
+        out = buffer.append(heap, out, line);
+        out = buffer.push(heap, out, byte_of(10));
+        if status == 2 && bytes.starts_with(line, "edition ") {
+            out = buffer.append(heap, out, "module ");
+            out = buffer.append(heap, out, modname);
+            out = buffer.append(heap, out, ";\n");
+            status = 0;
+        }
+        pos = e + 1;
+    }
+    return (out, status);
+}
+
+// `text` with each call of a function of `names` written `NAME.name(`: the name not part of a longer identifier, not already qualified, not a
+// definition. (A function name inside a string literal is qualified too: the tests the planner writes do not put one there.)
+fn qualify[&h, &t, &n, &m](heap: &!h Heap, text: &t [byte], names: &n [byte], modname: &m [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, len(text) + 64);
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if word_byte(c) && (i == 0 || !word_byte(int_of(text[i - 1]))) {
+            var e = i;
+            while e < len(text) && word_byte(int_of(text[e])) {
+                e = e + 1;
+            }
+            let w = text[i..e];
+            let dotted = i > 0 && int_of(text[i - 1]) == 46;
+            let defined = i >= 3 && bytes.equal(text[i - 3..i], "fn ");
+            if !dotted && !defined && e < len(text) && int_of(text[e]) == 40 && listed(names, w) {
+                out = buffer.append(heap, out, modname);
+                out = buffer.push(heap, out, byte_of(46));
+            }
+            out = buffer.append(heap, out, w);
+            i = e;
+        } else {
+            out = buffer.push(heap, out, text[i]);
+            i = i + 1;
+        }
+    }
+    return out;
+}
+
+// How many times `needle` occurs in `text`.
+fn count_of[&t](text: &t [byte], needle: &static [byte]) -> [] int {
+    var n = 0;
+    var i = 0;
+    while i + len(needle) <= len(text) {
+        if bytes.equal(text[i..i + len(needle)], needle) {
+            n = n + 1;
+            i = i + len(needle);
+        } else {
+            i = i + 1;
+        }
+    }
+    return n;
+}
+
+// The plan's tests of the contract functions, qualified; a `[LIBRARY_SKIPPED]` line for each of those functions the plan gives no tests (only
+// examples, which are documentation); how many tests; and 1 when the plan cannot be read.
+fn collect[&h, &s, &n, &m](heap: &!h Heap, src: &s [byte], names: &n [byte], modname: &m [byte]) -> [heap] (buffer.Buffer, buffer.Buffer, int, int) {
+    var tests = buffer.empty(heap, 1024);
+    var skipped = buffer.empty(heap, 128);
+    var count = 0;
+    var bad = 0;
+    let tb = box_slice(heap, json.tape_len(src), 0);
+    borrow mut tb as &!tw in {
+        let tape = contents(tw);
+        let nodes = json.parse(src, tape);
+        var units = 0 - 1;
+        if nodes >= 0 && json.is_object(tape, 0) {
+            units = json.get(src, tape, 0, "units");
+        }
+        if units < 0 || !json.is_array(tape, units) {
+            bad = 1;
+        } else {
+            var j = units + 1;
+            var left = json.count(tape, units);
+            while left > 0 {
+                let sg = json.get(src, tape, j, "signature");
+                if sg >= 0 && json.is_string(tape, sg) {
+                    let sig = json.string_view(src, tape, sg);
+                    let (a, z) = declared(sig);
+                    if a >= 0 && listed(names, sig[a..z]) {
+                        let ts = json.get(src, tape, j, "tests");
+                        var n = 0;
+                        if ts >= 0 && json.is_array(tape, ts) {
+                            n = json.count(tape, ts);
+                        }
+                        if n == 0 {
+                            skipped = buffer.append(heap, skipped, "[LIBRARY_SKIPPED]\t");
+                            skipped = buffer.append(heap, skipped, sig[a..z]);
+                            skipped = buffer.append(heap, skipped, "\tthe plan gives it no tests, only examples (documentation): its public-API test is not generated\n");
+                        } else {
+                            var raw = buffer.empty(heap, 512);
+                            var rj = ts + 1;
+                            var rleft = n;
+                            while rleft > 0 {
+                                raw = plan.add_unit_test(heap, raw, src, tape, plan.unit_file(src, tape, j), rj);
+                                raw = buffer.append(heap, raw, "\n");
+                                rj = json.skip(tape, rj);
+                                rleft = rleft - 1;
+                            }
+                            borrow raw as &rb in {
+                                count = count + count_of(buffer.bytes(rb), "pub fn test_");
+                                let q = qualify(heap, buffer.bytes(rb), names, modname);
+                                borrow q as &qb in {
+                                    tests = buffer.append(heap, tests, buffer.bytes(qb));
+                                }
+                                buffer.drop(heap, q);
+                            }
+                            buffer.drop(heap, raw);
+                        }
+                    }
+                }
+                j = json.skip(tape, j);
+                left = left - 1;
+            }
+        }
+    }
+    unbox_slice(heap, tb);
+    return (tests, skipped, count, bad);
+}
+
+// The test file: the header (the standard modules its text names, then the module under test) and the tests.
+fn test_file[&h, &t, &m](heap: &!h Heap, tests: &t [byte], modname: &m [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.append(heap, buffer.empty(heap, len(tests) + 256), "edition 7;\nimport std.test;\n");
+    if bytes.find(tests, "buffer.") >= 0 {
+        out = buffer.append(heap, out, "import std.buffer;\n");
+    }
+    if bytes.find(tests, "bytes.") >= 0 {
+        out = buffer.append(heap, out, "import std.bytes;\n");
+    }
+    if bytes.find(tests, "list.") >= 0 {
+        out = buffer.append(heap, out, "import std.list;\n");
+    }
+    if bytes.find(tests, "option.") >= 0 {
+        out = buffer.append(heap, out, "import std.option;\n");
+    }
+    if bytes.find(tests, "result.") >= 0 {
+        out = buffer.append(heap, out, "import std.result;\n");
+    }
+    if bytes.find(tests, "utf8.") >= 0 {
+        out = buffer.append(heap, out, "import std.utf8;\n");
+    }
+    if bytes.find(tests, "vec.") >= 0 {
+        out = buffer.append(heap, out, "import std.vec;\n");
+    }
+    out = buffer.append(heap, out, "import ");
+    out = buffer.append(heap, out, modname);
+    out = buffer.append(heap, out, ";\n\n");
+    out = buffer.append(heap, out, tests);
+    return out;
+}
+
+fn slurp[&h, &f, &p](heap: &!h Heap, fs: &f Fs(""), path: &p [byte], cap: int) -> [heap, fs_read("")] (buffer.Buffer, bool) {
+    let store = box_slice(heap, cap, byte_of(0));
+    var out = buffer.empty(heap, 16);
+    var ok = false;
+    borrow mut store as &!sw in {
+        let n = fs_read(fs, path, contents(sw));
+        if n >= 0 && n < cap {
+            ok = true;
+            out = buffer.append(heap, out, contents(sw)[0..n]);
+        }
+    }
+    unbox_slice(heap, store);
+    return (out, ok);
+}
+
+// One `[LIBRARY_ERROR]` line; the exit code of the library step.
+fn refuse[&h, &i, &z, &l, &d](heap: &!h Heap, io: &!i Io, fs: &z Fs(""), log: &l [byte], tag: &static [byte], detail: &d [byte]) -> [heap, io_write, fs_read(""), fs_write("")] int {
+    var line = buffer.append(heap, buffer.empty(heap, 96), "[LIBRARY_ERROR]\t");
+    line = buffer.append(heap, line, tag);
+    line = buffer.push(heap, line, byte_of(9));
+    line = buffer.append(heap, line, detail);
+    line = buffer.push(heap, line, byte_of(10));
+    borrow line as &lb in {
+        project.tell(heap, io, fs, log, buffer.bytes(lb));
+    }
+    buffer.drop(heap, line);
+    return 6;
+}
+
+// Run `text` in a shell with the checker's output kept: 0 when it held, else 1 and the line that said why.
+fn sh[&h, &x, &c, &t](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, text: &t [byte]) -> [heap, exec(""), clock, poll] (int, buffer.Buffer) {
+    let r = acceptance.run(heap, exec, clock, text, "", 1048576, 300000);
+    let acceptance.Result { held, why, said } = r;
+    buffer.drop(heap, said);
+    var code = 1;
+    if held == 0 {
+        code = 0;
+    }
+    return (code, why);
+}
+
+// The library step, after a build that is `done` (docs/library.md): 0 ok, 6 refused (`[LIBRARY_ERROR]`).
+pub fn emit[&h, &x, &c, &i, &z, &k, &w, &n, &q](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), checker: &k [byte], wd: &w [byte], name: &n [byte], contract: &q [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] int {
+    var status = 6;
+    let logp = project.in_wd(heap, wd, "run.log", "", "");
+    let projp = project.in_wd(heap, wd, "project.cho", "", "");
+    let planp = project.in_wd(heap, wd, "plan.json", "", "");
+    let srcp = project.in_wd(heap, wd, "src/", name, ".cho");
+    let tstp = project.in_wd(heap, wd, "tests/", name, "_test.cho");
+    borrow logp as &lgb in {
+        borrow projp as &pjb in {
+            borrow planp as &plb in {
+                borrow srcp as &spb in {
+                    borrow tstp as &tpb in {
+                        let lg = buffer.bytes(lgb);
+                        if !name_ok(name) {
+                            status = refuse(heap, io, fs, lg, "library-name", name);
+                        } else if len(contract) == 0 {
+                            status = refuse(heap, io, fs, lg, "library-no-contract", "--library needs --contract: the contract file names the public functions");
+                        } else {
+                            let (ctext, cread) = slurp(heap, fs, contract, 65536);
+                            let (ptext, pread) = slurp(heap, fs, buffer.bytes(pjb), 4194304);
+                            let (ltext, lread) = slurp(heap, fs, buffer.bytes(plb), 1048576);
+                            if !cread || !pread || !lread {
+                                status = refuse(heap, io, fs, lg, "library-unread", "the contract, project.cho or plan.json cannot be read");
+                            } else {
+                                borrow ctext as &ctb in {
+                                    borrow ptext as &ptb in {
+                                        borrow ltext as &ltb in {
+                                            let names = contract_names(heap, buffer.bytes(ctb));
+                                            borrow names as &nb in {
+                                                let nm = buffer.bytes(nb);
+                                                let gone = missing_name(heap, buffer.bytes(ptb), nm);
+                                                var gone_len = 0;
+                                                borrow gone as &gnb in {
+                                                    gone_len = len(buffer.bytes(gnb));
+                                                }
+                                                if len(nm) == 0 {
+                                                    status = refuse(heap, io, fs, lg, "library-contract-empty", "the contract file declares no `pub fn`");
+                                                } else if gone_len > 0 {
+                                                    borrow gone as &gmb in {
+                                                        status = refuse(heap, io, fs, lg, "library-contract-missing", buffer.bytes(gmb));
+                                                    }
+                                                } else {
+                                                    let (src, sstatus) = source(heap, buffer.bytes(ptb), nm, name);
+                                                    if sstatus == 1 {
+                                                        status = refuse(heap, io, fs, lg, "library-has-module", "project.cho already declares a module");
+                                                        buffer.drop(heap, src);
+                                                    } else if sstatus == 2 {
+                                                        status = refuse(heap, io, fs, lg, "library-no-edition", "project.cho has no `edition` line");
+                                                        buffer.drop(heap, src);
+                                                    } else {
+                                                        status = write_and_check(heap, exec, clock, io, fs, checker, wd, name, lg, nm, src, buffer.bytes(ltb), buffer.bytes(spb), buffer.bytes(tpb));
+                                                    }
+                                                }
+                                                buffer.drop(heap, gone);
+                                            }
+                                            buffer.drop(heap, names);
+                                        }
+                                    }
+                                }
+                            }
+                            buffer.drop(heap, ctext);
+                            buffer.drop(heap, ptext);
+                            buffer.drop(heap, ltext);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    buffer.drop(heap, logp);
+    buffer.drop(heap, projp);
+    buffer.drop(heap, planp);
+    buffer.drop(heap, srcp);
+    buffer.drop(heap, tstp);
+    return status;
+}
+
+// The rest of `emit`, once the source is made: the tests, the two files, `fmt`, then `fmt --check` and `test`.
+fn write_and_check[&h, &x, &c, &i, &z, &k, &w, &n, &l, &m, &s, &sp, &tp](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), checker: &k [byte], wd: &w [byte], name: &n [byte], lg: &l [byte], names: &m [byte], src: buffer.Buffer, plan_src: &s [byte], srcpath: &sp [byte], tstpath: &tp [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] int {
+    var status = 6;
+    // A plan with `cases` and no `tests` is expanded first (the build leaves the expanded one; a hand-given plan may not).
+    var expanded = buffer.append(heap, buffer.empty(heap, len(plan_src) + 16), plan_src);
+    let (ex, rep, errs) = cases.expand(heap, plan_src);
+    buffer.drop(heap, rep);
+    if errs == 0 {
+        buffer.drop(heap, expanded);
+        expanded = ex;
+    } else {
+        buffer.drop(heap, ex);
+    }
+    var tests = buffer.empty(heap, 16);
+    var skipped = buffer.empty(heap, 16);
+    var count = 0;
+    var bad = 0;
+    borrow expanded as &eb in {
+        let (t2, s2, c2, b2) = collect(heap, buffer.bytes(eb), names, name);
+        buffer.drop(heap, tests);
+        buffer.drop(heap, skipped);
+        tests = t2;
+        skipped = s2;
+        count = c2;
+        bad = b2;
+    }
+    buffer.drop(heap, expanded);
+    if bad != 0 {
+        status = refuse(heap, io, fs, lg, "library-unread", "plan.json has no units");
+        buffer.drop(heap, src);
+    } else if count == 0 {
+        status = refuse(heap, io, fs, lg, "library-no-tests", "the plan gives none of the contract functions a test: there would be nothing to verify the library with");
+        buffer.drop(heap, src);
+    } else {
+        var tf = buffer.empty(heap, 16);
+        borrow tests as &tsb in {
+            buffer.drop(heap, tf);
+            tf = test_file(heap, buffer.bytes(tsb), name);
+        }
+        var mk = buffer.append(heap, buffer.empty(heap, len(wd) + 48), "mkdir -p ");
+        mk = buffer.append(heap, mk, wd);
+        mk = buffer.append(heap, mk, "/src ");
+        mk = buffer.append(heap, mk, wd);
+        mk = buffer.append(heap, mk, "/tests");
+        var mkcode = 1;
+        borrow mk as &mb in {
+            let (mc, mw) = sh(heap, exec, clock, buffer.bytes(mb));
+            mkcode = mc;
+            buffer.drop(heap, mw);
+        }
+        buffer.drop(heap, mk);
+        if mkcode != 0 {
+            status = refuse(heap, io, fs, lg, "library-write", "the src and tests directories cannot be made");
+            buffer.drop(heap, src);
+            buffer.drop(heap, tf);
+        } else {
+            let w1 = project.put(heap, fs, srcpath, src);
+            let w2 = project.put(heap, fs, tstpath, tf);
+            if w1 < 0 || w2 < 0 {
+                status = refuse(heap, io, fs, lg, "library-write", "the library files cannot be written");
+            } else {
+                borrow skipped as &skb in {
+                    status = format_and_run(heap, exec, clock, io, fs, checker, name, lg, srcpath, tstpath, count, buffer.bytes(skb));
+                }
+            }
+        }
+    }
+    buffer.drop(heap, tests);
+    buffer.drop(heap, skipped);
+    return status;
+}
+
+// `fmt` both files, then `fmt --check` and `test --std` them together; the `[LIBRARY]` line, or the first line the checker said.
+fn format_and_run[&h, &x, &c, &i, &z, &k, &n, &l, &sp, &tp, &sk](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), checker: &k [byte], name: &n [byte], lg: &l [byte], srcpath: &sp [byte], tstpath: &tp [byte], count: int, skipped: &sk [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write] int {
+    var status = 6;
+    var fmt = buffer.append(heap, buffer.empty(heap, 256), checker);
+    fmt = buffer.append(heap, fmt, " fmt ");
+    fmt = buffer.append(heap, fmt, srcpath);
+    fmt = buffer.append(heap, fmt, " ");
+    fmt = buffer.append(heap, fmt, tstpath);
+    var fcode = 1;
+    var fwhy = buffer.empty(heap, 16);
+    borrow fmt as &fb in {
+        let (fc, fw) = sh(heap, exec, clock, buffer.bytes(fb));
+        fcode = fc;
+        buffer.drop(heap, fwhy);
+        fwhy = fw;
+    }
+    buffer.drop(heap, fmt);
+    if fcode != 0 {
+        borrow fwhy as &fy in {
+            status = refuse(heap, io, fs, lg, "library-format", buffer.bytes(fy));
+        }
+    } else {
+        var run = buffer.append(heap, buffer.empty(heap, 512), checker);
+        run = buffer.append(heap, run, " fmt --check ");
+        run = buffer.append(heap, run, srcpath);
+        run = buffer.append(heap, run, " ");
+        run = buffer.append(heap, run, tstpath);
+        run = buffer.append(heap, run, " && ");
+        run = buffer.append(heap, run, checker);
+        run = buffer.append(heap, run, " test --std --backend cranelift ");
+        run = buffer.append(heap, run, tstpath);
+        run = buffer.append(heap, run, " ");
+        run = buffer.append(heap, run, srcpath);
+        var rcode = 1;
+        var rwhy = buffer.empty(heap, 16);
+        borrow run as &rb in {
+            let (rc, rw) = sh(heap, exec, clock, buffer.bytes(rb));
+            rcode = rc;
+            buffer.drop(heap, rwhy);
+            rwhy = rw;
+        }
+        buffer.drop(heap, run);
+        if rcode != 0 {
+            borrow rwhy as &ry in {
+                status = refuse(heap, io, fs, lg, "library-tests", buffer.bytes(ry));
+            }
+        } else {
+            var line = buffer.append(heap, buffer.empty(heap, 256), "");
+            if len(skipped) > 0 {
+                line = buffer.append(heap, line, skipped);
+            }
+            line = buffer.append(heap, line, "[LIBRARY]\tok\t");
+            line = buffer.append(heap, line, name);
+            line = buffer.push(heap, line, byte_of(9));
+            line = buffer.append(heap, line, srcpath);
+            line = buffer.push(heap, line, byte_of(9));
+            line = buffer.append(heap, line, tstpath);
+            line = buffer.push(heap, line, byte_of(9));
+            line = buffer.push_nat(heap, line, count);
+            line = buffer.push(heap, line, byte_of(10));
+            borrow line as &lb in {
+                project.tell(heap, io, fs, lg, buffer.bytes(lb));
+            }
+            buffer.drop(heap, line);
+            status = 0;
+        }
+        buffer.drop(heap, rwhy);
+    }
+    buffer.drop(heap, fwhy);
+    return status;
+}
