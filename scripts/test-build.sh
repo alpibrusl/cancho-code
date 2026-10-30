@@ -166,6 +166,22 @@ expect "replan: one plan_replaced in the journal" "$(replaced "$wd")" 1
 grep '"kind":"plan_replaced"' "$wd/journal/events.jsonl" | grep -q '"unit":"a","test":"test_a_1"' || { echo "FAIL: replan: the event lacks the unit and the test" >&2; fail=1; }
 cmp -s "$wd/plan.json" "$P/plan.json" || { echo "FAIL: replan: plan.json is not the new plan" >&2; fail=1; }
 rm -rf "$wd" "$rc"
+# the cancho-diff shape (2026-10-30): a wrong test, and between the attempts that fail it one that does not compile. Only the last attempts decide: the unit's last
+# attempt failed the plan's own test the same way twice, so the next run asks for the plan again. (The first cancho-diff run met this; the person edited plan.json
+# before running again, which makes the plan the person's, and nothing was replaced. Nothing in the rule stopped it.)
+set -- $(mkdead "$DEADA"); wd=$1; rc=$2; lg=$3
+printf '%s\n' "$BROKENA" > "$rc/a.2.sh"
+out=$(run "$wd" "$rc" "$lg" --attempts 6); r=$?
+expect "replan after a compile error between: the first run is stuck" "$(verdict "$out")" stuck
+expect "replan after a compile error between: a had four attempts (the same failure twice ended it, before the ceiling of six)" "$(grep -c '^a$' "$lg")" 4
+expect "replan after a compile error between: the second attempt did not compile" "$(sed -n 2p "$wd/trail-a.jsonl" | grep -c 'not-a-slice\|"outcome":"refused"')" 1
+printf 'cp "%s" "$1"\n' "$P/plan.json" > "$rc/plan.sh"
+rm -f "$rc/a.2.sh"
+out=$(run "$wd" "$rc" "$lg" --attempts 6); r=$?
+expect "replan after a compile error between: exit code" "$r" 0
+expect "replan after a compile error between: run.log names the unit and the test" "$(grep '^\[BUILD_STAGE\]	plan	replaced' "$wd/run.log" | tr '\t' ':')" "[BUILD_STAGE]:plan:replaced:a:test_a_1"
+expect "replan after a compile error between: one plan_replaced" "$(replaced "$wd")" 1
+rm -rf "$wd" "$rc"
 # the dead end is one of the unit's own tests (`tests`, the B1 shape), not an example's
 set -- $(mkdead 's/"examples":\["double(2) == 4"/"tests":["pub fn test_a_dead() -> [] int { test.assert(double(2) == 5); return 0; }"],"examples":["double(2) == 4"/'); wd=$1; rc=$2; lg=$3
 out=$(run "$wd" "$rc" "$lg")
