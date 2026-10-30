@@ -1,7 +1,9 @@
 edition 7;
 
-// plancheck <plan.json>: check a plan (docs/plan.md). Exit 0 valid, 1 invalid,
-// 2 usage (no argument, the file cannot be read, or it is 1 MiB or more).
+// plancheck <plan.json> [<brief.txt>]: check a plan (docs/plan.md). Exit 0 valid, 1 invalid,
+// 2 usage (no argument, a file cannot be read, or it is 1 MiB or more). With a brief, a plan that passes
+// the check is then held to the brief's own rules (`plan.brief_report`: `brief-name`, `brief-heap`), as the
+// plan agent does in each round and `build` does as a backstop; their report replaces the valid verdict.
 
 import std.buffer;
 import std.io;
@@ -17,12 +19,18 @@ fn main(world: World) -> [] int {
     var console = io;
     var h = heap;
     var path = "";
+    var bpath = "";
     var given = false;
+    var with_brief = false;
     var status = 2;
     borrow args as &g in {
         if arg_count(g) >= 2 {
             given = true;
             path = arg(g, 1);
+        }
+        if arg_count(g) >= 3 {
+            with_brief = true;
+            bpath = arg(g, 2);
         }
     }
     if given {
@@ -30,22 +38,46 @@ fn main(world: World) -> [] int {
             borrow mut console as &!i in {
                 borrow mut h as &!hh in {
                     let room = box_slice(hh, 1048576, byte_of(0));
+                    let broom = box_slice(hh, 1048576, byte_of(0));
                     borrow mut room as &!rw in {
-                        let text = contents(rw);
-                        let n = fs_read(f, path, text);
-                        if n >= 1048576 {
-                            // The buffer is full: the file may be longer, and a plan checked in
-                            // part would be reported as if it were the whole.
-                            io.error_all(i, "plancheck: the plan is too large (1 MiB or more)\n");
-                        } else if n >= 0 {
-                            let (out, code) = plan.check(hh, text[0..n]);
-                            borrow out as &o in {
-                                buffer.write(i, o);
+                        borrow mut broom as &!bw in {
+                            let text = contents(rw);
+                            let btext = contents(bw);
+                            let n = fs_read(f, path, text);
+                            var bn = 0;
+                            if with_brief {
+                                bn = fs_read(f, bpath, btext);
                             }
-                            buffer.drop(hh, out);
-                            status = code;
+                            if n >= 1048576 || bn >= 1048576 {
+                                // The buffer is full: the file may be longer, and a plan checked in
+                                // part would be reported as if it were the whole.
+                                io.error_all(i, "plancheck: the plan or the brief is too large (1 MiB or more)\n");
+                            } else if n >= 0 && bn >= 0 {
+                                let (out, code) = plan.check(hh, text[0..n]);
+                                status = code;
+                                if code == 0 && with_brief {
+                                    let (brep, bcount) = plan.brief_report(hh, btext[0..bn], text[0..n]);
+                                    if bcount > 0 {
+                                        borrow brep as &o in {
+                                            buffer.write(i, o);
+                                        }
+                                        status = 1;
+                                    } else {
+                                        borrow out as &o in {
+                                            buffer.write(i, o);
+                                        }
+                                    }
+                                    buffer.drop(hh, brep);
+                                } else {
+                                    borrow out as &o in {
+                                        buffer.write(i, o);
+                                    }
+                                }
+                                buffer.drop(hh, out);
+                            }
                         }
                     }
+                    unbox_slice(hh, broom);
                     unbox_slice(hh, room);
                 }
             }

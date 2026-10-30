@@ -1,0 +1,75 @@
+{
+ "name": "fuzzy",
+ "units": [
+  {
+   "id": "count",
+   "signature": "fn fz_count[&h](heap: &!h Heap, n: int) -> [heap] int",
+   "description": "A helper the brief does not name: it may take a heap.",
+   "examples": [
+    "fz_count(heap, 3) == 3"
+   ],
+   "tests": [
+    "pub fn test_fz_count_1[&h](heap: &!h Heap) -> [heap] int { test.assert(fz_count(heap, 3) == 3); return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "dist",
+   "signature": "fn edit_distance[&h, &a, &b](heap: &!h Heap, a: &a [byte], b: &b [byte]) -> [heap] int",
+   "examples": [
+    "edit_distance(\"kitten\", \"sitting\") == 3"
+   ],
+   "tests": [
+    "pub fn test_dist_1[&h](heap: &!h Heap) -> [heap] int { test.assert(edit_distance(heap, \"kitten\", \"sitting\") == 3); return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "sim",
+   "signature": "fn similarity_pct[&a, &b](a: &a [byte], b: &b [byte]) -> [] int",
+   "examples": [
+    "similarity_pct(\"kitten\", \"sitting\") == 57"
+   ],
+   "deps": [
+    "dist"
+   ]
+  },
+  {
+   "id": "pick",
+   "signature": "fn closest[&h, &q](heap: &!h Heap, query: &q [byte]) -> [heap] option.Option[buffer.Buffer]",
+   "description": "Its result owns memory: the heap is the caller's.",
+   "examples": [
+    "closest(heap, \"abc\") == option.Option::None"
+   ],
+   "tests": [
+    "pub fn test_pick_1[&h](heap: &!h Heap) -> [heap] int { match closest(heap, \"abc\") { option.Option::Some(b) => { buffer.drop(heap, b); test.assert(false); } option.Option::None => { test.assert(true); } } return 0; }"
+   ],
+   "deps": [
+    "dist"
+   ]
+  },
+  {
+   "id": "rom",
+   "signature": "fn from_roman[&h, &r](heap: &!h Heap, text: &r [byte]) -> [heap] result.Result[int, &static [byte]]",
+   "examples": [
+    "from_roman(\"XIV\") == result.Result::Ok(14)"
+   ],
+   "tests": [
+    "pub fn test_rom_1[&h](heap: &!h Heap) -> [heap] int { match from_roman(heap, \"XIV\") { result.Result::Ok(v) => { test.assert(v == 14); } result.Result::Err(e) => { test.assert(false); } } return 0; }"
+   ],
+   "deps": []
+  },
+  {
+   "id": "free",
+   "signature": "fn fz_free_count[&h](heap: &!h Heap, parts: list.List[Box[Box[[byte]]]]) -> [heap] int",
+   "description": "Takes the list by value and frees it: the heap is needed for that, so `brief-heap` leaves it alone.",
+   "examples": [
+    "fz_free_count(heap, list.empty()) == 0"
+   ],
+   "tests": [
+    "pub fn test_free_1[&h](heap: &!h Heap) -> [heap] int { test.assert(fz_free_count(heap, list.empty()) == 0); return 0; }"
+   ],
+   "deps": []
+  }
+ ]
+}

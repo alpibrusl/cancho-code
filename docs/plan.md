@@ -69,6 +69,39 @@ Exit 0 valid, 1 invalid, 2 usage (no argument, or the file cannot be read). **Ev
 
 The message of a rule is what the model reads on its next round, so it names what to change (`tests/plans/messages.txt`, asserted by `scripts/test-plan.sh`): `unit-field` names each missing or mistyped field and the form it takes; `no-example` and `example-own` name the function the example must call (the whole name, prefix included); `example-callee` names the callee no unit declares.
 
+Two more rules need the **brief**, which the plan alone does not carry. They run after a valid plan check, in `src/plan.cho` `brief_report`: in each round of the plan agent (`--mode plan`, fed back like the rules above), in `build` as a backstop for a `plan.json` it did not just ask for (docs/build.md, verdict `plan_failed`, nothing built), and in `plancheck <plan.json> <brief.txt>` (with a second argument; with one, nothing changes). A brief's function is a bullet `- name(...) : ...` or `- name(...) -> Type : ...`.
+
+| rule | refused when |
+|---|---|
+| `brief-name` | (reported on the name) the brief names a function and no unit declares `fn name` with exactly that name |
+| `brief-heap` | (reported on the unit) a unit declares a function the brief names with a `Heap` parameter, its result owns no memory (`int`, `bool`, `byte`, a borrowed reference such as `&r [byte]` or `&static [byte]`, a tuple, or an `option.Option` / `result.Result` of those), and it takes nothing owned that it would have to free (every other parameter is a reference or such a plain value). See "The call shape" below |
+
+## The call shape: `brief-heap` (#83)
+
+The model writes the plan from the brief, and a hidden audit calls the brief's functions as the brief writes them. 6 of 7 `done` builds below 100% (eval/results/2026-10-15-planner-gaps.md, 2026-10-29-83-rerun.md) differed from the audit in the **call shape**, not in behaviour: the audit's file did not build, so every case of that function scored 0. The commonest shape error is a heap the caller does not pass: `edit_distance`, `similarity_pct` planned as `fn edit_distance[&h, &a, &b](heap: &!h Heap, a: &a [byte], b: &b [byte]) -> [heap] int` (runs-83 editdistance, 0/54: "takes 3 arguments, but 2 were given"), and `from_roman(heap, s)` (forge1 ev2 roman, 192/439: from_roman 0/246). With the reference's signatures pinned by `--contract` the same briefs scored 54/54 and 76/76.
+
+**The rule.** A caller passes a heap only to a function whose result owns memory it allocates (a buffer, a `Box`, a list, a vec); every function a brief names in `eval/*/reference.cho` follows this (a helper may not: csv's `drop_fields(heap, fields) -> [heap] int` takes its list by value and frees it, which is why a function given something owned is left alone), and the brief's bullets never list the heap (`- to_roman(n)` is `to_roman(heap, n)` because its result is owned text; `- edit_distance(a, b)` returns an integer, so it is `edit_distance(a, b)`). A function of the brief whose result is a plain value and that takes a heap is refused, with the action: remove the heap parameter and `heap` from the effect row (`-> [] int`), take scratch memory from a `region` inside the function, call no helper that takes a heap from it, write its tests and examples without a heap. A helper the brief does not name may take a heap (the services' `validate_create(heap, body)` and the integration units do); a brief function whose result is a record or anything not listed above is not judged (it may hold owned memory).
+
+**What the check sees, and what it cannot.** It sees the plan's signatures and the brief's bullets (their names; the argument words are only quoted back). It does not see the audit. The other inputs were measured and rejected:
+- the examples' arity: an example of a heap function is documentation (the project driver runs the unit's `tests`; src/project.cho `write_tests` writes examples as tests only for a unit without `tests`, as `() -> [] int` with no heap in scope), and real plans write it both ways: with the heap (`ini_parse(heap, "a = 1")`, the hand service plans) and without (`base64_encode("f")`, and the hand plans' first lines with unquoted JSON). An arity rule on examples refused 2 valid hand service plans (`invoices`, `kvstore`), a test fixture and a qwen base64 plan whose heap is right;
+- the brief's argument count against the signature's non-heap parameters: it fired on no plan (the shape losses are a heap, or a type, not a missing argument);
+- a heap on any plain-result unit, brief or not: it refused 14 test fixtures (the integration units among them) and the hand `jobs` service plan, where the heap is the helper's own business.
+
+It cannot see a **type** the brief leaves open: `closest(query, candidates)` returning owned or borrowed text, a `list.List` or a `vec.Vec` of candidates (runs-83 editdistance's third function), or ini's `Err(message)` read as text where the audit pins the line number (`Result[Buffer, int]`, ini 0/76 in runs-83 and m1). Both shapes follow the brief; only the brief (stating the type in words) or `--contract` can decide them.
+
+**Measured** (`plancheck <plan.json> <its eval brief>` over every plan at hand, with the build of this rule):
+
+| plans | count | refused by `brief-heap` | audit of the refused |
+|---|---|---|---|
+| real Haiku plans, runs-83 (4) and runs-83c (2) | 6 | runs-83 editdistance: `edit_distance`, `similarity` | 0/54 |
+| real plans of cancho-code/runs (Haiku m1, contract1, direct1, forge1, kill2; qwen oc-qwen), final and journal rounds | 44 parsed (21 final, 23 journal rounds; 4 files were not JSON) | forge1 ev2 roman (final plan and both rounds): `from_roman` | 192/439 |
+| hand plans `eval/*/plan.json` with their briefs | 14 | none | |
+| statuslite step plans (Haiku, another project) with their briefs | 36 | none (their bullets are `- name(...):`, which `brief_report` does not read; a looser reading also refuses none) | |
+
+No plan that scored 100% is refused (base64 2/2, basics 5/5, semver 3/3, jsonptr, sortedmap, roman 4/4, both runs-83c contract runs; the eval hand plans). Of the shape losses it catches 2 of the plans at hand (editdistance's 2 heap functions of 3, roman's 1 of 2); it does not catch closest's type or ini's error type. What it buys after the round is not measured: the model may fix the heap and keep `closest`'s list (editdistance would then still not reach 54/54).
+
+Gates: `scripts/test-plan.sh` (a synthetic plan with a heap on two brief functions, and three that keep theirs: an owning result, an owned parameter, a helper the brief does not name; the same plan fixed; the real runs-83 editdistance, forge1 ev2 roman and runs-83c editdistance plans as fixtures; every eval plan with its brief), `scripts/test-build.sh` (`brief heap`: refused, `plan_failed`, exit 3, no unit asked).
+
 ## What this does not check
 
 That the examples are *right*, or that they can all be satisfied together (lex-code's plan check runs the examples against a reference; there is none here). That a signature's types exist. Those need the model or the compiler and belong to later features (P4b unit verification, P6 hardening).
