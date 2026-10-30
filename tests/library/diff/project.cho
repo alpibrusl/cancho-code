@@ -1,0 +1,691 @@
+edition 7;
+import std.result;
+import std.buffer;
+
+fn cdiff_lines[&r](s: &r [byte]) -> [] int {
+    var count = 0;
+    var i = 0;
+    while i < len(s) {
+        if int_of(s[i]) == 10 {
+            count = count + 1;
+        }
+        i = i + 1;
+    }
+    if len(s) > 0 && int_of(s[len(s) - 1]) != 10 {
+        count = count + 1;
+    }
+    return count;
+}
+
+fn cdiff_line_end[&r](s: &r [byte], start: int) -> [] int {
+    var i = start;
+    var found = 0 - 1;
+    while i < len(s) && found < 0 {
+        if int_of(s[i]) == 10 {
+            found = i + 1;
+        }
+        i = i + 1;
+    }
+    if found < 0 {
+        return len(s);
+    }
+    return found;
+}
+
+fn cdiff_same_line[&ra, &rb](a: &ra [byte], a0: int, a1: int, b: &rb [byte], b0: int, b1: int) -> [] bool {
+    let n = a1 - a0;
+    if n != b1 - b0 {
+        return false;
+    }
+    var same = true;
+    var i = 0;
+    while i < n && same {
+        if int_of(a[a0 + i]) != int_of(b[b0 + i]) {
+            same = false;
+        }
+        i = i + 1;
+    }
+    return same;
+}
+
+fn cdiff_range[&h](heap: &!h Heap, start: int, count: int) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 16);
+    out = buffer.push_nat(heap, out, start);
+    if count != 1 {
+        out = buffer.push(heap, out, byte_of(44));
+        out = buffer.push_nat(heap, out, count);
+    }
+    return out;
+}
+
+fn cdiff_digits_end[&r](s: &r [byte], pos: int) -> [] int {
+    var i = pos;
+    while i < len(s) && int_of(s[i]) >= 48 && int_of(s[i]) <= 57 {
+        i = i + 1;
+    }
+    return i;
+}
+
+fn cdiff_num_end[&r](s: &r [byte], pos: int) -> [] int {
+    let e = cdiff_digits_end(s, pos);
+    if e - pos >= 1 {
+        if e - pos <= 9 {
+            return e;
+        }
+    }
+    return 0 - 1;
+}
+
+fn cdiff_value[&r](s: &r [byte], from: int, to: int) -> [] int {
+    var v = 0;
+    var i = from;
+    while i < to {
+        v = v * 10 + (int_of(s[i]) - 48);
+        i = i + 1;
+    }
+    return v;
+}
+
+fn cdiff_byte_is[&r](s: &r [byte], pos: int, c: int) -> [] bool {
+    if pos >= 0 && pos < len(s) {
+        return int_of(s[pos]) == c;
+    }
+    return false;
+}
+
+fn cdiff_at[&r, &l](s: &r [byte], pos: int, lit: &l [byte]) -> [] bool {
+    if pos >= 0 && pos + len(lit) <= len(s) {
+        return cdiff_same_line(s, pos, pos + len(lit), lit, 0, len(lit));
+    }
+    return false;
+}
+
+fn cdiff_nl_match(a_nl: bool, nonl: bool) -> [] bool {
+    if a_nl {
+        return !nonl;
+    }
+    return nonl;
+}
+
+fn cdiff_copy[&h, &r](heap: &!h Heap, out: buffer.Buffer, s: &r [byte], from: int, to: int) -> [heap] buffer.Buffer {
+    var acc = out;
+    var i = from;
+    while i < to {
+        acc = buffer.push(heap, acc, s[i]);
+        i = i + 1;
+    }
+    return acc;
+}
+
+fn cdiff_fail[&h](heap: &!h Heap, out: buffer.Buffer, code: int) -> [heap] result.Result[buffer.Buffer, int] {
+    buffer.drop(heap, out);
+    return result.Result::Err(code);
+}
+
+fn apply[&h, &rp, &ra](heap: &!h Heap, patch: &rp [byte], a: &ra [byte]) -> [heap] result.Result[buffer.Buffer, int] {
+    var out = buffer.empty(heap, len(a) + 16);
+    let plen = len(patch);
+    let alen = len(a);
+    if plen == 0 {
+        out = buffer.append(heap, out, a);
+        return result.Result::Ok(out);
+    }
+    if !cdiff_at(patch, 0, "--- ") {
+        return cdiff_fail(heap, out, 1);
+    }
+    let plus = cdiff_line_end(patch, 0);
+    if !cdiff_at(patch, plus, "+++ ") {
+        return cdiff_fail(heap, out, 1);
+    }
+    var q = cdiff_line_end(patch, plus);
+    let lines = cdiff_lines(a);
+    var cur = 0;
+    var aoff = 0;
+    while q < plen {
+        if !cdiff_at(patch, q, "@@ -") {
+            return cdiff_fail(heap, out, 1);
+        }
+        var r = q + 4;
+        let s_end = cdiff_num_end(patch, r);
+        if s_end < 0 {
+            return cdiff_fail(heap, out, 1);
+        }
+        let start = cdiff_value(patch, r, s_end);
+        r = s_end;
+        var count = 1;
+        if cdiff_byte_is(patch, r, 44) {
+            let c_end = cdiff_num_end(patch, r + 1);
+            if c_end < 0 {
+                return cdiff_fail(heap, out, 1);
+            }
+            count = cdiff_value(patch, r + 1, c_end);
+            r = c_end;
+        }
+        if !cdiff_at(patch, r, " +") {
+            return cdiff_fail(heap, out, 1);
+        }
+        r = r + 2;
+        let t_end = cdiff_num_end(patch, r);
+        if t_end < 0 {
+            return cdiff_fail(heap, out, 1);
+        }
+        r = t_end;
+        var new_count = 1;
+        if cdiff_byte_is(patch, r, 44) {
+            let d_end = cdiff_num_end(patch, r + 1);
+            if d_end < 0 {
+                return cdiff_fail(heap, out, 1);
+            }
+            new_count = cdiff_value(patch, r + 1, d_end);
+            r = d_end;
+        }
+        if !cdiff_at(patch, r, " @@\n") {
+            return cdiff_fail(heap, out, 1);
+        }
+        q = r + 4;
+
+        var first = start;
+        if count > 0 {
+            if start == 0 {
+                return cdiff_fail(heap, out, 1);
+            }
+            first = start - 1;
+        }
+        if first < cur {
+            return cdiff_fail(heap, out, 1);
+        }
+        if first > lines {
+            return cdiff_fail(heap, out, 2);
+        }
+        while cur < first {
+            let e = cdiff_line_end(a, aoff);
+            out = cdiff_copy(heap, out, a, aoff, e);
+            aoff = e;
+            cur = cur + 1;
+        }
+
+        var oldseen = 0;
+        var newseen = 0;
+        while !(oldseen >= count && newseen >= new_count) {
+            if q >= plen {
+                return cdiff_fail(heap, out, 1);
+            }
+            let kind = int_of(patch[q]);
+            if kind != 32 && kind != 45 && kind != 43 {
+                return cdiff_fail(heap, out, 1);
+            }
+            let qe = cdiff_line_end(patch, q);
+            var cend = qe;
+            if int_of(patch[qe - 1]) == 10 {
+                cend = qe - 1;
+            }
+            var nonl = false;
+            var after = qe;
+            if after < plen && int_of(patch[after]) == 92 {
+                nonl = true;
+                after = cdiff_line_end(patch, after);
+            }
+            let cs = q + 1;
+
+            if kind == 43 {
+                if newseen >= new_count {
+                    return cdiff_fail(heap, out, 1);
+                }
+                out = cdiff_copy(heap, out, patch, cs, cend);
+                if !nonl {
+                    out = buffer.push(heap, out, byte_of(10));
+                }
+                newseen = newseen + 1;
+            } else {
+                if oldseen >= count {
+                    return cdiff_fail(heap, out, 1);
+                }
+                if kind == 32 {
+                    if newseen >= new_count {
+                        return cdiff_fail(heap, out, 1);
+                    }
+                }
+                if aoff >= alen {
+                    return cdiff_fail(heap, out, 2);
+                }
+                let aend = cdiff_line_end(a, aoff);
+                let a_nl = int_of(a[aend - 1]) == 10;
+                var a_cend = aend;
+                if a_nl {
+                    a_cend = aend - 1;
+                }
+                if !cdiff_nl_match(a_nl, nonl) {
+                    return cdiff_fail(heap, out, 2);
+                }
+                if !cdiff_same_line(a, aoff, a_cend, patch, cs, cend) {
+                    return cdiff_fail(heap, out, 2);
+                }
+                if kind == 32 {
+                    out = cdiff_copy(heap, out, a, aoff, aend);
+                    newseen = newseen + 1;
+                }
+                oldseen = oldseen + 1;
+                aoff = aend;
+                cur = cur + 1;
+            }
+            q = after;
+        }
+    }
+    out = cdiff_copy(heap, out, a, aoff, alen);
+    return result.Result::Ok(out);
+}
+
+fn cdiff_hash[&r](s: &r [byte], from: int, to: int) -> [] int {
+    var h = 7;
+    var i = from;
+    while i < to {
+        h = (h * 131 + int_of(s[i])) % 1000000007;
+        i = i + 1;
+    }
+    return h;
+}
+
+fn cdiff_fill[&r, &w](s: &r [byte], t: &!w [int]) -> [] int {
+    let n = cdiff_lines(s);
+    var start = 0;
+    var i = 0;
+    while i < n {
+        let e = cdiff_line_end(s, start);
+        t[2 * i] = start;
+        t[2 * i + 1] = cdiff_hash(s, start, e);
+        start = e;
+        i = i + 1;
+    }
+    t[2 * n] = len(s);
+    t[2 * n + 1] = 0;
+    return n;
+}
+
+fn cdiff_eq[&ra, &ka, &rb, &kb](a: &ra [byte], ta: &ka [int], i: int, b: &rb [byte], tb: &kb [int], j: int) -> [] bool {
+    if ta[2 * i + 1] != tb[2 * j + 1] {
+        return false;
+    }
+    return cdiff_same_line(a, ta[2 * i], ta[2 * i + 2], b, tb[2 * j], tb[2 * j + 2]);
+}
+
+fn cdiff_hirsch[&h, &ra, &pa, &rb, &pb](heap: &!h Heap, out: buffer.Buffer, a: &ra [byte], ta: &pa [int], alo: int, ahi: int, b: &rb [byte], tb: &pb [int], blo: int, bhi: int) -> [heap] buffer.Buffer {
+    let na = ahi - alo;
+    let nb = bhi - blo;
+    var acc = out;
+    if na == 0 {
+        var k0 = 0;
+        while k0 < nb {
+            acc = buffer.push(heap, acc, byte_of(43));
+            k0 = k0 + 1;
+        }
+        return acc;
+    }
+    if nb == 0 {
+        var k1 = 0;
+        while k1 < na {
+            acc = buffer.push(heap, acc, byte_of(45));
+            k1 = k1 + 1;
+        }
+        return acc;
+    }
+    if na == 1 {
+        var j0 = blo;
+        var found = 0 - 1;
+        while j0 < bhi && found < 0 {
+            if cdiff_eq(a, ta, alo, b, tb, j0) {
+                found = j0;
+            }
+            j0 = j0 + 1;
+        }
+        if found < 0 {
+            acc = buffer.push(heap, acc, byte_of(45));
+            var k2 = 0;
+            while k2 < nb {
+                acc = buffer.push(heap, acc, byte_of(43));
+                k2 = k2 + 1;
+            }
+            return acc;
+        }
+        var k3 = 0;
+        while k3 < found - blo {
+            acc = buffer.push(heap, acc, byte_of(43));
+            k3 = k3 + 1;
+        }
+        acc = buffer.push(heap, acc, byte_of(32));
+        var k4 = 0;
+        while k4 < bhi - found - 1 {
+            acc = buffer.push(heap, acc, byte_of(43));
+            k4 = k4 + 1;
+        }
+        return acc;
+    }
+
+    let mid = alo + na / 2;
+    let w = nb + 1;
+    let scratch = box_slice(heap, 3 * w, 0);
+    var best = 0;
+    borrow mut scratch as &!s in {
+        let t = contents(s);
+        var j = 0;
+        while j <= nb {
+            t[w + j] = 0;
+            j = j + 1;
+        }
+        var i = alo;
+        while i < mid {
+            t[2 * w] = 0;
+            j = 1;
+            while j <= nb {
+                if cdiff_eq(a, ta, i, b, tb, blo + j - 1) {
+                    t[2 * w + j] = t[w + j - 1] + 1;
+                } else {
+                    if t[w + j] >= t[2 * w + j - 1] {
+                        t[2 * w + j] = t[w + j];
+                    } else {
+                        t[2 * w + j] = t[2 * w + j - 1];
+                    }
+                }
+                j = j + 1;
+            }
+            j = 0;
+            while j <= nb {
+                t[w + j] = t[2 * w + j];
+                j = j + 1;
+            }
+            i = i + 1;
+        }
+        j = 0;
+        while j <= nb {
+            t[j] = t[w + j];
+            j = j + 1;
+        }
+        j = 0;
+        while j <= nb {
+            t[w + j] = 0;
+            j = j + 1;
+        }
+        i = ahi - 1;
+        while i >= mid {
+            t[2 * w + nb] = 0;
+            j = nb - 1;
+            while j >= 0 {
+                if cdiff_eq(a, ta, i, b, tb, blo + j) {
+                    t[2 * w + j] = t[w + j + 1] + 1;
+                } else {
+                    if t[w + j] >= t[2 * w + j + 1] {
+                        t[2 * w + j] = t[w + j];
+                    } else {
+                        t[2 * w + j] = t[2 * w + j + 1];
+                    }
+                }
+                j = j - 1;
+            }
+            j = 0;
+            while j <= nb {
+                t[w + j] = t[2 * w + j];
+                j = j + 1;
+            }
+            i = i - 1;
+        }
+        var score = 0 - 1;
+        j = 0;
+        while j <= nb {
+            if t[j] + t[w + j] > score {
+                score = t[j] + t[w + j];
+                best = j;
+            }
+            j = j + 1;
+        }
+    }
+    unbox_slice(heap, scratch);
+    acc = cdiff_hirsch(heap, acc, a, ta, alo, mid, b, tb, blo, blo + best);
+    acc = cdiff_hirsch(heap, acc, a, ta, mid, ahi, b, tb, blo + best, bhi);
+    return acc;
+}
+
+fn cdiff_normalise[&r, &w](src: &r [byte], dst: &!w [byte]) -> [] int {
+    var i = 0;
+    var o = 0;
+    while i < len(src) {
+        if int_of(src[i]) == 32 {
+            dst[o] = byte_of(32);
+            o = o + 1;
+            i = i + 1;
+        } else {
+            var j = i;
+            var minus = 0;
+            while j < len(src) && int_of(src[j]) != 32 {
+                if int_of(src[j]) == 45 {
+                    minus = minus + 1;
+                }
+                j = j + 1;
+            }
+            var k = 0;
+            while k < minus {
+                dst[o] = byte_of(45);
+                o = o + 1;
+                k = k + 1;
+            }
+            k = 0;
+            while k < j - i - minus {
+                dst[o] = byte_of(43);
+                o = o + 1;
+                k = k + 1;
+            }
+            i = j;
+        }
+    }
+    return o;
+}
+
+fn cdiff_script[&h, &ra, &rb](heap: &!h Heap, a: &ra [byte], b: &rb [byte]) -> [heap] Box[[byte]] {
+    let n = cdiff_lines(a);
+    let m = cdiff_lines(b);
+    let ta = box_slice(heap, 2 * n + 2, 0);
+    let tb = box_slice(heap, 2 * m + 2, 0);
+    borrow mut ta as &!x in {
+        cdiff_fill(a, contents(x));
+    }
+    borrow mut tb as &!y in {
+        cdiff_fill(b, contents(y));
+    }
+    var ops = buffer.empty(heap, n + m + 16);
+    borrow ta as &p in {
+        borrow tb as &q in {
+            ops = cdiff_hirsch(heap, ops, a, contents(p), 0, n, b, contents(q), 0, m);
+        }
+    }
+    unbox_slice(heap, ta);
+    unbox_slice(heap, tb);
+    var total = 0;
+    borrow ops as &o in {
+        total = buffer.size(o);
+    }
+    let script = box_slice(heap, total, byte_of(32));
+    borrow mut script as &!w in {
+        borrow ops as &o in {
+            cdiff_normalise(buffer.bytes(o), contents(w));
+        }
+    }
+    buffer.drop(heap, ops);
+    return script;
+}
+
+fn edit_count[&h, &ra, &rb](heap: &!h Heap, a: &ra [byte], b: &rb [byte]) -> [heap] int {
+    let script = cdiff_script(heap, a, b);
+    var count = 0;
+    borrow script as &s in {
+        let t = contents(s);
+        var i = 0;
+        while i < len(t) {
+            if int_of(t[i]) != 32 {
+                count = count + 1;
+            }
+            i = i + 1;
+        }
+    }
+    unbox_slice(heap, script);
+    return count;
+}
+
+fn cdiff_offset[&r](s: &r [byte], lines: int) -> [] int {
+    var pos = 0;
+    var k = 0;
+    while k < lines {
+        pos = cdiff_line_end(s, pos);
+        k = k + 1;
+    }
+    return pos;
+}
+
+fn cdiff_a_before[&r](t: &r [byte], pos: int) -> [] int {
+    var n = 0;
+    var i = 0;
+    while i < pos {
+        if int_of(t[i]) != 43 {
+            n = n + 1;
+        }
+        i = i + 1;
+    }
+    return n;
+}
+
+fn cdiff_b_before[&r](t: &r [byte], pos: int) -> [] int {
+    var n = 0;
+    var i = 0;
+    while i < pos {
+        if int_of(t[i]) != 45 {
+            n = n + 1;
+        }
+        i = i + 1;
+    }
+    return n;
+}
+
+fn cdiff_put_range[&h](heap: &!h Heap, out: buffer.Buffer, start: int, count: int) -> [heap] buffer.Buffer {
+    let rng = cdiff_range(heap, start, count);
+    var acc = out;
+    borrow rng as &x in {
+        acc = buffer.append(heap, acc, buffer.bytes(x));
+    }
+    buffer.drop(heap, rng);
+    return acc;
+}
+
+fn cdiff_emit_line[&h, &r](heap: &!h Heap, out: buffer.Buffer, mark: int, s: &r [byte], from: int, to: int) -> [heap] buffer.Buffer {
+    var acc = buffer.push(heap, out, byte_of(mark));
+    acc = cdiff_copy(heap, acc, s, from, to);
+    if to > from && int_of(s[to - 1]) != 10 {
+        acc = buffer.append(heap, acc, "\n\\ No newline at end of file\n");
+    }
+    return acc;
+}
+
+fn unified[&h, &rn, &rm, &ra, &rb](heap: &!h Heap, a_name: &rn [byte], b_name: &rm [byte], a: &ra [byte], b: &rb [byte], context: int) -> [heap] buffer.Buffer {
+    var ctx = context;
+    if ctx < 0 {
+        ctx = 0;
+    }
+    var out = buffer.empty(heap, len(a) + len(b) + 64);
+    var started = false;
+    let script = cdiff_script(heap, a, b);
+    borrow script as &s in {
+        let t = contents(s);
+        let total = len(t);
+        var p = 0;
+        while p < total {
+            var gs = p;
+            while gs < total && int_of(t[gs]) == 32 {
+                gs = gs + 1;
+            }
+            if gs >= total {
+                p = total;
+            } else {
+                var ge = gs;
+                while ge < total && int_of(t[ge]) != 32 {
+                    ge = ge + 1;
+                }
+                var more = true;
+                while more {
+                    var nx = ge;
+                    while nx < total && int_of(t[nx]) == 32 {
+                        nx = nx + 1;
+                    }
+                    if nx < total && nx - ge <= 2 * ctx {
+                        ge = nx;
+                        while ge < total && int_of(t[ge]) != 32 {
+                            ge = ge + 1;
+                        }
+                    } else {
+                        more = false;
+                    }
+                }
+                var tr = ge;
+                while tr < total && int_of(t[tr]) == 32 {
+                    tr = tr + 1;
+                }
+                var hi = ge + ctx;
+                if hi > tr {
+                    hi = tr;
+                }
+                var lo = gs;
+                while lo > 0 && gs - lo < ctx && int_of(t[lo - 1]) == 32 {
+                    lo = lo - 1;
+                }
+
+                if !started {
+                    out = buffer.append(heap, out, "--- ");
+                    out = buffer.append(heap, out, a_name);
+                    out = buffer.append(heap, out, "\n+++ ");
+                    out = buffer.append(heap, out, b_name);
+                    out = buffer.append(heap, out, "\n");
+                    started = true;
+                }
+
+                let a0 = cdiff_a_before(t, lo);
+                let a1 = cdiff_a_before(t, hi);
+                let b0 = cdiff_b_before(t, lo);
+                let b1 = cdiff_b_before(t, hi);
+                var sa = a0 + 1;
+                if a1 - a0 == 0 {
+                    sa = a0;
+                }
+                var sb = b0 + 1;
+                if b1 - b0 == 0 {
+                    sb = b0;
+                }
+                out = buffer.append(heap, out, "@@ -");
+                out = cdiff_put_range(heap, out, sa, a1 - a0);
+                out = buffer.append(heap, out, " +");
+                out = cdiff_put_range(heap, out, sb, b1 - b0);
+                out = buffer.append(heap, out, " @@\n");
+
+                var aoff = cdiff_offset(a, a0);
+                var boff = cdiff_offset(b, b0);
+                var k = lo;
+                while k < hi {
+                    let c = int_of(t[k]);
+                    let ae = cdiff_line_end(a, aoff);
+                    let be = cdiff_line_end(b, boff);
+                    if c == 32 {
+                        out = cdiff_emit_line(heap, out, 32, a, aoff, ae);
+                        aoff = ae;
+                        boff = be;
+                    } else {
+                        if c == 45 {
+                            out = cdiff_emit_line(heap, out, 45, a, aoff, ae);
+                            aoff = ae;
+                        } else {
+                            out = cdiff_emit_line(heap, out, 43, b, boff, be);
+                            boff = be;
+                        }
+                    }
+                    k = k + 1;
+                }
+                p = hi;
+            }
+        }
+    }
+    unbox_slice(heap, script);
+    return out;
+}

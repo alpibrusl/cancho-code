@@ -1608,7 +1608,8 @@ fn named_before[&b, &n](before: &b [byte], name: &n [byte]) -> [] bool {
 }
 
 // `brief-heap` (docs/plan.md, "The call shape"): a function the brief names is called with the brief's arguments only (the audit, a user, the
-// brief's own worked examples), and a caller passes a heap only to a function whose result owns memory it must allocate. So a unit that declares
+// brief's own worked examples), and a caller passes a heap only to a function whose result owns memory it must allocate. A brief whose call
+// shows a `heap` argument (`edit_count(heap, a, b)`) has said the heap is part of the call shape: nothing is refused for it. So a unit that declares
 // a brief's function with a `Heap` parameter while its result owns nothing (`plain_type`) is refused, with what to change. One line per unit,
 // appended to `out`; and how many.
 fn brief_heaps[&h, &b, &s](heap: &!h Heap, out: buffer.Buffer, brief: &b [byte], plan: &s [byte]) -> [heap] (buffer.Buffer, int) {
@@ -1660,7 +1661,7 @@ fn brief_heaps[&h, &b, &s](heap: &!h Heap, out: buffer.Buffer, brief: &b [byte],
                                     if open >= 0 && shut > open {
                                         owned = owned_param(sig[open + 1..shut]);
                                     }
-                                    if close >= 0 && bytes.find(sig[0..arrow], "Heap") >= 0 && plain_type(ty) && !owned {
+                                    if close >= 0 && bytes.find(sig[0..arrow], "Heap") >= 0 && plain_type(ty) && !owned && bytes.find(call, "heap") < 0 {
                                         var msg = buffer.append(heap, buffer.empty(heap, 512), "the brief names `");
                                         msg = buffer.append(heap, msg, call);
                                         msg = buffer.append(heap, msg, "` and this signature of `");

@@ -20,6 +20,7 @@ build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m>
 | `--memory <dir>` | an absolute directory with `lessons.jsonl` (mined from past journals by `scripts/cancho-lessons.sh`) and/or `facts.txt`; the unit agent adds what it knows about the refusal a unit just got, and your facts, to its prompt, and the journal records it ([memory.md](memory.md)). Without it the agent is exactly as before |
 | `--remember <text>` | with `--memory`: one line of your own (at most 160 bytes, no newline) appended to `<dir>/facts.txt` before the run; ten facts are the most a prompt carries. Nothing is written by the model |
 | `--profile <file>` | the language profile ([profile.md](profile.md)): the file names, the words after the checker for check and test, the findings key, the primer. Without it, the default: cancho, exactly as this page says. A malformed profile is exit 2 with `[PROFILE_ERROR]` lines and nothing run; under a profile other than the default the units are built one at a time (`--jobs 1`), `--patch` is refused, and a plan with `files` is `plan_failed` |
+| `--library <name>` | after a build that is `done`, make it a library: `<workdir>/src/<name>.cho` and `<workdir>/tests/<name>_test.cho` ([library.md](library.md)). Needs `--contract`; both are checked before anything is asked of a model |
 
 Paths, provider and model go into shell command lines, so they may hold only letters, digits and `. _ / + : = @ % , -`. A path with `..` in it is refused (the file capability traps on it).
 
@@ -50,7 +51,7 @@ The last line is `[BUILD_VERDICT]<TAB><word>`; the exit code follows the word.
 | `plan_failed` | 3 | no valid plan: the agent used its rounds up, needs a decision (`plan.json.questions.json`), or wrote a plan the check refuses (its `[PLAN_ERROR]` lines are printed). **The project step does not run.** |
 | `provider_error` | 4 | the agent could not be reached (or crashed, or timed out), in the plan or in a unit; what verified is kept |
 
-Exit 2 is a usage error (nothing was run). A killed run is resumed by running the same command: a valid `plan.json` is not asked for again (one exception, once per work directory: a plan whose own test was the dead end of the run before, [below](#a-plan-whose-own-test-is-the-dead-end)), and `state.txt` keeps the units that verified (they are re-checked, as in `project`).
+Exit 2 is a usage error (nothing was run). Exit 6 is the library step of `--library` refusing a build that was `done` ([library.md](library.md): the `[BUILD_VERDICT]` line is still `done`; the `[LIBRARY_ERROR]` line says why). A killed run is resumed by running the same command: a valid `plan.json` is not asked for again (one exception, once per work directory: a plan whose own test was the dead end of the run before, [below](#a-plan-whose-own-test-is-the-dead-end)), and `state.txt` keeps the units that verified (they are re-checked, as in `project`).
 
 ## The run directory
 
@@ -115,6 +116,18 @@ A valid `plan.json` is normally reused as it is: "valid" means it parses, passes
 5. no plan of this work directory was replaced before: at most one re-plan per work directory, so a planner that writes the same wrong test again costs one more plan call, not one per run.
 
 `run.log` says `[BUILD_STAGE]<TAB>plan<TAB>replaced<TAB><unit><TAB><test>`, the journal records a `plan_replaced` event, and the run goes on as one without a valid plan: `plan.json` is emptied, the plan agent is asked (with the same brief and guide; it is not told which test failed), and the new plan is checked. `state.txt` is kept: the units that verified and that the new plan still has are re-checked, as on any resume, not rebuilt. It never happens with `--retry` or `--patch` (the person continues a unit of this plan), or without `--guide` (there is nothing to ask with: the plan is reused, not a usage error), and not when the last run ended any other way: `provider_error`, `plan_failed`, `gate_failed` or killed (no verdict), or `stuck` with no unit whose last attempt was that same-test stop (a unit stopped by the same compiler refusal twice, at the attempt ceiling, by its test file not compiling, or by an agent that failed or gave up).
+
+### What the rule looks at, and what it does not (measured on the first cancho-diff build)
+
+The rule reads each unit's **last** attempt only. An attempt in between that failed otherwise (a test file or code that did not compile) does not reset anything: the first
+cancho-diff build (2026-10-30, `--attempts 6`) failed the wrong test `test_script_7` at attempts 0, 2 and 3 with a compile error at attempt 1; its last attempt was that test failing the
+same way as the one before (decision `signature`), and the run ended `stuck`. Run again as it was, `build` says `[BUILD_STAGE]<TAB>plan<TAB>replaced<TAB>script<TAB>test_script_7` and asks the planner for
+the plan again (checked: that run's journal, its original `plan.json` and the command, with the planner replaced by a program that fails). It did not happen in that project because the person edited
+`plan.json` by hand before running again: an edited plan is the person's (the `plan_final` blob is no longer these bytes) and is kept. `scripts/test-build.sh` has that shape
+("replan after a compile error between"). It is a guard, not a fix: it passed before and after.
+
+Two endings are still not replaced, by design: a unit stopped by the attempt ceiling, even when its last attempts failed that test (`--attempts` 4 with the shape above ends at the ceiling at attempt 3, decision `ceiling`,
+so it is reused; with the same shape and `--attempts 6` it is replaced), and a run whose plan the person has edited. The new plan is asked for with the same brief and guide and is not told which test failed.
 
 ## Gate and authority
 
