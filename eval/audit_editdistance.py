@@ -21,10 +21,10 @@ cases = [json.loads(l) for l in subprocess.run([sys.executable, ORACLE], capture
 
 body = re.sub(r"fn main\(world: World\).*?\n\}\n", "", src, flags=re.S)
 body = re.sub(r"^edition \d+;\s*$", "", body, flags=re.M)
-body = re.sub(r"^import std\.(option|vec|utf8|test);\s*$", "", body, flags=re.M)   # the harness imports these itself
+body = re.sub(r"^import std\.(option|vec|list|utf8|test);\s*$", "", body, flags=re.M)   # the harness imports these itself
 body = re.sub(r"^fn ", "pub fn ", body, flags=re.M)
 body = re.sub(r"^(struct|enum) ", r"pub \1 ", body, flags=re.M)
-head = "edition 7;\nimport std.option;\nimport std.vec;\nimport std.utf8;\nimport std.test;\n"
+head = "edition 7;\nimport std.option;\nimport std.vec;\nimport std.list;\nimport std.utf8;\nimport std.test;\n"
 
 HELPERS = '''
 fn zz_same[&a, &b](x: &a [byte], y: &b [byte]) -> [] bool {
@@ -52,11 +52,42 @@ fn zz_pool(i: int) -> [] &static [byte] {
 fn zz_len(s: &static [byte]) -> [] int { return utf8.count(s); }
 '''
 
+# The brief says "a list of texts", which is a vec in the reference port and a list.List in a plan that reads it literally; both are fair.
+# The audit builds the argument in whichever shape the built `closest` declares.
+LIST_SHAPE = re.search(r"fn closest\b[^{]*list\.List", src) is not None
+HELPERS += '''
+fn zz_mk[&h, &r](heap: &!h Heap, s: &r [byte]) -> [heap] Box[[byte]] {
+    let b = box_slice(heap, len(s), byte_of(0));
+    borrow mut b as &!w in { let d = contents(w); var i = 0; while i < len(s) { d[i] = s[i]; i = i + 1; } }
+    return b;
+}
+fn zz_ldrop[&h](heap: &!h Heap, l: list.List[Box[Box[[byte]]]]) -> [heap] int {
+    match l {
+        list.List::Empty => { return 0; }
+        list.List::Cons(f, rest) => { unbox_slice(heap, unbox(heap, f)); let tail = unbox(heap, rest); return 1 + zz_ldrop(heap, tail); }
+    }
+}
+'''
+
 def lit(s):
     m = {"\n": "\\n", "\r": "\\r", "\t": "\\t", "\\": "\\\\", '"': '\\"', "\0": "\\0"}
     return '"' + "".join(m.get(c, c) for c in s) + '"'
 
+def closest_list_test(i, c):
+    q, cs = c["args"]
+    none = c["expect"]["$variant"] == "None"
+    want = "" if none else c["expect"]["args"][0]
+    pushes = " ".join(f"l = list.push(heap, l, box(heap, zz_mk(heap, {lit(x)})));" for x in reversed(cs))
+    nn = "true" if none else "false"
+    return (f'pub fn test_c{i:02d}[&h](heap: &!h Heap) -> [heap] int {{ var l: list.List[Box[Box[[byte]]]] = list.List::Empty; {pushes} var code = 9; '
+            f'borrow l as &lb in {{ match closest({lit(q)}, lb) {{ '
+            f'option.Option::None => {{ if {nn} {{ code = 0; }} else {{ code = 1; }} }} '
+            f'option.Option::Some(s) => {{ if {nn} {{ code = 2; }} else {{ if zz_same(s, {lit(want)}) {{ code = 0; }} else {{ code = 3; }} }} }} }} }} '
+            f'zz_ldrop(heap, l); test.assert_eq(code, 0); return 0; }}')
+
 def closest_test(i, c):
+    if LIST_SHAPE:
+        return closest_list_test(i, c)
     q, cs = c["args"]
     none = c["expect"]["$variant"] == "None"
     want = "" if none else c["expect"]["args"][0]
