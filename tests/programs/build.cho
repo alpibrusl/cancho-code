@@ -7,9 +7,12 @@ edition 7;
 // `--profile <file>` is the language profile (docs/profile.md; without it, the default: cancho). `--jobs N` (default 4) builds up to N units at once (docs/parallel.md; 1 is one at a time). Started again as `build --unit-worker ...` it is one such
 // unit's worker, which the driver itself starts (not for people).
 //
-// Exit codes: 0 done, 1 stuck or the final gate failed, 2 usage, 3 plan_failed, 4 provider_error.
+// `--library NAME` (docs/library.md) turns a build that is `done` into src/NAME.cho and tests/NAME_test.cho; it needs `--contract`.
+//
+// Exit codes: 0 done, 1 stuck or the final gate failed, 2 usage, 3 plan_failed, 4 provider_error, 6 the library step refused.
 
 import build;
+import library;
 import project;
 import std.buffer;
 import std.bytes;
@@ -70,11 +73,7 @@ fn given_opt[&g](g: &g Args, name: &static [byte]) -> [args] bool {
 }
 
 fn known[&a](name: &a [byte]) -> [] bool {
-    return bytes.equal(name, "--provider") || bytes.equal(name, "--model") || bytes.equal(name, "--guide") || bytes.equal(name, "--review-guide")
-        || bytes.equal(name, "--review") || bytes.equal(name, "--contract") || bytes.equal(name, "--rounds") || bytes.equal(name, "--attempts")
-        || bytes.equal(name, "--agent-seconds") || bytes.equal(name, "--plan-seconds")
-        || bytes.equal(name, "--retry") || bytes.equal(name, "--hint") || bytes.equal(name, "--patch") || bytes.equal(name, "--jobs")
-        || bytes.equal(name, "--memory") || bytes.equal(name, "--remember") || bytes.equal(name, "--profile");
+    return bytes.equal(name, "--provider") || bytes.equal(name, "--model") || bytes.equal(name, "--guide") || bytes.equal(name, "--review-guide") || bytes.equal(name, "--review") || bytes.equal(name, "--contract") || bytes.equal(name, "--rounds") || bytes.equal(name, "--attempts") || bytes.equal(name, "--agent-seconds") || bytes.equal(name, "--plan-seconds") || bytes.equal(name, "--retry") || bytes.equal(name, "--hint") || bytes.equal(name, "--patch") || bytes.equal(name, "--jobs") || bytes.equal(name, "--memory") || bytes.equal(name, "--remember") || bytes.equal(name, "--profile") || bytes.equal(name, "--library");
 }
 
 // A word that goes into a shell command line: letters, digits and . _ / + : = @ % , - only.
@@ -82,7 +81,7 @@ fn plain[&a](text: &a [byte]) -> [] bool {
     var i = 0;
     while i < len(text) {
         let c = int_of(text[i]);
-        let ok = (c >= 48 && c <= 58) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 46 || c == 95 || c == 47 || c == 43 || c == 61 || c == 64 || c == 37 || c == 44 || c == 45;
+        let ok = c >= 48 && c <= 58 || c >= 65 && c <= 90 || c >= 97 && c <= 122 || c == 46 || c == 95 || c == 47 || c == 43 || c == 61 || c == 64 || c == 37 || c == 44 || c == 45;
         if ok == false {
             return false;
         }
@@ -176,6 +175,7 @@ fn main(world: World) -> [] int {
     var memory = "";
     var fact = "";
     var profile = "";
+    var library_name = "";
     var jobs_given = false;
     var given = false;
     borrow args as &g0 in {
@@ -188,7 +188,7 @@ fn main(world: World) -> [] int {
             if worker {
                 given = false;
             } else if arg_count(g) < 5 {
-                io.error_all(ci, "usage: build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [--guide <file>] [--review on --review-guide <file>] [--contract <file>] [--rounds N] [--attempts N] [--agent-seconds N] [--plan-seconds N] [--retry <unit> [--hint <text>]] [--patch <unit> <file>] [--memory <dir> [--remember <text>]] [--jobs N] [--profile <file>]\n");
+                io.error_all(ci, "usage: build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [--guide <file>] [--review on --review-guide <file>] [--contract <file>] [--rounds N] [--attempts N] [--agent-seconds N] [--plan-seconds N] [--retry <unit> [--hint <text>]] [--patch <unit> <file>] [--memory <dir> [--remember <text>]] [--jobs N] [--profile <file>] [--library <name>]\n");
             } else {
                 given = true;
                 argv0 = arg(g, 0);
@@ -243,7 +243,7 @@ fn main(world: World) -> [] int {
                     io.error_all(ci, "build: --patch needs a unit\n");
                     given = false;
                 }
-                if (len(retry) > 0 && plain(retry) == false) || (len(patch) > 0 && plain(patch) == false) || (len(pfile) > 0 && plain(pfile) == false) {
+                if len(retry) > 0 && plain(retry) == false || len(patch) > 0 && plain(patch) == false || len(pfile) > 0 && plain(pfile) == false {
                     io.error_all(ci, "build: a unit and a patch file may hold only letters, digits and . _ / + : = @ % , -\n");
                     given = false;
                 }
@@ -294,6 +294,17 @@ fn main(world: World) -> [] int {
                 if given_opt(g, "--profile") && (len(profile) == 0 || bytes.find(profile, "..") >= 0 || plain(profile) == false) {
                     io.error_all(ci, "build: --profile needs a file (letters, digits and . _ / + : = @ % , - only, no ..)\n");
                     given = false;
+                }
+                // --library NAME (docs/library.md): the finished build becomes src/NAME.cho and tests/NAME_test.cho. Checked here, before a model is paid for.
+                library_name = opt(g, "--library");
+                if given_opt(g, "--library") {
+                    if library.name_ok(library_name) == false {
+                        io.error_all(ci, "[LIBRARY_ERROR]\tlibrary-name\t--library needs a module name: a lowercase letter or _, then lowercase letters, digits and _\n");
+                        given = false;
+                    } else if len(contract) == 0 {
+                        io.error_all(ci, "[LIBRARY_ERROR]\tlibrary-no-contract\t--library needs --contract: the contract file names the public functions\n");
+                        given = false;
+                    }
                 }
                 let n_jobs = opt(g, "--jobs");
                 jobs_given = given_opt(g, "--jobs");
@@ -378,9 +389,13 @@ fn main(world: World) -> [] int {
                                     }
                                 }
                                 borrow agent2 as &a2 in {
-                                borrow tool as &tq in {
-                                status = build.run(hh, x, c, i, fz, buffer.bytes(tq), brief, wd, buffer.bytes(a2), provider, model, guide, review_guide, contract, review, rounds, attempts, agent_seconds * 1000, plan_seconds * 1000, retry, hint, patch, pfile, jobs, argv0);
-                                }
+                                    borrow tool as &tq in {
+                                        status = build.run(hh, x, c, i, fz, buffer.bytes(tq), brief, wd, buffer.bytes(a2), provider, model, guide, review_guide, contract, review, rounds, attempts, agent_seconds * 1000, plan_seconds * 1000, retry, hint, patch, pfile, jobs, argv0);
+                                        // The library step follows a build that is `done`, and only then (docs/library.md).
+                                        if status == 0 && len(library_name) > 0 {
+                                            status = library.emit(hh, x, c, i, fz, buffer.bytes(tq), wd, library_name, contract);
+                                        }
+                                    }
                                 }
                                 buffer.drop(hh, agent2);
                             } else if remembered {

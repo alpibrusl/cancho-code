@@ -28,7 +28,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 SRC="${JOURNAL_SRC:-$root/src}"
 exe=$(mktemp -t cc-journal-XXXXXX)
 files=""
-for f in build project plan driver checker signature loop_check snapshot trail acceptance splice pool parallel; do
+for f in build project plan driver checker signature loop_check snapshot trail acceptance splice pool parallel library cases; do
     [ -f "$SRC/$f.cho" ] && files="$files $SRC/$f.cho"
 done
 "$CANCHO" build "$root/tests/programs/build.cho" $files --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }

@@ -20,6 +20,7 @@ build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m>
 | `--memory <dir>` | an absolute directory with `lessons.jsonl` (mined from past journals by `scripts/cancho-lessons.sh`) and/or `facts.txt`; the unit agent adds what it knows about the refusal a unit just got, and your facts, to its prompt, and the journal records it ([memory.md](memory.md)). Without it the agent is exactly as before |
 | `--remember <text>` | with `--memory`: one line of your own (at most 160 bytes, no newline) appended to `<dir>/facts.txt` before the run; ten facts are the most a prompt carries. Nothing is written by the model |
 | `--profile <file>` | the language profile ([profile.md](profile.md)): the file names, the words after the checker for check and test, the findings key, the primer. Without it, the default: cancho, exactly as this page says. A malformed profile is exit 2 with `[PROFILE_ERROR]` lines and nothing run; under a profile other than the default the units are built one at a time (`--jobs 1`), `--patch` is refused, and a plan with `files` is `plan_failed` |
+| `--library <name>` | after a build that is `done`, make it a library: `<workdir>/src/<name>.cho` and `<workdir>/tests/<name>_test.cho` ([library.md](library.md)). Needs `--contract`; both are checked before anything is asked of a model |
 
 Paths, provider and model go into shell command lines, so they may hold only letters, digits and `. _ / + : = @ % , -`. A path with `..` in it is refused (the file capability traps on it).
 
@@ -50,7 +51,7 @@ The last line is `[BUILD_VERDICT]<TAB><word>`; the exit code follows the word.
 | `plan_failed` | 3 | no valid plan: the agent used its rounds up, needs a decision (`plan.json.questions.json`), or wrote a plan the check refuses (its `[PLAN_ERROR]` lines are printed). **The project step does not run.** |
 | `provider_error` | 4 | the agent could not be reached (or crashed, or timed out), in the plan or in a unit; what verified is kept |
 
-Exit 2 is a usage error (nothing was run). A killed run is resumed by running the same command: a valid `plan.json` is not asked for again (one exception, once per work directory: a plan whose own test was the dead end of the run before, [below](#a-plan-whose-own-test-is-the-dead-end)), and `state.txt` keeps the units that verified (they are re-checked, as in `project`).
+Exit 2 is a usage error (nothing was run). Exit 6 is the library step of `--library` refusing a build that was `done` ([library.md](library.md): the `[BUILD_VERDICT]` line is still `done`; the `[LIBRARY_ERROR]` line says why). A killed run is resumed by running the same command: a valid `plan.json` is not asked for again (one exception, once per work directory: a plan whose own test was the dead end of the run before, [below](#a-plan-whose-own-test-is-the-dead-end)), and `state.txt` keeps the units that verified (they are re-checked, as in `project`).
 
 ## The run directory
 

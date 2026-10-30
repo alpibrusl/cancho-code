@@ -109,6 +109,7 @@ jobs:
           sh scripts/test-lessons.sh
           sh scripts/test-lessons.sh --mutants
           sh scripts/test-build.sh
+          sh scripts/test-library.sh
           sh scripts/test-profile.sh
           sh scripts/test-journal.sh
           sh scripts/test-eval.sh
