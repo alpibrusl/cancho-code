@@ -92,6 +92,7 @@ brief_case() {
 }
 brief_case "brief-heap" brief-heap.json "$root/tests/plans/brief-heap.txt" 1 "brief-heap:dist brief-heap:rom"
 brief_case "brief-heap ok" brief-heap-ok.json "$root/tests/plans/brief-heap.txt" 0 ""
+brief_case "brief-heap shown in the call" brief-heap.json "$root/tests/plans/brief-heap-shown.txt" 1 "brief-heap:rom"
 brief_case "brief-heap real editdistance" real-editdistance-heap.json "$root/eval/editdistance/brief.txt" 1 "brief-heap:edit_distance brief-heap:similarity"
 brief_case "brief-heap real roman" real-roman-heap.json "$root/eval/roman/brief.txt" 1 "brief-heap:from_roman"
 brief_case "brief-heap real editdistance contract" real-editdistance-contract.json "$root/eval/editdistance/brief.txt" 0 ""
