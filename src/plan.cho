@@ -1764,6 +1764,70 @@ pub fn check[&h, &s](heap: &!h Heap, src: &s [byte]) -> [heap] (buffer.Buffer, i
     return (out, code);
 }
 
+// ---- effort tiers (docs/plan.md, "Effort tiers") -----------------------------------------------------------------------------------------
+
+// Does the unit at `node` think long? Measured (eval/results/2026-10-19-effort-per-unit.md): the thinking tracks the description's length, and a
+// unit with three or more dependencies or a list/vec result runs longest. So: a description of 900 characters or more (of the JSON text, escapes
+// counted), three or more `deps`, or a signature whose result type mentions `list.` or `vec.`.
+fn long_thinking[&s, &t](src: &s [byte], tape: &t [int], node: int) -> [] bool {
+    let ds = json.get(src, tape, node, "description");
+    if ds >= 0 && json.is_string(tape, ds) && tape[3 * ds + 2] - tape[3 * ds + 1] >= 900 {
+        return true;
+    }
+    let dp = json.get(src, tape, node, "deps");
+    if dp >= 0 && json.is_array(tape, dp) && json.count(tape, dp) >= 3 {
+        return true;
+    }
+    let sg = json.get(src, tape, node, "signature");
+    if sg >= 0 && json.is_string(tape, sg) {
+        let sig = node_text(src, tape, sg);
+        let arrow = bytes.find(sig, "->");
+        if arrow >= 0 {
+            let ret = sig[arrow..len(sig)];
+            return bytes.find(ret, "list.") >= 0 || bytes.find(ret, "vec.") >= 0;
+        }
+    }
+    return false;
+}
+
+// `plan` with `"effort": "medium"` added to every unit that has no `effort` and thinks long (`long_thinking`), and how many units got it. A unit
+// that has an `effort` is never touched; the plan is returned byte for byte but for the inserted text. Run on a plan the plan agent just wrote
+// (src/build.cho), never on the operator's. The plan must be valid (`check`): anything else comes back unchanged with 0.
+pub fn tier_efforts[&h, &s](heap: &!h Heap, src: &s [byte]) -> [heap] (buffer.Buffer, int) {
+    var out = buffer.empty(heap, len(src) + 256);
+    var added = 0;
+    let tb = box_slice(heap, json.tape_len(src), 0);
+    borrow mut tb as &!tw in {
+        let tape = contents(tw);
+        let nodes = json.parse(src, tape);
+        var units = 0 - 1;
+        if nodes > 0 && json.is_object(tape, 0) {
+            units = json.get(src, tape, 0, "units");
+        }
+        var at = 0;
+        if units >= 0 && json.is_array(tape, units) {
+            var u = 0;
+            var j = units + 1;
+            let n = json.count(tape, units);
+            while u < n {
+                if json.is_object(tape, j) && json.count(tape, j) > 0 && json.get(src, tape, j, "effort") < 0 && long_thinking(src, tape, j) {
+                    // an object has no byte range of its own: the effort goes before its first key (the string node after it, whose range is inside the quotes)
+                    let open = tape[3 * (j + 1) + 1] - 1;
+                    out = buffer.append(heap, out, src[at..open]);
+                    out = buffer.append(heap, out, "\"effort\": \"medium\", ");
+                    at = open;
+                    added = added + 1;
+                }
+                j = json.skip(tape, j);
+                u = u + 1;
+            }
+        }
+        out = buffer.append(heap, out, src[at..len(src)]);
+    }
+    unbox_slice(heap, tb);
+    return (out, added);
+}
+
 // The byte range of the function name in a signature text, or (-1, -1) (for the project driver).
 pub fn name_range[&t](t: &t [byte]) -> [] (int, int) {
     return sig_name(t);

@@ -4,8 +4,10 @@ edition 7;
 // 2 usage (no argument, a file cannot be read, or it is 1 MiB or more). With a brief, a plan that passes
 // the check is then held to the brief's own rules (`plan.brief_report`: `brief-name`, `brief-heap`), as the
 // plan agent does in each round and `build` does as a backstop; their report replaces the valid verdict.
+// `plancheck <plan.json> --tier`: a valid plan is answered with the plan `plan.tier_efforts` makes of it (docs/plan.md, "Effort tiers"), and the count on stderr-free line `[TIER]<TAB>n` last.
 
 import std.buffer;
+import std.bytes;
 import std.io;
 import plan;
 
@@ -22,6 +24,7 @@ fn main(world: World) -> [] int {
     var bpath = "";
     var given = false;
     var with_brief = false;
+    var tier = false;
     var status = 2;
     borrow args as &g in {
         if arg_count(g) >= 2 {
@@ -29,8 +32,12 @@ fn main(world: World) -> [] int {
             path = arg(g, 1);
         }
         if arg_count(g) >= 3 {
-            with_brief = true;
             bpath = arg(g, 2);
+            if bytes.equal(bpath, "--tier") {
+                tier = true;
+            } else {
+                with_brief = true;
+            }
         }
     }
     if given {
@@ -55,7 +62,20 @@ fn main(world: World) -> [] int {
                             } else if n >= 0 && bn >= 0 {
                                 let (out, code) = plan.check(hh, text[0..n]);
                                 status = code;
-                                if code == 0 && with_brief {
+                                if code == 0 && tier {
+                                    let (tp, tn) = plan.tier_efforts(hh, text[0..n]);
+                                    borrow tp as &o in {
+                                        buffer.write(i, o);
+                                    }
+                                    buffer.drop(hh, tp);
+                                    var nl = buffer.append(hh, buffer.empty(hh, 16), "\n[TIER]\t");
+                                    nl = buffer.push_nat(hh, nl, tn);
+                                    nl = buffer.append(hh, nl, "\n");
+                                    borrow nl as &o in {
+                                        buffer.write(i, o);
+                                    }
+                                    buffer.drop(hh, nl);
+                                } else if code == 0 && with_brief {
                                     let (brep, bcount) = plan.brief_report(hh, btext[0..bn], text[0..n]);
                                     if bcount > 0 {
                                         borrow brep as &o in {

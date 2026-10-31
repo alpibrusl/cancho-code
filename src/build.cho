@@ -1089,6 +1089,30 @@ pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q, &rt, &ht, &pt
                         buffer.drop(heap, fresh);
                     }
                 }
+                // The plan agent's plan, valid: a unit that thinks long and has no `effort` gets `medium` (plan.tier_efforts, docs/plan.md "Effort tiers").
+                // Only a plan asked for just now: a plan.json that was already there is the operator's (or an earlier run's, already tiered), and is kept.
+                if asked && units >= 0 {
+                    let (cur, cur_ok) = slurp(heap, fs, pp, 1048576);
+                    borrow cur as &cb2 in {
+                        if cur_ok {
+                            let (tiered, tier_n) = plan.tier_efforts(heap, buffer.bytes(cb2));
+                            if tier_n > 0 {
+                                borrow tiered as &tdq in {
+                                    fs_write(fs, pp, buffer.bytes(tdq));
+                                }
+                                var tsaid = buffer.append(heap, buffer.empty(heap, 64), "[BUILD_STAGE]\tplan\ttiered\t");
+                                tsaid = buffer.push_nat(heap, tsaid, tier_n);
+                                tsaid = buffer.append(heap, tsaid, "\n");
+                                borrow tsaid as &tsq in {
+                                    project.tell(heap, io, fs, lg, buffer.bytes(tsq));
+                                }
+                                buffer.drop(heap, tsaid);
+                            }
+                            buffer.drop(heap, tiered);
+                        }
+                    }
+                    buffer.drop(heap, cur);
+                }
                 if provider_away == false && (asked || units >= 0) {
                     let jd2 = trail.journal_dir(heap, wd);
                     var counted = units;
