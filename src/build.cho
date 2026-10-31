@@ -937,6 +937,61 @@ fn dead_plan_test[&h, &z, &d, &s](heap: &!h Heap, fs: &z Fs(""), jdir: &d [byte]
     return out;
 }
 
+// Was the plan about to be reused (`plan_src`) written by the plan agent, and not supplied by the operator? The journal (`jdir`) says: a run that asked
+// the plan agent (it holds a `plan_call`) ends its planning with a `plan_final` whose blob is the plan that agent left. The plan is the agent's when it
+// is, byte for byte, the blob of such a `plan_final`. A plan.json the operator wrote or edited matches none, and nothing is tiered in it.
+fn planner_plan[&h, &z, &d, &s](heap: &!h Heap, fs: &z Fs(""), jdir: &d [byte], plan_src: &s [byte]) -> [heap, fs_read("")] bool {
+    var found = false;
+    let ep = trail.path_under(heap, jdir, "events.jsonl", "");
+    borrow ep as &eq in {
+        let (evs, evs_ok) = slurp(heap, fs, buffer.bytes(eq), 4194304);
+        borrow evs as &evb in {
+            let all = buffer.bytes(evb);
+            var asked_here = false;
+            var i = 0;
+            while evs_ok && found == false && i < len(all) {
+                var e = i;
+                while e < len(all) && int_of(all[e]) != 10 {
+                    e = e + 1;
+                }
+                let line = all[i..e];
+                if bytes.find(line, "\"kind\":\"run_start\"") >= 0 {
+                    asked_here = false;
+                } else if bytes.find(line, "\"kind\":\"plan_call\"") >= 0 {
+                    asked_here = true;
+                } else if asked_here && bytes.find(line, "\"kind\":\"plan_final\"") >= 0 {
+                    let tb = box_slice(heap, json.tape_len(line), 0);
+                    borrow mut tb as &!tw in {
+                        let tape = contents(tw);
+                        if json.parse(line, tape) > 0 {
+                            let name = trail.add_string(heap, buffer.empty(heap, 32), line, tape, json.get(line, tape, 0, "plan"));
+                            borrow name as &nq in {
+                                if len(buffer.bytes(nq)) > 0 {
+                                    let bp = trail.blob_path(heap, jdir, buffer.bytes(nq));
+                                    borrow bp as &bpq in {
+                                        let (was, was_ok) = slurp(heap, fs, buffer.bytes(bpq), 1048576);
+                                        borrow was as &wq in {
+                                            found = was_ok && bytes.equal(buffer.bytes(wq), plan_src);
+                                        }
+                                        buffer.drop(heap, was);
+                                    }
+                                    buffer.drop(heap, bp);
+                                }
+                            }
+                            buffer.drop(heap, name);
+                        }
+                    }
+                    unbox_slice(heap, tb);
+                }
+                i = e + 1;
+            }
+        }
+        buffer.drop(heap, evs);
+    }
+    buffer.drop(heap, ep);
+    return found;
+}
+
 // ---- the run --------------------------------------------------------------
 
 // What a verdict word is as an exit code.
@@ -1090,8 +1145,21 @@ pub fn run[&h, &x, &c, &i, &z, &k, &b, &w, &a, &p, &m, &g, &r, &q, &rt, &ht, &pt
                     }
                 }
                 // The plan agent's plan, valid: a unit that thinks long and has no `effort` gets `medium` (plan.tier_efforts, docs/plan.md "Effort tiers").
-                // Only a plan asked for just now: a plan.json that was already there is the operator's (or an earlier run's, already tiered), and is kept.
-                if asked && units >= 0 {
+                // Only the plan agent's plan: one asked for just now, or a reused one that is, byte for byte, the blob of a `plan_final` after a
+                // `plan_call` (planner_plan). A plan.json the operator wrote or edited is kept as it is. Tiering is idempotent.
+                var tier_it = asked && units >= 0;
+                if asked == false && units >= 0 && len(retry) == 0 && len(patch) == 0 {
+                    let jd4 = trail.journal_dir(heap, wd);
+                    borrow jd4 as &jq4 in {
+                        let (own, own_ok) = slurp(heap, fs, pp, 1048576);
+                        borrow own as &owq in {
+                            tier_it = own_ok && planner_plan(heap, fs, buffer.bytes(jq4), buffer.bytes(owq));
+                        }
+                        buffer.drop(heap, own);
+                    }
+                    buffer.drop(heap, jd4);
+                }
+                if tier_it {
                     let (cur, cur_ok) = slurp(heap, fs, pp, 1048576);
                     borrow cur as &cb2 in {
                         if cur_ok {
