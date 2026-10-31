@@ -125,7 +125,32 @@ set -- $(mk); wd=$1; rc=$2; lg=$3
 cp "$tp" "$wd/plan.json"
 out=$(run "$wd" "$rc" "$lg"); r=$?
 expect "tiers: a plan.json that was already there is not touched" "$(cmp -s "$tp" "$wd/plan.json" && echo same)" same
-rm -rf "$wd" "$rc" "$tp" "$tp.kept"
+# ... but a reused plan.json that is, byte for byte, what the plan agent left (the journal: a plan_call, then a plan_final whose blob this is) is tiered
+# once; the operator's (no such journal, or an edited plan.json) is not
+seed_journal() {
+    mkdir -p "$1/journal/blobs"; cp "$2" "$1/journal/blobs/plan-1.json"
+    printf '%s\n' '{"t_ms":1,"kind":"run_start","brief":"b"}' '{"t_ms":2,"kind":"plan_call","round":1}' '{"t_ms":3,"kind":"plan_final","valid":true,"units":3,"plan":"plan-1.json"}' > "$1/journal/events.jsonl"
+}
+set -- $(mk); wd=$1; rc=$2; lg=$3
+cp "$tp" "$wd/plan.json"; seed_journal "$wd" "$tp"
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "tiers reused: exit code" "$r" 0
+expect "tiers reused: the planner's plan is tiered" "$(python3 -c "
+import json
+print(' '.join(u['id'] + ':' + u.get('effort', '-') for u in json.load(open('$wd/plan.json'))['units']))")" "a:medium b:- c:-"
+expect "tiers reused: run.log says how many" "$(grep -c '^\[BUILD_STAGE\]	plan	tiered	1' "$wd/run.log")" 1
+cp "$wd/plan.json" "$wd/plan.after1"
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "tiers reused: a second run changes nothing" "$(cmp -s "$wd/plan.after1" "$wd/plan.json" && echo same)" same
+expect "tiers reused: ... and says nothing more" "$(grep -c 'plan	tiered' "$wd/run.log")" 1
+rm -rf "$wd" "$rc"
+set -- $(mk); wd=$1; rc=$2; lg=$3
+printf ' ' >> "$tp.kept.sp"; cp "$tp" "$wd/plan.json"; printf ' \n' >> "$wd/plan.json"
+seed_journal "$wd" "$tp"
+cp "$wd/plan.json" "$wd/plan.edited"
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "tiers reused: a plan the operator edited since is not touched" "$(cmp -s "$wd/plan.edited" "$wd/plan.json" && echo same)" same
+rm -rf "$wd" "$rc" "$tp" "$tp.kept" "$tp.kept.sp"
 
 # args
 set -- $(mk); wd=$1; rc=$2; lg=$3
