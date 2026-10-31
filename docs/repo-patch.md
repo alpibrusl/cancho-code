@@ -3,7 +3,7 @@
 Everything else in this repository builds from a brief to a new program. `repo.patch` is the other direction: a repository **already exists**, a person (or Forge) writes a *change request*, and the tool answers it with a patch to that checkout, gated by the repository's own checks. It is the agent-side half of the `repo.change` task type of cancho-forge's `docs/company-lifecycle.md` (section 4.2): Forge prepares the input and bounds the output, this command is the stand-in-free worker that fills the middle.
 
 ```
-cancho-build --repo DIR --change change.txt --checker CANCHO --work WORKDIR --agent CMD --provider P --model M [--kind bug|feature|refactor|rename] [options]
+cancho-build --repo DIR --change change.txt --checker CANCHO --work WORKDIR --agent CMD --provider P --model M [--kind bug|feature|refactor|rename] [--constraints FILE] [options]
 ```
 
 It works on a **copy** of `DIR`. It never writes `DIR`, never runs `git` (there is no `git` in its code, and the copy leaves `.git` out), and ends with a `change.patch` and the changed tree in the work directory. Publishing, pushing and opening a pull request are somebody else's step.
@@ -15,6 +15,7 @@ It works on a **copy** of `DIR`. It never writes `DIR`, never runs `git` (there 
 | `--kind` | `bug`, `feature` (default), `refactor` or `rename`. The first two must add a test ([below](#a-test-is-required)) |
 | `--checker`, `--work` | the compiler (absolute) and the work directory (created; it may not contain `DIR` nor be inside it) |
 | `--agent`, `--provider`, `--model` | as for `build`: the agent command, with no default provider and no default model. The agent is run as `AGENT --provider P --model M --usage-log WORKDIR/usage.jsonl --output change WORKDIR/bundle.txt` |
+| `--constraints FILE` | optional, absolute: a small closed file of bounds on the *shape* of the change, enforced by the command ([below](#constraints-on-the-shape-of-a-change)). A line it does not know is a usage error (exit 2) |
 | `--attempts N` (4), `--agent-seconds N` (300), `--test-seconds N` (300) | the attempt ceiling, the cap on one agent turn, the cap on one `cancho test` |
 | `--max-files N` (8, at most 64), `--max-bytes N` (65536, at most 1000000) | the bounds on a change: sections (files) and bytes of the reply |
 
@@ -50,16 +51,37 @@ Each attempt starts from a fresh copy of the base (`WORKDIR/tree`), so a retry n
 4. **`cancho fmt` runs on every file written** (the compiler's own formatter, nothing hand-rolled). A file `fmt` cannot read is `fmt-failed`, with its words;
 5. **the gate**, cheap checks first:
    * **2000-line guard**: a written file that is over 2000 lines and longer than it was is `file-too-long` (a file that was already over and did not grow is not blamed);
-   * **a test is required**: see below, `no-test-added`;
+   * **a test is required**: see below, `no-test-added`; for a feature the tests must call the new code (`test-not-exercising`);
+   * **the constraints**, when `--constraints` was given: see below, `constraint-*`;
    * the repo's own `cancho fmt --check src tests` (`fmt-check-failed`);
    * `cancho test --std --backend cranelift tests/X_test.cho src/*.cho` for every `tests/*_test.cho` (`tests-failed`, the first lines of the compiler's or the runner's answer); no such test file at all is `no-tests`;
+   * for kind `bug`, the tests that were added or changed are run against the **base** and must fail there (`test-passes-on-base`);
 6. **`change.patch`** is `diff -ruN base tree` run in the work directory (so the paths read `base/src/x.cho` and `tree/src/x.cho`; `patch -p1` applies it to a fresh copy of the checkout). A tree equal to the base is `empty-change`.
 
 A refusal is printed as `[CHANGE_ATTEMPT]<TAB>N<TAB>refused<TAB>tag,tag` and its `[CHANGE_ERROR]<TAB>tag<TAB>path<TAB>detail` lines (or the `[SPLICE_ERROR]` lines), and the first 1400 bytes of them are the next attempt's feedback, so the model reads the tag. `[CHANGE_ATTEMPT]<TAB>N<TAB>passed` ends a good run. Everything goes to the console and to `WORKDIR/run.log`.
 
 ### A test is required
 
-For kind `bug` or `feature` the change must **add or change at least one test function** (`fn test_...`) in a file under `tests/`: a `test_` item of a written `tests/` file that the base does not have, or has with other text (`splice.changed_tests`). If it adds none the result is `no-test-added` and the retry feedback says so and what to do ("add a test that fails without the change"). `refactor` and `rename` are exempt. This is the answer to the one logic bug of the measurement (M-1, F1 sample 1: a swapped tuple that compiled and passed every existing test): the only defence is a test the change brings with it. It does **not** check that the test is good, or that it fails on the base; that is the lifecycle doc's repro step and an audit, and is not here.
+For kind `bug` or `feature` the change must **add or change at least one test function** (`fn test_...`) in a file under `tests/`: a `test_` item of a written `tests/` file that the base does not have, or has with other text (`splice.changed_tests`). If it adds none the result is `no-test-added` and the retry feedback says so and what to do ("add a test that fails without the change"). `refactor` and `rename` are exempt. This is the answer to the one logic bug of the measurement (M-1, F1 sample 1: a swapped tuple that compiled and passed every existing test). A test that exists is not yet a test that proves something (M-1b: one feature sample's two tests used inputs on which the right answer and the swapped one are equal), so two rules need no model and no mutation engine:
+
+**A bug fix: the tests must fail on the base (`test-passes-on-base`).** After the repo's own checks pass, every `tests/NAME_test.cho` that has an added or changed test function is run against `src/*.cho` of the **base** (`WORKDIR/probe`: a copy of the base with that one test file from the tree put over it, run as the gate runs it). *Every* test function the change added or changed must fail there; the ones that pass are named, and the retry feedback says "a test for a bug must fail without the fix: use inputs on which the buggy code gives the wrong answer". A test that does not compile on the base (it calls something the fix adds) fails there and is accepted: the check is "does not pass on the base", not "fails for the right reason". Test files the gate does not run (not directly `tests/NAME_test.cho`) are not probed. An untouched older test does not have to fail.
+
+**A feature: the tests must call the new code (`test-not-exercising`).** A feature cannot be run against the base (the new function does not compile there), so the check is the cheap deterministic part: among the text of the test functions the change adds or changes, some function the change added or replaced in `src/` and made `pub` must be *called* (its name as a whole word followed by `(`, so `mathx.quarter(9)` and `quarter (9)` count, `test_quarter(` and a mention in a comment of the item do not). If the change adds or replaces no public function (a private helper, a struct) there is nothing a test could be asked to call and the rule does not apply. `bug`, `refactor` and `rename` are not asked.
+
+Neither rule checks that the test is *good* (a mutation of the new code is a bigger piece); they close the two holes the real-model run showed: a test that cannot fail on the bug, and a test that never touches the new function.
+
+## Constraints on the shape of a change
+
+`--constraints FILE` is a small closed file of bounds the gate can see, for requests like "keep the test names" or "change nothing but these functions", which the model reads in the task (the file is shown to it) and the command enforces mechanically on the written files. One constraint per line; blank lines and lines starting with `#` are skipped.
+
+| line | meaning | refusal |
+|---|---|---|
+| `keep-names GLOB` | no `fn` of a file matching GLOB (a `src/` or `tests/` path, with a `*` only at its end: `tests/*`, `src/diff.cho`) may be removed or renamed. A changed body is fine; a rename is a removal and an addition, so it is caught by the removal. May be given more than once | `constraint-keep-names` |
+| `max-added-items N` | at most N items (fns, structs, enums) are *added* to `src/` (a replaced item is not an addition; items of `tests/` do not count) | `constraint-max-added-items` |
+| `max-added-lines N` | at most N lines are added to `src/` (the `+` lines of `diff -ruN base/src tree/src`; the new tests are not counted) | `constraint-max-added-lines` |
+| `only-items a,b,c` | the only items of `src/` that may be added, replaced or removed (tests may change freely) | `constraint-only-items` |
+
+Item names are those of `splice.item_delta` (functions, structs, enums, one namespace). A violation is one `[CHANGE_ERROR]` line per constraint broken, with the names and counts in its words, reported together with the other refusals of the gate, and it is the retry feedback like any other. A line that is not one of these four, a number that is not a number, a second `max-added-items`, `max-added-lines` or `only-items`, a glob outside `src/` and `tests/` or with a `*` elsewhere than at its end, a file that cannot be read (or is over 16 KiB) or a relative path is a usage error: exit 2, nothing run, the line number in the message.
 
 ## The verdict, the exit code, the files
 
@@ -79,7 +101,7 @@ The last line is `[CHANGE_VERDICT]<TAB>done|stuck|provider_error`; with `done`, 
 * **One model call per attempt, over all the files.** The model sees every file of `src/` and `tests/` (up to 400000 bytes): there is no selection of the files that matter, so a repository bigger than that is refused. M-1 measured one file per call.
 * **The stale-base rule is Forge's.** The lifecycle doc has Forge apply the accepted patch to the *current* tip at publish and re-derive once (`patch-base-stale`). This command works on the working tree it is given and records no base revision.
 * **The gate is the one the task named**: `fmt --check`, `test` of `tests/*_test.cho` against `src/*.cho`, the line guard. A repository with other checks (examples, a `main`, a doc build) gets those from its own CI, not here; and `fmt --check` runs on all of `src/` and `tests/`, so a base that is not formatted is refused until it is.
-* **The required test is not shown to fail on the base.**
+* **The required test is not shown to be good.** A bug fix's tests must fail on the base and a feature's must call the new code, but nothing mutates the new code to see that the tests would notice a wrong one.
 * **Renames of files, mode changes and binary files cannot be expressed**: the envelope names files to write, never to move or delete, so a whole file cannot be removed (an item can).
 * It has none of `build`'s other machinery (effort tiers, memory, the journal, parallel units, resuming a killed run): this is the smallest slice.
 
@@ -97,4 +119,4 @@ The doc's refusal tags `patch-path-denied`, `patch-too-large` and `patch-kind-in
 
 ## Gate
 
-`scripts/test-repo-patch.sh` (the real compiler, a stand-in agent `tests/repochange/agent.sh` that answers from recipe files, a small repository `tests/repochange/repo/`): the pure functions one at a time (paths, kinds, envelopes, sections, removals, test counting), a feature over `src/` and `tests/` written on one line and made `fmt`-clean, `change.patch` applying to a fresh copy, the original untouched byte for byte (also read-only), a rename (the old function gone), a removal of a missing item and of an item the tests still call (both refused, the retry told), `no-test-added` for a feature and a bug and not for a refactor or a rename, a changed test counting, every bound and path refusal with nothing written outside, the 2000-line guard, `fmt-failed`, an agent that gives up and one that is away, and the usage errors. Its mutants (the test rule off, `fmt` off, the path check off) are red. `scripts/test-agent-native-ollama.sh` holds `--output change` against a stub model.
+`scripts/test-repo-patch.sh` (the real compiler, a stand-in agent `tests/repochange/agent.sh` that answers from recipe files, a small repository `tests/repochange/repo/`): the pure functions one at a time (paths, kinds, envelopes, sections, removals, test counting), a feature over `src/` and `tests/` written on one line and made `fmt`-clean, `change.patch` applying to a fresh copy, the original untouched byte for byte (also read-only), a rename (the old function gone), a removal of a missing item and of an item the tests still call (both refused, the retry told), `no-test-added` for a feature and a bug and not for a refactor or a rename, a changed test counting, a bug fix whose tests pass on the buggy base (refused, named, the retry told), fail on it (accepted), or are one of each, a feature whose tests do not call the new function, the constraints one by one (a renamed test, too many items or lines, an item that was not allowed) and their usage errors, every bound and path refusal with nothing written outside, the 2000-line guard, `fmt-failed`, an agent that gives up and one that is away, and the usage errors. `sh scripts/test-repo-patch.sh --mutants` breaks one rule at a time in a copy of `src/` (the test probe on the base, the probe on the fix instead of the base, the call check, each of the four constraints, the usage check of the constraints, and others) and requires the gate to go red for each. `scripts/test-agent-native-ollama.sh` holds `--output change` against a stub model.

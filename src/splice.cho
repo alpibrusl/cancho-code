@@ -60,7 +60,7 @@ fn rfind_in[&s, &l](s: &s [byte], from: int, to: int, lit: &l [byte]) -> [] int 
 
 // Python's `str.isspace` on ASCII: space, \t \n \v \f \r.
 fn is_space(c: int) -> [] bool {
-    return c == 32 || (c >= 9 && c <= 13);
+    return c == 32 || c >= 9 && c <= 13;
 }
 
 fn blank[&s](s: &s [byte], lo: int, hi: int) -> [] bool {
@@ -77,7 +77,7 @@ fn blank[&s](s: &s [byte], lo: int, hi: int) -> [] bool {
 
 // [A-Za-z0-9_+-]: what a fence's language tag is made of.
 fn is_info(c: int) -> [] bool {
-    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95 || c == 43 || c == 45;
+    return c >= 65 && c <= 90 || c >= 97 && c <= 122 || c >= 48 && c <= 57 || c == 95 || c == 43 || c == 45;
 }
 
 // A fenced block that starts at or after `from`: (where its text starts, where
@@ -128,7 +128,7 @@ fn is_ws(c: int) -> [] bool {
 }
 
 fn is_ident(c: int) -> [] bool {
-    return (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95;
+    return c >= 48 && c <= 57 || c >= 65 && c <= 90 || c >= 97 && c <= 122 || c == 95;
 }
 
 // ---- items ---------------------------------------------------------------------------
@@ -380,9 +380,7 @@ fn parse_items[&t, &x](t: &t [byte], tab: &!x [int]) -> [] (int, int, int, int) 
 // ---- the patch in a reply -------------------------------------------------------------
 
 fn starts_item_line[&s](s: &s [byte], i: int) -> [] bool {
-    return match_at(s, i, "fn ") || match_at(s, i, "pub fn ") || match_at(s, i, "struct ") || match_at(s, i, "pub struct ")
-        || match_at(s, i, "res struct ") || match_at(s, i, "pub res struct ") || match_at(s, i, "enum ") || match_at(s, i, "pub enum ")
-        || match_at(s, i, "import ") || match_at(s, i, "//") || match_at(s, i, "edition ") || match_at(s, i, "module ");
+    return match_at(s, i, "fn ") || match_at(s, i, "pub fn ") || match_at(s, i, "struct ") || match_at(s, i, "pub struct ") || match_at(s, i, "res struct ") || match_at(s, i, "pub res struct ") || match_at(s, i, "enum ") || match_at(s, i, "pub enum ") || match_at(s, i, "import ") || match_at(s, i, "//") || match_at(s, i, "edition ") || match_at(s, i, "module ");
 }
 
 fn segment_patch[&s](s: &s [byte], lo: int, hi: int) -> [] (int, int) {
@@ -1194,4 +1192,141 @@ pub fn changed_tests[&h, &b, &n](heap: &!h Heap, base: &b [byte], new: &n [byte]
     unbox_slice(heap, nb);
     unbox_slice(heap, bb);
     return count;
+}
+
+// The test functions `new` adds or changes against `base` (the ones `changed_tests` counts), one per line: their names, or (`text` true) their text
+// from the keyword to the end of the item, a newline after each. The gate reads the names to run them against the base, and the text to see what they call.
+pub fn changed_test_items[&h, &b, &n](heap: &!h Heap, base: &b [byte], new: &n [byte], text: bool) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 64);
+    let bb = box_slice(heap, 6 * (len(base) / 4 + 16), 0);
+    let nb = box_slice(heap, 6 * (len(new) / 4 + 16), 0);
+    borrow mut bb as &!bw in {
+        borrow mut nb as &!nw in {
+            let tb = contents(bw);
+            let tn = contents(nw);
+            let (cb, sb, pb, lb) = parse_items(base, tb);
+            let (cn, sn, pn, ln) = parse_items(new, tn);
+            if sb == 0 && sn == 0 {
+                var k = 0;
+                while k < cn {
+                    if tn[6 * k] == 2 && match_at(new, tn[6 * k + 3], "test_") && tn[6 * k + 3] + 5 <= tn[6 * k + 4] {
+                        var same = false;
+                        var e = 0;
+                        while e < cb {
+                            if same_ident(base, tb, e, new, tn, k) && bytes.equal(base[tb[6 * e + 1]..tb[6 * e + 2]], new[tn[6 * k + 1]..tn[6 * k + 2]]) {
+                                same = true;
+                            }
+                            e = e + 1;
+                        }
+                        if same == false {
+                            if text {
+                                out = buffer.append(heap, out, new[tn[6 * k + 5]..tn[6 * k + 2]]);
+                            } else {
+                                out = buffer.append(heap, out, new[tn[6 * k + 3]..tn[6 * k + 4]]);
+                            }
+                            out = buffer.push(heap, out, byte_of(10));
+                        }
+                    }
+                    k = k + 1;
+                }
+            }
+        }
+    }
+    unbox_slice(heap, nb);
+    unbox_slice(heap, bb);
+    return out;
+}
+
+fn delta_line[&h, &p, &t, &x](heap: &!h Heap, out: buffer.Buffer, path: &p [byte], status: &static [byte], text: &t [byte], tab: &x [int], k: int) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, out, path);
+    b = buffer.push(heap, b, byte_of(9));
+    b = buffer.append(heap, b, status);
+    b = buffer.push(heap, b, byte_of(9));
+    if tab[6 * k] == 2 {
+        b = buffer.append(heap, b, "fn");
+    } else {
+        b = buffer.append(heap, b, "type");
+    }
+    b = buffer.push(heap, b, byte_of(9));
+    b = buffer.append(heap, b, text[tab[6 * k + 3]..tab[6 * k + 4]]);
+    b = buffer.push(heap, b, byte_of(9));
+    if match_at(text, tab[6 * k + 5], "pub ") {
+        b = buffer.append(heap, b, "1");
+    } else {
+        b = buffer.append(heap, b, "0");
+    }
+    b = buffer.push(heap, b, byte_of(9));
+    var lines = 1;
+    var i = tab[6 * k + 5];
+    while i < tab[6 * k + 2] {
+        if int_of(text[i]) == 10 {
+            lines = lines + 1;
+        }
+        i = i + 1;
+    }
+    b = buffer.push_nat(heap, b, lines);
+    return buffer.push(heap, b, byte_of(10));
+}
+
+// What `new` did to the items (fns, structs, enums) of `base`, one line per item: `PATH<TAB>STATUS<TAB>KIND<TAB>NAME<TAB>PUB<TAB>LINES`, with STATUS
+// `A` (added), `C` (an item of that name with other text: replaced) or `R` (removed), KIND `fn` or `type` (the two share a namespace as `splice`
+// has it), PUB 1 or 0, LINES the lines of the new item (of the removed one for `R`). `base` empty is a new file. A file that does not parse gives
+// nothing (the compiler says why). The `--constraints` of docs/repo-patch.md are decided on these lines.
+pub fn item_delta[&h, &p, &b, &n](heap: &!h Heap, path: &p [byte], base: &b [byte], new: &n [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 64);
+    let bb = box_slice(heap, 6 * (len(base) / 4 + 16), 0);
+    let nb = box_slice(heap, 6 * (len(new) / 4 + 16), 0);
+    borrow mut bb as &!bw in {
+        borrow mut nb as &!nw in {
+            let tb = contents(bw);
+            let tn = contents(nw);
+            let (cb, sb, pb, lb) = parse_items(base, tb);
+            let (cn, sn, pn, ln) = parse_items(new, tn);
+            if sb == 0 && sn == 0 {
+                var k = 0;
+                while k < cn {
+                    if tn[6 * k] >= 2 {
+                        var found = false;
+                        var same = false;
+                        var e = 0;
+                        while e < cb {
+                            if same_ident(base, tb, e, new, tn, k) {
+                                found = true;
+                                if bytes.equal(base[tb[6 * e + 1]..tb[6 * e + 2]], new[tn[6 * k + 1]..tn[6 * k + 2]]) {
+                                    same = true;
+                                }
+                            }
+                            e = e + 1;
+                        }
+                        if found == false {
+                            out = delta_line(heap, out, path, "A", new, tn, k);
+                        } else if same == false {
+                            out = delta_line(heap, out, path, "C", new, tn, k);
+                        }
+                    }
+                    k = k + 1;
+                }
+                var e2 = 0;
+                while e2 < cb {
+                    if tb[6 * e2] >= 2 {
+                        var kept = false;
+                        var j = 0;
+                        while j < cn {
+                            if same_ident(base, tb, e2, new, tn, j) {
+                                kept = true;
+                            }
+                            j = j + 1;
+                        }
+                        if kept == false {
+                            out = delta_line(heap, out, path, "R", base, tb, e2);
+                        }
+                    }
+                    e2 = e2 + 1;
+                }
+            }
+        }
+    }
+    unbox_slice(heap, nb);
+    unbox_slice(heap, bb);
+    return out;
 }

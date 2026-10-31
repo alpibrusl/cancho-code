@@ -110,6 +110,7 @@ jobs:
           sh scripts/test-lessons.sh --mutants
           sh scripts/test-build.sh
           sh scripts/test-repo-patch.sh
+          sh scripts/test-repo-patch.sh --mutants
           sh scripts/test-library.sh
           sh scripts/test-profile.sh
           sh scripts/test-journal.sh

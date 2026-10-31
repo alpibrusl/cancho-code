@@ -9,6 +9,13 @@ edition 7;
 //   apply EXISTING BODY PATH     EXISTING is a file, or `-` for a file the checkout does not have; the new file on stdout, the report on stderr
 //   remove EXISTING REMOVES      `splice.remove_items`; the new file on stdout, the report on stderr
 //   tests BASE NEW               prints how many test functions NEW adds or changes against BASE
+//   testitems BASE NEW names|text  the test functions NEW adds or changes against BASE: their names, or their text, one per line
+//   delta BASE NEW PATH          `splice.item_delta`: the items NEW adds (A), replaces (C) or removes (R) against BASE, as PATH<TAB>S<TAB>KIND<TAB>NAME<TAB>PUB<TAB>LINES
+//   publicfns RECORDS            `change.public_fns`: the public functions added or replaced in src/, from delta lines
+//   exercise TEXT NAMES          prints `yes` when TEXT calls one of NAMES (one per line) or NAMES is empty, else `no`
+//   passed OUTPUT NAMES          `change.passed_in`: the NAMES the `cancho test` OUTPUT shows as passed
+//   constraint FILE              `change.constraint_problem` on a constraints file: `ok`, or `LINE<TAB>why`
+//   violate CFILE RECORDS LINES  `change.violations` of a constraints file against delta lines and LINES lines added to src/: the [CHANGE_ERROR] lines
 //
 // Exit 0, or 1 when the function reports an error; 2: usage or a file that cannot be read.
 
@@ -140,6 +147,69 @@ fn main(world: World) -> [] int {
                                         buffer.write(i, lr);
                                     }
                                     buffer.drop(hh, line);
+                                    status = 0;
+                                } else if n == 5 && bytes.equal(mode, "delta") {
+                                    let d = splice.item_delta(hh, arg(g, 4), t1[0..n1], t2[0..n2]);
+                                    borrow d as &dr in {
+                                        buffer.write(i, dr);
+                                    }
+                                    buffer.drop(hh, d);
+                                    status = 0;
+                                } else if n == 5 && bytes.equal(mode, "testitems") {
+                                    let d = splice.changed_test_items(hh, t1[0..n1], t2[0..n2], bytes.equal(arg(g, 4), "text"));
+                                    borrow d as &dr in {
+                                        buffer.write(i, dr);
+                                    }
+                                    buffer.drop(hh, d);
+                                    status = 0;
+                                } else if n == 3 && bytes.equal(mode, "publicfns") {
+                                    let d = change.public_fns(hh, t1[0..n1]);
+                                    borrow d as &dr in {
+                                        buffer.write(i, dr);
+                                    }
+                                    buffer.drop(hh, d);
+                                    status = 0;
+                                } else if n == 4 && bytes.equal(mode, "exercise") {
+                                    if change.exercised(t1[0..n1], t2[0..n2]) {
+                                        io.write_all(i, "yes\n");
+                                    } else {
+                                        io.write_all(i, "no\n");
+                                    }
+                                    status = 0;
+                                } else if n == 4 && bytes.equal(mode, "passed") {
+                                    let d = change.passed_in(hh, t1[0..n1], t2[0..n2]);
+                                    borrow d as &dr in {
+                                        buffer.write(i, dr);
+                                    }
+                                    buffer.drop(hh, d);
+                                    status = 0;
+                                } else if n == 3 && bytes.equal(mode, "constraint") {
+                                    let (bad, why) = change.constraint_problem(t1[0..n1]);
+                                    if bad == 0 {
+                                        io.write_all(i, "ok\n");
+                                    } else {
+                                        var line = buffer.push_nat(hh, buffer.empty(hh, 16), bad);
+                                        line = buffer.push(hh, line, byte_of(9));
+                                        line = buffer.append(hh, line, why);
+                                        line = buffer.push(hh, line, byte_of(10));
+                                        borrow line as &lr in {
+                                            buffer.write(i, lr);
+                                        }
+                                        buffer.drop(hh, line);
+                                    }
+                                    status = 0;
+                                } else if n == 5 && bytes.equal(mode, "violate") {
+                                    var lines = 0;
+                                    var x = 0;
+                                    while x < len(arg(g, 4)) {
+                                        lines = lines * 10 + int_of(arg(g, 4)[x]) - 48;
+                                        x = x + 1;
+                                    }
+                                    let d = change.violations(hh, t1[0..n1], t2[0..n2], lines);
+                                    borrow d as &dr in {
+                                        buffer.write(i, dr);
+                                    }
+                                    buffer.drop(hh, d);
                                     status = 0;
                                 }
                             }
