@@ -13,6 +13,8 @@
 #             without --memory, for a superseded lesson, for another class: nothing is added; what was added is in <project>.call/memory.json; the task file is untouched
 #   away      a server that is not there is a non-zero exit and the file is left as it was (the driver names it `agent_exit`)
 #
+#   change    --output change (docs/repo-patch.md): the model answers with an envelope of `=== FILE <path>` sections, written over the bundle it was shown; prose is exit 11
+#
 # Needs python3 (the stub, and the script's own HTTP call; standard library only).
 set -u
 
@@ -264,6 +266,26 @@ expect "patch: ... and logged" "$(python3 -c "import json; print([json.loads(l)[
 kill $stub 2>/dev/null; wait $stub 2>/dev/null
 rm -f "$d"/response*.txt
 ag --output bogus "$d/pt.cho" >/dev/null 2>&1; expect "patch: an unknown --output is exit 2" "$?" 2
+
+# change output (--output change, docs/repo-patch.md): the "project file" is a bundle of a repository's files; the model answers with an envelope
+# (`=== FILE <path>` sections) which is written over the bundle for the driver to apply (src/change.cho); the agent applies nothing itself
+mkbundle() { printf '=== FILE src/a.cho\nedition 7;\nfn keep() -> [] int { return 1; }\n=== FILE tests/a_test.cho\nedition 7;\nfn test_keep() -> [] int { return 0; }\n' > "$d/bd.txt"; printf 'CHANGE: feature\nAdd fn added.\n' > "$d/bd.txt.task"; rm -f "$d/ulog.bd"; }
+python3 "$d/stub.py" "$d" & stub=$!
+rm -f "$d/port" "$d"/response*.txt "$d"/request.json; n=0; while [ ! -s "$d/port" ] && [ $n -lt 50 ]; do sleep 0.1; n=$((n + 1)); done; port=$(cat "$d/port")
+mkbundle; printf 'Here is the change:\n=== FILE src/a.cho\nremove fn keep\nfn added() -> [] int { return 3; }\n=== FILE tests/a_test.cho\nfn test_added() -> [] int { return 0; }\n' > "$d/response.txt"
+ag --output change --usage-log "$d/ulog.bd" "$d/bd.txt" >/dev/null 2>&1; rc=$?
+expect "change: exit code" "$rc" 0
+printf '=== FILE src/a.cho\nremove fn keep\nfn added() -> [] int { return 3; }\n=== FILE tests/a_test.cho\nfn test_added() -> [] int { return 0; }\n' > "$d/bd.want"
+cmp -s "$d/bd.txt" "$d/bd.want" || { echo "FAIL: change: the envelope (from the first header, no preamble) is not what the bundle became" >&2; fail=1; }
+case "$(python3 -c "import json; print(json.load(open('$d/request.json'))['prompt'])")" in *"=== FILE <path>"*"remove fn NAME"*"fn keep()"*) ;; *) echo "FAIL: change: the prompt does not ask for an envelope with remove lines (and show the files)" >&2; fail=1 ;; esac
+expect "change: usage outcome" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog.bd')])")" "['written']"
+mkbundle; printf 'I would rename keep to added.\n' > "$d/response.txt"; cp "$d/bd.txt" "$d/bd.before"; rm -f "$d/ulog.bd"
+ag --output change --usage-log "$d/ulog.bd" "$d/bd.txt" >/dev/null 2>&1; rc=$?
+expect "change: prose only is exit 11 (gave up, no change)" "$rc" 11
+cmp -s "$d/bd.txt" "$d/bd.before" || { echo "FAIL: change: the bundle changed though nothing usable came back" >&2; fail=1; }
+expect "change: three samples, all no_program" "$(python3 -c "import json; print([json.loads(l)['outcome'] for l in open('$d/ulog.bd')])")" "['no_program', 'no_program', 'no_program']"
+kill $stub 2>/dev/null; wait $stub 2>/dev/null
+rm -f "$d"/response*.txt
 
 # truncated: a reply that stopped because it hit the generation bound (done_reason "length") is cut off mid-program, not an answer. Written
 # to the project it left `expected ..., found end of file` as the refusal, which a model cannot act on (the first CSV runs: 7 of 12 units).

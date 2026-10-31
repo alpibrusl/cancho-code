@@ -211,7 +211,9 @@ fn lead_lines[&h, &t](heap: &!h Heap, out: buffer.Buffer, text: &t [byte], lead:
 
 // The prompt: the task (or the instruction to fix), the checker's current
 // output, then the file between rules.
-fn compose[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte], patch: bool) -> [heap] buffer.Buffer {
+fn compose[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte], mode: int) -> [heap] buffer.Buffer {
+    let patch = mode == 1;
+    let change = mode == 2;
     var p = buffer.empty(heap, 4096);
     let (rest0, memo) = split_prefix(heap, task, "\0MEMORY: ");
     var rest1 = buffer.empty(heap, 8);
@@ -245,13 +247,17 @@ fn compose[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], f
                 p = buffer.append(heap, p, "\n\nWhat the person who runs this build says about this unit (they have read the earlier attempts; take it into account, but the compiler and the tests still decide whether the code is right):\n");
                 p = buffer.append(heap, p, said);
             }
-            if patch {
+            if change {
+                p = buffer.append(heap, p, "\n\nThe files of the repository are below, each after a line `=== FILE <path>`. Reply with ONLY the change, in this form, for each file you change or add (only files under src/ or tests/ whose names end in .cho): a line `=== FILE <path>`, then for an existing file the complete new definition of each top-level item (function, struct, enum) to ADD or CHANGE (an item with the same name is replaced in place; do not repeat the items that stay), and one line `remove fn NAME` or `remove struct NAME` or `remove enum NAME` for each item to DELETE. To rename an item, remove the old name, add the new one and change every use of it in every file. A path that is not below is a new file: give it whole, starting with its `edition` line. A bug fix or a new feature must add or change a test function (`fn test_...`) in a file under tests/. No explanation and no markdown fences.\n");
+            } else if patch {
                 p = buffer.append(heap, p, "\n\nThe file below is kept as it is. Reply with ONLY the code to ADD or CHANGE: the function(s) this task asks for, and any helper functions or types it needs, as complete top-level items. Do not repeat the other items of the file; if you must change one, give its complete new definition. No `edition` line, no imports the file already has, no tests, no markdown fences, no explanation.\n");
             } else {
                 p = buffer.append(heap, p, "\n\nReply with the complete file, with the task done, and nothing else: no markdown fences, no explanation.\n");
             }
         } else {
-            if patch {
+            if change {
+                p = buffer.append(heap, p, "The change to the repository below is refused. Reply with the complete corrected change (`=== FILE <path>` sections as before) and nothing else.\n");
+            } else if patch {
                 p = buffer.append(heap, p, "The cancho program below is refused by its compiler. Reply with ONLY the complete corrected definition of each item that must change, as top-level items, and nothing else: not the items that are fine, no `edition` line, no markdown fences, no explanation.\n");
             } else {
                 p = buffer.append(heap, p, "The cancho program below is refused by its compiler. Reply with the complete corrected file and nothing else: no markdown fences, no explanation.\n");
@@ -292,10 +298,15 @@ fn compose[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], f
 
 // The prompt that asks for the complete file.
 pub fn build[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
-    return compose(heap, source, task, feedback, false);
+    return compose(heap, source, task, feedback, 0);
 }
 
 // The prompt that asks for only the code to add or change: what the model re-emits is the unit, not the whole file (`splice` puts it in).
 pub fn build_patch[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
-    return compose(heap, source, task, feedback, true);
+    return compose(heap, source, task, feedback, 1);
+}
+
+// The prompt of a change request for a repository: `source` is the bundle of its files (`=== FILE <path>` and the text), the answer an envelope.
+pub fn build_change[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
+    return compose(heap, source, task, feedback, 2);
 }

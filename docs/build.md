@@ -24,6 +24,8 @@ build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m>
 
 Paths, provider and model go into shell command lines, so they may hold only letters, digits and `. _ / + : = @ % , -`. A path with `..` in it is refused (the file capability traps on it).
 
+`build --repo DIR --change FILE ...` is a different command line on the same program: a change request answered for an existing repository checkout, ending in `change.patch` ([repo-patch.md](repo-patch.md)).
+
 ## Example
 
 ```sh

@@ -398,7 +398,7 @@ rm -rf "$wd" "$rc"
 bexe="$d/build"
 "$CANCHO" build "$root/tests/programs/build.cho" "$SRC/build.cho" "$SRC/project.cho" "$SRC/plan.cho" "$SRC/driver.cho" \
     "$SRC/checker.cho" "$SRC/signature.cho" "$SRC/loop_check.cho" "$SRC/snapshot.cho" "$SRC/trail.cho" \
-    "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" "$SRC/library.cho" "$SRC/cases.cho" --std --backend cranelift -o "$bexe" >/dev/null 2>"$d/bbuild.err" \
+    "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" "$SRC/library.cho" "$SRC/cases.cho" "$SRC/change.cho" "$SRC/repochange.cho" --std --backend cranelift -o "$bexe" >/dev/null 2>"$d/bbuild.err" \
     || { cat "$d/bbuild.err" >&2; echo "build gate did not build" >&2; exit 2; }
 B="$root/tests/buildcmd"
 runb() { # wd recipes log [more options...]

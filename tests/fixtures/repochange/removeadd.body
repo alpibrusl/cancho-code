@@ -1,0 +1,5 @@
+remove fn old
+remove fn change
+fn changed() -> [] int {
+    return 5;
+}

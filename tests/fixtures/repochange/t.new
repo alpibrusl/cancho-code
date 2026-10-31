@@ -1,0 +1,13 @@
+edition 7;
+
+pub fn helper() -> [] int {
+    return 1;
+}
+
+pub fn test_one() -> [] int {
+    return 0;
+}
+
+pub fn test_two() -> [] int {
+    return 0;
+}

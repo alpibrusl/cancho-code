@@ -1,0 +1,16 @@
+edition 7;
+
+import std.result;
+
+// the old one
+fn edit_count(a: int) -> [] int {
+    return a;
+}
+
+struct Point { x: int }
+
+enum Color { Red, Green }
+
+fn keep() -> [] int {
+    return 1;
+}

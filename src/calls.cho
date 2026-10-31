@@ -186,9 +186,12 @@ fn int_at[&s, &t](src: &s [byte], tape: &t [int], i: int) -> [] int {
 // ---- the prompt -----------------------------------------------------------
 
 // The text the model was asked, after the primer: what varies from call to call. The same dispatch as the request builder's.
-pub fn asked_text[&h, &g, &s, &t, &f](heap: &!h Heap, plan_mode: bool, patch_out: bool, guide: &g [byte], source: &s [byte], task: &t [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
+pub fn asked_text[&h, &g, &s, &t, &f](heap: &!h Heap, plan_mode: bool, patch_out: bool, change_out: bool, guide: &g [byte], source: &s [byte], task: &t [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
     if plan_mode {
         return planprompt.build(heap, guide, source, task, feedback);
+    }
+    if change_out {
+        return prompt.build_change(heap, source, task, feedback);
     }
     if patch_out {
         return prompt.build_patch(heap, source, task, feedback);

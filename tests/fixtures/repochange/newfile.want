@@ -1,0 +1,4 @@
+edition 7;
+module extra;
+
+pub fn five() -> [] int { return 5; }

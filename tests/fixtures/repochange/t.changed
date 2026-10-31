@@ -1,0 +1,10 @@
+edition 7;
+
+pub fn helper() -> [] int {
+    return 2;
+}
+
+pub fn test_one() -> [] int {
+    test.assert(true);
+    return 0;
+}

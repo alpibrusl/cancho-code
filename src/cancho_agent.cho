@@ -44,7 +44,9 @@ edition 7;
 //                   (src/plan.cho, in process) decides: a rejected plan is fed back with its report; {"status": "unclear" |
 //                   "too_big"} exits 3 and is saved as <out>.questions.json; nothing is written unless the check passes.
 //   --output        file (default): the model returns the complete project file; patch: it returns only the code to ADD or CHANGE (a unit)
-//                   and src/splice.cho splices it into the file (an item with the same name is replaced in place, a new one appended)
+//                   and src/splice.cho splices it into the file (an item with the same name is replaced in place, a new one appended);
+//                   change: the "project file" is a bundle of a repository's files (docs/repo-patch.md), the model answers with an envelope
+//                   (`=== FILE <path>` sections: items to add, `remove` lines, new files) which is written over the bundle for the driver to apply
 //   --review        off | on (off): after a plan passes the check, a SECOND call re-derives every case's expected value blind (from the
 //                   description only) and a case survives only if the reviewer agrees (src/review.cho); needs --review-guide <file>
 //   --usage-log     a file that gets one JSON line per API call: tokens in, out,
@@ -605,8 +607,8 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
     }
     let plan_mode = bytes.equal(mode, "plan");
     let out_mode = opt(args, "--output");
-    if len(out_mode) > 0 && bytes.equal(out_mode, "file") == false && bytes.equal(out_mode, "patch") == false {
-        say(io, "--output must be file or patch");
+    if len(out_mode) > 0 && bytes.equal(out_mode, "file") == false && bytes.equal(out_mode, "patch") == false && bytes.equal(out_mode, "change") == false {
+        say(io, "--output must be file, patch or change");
         return 2;
     }
     if plan_mode && (len(opt(args, "--guide")) == 0 || len(opt(args, "--brief")) == 0) {
@@ -734,6 +736,7 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
         }
     }
     let patch_out = bytes.equal(out_mode, "patch") && plan_mode == false;
+    let change_out = bytes.equal(out_mode, "change") && plan_mode == false;
     let review_on = bytes.equal(opt(args, "--review"), "on");
     var rguide = buffer.empty(heap, 16);
     var rguide_ok = true;
@@ -774,7 +777,7 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
     }
     if key_ok && key_present && roots_ok && primer_ok && source_ok && guide_ok && rguide_ok && task_ok {
         // consumed: it drops all six
-        return ask_and_write(heap, fs, net, clock, io, args, project, model, host, ip, port, secure, local, num_ctx, max_tokens, thinking, effort, plan_mode, rounds, review_on, patch_out, key_raw, roots, primer, guide, rguide, source, task, feedback);
+        return ask_and_write(heap, fs, net, clock, io, args, project, model, host, ip, port, secure, local, num_ctx, max_tokens, thinking, effort, plan_mode, rounds, review_on, patch_out, change_out, key_raw, roots, primer, guide, rguide, source, task, feedback);
     }
     if key_ok == false {
         say(io, "cannot read --key-file");
@@ -806,11 +809,13 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
 }
 
 // The request body for this round: the prompt (to fix a program, or to write a plan) in the provider's wire form.
-fn make_body[&h, &m, &y, &s, &p, &g, &r, &k, &f](heap: &!h Heap, local: bool, plan_mode: bool, patch_out: bool, model: &m [byte], num_ctx: int, max_tokens: int, thinking: &y [byte], effort: &s [byte], primer: &p [byte], guide: &g [byte], source: &r [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
+fn make_body[&h, &m, &y, &s, &p, &g, &r, &k, &f](heap: &!h Heap, local: bool, plan_mode: bool, patch_out: bool, change_out: bool, model: &m [byte], num_ctx: int, max_tokens: int, thinking: &y [byte], effort: &s [byte], primer: &p [byte], guide: &g [byte], source: &r [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
     var asked = buffer.empty(heap, 16);
     buffer.drop(heap, asked);
     if plan_mode {
         asked = planprompt.build(heap, guide, source, task, feedback);
+    } else if change_out {
+        asked = prompt.build_change(heap, source, task, feedback);
     } else if patch_out {
         asked = prompt.build_patch(heap, source, task, feedback);
     } else {
@@ -831,7 +836,7 @@ fn make_body[&h, &m, &y, &s, &p, &g, &r, &k, &f](heap: &!h Heap, local: bool, pl
 
 // Up to `rounds` samples: a reply without a program, or cut off, is retried and
 // never written over the project.
-fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, args: &g Args, project: &p [byte], model: &m [byte], host: &o [byte], ip: &q [byte], port: int, secure: bool, local: bool, num_ctx: int, max_tokens: int, thinking: &y [byte], effort: &s [byte], plan_mode: bool, rounds: int, review_on: bool, patch_out: bool, key_raw: buffer.Buffer, roots: buffer.Buffer, primer: buffer.Buffer, guide: buffer.Buffer, rguide: buffer.Buffer, source: buffer.Buffer, task: buffer.Buffer, feedback0: buffer.Buffer) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write, args] int {
+fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, args: &g Args, project: &p [byte], model: &m [byte], host: &o [byte], ip: &q [byte], port: int, secure: bool, local: bool, num_ctx: int, max_tokens: int, thinking: &y [byte], effort: &s [byte], plan_mode: bool, rounds: int, review_on: bool, patch_out: bool, change_out: bool, key_raw: buffer.Buffer, roots: buffer.Buffer, primer: buffer.Buffer, guide: buffer.Buffer, rguide: buffer.Buffer, source: buffer.Buffer, task: buffer.Buffer, feedback0: buffer.Buffer) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write, args] int {
     var feedback = feedback0;
     // The bound on one answer. A reply (a plan, a patch) cut off by it is asked again with the bound doubled (at most 32000): a model that thinks first can spend the
     // whole bound before the first byte of the plan (the `semver` plan failed three rounds of three with 16000 tokens of thinking and no JSON).
@@ -904,18 +909,18 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                         borrow feedback as &fr in {
                             buffer.drop(heap, body);
                             buffer.drop(heap, asked_now);
-                            asked_now = calls.asked_text(heap, plan_mode, patch_out, buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                            asked_now = calls.asked_text(heap, plan_mode, patch_out, change_out, buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
                             has_primer = len(buffer.bytes(pr)) > 0;
                             if attempt == 1 {
                                 calls.keep_primer(heap, fs, jdir, project, plan_mode, buffer.bytes(pr));
                             }
                             let te = task_effort(buffer.bytes(tr));
                             if len(eff_over) > 0 {
-                                body = make_body(heap, local, plan_mode, patch_out, model, num_ctx, bound, thinking, eff_over, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                                body = make_body(heap, local, plan_mode, patch_out, change_out, model, num_ctx, bound, thinking, eff_over, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
                             } else if len(te) > 0 {
-                                body = make_body(heap, local, plan_mode, patch_out, model, num_ctx, bound, thinking, te, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                                body = make_body(heap, local, plan_mode, patch_out, change_out, model, num_ctx, bound, thinking, te, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
                             } else {
-                                body = make_body(heap, local, plan_mode, patch_out, model, num_ctx, bound, thinking, effort, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                                body = make_body(heap, local, plan_mode, patch_out, change_out, model, num_ctx, bound, thinking, effort, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
                             }
                         }
                     }
@@ -1214,7 +1219,11 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                         var pa = 0 - 1;
                                         var pz = 0 - 1;
                                         if cut == false {
-                                            if patch_out {
+                                            if change_out {
+                                                let (a, z) = splice.envelope_span(buffer.bytes(xr));
+                                                pa = a;
+                                                pz = z;
+                                            } else if patch_out {
                                                 let (a, z) = splice.patch_span(buffer.bytes(xr));
                                                 pa = a;
                                                 pz = z;
@@ -1302,6 +1311,22 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                                     io.error_all(io, buffer.bytes(sdq));
                                                 }
                                                 buffer.drop(heap, said);
+                                            }
+                                        } else if change_out {
+                                            if pa < 0 {
+                                                gave = 11;
+                                                io.error_all(io, "cancho-agent: a sample has no change in it (a `=== FILE <path>` line and what to do to that file)\n");
+                                            } else {
+                                                // the envelope and one final newline: the driver reads it (src/change.cho), the file it replaces was only what the model was shown
+                                                var file = buffer.empty(heap, pz - pa + 2);
+                                                file = buffer.append(heap, file, buffer.bytes(xr)[pa..pz]);
+                                                file = buffer.push(heap, file, byte_of(10));
+                                                borrow file as &fr in {
+                                                    fs_write(fs, project, buffer.bytes(fr));
+                                                }
+                                                buffer.drop(heap, file);
+                                                rc = 0;
+                                                finished = true;
                                             }
                                         } else if patch_out {
                                             if pa < 0 {

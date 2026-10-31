@@ -1,0 +1,5 @@
+```cancho
+fn change() -> [] int {
+    return 20;
+}
+```

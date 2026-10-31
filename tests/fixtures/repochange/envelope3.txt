@@ -1,0 +1,12 @@
+=== FILE src/a.cho ===
+remove fn old
+fn a() -> [] int {
+    return 1;
+}
+=== FILE tests/a_test.cho
+fn test_a() -> [] int {
+    return 0;
+}
+=== FILE   src/new.cho
+edition 7;
+module new;

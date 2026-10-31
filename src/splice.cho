@@ -1004,3 +1004,194 @@ pub fn public_items[&h, &s](heap: &!h Heap, text: &s [byte]) -> [heap] buffer.Bu
     unbox_slice(heap, tb);
     return out;
 }
+
+// ---- removing items (docs/repo-patch.md) -------------------------------------------------------------------------------------------------
+//
+// Patch mode can add or replace an item by name, never delete one; a rename is a removal and an addition. `remove_items` takes the file and a
+// list of lines `fn NAME` or `type NAME` (a struct or an enum is a `type`: the two share a namespace, as `splice`'s identity has it), and drops
+// each such item, its leading comment with it and the blank space after it. It does not look for uses of the item: a use that is left is the
+// compiler's to find. An item the file does not have is an error, in the same `[SPLICE_ERROR]` form as the others (and the file is returned
+// unchanged). Pure, like `splice`.
+pub fn remove_items[&h, &s, &r](heap: &!h Heap, existing: &s [byte], removes: &r [byte]) -> [heap] (buffer.Buffer, buffer.Buffer, int) {
+    var rep = buffer.empty(heap, 128);
+    var out = buffer.empty(heap, len(existing) + 16);
+    var code = 0;
+    let teb = box_slice(heap, 6 * (len(existing) / 4 + 16), 0);
+    let gone = box_slice(heap, len(existing) / 4 + 17, 0);
+    borrow mut teb as &!ew in {
+        borrow mut gone as &!gw in {
+            let te = contents(ew);
+            let dropped = contents(gw);
+            let (ne, se, pe, le) = parse_items(existing, te);
+            if se != 0 {
+                rep = put_parse_error(heap, rep, "existing", existing, se, pe);
+                code = 1;
+            } else {
+                var p = 0;
+                var lineno = 0;
+                while p < len(removes) {
+                    let e = line_end(removes, p);
+                    lineno = lineno + 1;
+                    let ln = bytes.trim(removes[p..e]);
+                    if len(ln) > 0 {
+                        var tag = 0;
+                        var name = ln;
+                        if bytes.starts_with(ln, "fn ") {
+                            tag = 2;
+                            name = bytes.trim(ln[3..len(ln)]);
+                        } else if bytes.starts_with(ln, "type ") {
+                            tag = 3;
+                            name = bytes.trim(ln[5..len(ln)]);
+                        }
+                        var idx = 0 - 1;
+                        var k = 0;
+                        while k < ne && idx < 0 {
+                            if tag_of(te[6 * k]) == tag && tag >= 2 && bytes.equal(existing[te[6 * k + 3]..te[6 * k + 4]], name) {
+                                idx = k;
+                            }
+                            k = k + 1;
+                        }
+                        if idx < 0 {
+                            rep = put_line(heap, rep, "[SPLICE_ERROR]\t-\t", "patch", lineno, ": remove ");
+                            rep = buffer.append(heap, rep, ln);
+                            rep = buffer.append(heap, rep, ": the file has no such item\n");
+                            code = 1;
+                        } else {
+                            dropped[idx] = 1;
+                        }
+                    }
+                    p = e + 1;
+                }
+                if code == 0 {
+                    var whole = buffer.empty(heap, len(existing) + 16);
+                    var pos = 0;
+                    var k = 0;
+                    while k < ne {
+                        if dropped[k] == 1 {
+                            whole = buffer.append(heap, whole, existing[pos..te[6 * k + 1]]);
+                            pos = te[6 * k + 2];
+                            while pos < len(existing) && is_ws(int_of(existing[pos])) {
+                                pos = pos + 1;
+                            }
+                        }
+                        k = k + 1;
+                    }
+                    whole = buffer.append(heap, whole, existing[pos..len(existing)]);
+                    borrow whole as &wr in {
+                        var tl = buffer.size(wr);
+                        while tl > 0 && is_ws(int_of(buffer.bytes(wr)[tl - 1])) {
+                            tl = tl - 1;
+                        }
+                        buffer.drop(heap, out);
+                        out = buffer.append(heap, buffer.empty(heap, tl + 2), buffer.bytes(wr)[0..tl]);
+                        out = buffer.push(heap, out, byte_of(10));
+                    }
+                    buffer.drop(heap, whole);
+                }
+            }
+        }
+    }
+    unbox_slice(heap, gone);
+    unbox_slice(heap, teb);
+    if code != 0 {
+        buffer.drop(heap, out);
+        out = buffer.append(heap, buffer.empty(heap, len(existing) + 16), existing);
+    }
+    return (out, rep, code);
+}
+
+// ---- a change of several files (docs/repo-patch.md) --------------------------------------------------------------------------------------
+//
+// The reply to a change request is an ENVELOPE: for each file it touches, a header line `=== FILE <path>` and under it the body for that file (the
+// items to add or replace, the `remove` lines, or a whole new file). These two functions are the parts of it that need the item parser.
+
+// Does a header line `=== FILE ` begin at `i`, at the start of a line?
+pub fn is_header[&s](s: &s [byte], i: int) -> [] bool {
+    return (i == 0 || int_of(s[i - 1]) == 10) && match_at(s, i, "=== FILE ");
+}
+
+// The first line at or after `from` (before `hi`) that begins with `=== FILE `, as its offset, or -1.
+fn header_from[&s](s: &s [byte], from: int, hi: int) -> [] int {
+    var i = from;
+    var found = 0 - 1;
+    while found < 0 && i < hi {
+        if (i == 0 || int_of(s[i - 1]) == 10) && match_at(s, i, "=== FILE ") {
+            found = i;
+        }
+        i = i + 1;
+    }
+    return found;
+}
+
+// The envelope in a model's answer: from its first header line to its end (trailing space off, and a closing fence that closes no fence of the
+// envelope), or (-1, -1) when there is no header. Text before the first header (a preamble, reasoning) is not part of it; of a `</think>`, only
+// what follows the last one counts when a header follows it.
+pub fn envelope_span[&s](answer: &s [byte]) -> [] (int, int) {
+    let n = len(answer);
+    var lo = 0;
+    let t = rfind_in(answer, 0, n, "</think>");
+    if t >= 0 && header_from(answer, t + 8, n) >= 0 {
+        lo = t + 8;
+    }
+    let a = header_from(answer, lo, n);
+    if a < 0 {
+        return (0 - 1, 0 - 1);
+    }
+    var e = n;
+    while e > a && is_space(int_of(answer[e - 1])) {
+        e = e - 1;
+    }
+    var fences = 0;
+    var i = a;
+    while i < e {
+        if (i == a || int_of(answer[i - 1]) == 10) && match_at(answer, i, "```") {
+            fences = fences + 1;
+        }
+        i = i + 1;
+    }
+    if fences % 2 == 1 && e - 3 >= a && match_at(answer, e - 3, "```") && int_of(answer[e - 4]) == 10 {
+        e = e - 3;
+        while e > a && is_space(int_of(answer[e - 1])) {
+            e = e - 1;
+        }
+    }
+    return (a, e);
+}
+
+// How many test functions `new` adds or changes against `base`: the `fn test_...` items of `new` that `base` does not have, or has with other text.
+// `base` empty is a new file. A file that does not parse counts none (the compiler is the one to say why).
+pub fn changed_tests[&h, &b, &n](heap: &!h Heap, base: &b [byte], new: &n [byte]) -> [heap] int {
+    var count = 0;
+    let bb = box_slice(heap, 6 * (len(base) / 4 + 16), 0);
+    let nb = box_slice(heap, 6 * (len(new) / 4 + 16), 0);
+    borrow mut bb as &!bw in {
+        borrow mut nb as &!nw in {
+            let tb = contents(bw);
+            let tn = contents(nw);
+            let (cb, sb, pb, lb) = parse_items(base, tb);
+            let (cn, sn, pn, ln) = parse_items(new, tn);
+            if sb == 0 && sn == 0 {
+                var k = 0;
+                while k < cn {
+                    if tn[6 * k] == 2 && match_at(new, tn[6 * k + 3], "test_") && tn[6 * k + 3] + 5 <= tn[6 * k + 4] {
+                        var same = false;
+                        var e = 0;
+                        while e < cb {
+                            if same_ident(base, tb, e, new, tn, k) && bytes.equal(base[tb[6 * e + 1]..tb[6 * e + 2]], new[tn[6 * k + 1]..tn[6 * k + 2]]) {
+                                same = true;
+                            }
+                            e = e + 1;
+                        }
+                        if same == false {
+                            count = count + 1;
+                        }
+                    }
+                    k = k + 1;
+                }
+            }
+        }
+    }
+    unbox_slice(heap, nb);
+    unbox_slice(heap, bb);
+    return count;
+}
