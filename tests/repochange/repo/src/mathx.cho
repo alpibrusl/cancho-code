@@ -1,0 +1,22 @@
+edition 7;
+
+module mathx;
+
+// Twice the number.
+pub fn double(x: int) -> [] int {
+    return x * 2;
+}
+
+pub fn half(x: int) -> [] int {
+    return x / 2;
+}
+
+pub fn clamp(x: int, lo: int, hi: int) -> [] int {
+    if x < lo {
+        return lo;
+    }
+    if x > hi {
+        return hi;
+    }
+    return x;
+}

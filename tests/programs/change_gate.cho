@@ -1,0 +1,159 @@
+edition 7;
+
+// change_gate MODE ARGS...: src/change.cho and the parts of src/splice.cho that `repo.patch` uses (docs/repo-patch.md), one pure function at a time.
+//
+//   path PATH                    prints the tag `change.path_tag` refuses it with, or `ok`
+//   kind KIND                    prints `ok` or `bad`, then `test` or `free` (does the kind need a test?)
+//   envelope REPLY               prints "START END" of the envelope in a model's reply ("-1 -1" when there is none)
+//   sections ENVELOPE            prints `PATH<TAB>BODY-BYTES` for each section
+//   apply EXISTING BODY PATH     EXISTING is a file, or `-` for a file the checkout does not have; the new file on stdout, the report on stderr
+//   remove EXISTING REMOVES      `splice.remove_items`; the new file on stdout, the report on stderr
+//   tests BASE NEW               prints how many test functions NEW adds or changes against BASE
+//
+// Exit 0, or 1 when the function reports an error; 2: usage or a file that cannot be read.
+
+import change;
+import splice;
+import std.buffer;
+import std.bytes;
+import std.io;
+
+fn main(world: World) -> [] int {
+    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);
+    release(ffi);
+    release(net);
+    release(clock);
+    release(signals);
+    release(exec);
+    var console = io;
+    var h = heap;
+    var status = 2;
+    borrow args as &g in {
+        borrow fs as &f in {
+            borrow mut console as &!i in {
+                borrow mut h as &!hh in {
+                    let room1 = box_slice(hh, 1048576, byte_of(0));
+                    let room2 = box_slice(hh, 1048576, byte_of(0));
+                    borrow mut room1 as &!r1 in {
+                        borrow mut room2 as &!r2 in {
+                            let n = arg_count(g);
+                            let mode = arg(g, 1);
+                            if n == 3 && bytes.equal(mode, "path") {
+                                let tag = change.path_tag(arg(g, 2));
+                                if len(tag) == 0 {
+                                    io.write_all(i, "ok\n");
+                                } else {
+                                    io.write_all(i, tag);
+                                    io.write_all(i, "\n");
+                                }
+                                status = 0;
+                            } else if n == 3 && bytes.equal(mode, "kind") {
+                                if change.kind_ok(arg(g, 2)) {
+                                    io.write_all(i, "ok ");
+                                } else {
+                                    io.write_all(i, "bad ");
+                                }
+                                if change.needs_test(arg(g, 2)) {
+                                    io.write_all(i, "test\n");
+                                } else {
+                                    io.write_all(i, "free\n");
+                                }
+                                status = 0;
+                            } else if n >= 3 {
+                                let t1 = contents(r1);
+                                let t2 = contents(r2);
+                                var n1 = 0;
+                                if bytes.equal(arg(g, 2), "-") == false {
+                                    n1 = fs_read(f, arg(g, 2), t1);
+                                }
+                                var n2 = 0;
+                                if n >= 4 {
+                                    n2 = fs_read(f, arg(g, 3), t2);
+                                }
+                                if n1 < 0 || n2 < 0 || n1 >= 1048576 || n2 >= 1048576 {
+                                    io.error_all(i, "change_gate: a file cannot be read, or is 1 MiB or more\n");
+                                } else if n == 3 && bytes.equal(mode, "envelope") {
+                                    let (a, z) = splice.envelope_span(t1[0..n1]);
+                                    var line = buffer.empty(hh, 32);
+                                    if a < 0 {
+                                        line = buffer.append(hh, line, "-1 -1\n");
+                                    } else {
+                                        line = buffer.push_nat(hh, line, a);
+                                        line = buffer.append(hh, line, " ");
+                                        line = buffer.push_nat(hh, line, z);
+                                        line = buffer.append(hh, line, "\n");
+                                    }
+                                    borrow line as &lr in {
+                                        buffer.write(i, lr);
+                                    }
+                                    buffer.drop(hh, line);
+                                    status = 0;
+                                } else if n == 3 && bytes.equal(mode, "sections") {
+                                    let env = t1[0..n1];
+                                    var k = 0;
+                                    var more = true;
+                                    while more {
+                                        let (ps, pz, bs, bz) = change.section_at(env, k);
+                                        if ps < 0 {
+                                            more = false;
+                                        } else {
+                                            var line = buffer.append(hh, buffer.empty(hh, 64), env[ps..pz]);
+                                            line = buffer.push(hh, line, byte_of(9));
+                                            line = buffer.push_nat(hh, line, bz - bs);
+                                            line = buffer.push(hh, line, byte_of(10));
+                                            borrow line as &lr in {
+                                                buffer.write(i, lr);
+                                            }
+                                            buffer.drop(hh, line);
+                                        }
+                                        k = k + 1;
+                                    }
+                                    status = 0;
+                                } else if n == 5 && bytes.equal(mode, "apply") {
+                                    let exists = bytes.equal(arg(g, 2), "-") == false;
+                                    let (file, report, code) = change.apply(hh, t1[0..n1], exists, t2[0..n2], arg(g, 4));
+                                    borrow file as &p in {
+                                        buffer.write(i, p);
+                                    }
+                                    buffer.drop(hh, file);
+                                    borrow report as &r in {
+                                        io.error_all(i, buffer.bytes(r));
+                                    }
+                                    buffer.drop(hh, report);
+                                    status = code;
+                                } else if n == 4 && bytes.equal(mode, "remove") {
+                                    let (file, report, code) = splice.remove_items(hh, t1[0..n1], t2[0..n2]);
+                                    borrow file as &p in {
+                                        buffer.write(i, p);
+                                    }
+                                    buffer.drop(hh, file);
+                                    borrow report as &r in {
+                                        io.error_all(i, buffer.bytes(r));
+                                    }
+                                    buffer.drop(hh, report);
+                                    status = code;
+                                } else if n == 4 && bytes.equal(mode, "tests") {
+                                    let c = splice.changed_tests(hh, t1[0..n1], t2[0..n2]);
+                                    var line = buffer.push_nat(hh, buffer.empty(hh, 16), c);
+                                    line = buffer.push(hh, line, byte_of(10));
+                                    borrow line as &lr in {
+                                        buffer.write(i, lr);
+                                    }
+                                    buffer.drop(hh, line);
+                                    status = 0;
+                                }
+                            }
+                        }
+                    }
+                    unbox_slice(hh, room2);
+                    unbox_slice(hh, room1);
+                }
+            }
+        }
+    }
+    release(fs);
+    release(console);
+    release(h);
+    release(args);
+    return status;
+}

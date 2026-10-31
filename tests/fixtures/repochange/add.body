@@ -1,0 +1,3 @@
+fn added() -> [] int {
+    return 4;
+}

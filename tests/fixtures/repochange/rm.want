@@ -1,0 +1,9 @@
+edition 7;
+
+import std.result;
+
+enum Color { Red, Green }
+
+fn keep() -> [] int {
+    return 1;
+}

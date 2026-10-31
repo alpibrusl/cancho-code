@@ -7,6 +7,8 @@ edition 7;
 // `--profile <file>` is the language profile (docs/profile.md; without it, the default: cancho). `--jobs N` (default 4) builds up to N units at once (docs/parallel.md; 1 is one at a time). Started again as `build --unit-worker ...` it is one such
 // unit's worker, which the driver itself starts (not for people).
 //
+// `build --repo DIR --change FILE ...` (docs/repo-patch.md) answers a change request for an existing repository checkout: on a copy of DIR, ending in change.patch.
+//
 // `--library NAME` (docs/library.md) turns a build that is `done` into src/NAME.cho and tests/NAME_test.cho; it needs `--contract`.
 //
 // Exit codes: 0 done, 1 stuck or the final gate failed, 2 usage, 3 plan_failed, 4 provider_error, 6 the library step refused.
@@ -14,6 +16,7 @@ edition 7;
 import build;
 import library;
 import project;
+import repochange;
 import std.buffer;
 import std.bytes;
 import std.io;
@@ -172,6 +175,7 @@ fn main(world: World) -> [] int {
     var jobs = 4;
     var argv0 = "";
     var worker = false;
+    var repo_mode = false;
     var memory = "";
     var fact = "";
     var profile = "";
@@ -182,10 +186,13 @@ fn main(world: World) -> [] int {
         if arg_count(g0) >= 2 && bytes.equal(arg(g0, 1), "--unit-worker") {
             worker = true;
         }
+        if arg_count(g0) >= 2 && bytes.equal(arg(g0, 1), "--repo") {
+            repo_mode = true;
+        }
     }
     borrow mut console as &!ci in {
         borrow args as &g in {
-            if worker {
+            if worker || repo_mode {
                 given = false;
             } else if arg_count(g) < 5 {
                 io.error_all(ci, "usage: build <checker> <brief.txt> <workdir> <agent-command> --provider <p> --model <m> [--guide <file>] [--review on --review-guide <file>] [--contract <file>] [--rounds N] [--attempts N] [--agent-seconds N] [--plan-seconds N] [--retry <unit> [--hint <text>]] [--patch <unit> <file>] [--memory <dir> [--remember <text>]] [--jobs N] [--profile <file>] [--library <name>]\n");
@@ -416,6 +423,21 @@ fn main(world: World) -> [] int {
                         borrow mut h as &!hh in {
                             borrow args as &g in {
                                 status = project.unit_worker(hh, x, c, i, fz, g);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if repo_mode {
+        borrow fs as &fz in {
+            borrow exec as &x in {
+                borrow clock as &c in {
+                    borrow mut console as &!i in {
+                        borrow mut h as &!hh in {
+                            borrow args as &g in {
+                                status = repochange.go(hh, x, c, i, fz, g);
                             }
                         }
                     }

@@ -1,0 +1,19 @@
+edition 7;
+
+import std.result;
+
+fn keep() -> [] int {
+    return 1;
+}
+
+fn change() -> [] int {
+    return 2;
+}
+
+fn old() -> [] int {
+    return 3;
+}
+
+fn added() -> [] int {
+    return 4;
+}

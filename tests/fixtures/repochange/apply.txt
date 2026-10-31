@@ -1,0 +1,12 @@
+# name	exit	a piece of the report
+add	0	
+replace	0	
+removeadd	0	
+removemissing	1	[SPLICE_ERROR]	-	1:patch: remove fn nothere: the file has no such item
+onlyremove	0	
+emptysection	1	[CHANGE_ERROR]	section-empty
+newfile	0	
+newnoedition	1	new-file-no-edition
+removenew	1	remove-in-new-file
+badremove	1	remove-syntax
+twice	1	defines fn a twice

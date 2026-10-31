@@ -1,0 +1,21 @@
+edition 7;
+
+module mathx_test;
+
+import mathx;
+import std.test;
+
+pub fn test_double() -> [] int {
+    test.assert(mathx.double(4) == 8);
+    return 0;
+}
+
+pub fn test_half() -> [] int {
+    test.assert(mathx.half(9) == 4);
+    return 0;
+}
+
+pub fn test_clamp() -> [] int {
+    test.assert(mathx.clamp(5, 0, 3) == 3);
+    return 0;
+}

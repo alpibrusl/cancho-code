@@ -1,0 +1,2 @@
+remove nonsense
+fn a() -> [] int { return 1; }

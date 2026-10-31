@@ -87,7 +87,7 @@ elif [ "$variant" = project ]; then
 elif [ "$variant" = build ]; then
   pinned=$here/docs/authority-build.json
   files=("$here/tests/programs/build.cho" "$here/src/build.cho" "$here/src/project.cho" "$here/src/plan.cho" "$here/src/driver.cho" "$here/src/checker.cho"
-    "$here/src/signature.cho" "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho" "$here/src/acceptance.cho" "$here/src/splice.cho" "$here/src/pool.cho" "$here/src/parallel.cho" "$here/src/library.cho" "$here/src/cases.cho")
+    "$here/src/signature.cho" "$here/src/loop_check.cho" "$here/src/snapshot.cho" "$here/src/trail.cho" "$here/src/acceptance.cho" "$here/src/splice.cho" "$here/src/pool.cho" "$here/src/parallel.cho" "$here/src/library.cho" "$here/src/cases.cho" "$here/src/change.cho" "$here/src/repochange.cho")
 else
   pinned=$here/docs/authority.json
   files=("$here/tests/programs/fix.cho" "$here/src/driver.cho" "$here/src/checker.cho" "$here/src/signature.cho"

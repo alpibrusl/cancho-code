@@ -1,0 +1,11 @@
+edition 7;
+
+import std.result;
+
+fn keep() -> [] int {
+    return 1;
+}
+
+fn changed() -> [] int {
+    return 5;
+}
