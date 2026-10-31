@@ -179,7 +179,30 @@ expect("thinking tokens details without the field", "usage-thinking", {"content"
 expect("thinking tokens at the wrong level", "usage-thinking", {"content": [], "thinking_tokens": 77, "usage": {}}, "0")
 expect("thinking tokens of a non-JSON body", "usage-thinking", b"nope", "0")
 expect("thinking tokens zero", "usage-thinking", {"content": [], "usage": {"output_tokens_details": {"thinking_tokens": 0}}}, "0")
-print("reply: 59 cases")
+# the retry after a cut-off that thought the whole bound and wrote nothing lowers the effort one step (src/reply.cho `next_effort`);
+# "-" is no effort at all (the model's default). The run that measured it: Haiku 5.5, no effort, 16000 thinking of 16000, 0 reply chars.
+def eff(name, cur, reply, thinking, bound, want):
+    expect("next effort: " + name, "next-effort", {"reply": reply, "thinking": thinking, "bound": bound}, want, cur)
+eff("default -> medium", "-", 0, 16000, 16000, "medium")
+eff("medium -> low", "medium", 0, 16000, 16000, "low")
+eff("low stays low", "low", 0, 16000, 16000, "low")
+eff("high -> medium", "high", 0, 32000, 32000, "medium")
+eff("xhigh -> high", "xhigh", 0, 32000, 32000, "high")
+eff("max -> xhigh", "max", 0, 8192, 8192, "xhigh")
+eff("nearly all of the bound counts (90%)", "-", 0, 14400, 16000, "medium")
+eff("thinking left room: unchanged (default)", "-", 0, 8000, 16000, "-")
+eff("thinking left room: unchanged (high)", "high", 0, 8000, 16000, "high")
+eff("some reply text: unchanged", "medium", 5, 16000, 16000, "medium")
+eff("no thinking reported: unchanged", "medium", 0, 0, 16000, "medium")
+eff("no bound: unchanged", "-", 0, 0, 0, "-")
+# the full ladder from the default is default -> medium -> low -> low
+step = "-"
+for want in ("medium", "low", "low"):
+    code, out = run("next-effort", json.dumps({"reply": 0, "thinking": 16000, "bound": 16000}).encode(), step)
+    step = out.decode()
+    if step != want:
+        fail("next effort ladder: wanted %s, got %s" % (want, step))
+print("reply: 71 cases")
 sys.exit(1 if fails else 0)
 PY
 rc=$?

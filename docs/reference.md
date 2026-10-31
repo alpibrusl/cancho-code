@@ -68,6 +68,8 @@ scripts/build-agent.sh
 
 Claude thinks before it answers and **the thinking counts against `--max-tokens`**: on a long prompt a model can spend the whole bound thinking and leave no answer (every reply of the first long runs). `--thinking disabled|adaptive` and `--effort low|medium|high|xhigh|max` (the API's own values) control it, and `--max-tokens 16000` gives it room. `--workspace <id>` is sent for a key that is not scoped to one workspace. `--save-raw <file>` appends every raw reply, whole, with the tokens the API reported (input, output, cache write, cache read).
 
+A sample cut off by the bound is asked again with the bound doubled (at most 32000). If it also wrote no text at all and its thinking filled the bound (90% or more of it), the retry also lowers the effort one step: the unit's `effort` or `--effort` is the start, `max` -> `xhigh` -> `high` -> `medium` -> `low`, and no effort (the model's default) -> `medium`; `low` is the floor. Raising the bound alone only doubles the waste: a Haiku 5.5 unit at the default effort spent 16000 and then 32000 tokens thinking and wrote nothing. The new effort is printed on stderr (`the effort for the next round is ...`).
+
 The language page is sent as a cached `system` block, so every call after the first pays the cached-input price for it. Gate: `scripts/test-agent-native.sh` (a TLS stub of the API; no key, no spend).
 
 ## The agent contract

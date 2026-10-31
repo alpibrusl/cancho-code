@@ -21,6 +21,7 @@ module reply;
 // allocates a second program.
 
 import std.buffer;
+import std.bytes;
 import std.json;
 
 // ---- bytes ---------------------------------------------------------------
@@ -310,6 +311,42 @@ pub fn stop_reason_is[&h, &b, &r](heap: &!h Heap, body: &b [byte], reason: &r [b
     }
     unbox_slice(heap, tape_box);
     return yes;
+}
+
+// The effort for the sample after one that was cut off by its bound (`bound`) with no reply text at all (`reply_len` 0) and thinking tokens
+// (`thinking`) filling the bound (at least 90% of it): one step LOWER, since asking again at the same effort only spends the same thinking
+// again. The ladder is max -> xhigh -> high -> medium -> low, and no effort (the model's default) -> medium; `low` stays `low`. Any other
+// situation (a reply with text, thinking that left room, no thinking reported) leaves `current` as it is. The bound is not this function's:
+// it is raised by the caller, up to its own ceiling.
+pub fn next_effort[&c](current: &c [byte], reply_len: int, thinking: int, bound: int) -> [] &static [byte] {
+    var keep = "";
+    if bytes.equal(current, "low") {
+        keep = "low";
+    } else if bytes.equal(current, "medium") {
+        keep = "medium";
+    } else if bytes.equal(current, "high") {
+        keep = "high";
+    } else if bytes.equal(current, "xhigh") {
+        keep = "xhigh";
+    } else if bytes.equal(current, "max") {
+        keep = "max";
+    }
+    if reply_len > 0 || bound <= 0 || thinking * 10 < bound * 9 {
+        return keep;
+    }
+    if bytes.equal(current, "max") {
+        return "xhigh";
+    }
+    if bytes.equal(current, "xhigh") {
+        return "high";
+    }
+    if bytes.equal(current, "high") {
+        return "medium";
+    }
+    if bytes.equal(current, "medium") || bytes.equal(current, "low") {
+        return "low";
+    }
+    return "medium";
 }
 
 // The API's own message for a refused call: `type: message`, or `no message`.

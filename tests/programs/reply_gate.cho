@@ -111,6 +111,19 @@ fn main(world: World) -> [] int {
                         io.write_all(i, "no");
                     }
                 }
+                if bytes.equal(mode, "next-effort") {
+                    // name is the current effort ("-" for none); the file holds {"reply": n, "thinking": n, "bound": n}
+                    var cur = name;
+                    if bytes.equal(name, "-") {
+                        cur = name[0..0];
+                    }
+                    let nx = reply.next_effort(cur, reply.top_count(hh, body, "reply"), reply.top_count(hh, body, "thinking"), reply.top_count(hh, body, "bound"));
+                    if len(nx) == 0 {
+                        io.write_all(i, "-");
+                    } else {
+                        io.write_all(i, nx);
+                    }
+                }
                 if bytes.equal(mode, "usage-thinking") {
                     io.print_int(i, reply.usage_thinking(hh, body));
                 }
