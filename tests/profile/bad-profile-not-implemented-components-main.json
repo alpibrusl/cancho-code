@@ -1,0 +1,30 @@
+{
+ "profile": "cancho-build-profile/1",
+ "name": "cancho-ui",
+ "ext": ".cui",
+ "files": {
+  "entry": "app.cui",
+  "main": "main.cui",
+  "tests": "trace-{id}.json"
+ },
+ "commands": {
+  "check": [
+   "check",
+   "--output",
+   "json"
+  ],
+  "compile": [
+   "check"
+  ],
+  "test": [
+   "test"
+  ]
+ },
+ "units": "components",
+ "unit_tests": "trace",
+ "findings": {
+  "key": "code",
+  "clean": "[]"
+ },
+ "primer": ""
+}

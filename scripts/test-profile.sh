@@ -13,6 +13,14 @@
 #   primer      a profile's primer reaches the plan agent and the unit agent as --primer <file>; with "" neither gets one
 #   combos      a profile other than the default with --jobs 2 (`profile-jobs`) or --patch (`profile-patch`): exit 2; a plan with `files`
 #               under it is refused by the plan judgement (`profile-files`): plan_failed, exit 3
+#   cancho-ui   tests/profile/cancho-ui.json (units "components", unit_tests "trace", no main file) with the checker a stand-in cancho-ui
+#               (tests/profile/ui/standin.sh behind tests/profile/ui/clean-wrap.sh): a 2-component plan (tests/profile/ui/plan.json) is done; the
+#               entry starts empty, no main is written or compiled (the stand-in refuses a second file), each unit's tests file is its trace; the task names the component, the
+#               entry and the profile, never project.cho; a refused first attempt is retried on its `code`, a trace that fails is retried;
+#               the component plan check's refusals (tests/profile/ui/bad-*.json, unit-field.json), a function plan under the profile and a
+#               component plan under the default are plan_failed, exit 3. With CANCHO_UI=<cancho-ui binary> the same plan is built once more
+#               against the real cancho-ui (behind the same clean-wrap.sh); without it that case is skipped and says so.
+#   language    the native agent's prompt names the profile's language from the task's LANGUAGE line (tests/prompt_language_test.cho)
 #
 # Needs the real cancho as CANCHO. Exit 0: every case held.
 set -u
@@ -158,6 +166,103 @@ expect "combo files: exit code" "$r" 3
 expect "combo files: verdict" "$(verdict "$out")" plan_failed
 expect "combo files: the refusal" "$(printf '%s\n' "$out" | grep '^\[PLAN_ERROR\]' | cut -f2 | sort -u)" profile-files
 expect "combo files: no unit agent" "$(cat "$lg")" PLAN
+
+# language: the prompt's words come from the task's LANGUAGE line, and a task without one is the old prompt
+"$CANCHO" test "$root/tests/prompt_language_test.cho" "$SRC/prompt.cho" --std --backend cranelift > "$tmp/lang.out" 2>&1 \
+    || { echo "FAIL: language: tests/prompt_language_test.cho" >&2; cat "$tmp/lang.out" >&2; fail=1; }
+
+# cancho-ui: the profile with a stand-in cancho-ui behind the clean wrapper (both sh builtins only: the checker runs with no environment)
+U="$T/ui"
+uichk="$tmp/bin/ui-checker"
+printf '#!/bin/sh\nexec /bin/sh "%s" /bin/sh "%s" "$@"\n' "$U/clean-wrap.sh" "$U/standin.sh" > "$uichk"
+chmod +x "$uichk"
+sed "s#\"primer\": \"\"#\"primer\": \"$T/cancho-ui-primer.md\"#" "$T/cancho-ui.json" > "$tmp/cancho-ui.json"
+mkui() {
+    set -- $(mk "${1:-$U/plan.json}")
+    rm -f "$2"/a.sh "$2"/b.sh "$2"/c.sh
+    cp "$U"/recipes/*.sh "$2"/
+    echo "$1 $2 $3"
+}
+set -- $(mkui); wd=$1; rc=$2; lg=$3
+out=$(run "$uichk" "$wd" "$rc" "$lg" --profile "$tmp/cancho-ui.json"); r=$?
+expect "cancho-ui: exit code" "$r" 0
+expect "cancho-ui: verdict" "$(verdict "$out")" done
+expect "cancho-ui: unit lines" "$(units "$out")" "a:building a:verified b:building b:verified"
+expect "cancho-ui: state" "$(tr '\n' ' ' < "$wd/state.txt")" "verified a verified b "
+for f in app.cui trace-a.json trace-b.json app.cui.task legend-a.txt; do [ -f "$wd/$f" ] || { echo "FAIL: cancho-ui: no $f" >&2; fail=1; }; done
+for f in project.cho main.cho main.cui tests-a.cho tests-a.cui trace-a.cui; do [ -e "$wd/$f" ] && { echo "FAIL: cancho-ui: $f was written" >&2; fail=1; }; done
+expect "cancho-ui: the entry is the components alone" "$(grep -c '' "$wd/app.cui") $(grep -c '^component ' "$wd/app.cui") $(grep -c 'edition' "$wd/app.cui")" "26 2 0"
+expect "cancho-ui: trace-a.json is the plan's trace (an object)" "$(cat "$wd/trace-a.json")" '{"schema":"cancho-ui-trace","version":"0.1.0","component":"Counter","steps":[{"event":"Increment","state":{"count":1}},{"event":"Increment","state":{"count":2}}]}'
+expect "cancho-ui: trace-b.json is the plan's trace (a string)" "$(cat "$wd/trace-b.json")" '{"schema": "cancho-ui-trace", "version": "0.1.0", "component": "Toggle", "steps": [{"event": "Flip", "state": {"lit": true}}]}'
+expect "cancho-ui: the unit agent's file" "$(awk '{print $NF}' "$rc/unit.args")" "$wd/app.cui"
+expect "cancho-ui: the primer reaches both agents" "$(grep -c -- "--primer $T/cancho-ui-primer.md" "$rc/plan.args" "$rc/unit.args" | cut -d: -f2 | tr '\n' ' ')" "1 1 "
+task="$wd/app.cui.task"
+expect "cancho-ui: the task's heads" "$(grep -o '^[A-Z]*:' "$task" | tr '\n' ' ')" "UNIT: LANGUAGE: COMPONENT: DESCRIPTION: TRACE: INSTRUCTIONS: "
+expect "cancho-ui: the task's language" "$(sed -n 's/^LANGUAGE: //p' "$task")" cancho-ui
+expect "cancho-ui: the task's component" "$(sed -n 's/^COMPONENT: //p' "$task")" Toggle
+grep -q '^INSTRUCTIONS: Add the component `Toggle` to app.cui' "$task" || { echo "FAIL: cancho-ui: the task's instructions do not name the component and the entry" >&2; fail=1; }
+grep -q 'project\.cho\|cancho program\|EXAMPLES\|SIGNATURE' "$task" && { echo "FAIL: cancho-ui: the task names cancho's files or fields" >&2; fail=1; }
+
+# cancho-ui, the findings key: the first attempt at a is refused (reported under `code`), the second reads it from the feedback and fixes it
+set -- $(mkui); wd=$1; rc=$2; lg=$3
+printf 'sh "%s/a.sh" "$1"\nprintf "BROKEN\\n" >> "$1"\n' "$rc" > "$rc/a.1.sh"
+printf 'grep -q "\\"code\\": \\"standin-broken\\"" "$1.feedback" || exit 3\nsed -i.bak "/^BROKEN$/d" "$1"\n' > "$rc/a.2.sh"
+out=$(run "$uichk" "$wd" "$rc" "$lg" --profile "$tmp/cancho-ui.json"); r=$?
+expect "cancho-ui refused first: exit code" "$r" 0
+expect "cancho-ui refused first: a took two attempts" "$(grep -c '^a$' "$lg")" 2
+expect "cancho-ui refused first: the trail of a" "$(grep -o '"outcome":"[a-z_]*","sig":"[^"]*"' "$wd/trail-a.jsonl" | tr '\n' ' ')" '"outcome":"refused","sig":"standin-broken:the file holds the word BROKEN" "outcome":"verified","sig":"" '
+
+# cancho-ui, the verify: the first attempt at a checks clean but declares another component, so its trace fails; the second fixes the name
+set -- $(mkui); wd=$1; rc=$2; lg=$3
+printf 'sh "%s/a.sh" "$1"\nsed -i.bak "s/^component Counter {/component Countr {/" "$1"\n' "$rc" > "$rc/a.1.sh"
+printf 'sed -i.bak "s/^component Countr {/component Counter {/" "$1"\n' > "$rc/a.2.sh"
+out=$(run "$uichk" "$wd" "$rc" "$lg" --profile "$tmp/cancho-ui.json"); r=$?
+expect "cancho-ui trace fails first: exit code" "$r" 0
+expect "cancho-ui trace fails first: a took two attempts" "$(grep -c '^a$' "$lg")" 2
+expect "cancho-ui trace fails first: the trail of a" "$(grep -o '"outcome":"[a-z_]*","sig":"[^"]*"' "$wd/trail-a.jsonl" | tr '\n' ' ')" '"outcome":"refused","sig":"acceptance:FAIL  trace-unknown-component (component)" "outcome":"verified","sig":"" '
+
+# the component plan check, through the build: each refusal is plan_failed, exit 3, with exactly its rules, and no unit agent
+for spec in "bad-component bad-component:a" "bad-component-twice bad-component:b" "bad-trace bad-trace:b" "bad-trace-name bad-trace:a" \
+    "bad-trace-unnamed bad-trace:a" "bad-trace-type bad-trace:a" "unit-field unit-field:a unknown-dep:b"; do
+    name=${spec%% *}; want=${spec#* }
+    set -- $(mkui "$U/$name.json"); wd=$1; rc=$2; lg=$3
+    out=$(run "$uichk" "$wd" "$rc" "$lg" --profile "$tmp/cancho-ui.json"); r=$?
+    expect "cancho-ui plan $name: exit code" "$r" 3
+    expect "cancho-ui plan $name: verdict" "$(verdict "$out")" plan_failed
+    expect "cancho-ui plan $name: the refusals" "$(printf '%s\n' "$out" | grep '^\[PLAN_ERROR\]' | awk -F'\t' '{print $2 ":" $3}' | tr '\n' ' ' | sed 's/ $//')" "$want"
+    expect "cancho-ui plan $name: no unit agent" "$(cat "$lg")" PLAN
+done
+# a function plan under the components profile, and the component plan under the default: neither unit reads as the other
+set -- $(mkui "$P/plan.json"); wd=$1; rc=$2; lg=$3
+out=$(run "$uichk" "$wd" "$rc" "$lg" --profile "$tmp/cancho-ui.json"); r=$?
+expect "cancho-ui: a function plan: exit code" "$r" 3
+expect "cancho-ui: a function plan: the refusals" "$(printf '%s\n' "$out" | grep '^\[PLAN_ERROR\]' | cut -f2 | sort -u)" unit-field
+set -- $(mkui); wd=$1; rc=$2; lg=$3
+out=$(run "$CANCHO" "$wd" "$rc" "$lg" --jobs 1); r=$?
+expect "default: a component plan: exit code" "$r" 3
+expect "default: a component plan: the refusals" "$(printf '%s\n' "$out" | grep '^\[PLAN_ERROR\]' | cut -f2 | sort -u)" unit-field
+
+# cancho-ui, the real one (optional): CANCHO_UI is the cancho-ui binary, behind the same clean wrapper
+if [ -n "${CANCHO_UI:-}" ]; then
+    realchk="$tmp/bin/ui-real"
+    case "$CANCHO_UI" in /*) ;; *) echo "FAIL: CANCHO_UI must be an absolute path" >&2; fail=1 ;; esac
+    printf '#!/bin/sh\nexec /bin/sh "%s" "%s" "$@"\n' "$U/clean-wrap.sh" "$CANCHO_UI" > "$realchk"
+    chmod +x "$realchk"
+    set -- $(mkui); wd=$1; rc=$2; lg=$3
+    out=$(run "$realchk" "$wd" "$rc" "$lg" --profile "$tmp/cancho-ui.json"); r=$?
+    expect "real cancho-ui: exit code" "$r" 0
+    expect "real cancho-ui: verdict" "$(verdict "$out")" done
+    expect "real cancho-ui: state" "$(tr '\n' ' ' < "$wd/state.txt")" "verified a verified b "
+    "$CANCHO_UI" test "$wd/app.cui" "$wd/trace-a.json" > /dev/null 2>&1 || { echo "FAIL: real cancho-ui: trace-a.json does not replay on app.cui" >&2; fail=1; }
+    set -- $(mkui); wd=$1; rc=$2; lg=$3
+    printf 'sh "%s/a.sh" "$1"\nsed -i.bak "s/^component Counter {/component Countr {/" "$1"\n' "$rc" > "$rc/a.1.sh"
+    printf 'sed -i.bak "s/^component Countr {/component Counter {/" "$1"\n' > "$rc/a.2.sh"
+    out=$(run "$realchk" "$wd" "$rc" "$lg" --profile "$tmp/cancho-ui.json"); r=$?
+    expect "real cancho-ui trace fails first: exit code" "$r" 0
+    expect "real cancho-ui trace fails first: the trail of a" "$(grep -o '"outcome":"[a-z_]*","sig":"[a-z]*:' "$wd/trail-a.jsonl" | tr '\n' ' ')" '"outcome":"refused","sig":"acceptance: '
+else
+    echo "profile gate: CANCHO_UI is not set: the real cancho-ui case is skipped"
+fi
 
 [ -n "${KEEP:-}" ] || rm -rf "$tmp"
 [ "$fail" = 0 ] && echo "profile gate: every case held"

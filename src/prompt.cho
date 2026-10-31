@@ -234,12 +234,37 @@ fn compose[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], f
         hint = b;
     }
     buffer.drop(heap, rest1);
+    // The language of the program (docs/profile.md): a task written under a build profile other than the default has a `LANGUAGE: <name>` line
+    // (src/project.cho `write_task`), which is not part of the task the model reads; without one the program is cancho's.
+    var lang = buffer.empty(heap, 8);
+    var rest2 = buffer.empty(heap, 8);
+    borrow rest as &rl in {
+        let (a, b) = split_prefix(heap, buffer.bytes(rl), "LANGUAGE: ");
+        buffer.drop(heap, rest2);
+        buffer.drop(heap, lang);
+        rest2 = a;
+        lang = b;
+    }
+    buffer.drop(heap, rest);
+    rest = rest2;
+    var said_lang = false;
+    borrow lang as &lq in {
+        said_lang = len(trimmed(buffer.bytes(lq))) > 0;
+    }
+    if said_lang == false {
+        buffer.drop(heap, lang);
+        lang = buffer.append(heap, buffer.empty(heap, 8), "cancho");
+    }
     borrow rest as &rq in {
     borrow hint as &hq in {
+    borrow lang as &lgq in {
         let job = trimmed(buffer.bytes(rq));
         let said = trimmed(buffer.bytes(hq));
+        let language = trimmed(buffer.bytes(lgq));
         if len(job) > 0 {
-            p = buffer.append(heap, p, "Your task, for the cancho program below:\n");
+            p = buffer.append(heap, p, "Your task, for the ");
+            p = buffer.append(heap, p, language);
+            p = buffer.append(heap, p, " program below:\n");
             p = buffer.append(heap, p, job);
             if len(said) > 0 {
                 p = buffer.append(heap, p, "\n\nWhat the person who runs this build says about this unit (they have read the earlier attempts; take it into account, but the compiler and the tests still decide whether the code is right):\n");
@@ -252,15 +277,21 @@ fn compose[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], f
             }
         } else {
             if patch {
-                p = buffer.append(heap, p, "The cancho program below is refused by its compiler. Reply with ONLY the complete corrected definition of each item that must change, as top-level items, and nothing else: not the items that are fine, no `edition` line, no markdown fences, no explanation.\n");
+                p = buffer.append(heap, p, "The ");
+                p = buffer.append(heap, p, language);
+                p = buffer.append(heap, p, " program below is refused by its compiler. Reply with ONLY the complete corrected definition of each item that must change, as top-level items, and nothing else: not the items that are fine, no `edition` line, no markdown fences, no explanation.\n");
             } else {
-                p = buffer.append(heap, p, "The cancho program below is refused by its compiler. Reply with the complete corrected file and nothing else: no markdown fences, no explanation.\n");
+                p = buffer.append(heap, p, "The ");
+                p = buffer.append(heap, p, language);
+                p = buffer.append(heap, p, " program below is refused by its compiler. Reply with the complete corrected file and nothing else: no markdown fences, no explanation.\n");
             }
         }
     }
     }
+    }
     buffer.drop(heap, rest);
     buffer.drop(heap, hint);
+    buffer.drop(heap, lang);
     let fb = feedback_text(heap, source, feedback);
     borrow fb as &fr in {
         if len(buffer.bytes(fr)) > 0 {

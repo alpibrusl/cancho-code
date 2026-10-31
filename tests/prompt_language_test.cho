@@ -1,0 +1,55 @@
+edition 7;
+
+module prompt_language_test;
+
+// The gates for the language of the prompt (docs/profile.md, "The task's words"): under a profile other than the default the project driver
+// writes a `LANGUAGE: <profile name>` line into the task (src/project.cho `write_task`), and the native agent's prompt (src/prompt.cho) names that
+// language where it said "the cancho program"; the line itself is not in the prompt. A task without the line is the prompt of before, byte for
+// byte: the prompt gate (scripts/test-prompt.sh) holds that one to the Python it replaces.
+
+import std.bytes;
+import std.buffer;
+import std.test;
+import prompt;
+
+pub fn test_language_line_names_the_program[&h](heap: &!h Heap) -> [heap] int {
+    let p = prompt.build(heap, "component A {}\n", "UNIT: a\nLANGUAGE: cancho-ui\nCOMPONENT: A\n", "");
+    borrow p as &pq in {
+        let t = buffer.bytes(pq);
+        test.assert(bytes.find(t, "Your task, for the cancho-ui program below:\n") >= 0);
+        test.assert(bytes.find(t, "cancho program") < 0);
+        test.assert(bytes.find(t, "LANGUAGE:") < 0);
+        test.assert(bytes.find(t, "UNIT: a\nCOMPONENT: A") >= 0);
+    }
+    buffer.drop(heap, p);
+    return 0;
+}
+
+pub fn test_language_line_names_the_fix[&h](heap: &!h Heap) -> [heap] int {
+    let p = prompt.build(heap, "component A {}\n", "LANGUAGE: cancho-ui\n", "");
+    borrow p as &pq in {
+        let t = buffer.bytes(pq);
+        test.assert(bytes.find(t, "The cancho-ui program below is refused by its compiler.") == 0);
+    }
+    buffer.drop(heap, p);
+    let q = prompt.build_patch(heap, "component A {}\n", "LANGUAGE: cancho-ui\n", "");
+    borrow q as &qq in {
+        test.assert(bytes.find(buffer.bytes(qq), "The cancho-ui program below is refused by its compiler.") == 0);
+    }
+    buffer.drop(heap, q);
+    return 0;
+}
+
+pub fn test_no_language_line_is_cancho[&h](heap: &!h Heap) -> [heap] int {
+    let p = prompt.build(heap, "fn a() -> [] int { return 1; }\n", "UNIT: a\nFUNCTION: a\n", "");
+    borrow p as &pq in {
+        test.assert(bytes.find(buffer.bytes(pq), "Your task, for the cancho program below:\nUNIT: a\nFUNCTION: a") == 0);
+    }
+    buffer.drop(heap, p);
+    let q = prompt.build(heap, "fn a() -> [] int { return 1; }\n", "", "");
+    borrow q as &qq in {
+        test.assert(bytes.find(buffer.bytes(qq), "The cancho program below is refused by its compiler.") == 0);
+    }
+    buffer.drop(heap, q);
+    return 0;
+}

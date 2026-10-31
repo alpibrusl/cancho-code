@@ -72,6 +72,11 @@ pub fn tool_entry[&k](tool: &k [byte]) -> [] &k [byte] {
     return tool_get(tool, "entry", "project.cho");
 }
 
+// Are the plan's units components (a profile's `units: "components"`, with `unit_tests: "trace"` and no main file: docs/profile.md)?
+pub fn tool_components[&k](tool: &k [byte]) -> [] bool {
+    return bytes.equal(tool_get(tool, "units", "functions"), "components");
+}
+
 // `<checker> <words> ` for one of the profile's commands: `check`, `compile` or `test`.
 fn add_command[&h, &k](heap: &!h Heap, b: buffer.Buffer, tool: &k [byte], which: &static [byte]) -> [heap] buffer.Buffer {
     var r = buffer.append(heap, b, tool_program(tool));
@@ -94,8 +99,11 @@ fn add_entry[&h, &k, &w](heap: &!h Heap, b: buffer.Buffer, tool: &k [byte], wd: 
     return buffer.append(heap, r, " ");
 }
 
-// `<wd>/<main> `.
+// `<wd>/<main> `; nothing for a profile with no main file (`files.main: ""`).
 fn add_main[&h, &k, &w](heap: &!h Heap, b: buffer.Buffer, tool: &k [byte], wd: &w [byte]) -> [heap] buffer.Buffer {
+    if len(tool_get(tool, "main", "main.cho")) == 0 {
+        return b;
+    }
     var r = buffer.append(heap, b, wd);
     r = buffer.append(heap, r, "/");
     r = buffer.append(heap, r, tool_get(tool, "main", "main.cho"));
@@ -558,6 +566,9 @@ fn example_body[&h, &e](heap: &!h Heap, out: buffer.Buffer, ex: &e [byte]) -> [h
 
 fn write_tests[&h, &z, &s, &t, &w, &k](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], tape: &t [int], node: int, wd: &w [byte], tool: &k [byte]) -> [heap, fs_write("")] int {
     let id = json.string_view(src, tape, json.get(src, tape, node, "id"));
+    if bytes.equal(tool_get(tool, "unit_tests", "examples"), "trace") {
+        return write_trace(heap, fs, src, tape, node, wd, tool, id);
+    }
     var sid = buffer.empty(heap, 32);
     var q = 0;
     while q < len(id) {
@@ -649,13 +660,82 @@ fn write_tests[&h, &z, &s, &t, &w, &k](heap: &!h Heap, fs: &z Fs(""), src: &s [b
     return r;
 }
 
+// `unit_tests: "trace"` (docs/profile.md): the unit's tests file is its trace, written from the plan as it stands (plan.trace_text), and the
+// legend says which component it replays.
+fn write_trace[&h, &z, &s, &t, &w, &k, &d](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], tape: &t [int], node: int, wd: &w [byte], tool: &k [byte], id: &d [byte]) -> [heap, fs_write("")] int {
+    let tp = in_wd(heap, wd, tool_get(tool, "tests_pre", "tests-"), id, tool_get(tool, "tests_suf", ".cho"));
+    let lp = in_wd(heap, wd, "legend-", id, ".txt");
+    var legend = buffer.append(heap, buffer.empty(heap, 128), "the trace of the component `");
+    legend = buffer.append(heap, legend, json.string_view(src, tape, json.get(src, tape, node, "component")));
+    legend = buffer.append(heap, legend, "`, replayed on the entry file (the plan's `trace`, as it stands)\n");
+    var r = 0;
+    borrow tp as &tq in {
+        if put(heap, fs, buffer.bytes(tq), plan.trace_text(heap, src, tape, node)) < 0 {
+            r = -1;
+        }
+    }
+    borrow lp as &lq in {
+        if put(heap, fs, buffer.bytes(lq), legend) < 0 {
+            r = -1;
+        }
+    }
+    buffer.drop(heap, tp);
+    buffer.drop(heap, lp);
+    return r;
+}
+
+// The task of a component unit (docs/profile.md): the component, its description and effort, its trace, and the instructions, in the profile's
+// words (its entry file and its name; never cancho's).
+fn component_task[&h, &s, &t, &k, &d](heap: &!h Heap, b: buffer.Buffer, src: &s [byte], tape: &t [int], node: int, tool: &k [byte], id: &d [byte]) -> [heap] buffer.Buffer {
+    let name = json.string_view(src, tape, json.get(src, tape, node, "component"));
+    var r = buffer.append(heap, b, "\nCOMPONENT: ");
+    r = buffer.append(heap, r, name);
+    let dn = json.get(src, tape, node, "description");
+    if dn >= 0 && json.is_string(tape, dn) {
+        r = buffer.append(heap, r, "\nDESCRIPTION: ");
+        r = add_decoded(heap, r, src, tape, dn);
+    }
+    let en = json.get(src, tape, node, "effort");
+    if en >= 0 && json.is_string(tape, en) {
+        r = buffer.append(heap, r, "\nEFFORT: ");
+        r = add_decoded(heap, r, src, tape, en);
+    }
+    r = buffer.append(heap, r, "\nTRACE:\n");
+    let tt = plan.trace_text(heap, src, tape, node);
+    borrow tt as &tq in {
+        r = buffer.append(heap, r, bytes.trim(buffer.bytes(tq)));
+    }
+    buffer.drop(heap, tt);
+    r = buffer.append(heap, r, "\nINSTRUCTIONS: Add the component `");
+    r = buffer.append(heap, r, name);
+    r = buffer.append(heap, r, "` to ");
+    r = buffer.append(heap, r, tool_entry(tool));
+    r = buffer.append(heap, r, ", keeping every other component as it is. The file is a ");
+    r = buffer.append(heap, r, tool_get(tool, "name", "cancho"));
+    r = buffer.append(heap, r, " program and has no main. The trace above is replayed for you on the component, from its file ");
+    r = buffer.append(heap, r, tool_get(tool, "tests_pre", "tests-"));
+    r = buffer.append(heap, r, id);
+    r = buffer.append(heap, r, tool_get(tool, "tests_suf", ".cho"));
+    r = buffer.append(heap, r, ": the component's events, its state and its effects must be what the trace says. Do not write traces or tests of your own.\n");
+    return r;
+}
+
 // `<file>.task` for unit `node` (`project.cho.task` for a unit of the default file).
 fn write_task[&h, &z, &s, &t, &w, &x, &y, &k](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], tape: &t [int], node: int, wd: &w [byte], note: &x [byte], hint: &y [byte], integ: bool, tool: &k [byte]) -> [heap, fs_read(""), fs_write("")] int {
     let id = json.string_view(src, tape, json.get(src, tape, node, "id"));
-    let sg = json.get(src, tape, node, "signature");
-    var sig = add_str(heap, buffer.empty(heap, 96), src, tape, sg);
     var b = buffer.append(heap, buffer.empty(heap, 512), "UNIT: ");
     b = buffer.append(heap, b, id);
+    // under a profile other than the default, the language the agent writes in (src/prompt.cho reads it instead of "cancho")
+    if tool_profiled(tool) {
+        b = buffer.append(heap, b, "\nLANGUAGE: ");
+        b = buffer.append(heap, b, tool_get(tool, "name", "cancho"));
+    }
+    if tool_components(tool) {
+        b = component_task(heap, b, src, tape, node, tool, id);
+        return write_task_end(heap, fs, src, tape, node, wd, note, hint, tool, b);
+    }
+    let sg = json.get(src, tape, node, "signature");
+    var sig = add_str(heap, buffer.empty(heap, 96), src, tape, sg);
     b = buffer.append(heap, b, "\nFUNCTION: ");
     borrow sig as &sb in {
         let (a, e) = plan.name_range(buffer.bytes(sb));
@@ -689,7 +769,9 @@ fn write_task[&h, &z, &s, &t, &w, &x, &y, &k](heap: &!h Heap, fs: &z Fs(""), src
     if integ {
         // The integration unit (docs/plan.md `integration`): the application, wired from the functions already in project.cho, judged by
         // the service's acceptance scenarios, whose output is the feedback. It has no examples.
-        b = buffer.append(heap, b, "\nINSTRUCTIONS: Add the application to project.cho: the definitions the description names, wired from the functions that are already in the file (call them; do not write them again). The service's acceptance scenarios are run for you on the whole service (the file plus the fixed server loop that holds `main`); when one fails, its output is the feedback. Do not write a main, tests or examples of your own. If a scenario shows that an earlier function is wrong, fix that function too, keeping every other function as it is.\n");
+        b = buffer.append(heap, b, "\nINSTRUCTIONS: Add the application to ");
+        b = buffer.append(heap, b, tool_entry(tool));
+        b = buffer.append(heap, b, ": the definitions the description names, wired from the functions that are already in the file (call them; do not write them again). The service's acceptance scenarios are run for you on the whole service (the file plus the fixed server loop that holds `main`); when one fails, its output is the feedback. Do not write a main, tests or examples of your own. If a scenario shows that an earlier function is wrong, fix that function too, keeping every other function as it is.\n");
     } else {
         b = buffer.append(heap, b, "\nEXAMPLES:\n");
         let arr = json.get(src, tape, node, "examples");
@@ -708,11 +790,23 @@ fn write_task[&h, &z, &s, &t, &w, &x, &y, &k](heap: &!h Heap, fs: &z Fs(""), src
             b = buffer.append(heap, b, um);
             b = buffer.append(heap, b, "`: its `module` line and its imports are already there, and you write only this one file. Declare the function `pub fn`: another module can call a function only when it is `pub`, and the unit is refused otherwise. Call another module's function with the module name in front (`module_name.function_name(...)`), only for a module this file imports. The file has no main. Do not write tests or examples of your own: the examples above are run for you.\n");
         } else if plan.files_declared(src, tape) > 0 {
-            b = buffer.append(heap, b, "INSTRUCTIONS: Add this function to project.cho, keeping every other function as it is. project.cho is the root file: call a function of another file with its module name in front (`module_name.function_name(...)`), for a module the file imports. The file has no main. Do not write tests or examples of your own: the examples above are run for you.\n");
+            b = buffer.append(heap, b, "INSTRUCTIONS: Add this function to ");
+            b = buffer.append(heap, b, tool_entry(tool));
+            b = buffer.append(heap, b, ", keeping every other function as it is. ");
+            b = buffer.append(heap, b, tool_entry(tool));
+            b = buffer.append(heap, b, " is the root file: call a function of another file with its module name in front (`module_name.function_name(...)`), for a module the file imports. The file has no main. Do not write tests or examples of your own: the examples above are run for you.\n");
         } else {
-            b = buffer.append(heap, b, "INSTRUCTIONS: Add this function to project.cho, keeping every other function as it is. The file has no main. Do not write tests or examples of your own: the examples above are run for you.\n");
+            b = buffer.append(heap, b, "INSTRUCTIONS: Add this function to ");
+            b = buffer.append(heap, b, tool_entry(tool));
+            b = buffer.append(heap, b, ", keeping every other function as it is. The file has no main. Do not write tests or examples of your own: the examples above are run for you.\n");
         }
     }
+    return write_task_end(heap, fs, src, tape, node, wd, note, hint, tool, b);
+}
+
+// The end of a task (its NOTE and HINT lines), written to `<file>.task`.
+fn write_task_end[&h, &z, &s, &t, &w, &x, &y, &k](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], tape: &t [int], node: int, wd: &w [byte], note: &x [byte], hint: &y [byte], tool: &k [byte], task: buffer.Buffer) -> [heap, fs_write("")] int {
+    var b = task;
     if len(note) > 0 {
         b = buffer.append(heap, b, "NOTE: ");
         b = buffer.append(heap, b, note);
@@ -805,18 +899,28 @@ fn write_fixed[&h, &z, &w, &k](heap: &!h Heap, fs: &z Fs(""), wd: &w [byte], too
     m = buffer.append(heap, m, "    let Split { io, ffi, fs, heap, args, net, clock, signals, exec } = split(world);\n");
     m = buffer.append(heap, m, "    release(io);\n    release(ffi);\n    release(fs);\n    release(heap);\n    release(args);\n");
     m = buffer.append(heap, m, "    release(net);\n    release(clock);\n    release(signals);\n    release(exec);\n    return 0;\n}\n");
-    let mp = in_wd(heap, wd, tool_get(tool, "main", "main.cho"), "", "");
+    // a profile with no main file (`files.main: ""`) has none written; its entry starts empty, `edition 7;` being cancho's (docs/profile.md)
+    let mainf = tool_get(tool, "main", "main.cho");
     var r = 0;
-    borrow mp as &mq in {
-        r = put(heap, fs, buffer.bytes(mq), m);
+    if len(mainf) > 0 {
+        let mp = in_wd(heap, wd, mainf, "", "");
+        borrow mp as &mq in {
+            r = put(heap, fs, buffer.bytes(mq), m);
+        }
+        buffer.drop(heap, mp);
+    } else {
+        buffer.drop(heap, m);
     }
-    buffer.drop(heap, mp);
     let pp = in_wd(heap, wd, tool_entry(tool), "", "");
     borrow pp as &pq in {
         region g {
             let probe = alloc_slice[g](16, byte_of(0));
             if fs_read(fs, buffer.bytes(pq), probe) < 0 {
-                if fs_write(fs, buffer.bytes(pq), "edition 7;\n") < 0 {
+                var seed = "edition 7;\n";
+                if tool_components(tool) {
+                    seed = "";
+                }
+                if fs_write(fs, buffer.bytes(pq), seed) < 0 {
                     r = -1;
                 }
             }
@@ -2735,7 +2839,7 @@ fn drive[&h, &x, &c, &i, &z, &s, &t, &n, &m, &o, &k, &w, &a, &l, &ac, &lb, &rc, 
 // `retry` (a unit id; empty: none) re-opens that unit, with `hint` (the person's words; empty: none) in its task; `patch` (a unit id) applies
 // the code in the file `pfile` to that unit instead of asking the agent (docs/build.md). Both empty is a plain run.
 pub fn run_logged[&h, &x, &c, &i, &z, &s, &k, &w, &a, &l, &ac, &lb, &rt, &ht, &pt, &pf, &av](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), src: &s [byte], checker: &k [byte], wd: &w [byte], agent: &a [byte], attempts: int, agent_ms: int, log: &l [byte], accept: &ac [byte], libs: &lb [byte], retry: &rt [byte], hint: &ht [byte], patch: &pt [byte], pfile: &pf [byte], par: Par, argv0: &av [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write, err_write, pipe_read, child_signal] int {
-    let (out, code) = plan.check(heap, src);
+    let (out, code) = plan.check_as(heap, src, tool_components(checker));
     borrow out as &o in {
         tell(heap, io, fs, log, buffer.bytes(o));
     }
@@ -2790,7 +2894,7 @@ pub fn run[&h, &x, &c, &i, &z, &s, &k, &w, &a, &ac, &lb, &rt, &ht, &pt, &pf, &av
     let started = clock_unix_ms(clock);
     // A re-opening that does not fit the plan is a usage error before anything is written, the journal included.
     if len(retry) > 0 || len(patch) > 0 {
-        let (pout, pcode) = plan.check(heap, src);
+        let (pout, pcode) = plan.check_as(heap, src, tool_components(checker));
         buffer.drop(heap, pout);
         if pcode == 0 && redo_check(heap, io, fs, src, retry, patch, pfile) != 0 {
             return 2;

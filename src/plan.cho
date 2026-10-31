@@ -702,6 +702,214 @@ fn integration_rules[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s
     return b;
 }
 
+// ---- components (docs/profile.md, `units: "components"`) ---------------------------------------------------------------------------------
+//
+// Under a build profile whose units are components, a unit is `{"id", "component", "trace", "deps"}` (and an optional `description` and `effort`):
+// `component` is the name of the one component the unit adds to the entry file, `trace` its trace (a JSON object, or a string that holds one),
+// which the project driver writes as the unit's tests file and the profile's `test` command replays. `signature`, `examples`, `tests` and
+// `cases` are not read; `bad-signature`, `needs-tests`, `bad-test` and the example rules do not apply. The info fields are the same: `f_sig` is
+// the `component` node, `f_ns`..`f_ne` the name within it (-1 when it is not a name), so `find_fn` finds a component by name.
+
+fn collect_components[&s, &t, &i](src: &s [byte], tape: &t [int], info: &!i [int], units: int, n: int) -> [] int {
+    var u = 0;
+    var j = units + 1;
+    while u < n {
+        set_f(info, u, f_node(), j);
+        set_f(info, u, f_file(), 0);
+        let isobj = json.is_object(tape, j);
+        var idn = 0 - 1;
+        var cp = 0 - 1;
+        var tr = 0 - 1;
+        var dp = 0 - 1;
+        var ds = 0 - 1;
+        var ef = 0 - 1;
+        var fl = 0 - 1;
+        if isobj {
+            idn = json.get(src, tape, j, "id");
+            cp = json.get(src, tape, j, "component");
+            tr = json.get(src, tape, j, "trace");
+            dp = json.get(src, tape, j, "deps");
+            ds = json.get(src, tape, j, "description");
+            ef = json.get(src, tape, j, "effort");
+            fl = json.get(src, tape, j, "file");
+        }
+        if idn >= 0 && json.is_string(tape, idn) {
+            set_f(info, u, f_id(), idn);
+        }
+        var ok = 0;
+        if isobj && get_f(info, u, f_id()) >= 0 && cp >= 0 && json.is_string(tape, cp) && tr >= 0 && all_strings(tape, dp) && (ds < 0 || json.is_string(tape, ds)) && (ef < 0 || effort_level(src, tape, ef)) && fl < 0 {
+            ok = 1;
+        }
+        set_f(info, u, f_ok(), ok);
+        if ok == 1 {
+            set_f(info, u, f_sig(), cp);
+            set_f(info, u, f_dep(), dp);
+            let name = node_text(src, tape, cp);
+            if len(name) > 0 && ident_end(name, 0) == len(name) {
+                set_f(info, u, f_ns(), 0);
+                set_f(info, u, f_ne(), len(name));
+            } else {
+                set_f(info, u, f_ns(), 0 - 1);
+                set_f(info, u, f_ne(), 0 - 1);
+            }
+        }
+        j = json.skip(tape, j);
+        u = u + 1;
+    }
+    return 0;
+}
+
+// What is wrong with a component unit that is not usable, field by field.
+fn component_problems[&h, &s, &t](heap: &!h Heap, src: &s [byte], tape: &t [int], node: int) -> [heap] buffer.Buffer {
+    var b = buffer.empty(heap, 256);
+    if !json.is_object(tape, node) {
+        return buffer.append(heap, b, "this unit is not a JSON object; a unit is {\"id\": \"...\", \"component\": \"NAME\", \"description\": \"...\", \"trace\": {...}, \"deps\": []}");
+    }
+    let idn = json.get(src, tape, node, "id");
+    if idn < 0 || !json.is_string(tape, idn) {
+        b = buffer.append(heap, b, "`id` is missing or is not a string (letters, digits, underscore); ");
+    }
+    let cp = json.get(src, tape, node, "component");
+    if cp < 0 || !json.is_string(tape, cp) {
+        b = buffer.append(heap, b, "`component` is missing or is not a string (the name of the one component this unit adds); ");
+    }
+    if json.get(src, tape, node, "trace") < 0 {
+        b = buffer.append(heap, b, "`trace` is missing (the component's trace: a JSON object whose `component` is the unit's component); ");
+    }
+    let dp = json.get(src, tape, node, "deps");
+    if !all_strings(tape, dp) {
+        b = buffer.append(heap, b, "`deps` is missing or is not an array of strings (the ids of the units this one uses; `[]` for none); ");
+    }
+    let ds = json.get(src, tape, node, "description");
+    if ds >= 0 && !json.is_string(tape, ds) {
+        b = buffer.append(heap, b, "`description` is not a string; ");
+    }
+    let ef = json.get(src, tape, node, "effort");
+    if ef >= 0 && !effort_level(src, tape, ef) {
+        b = buffer.append(heap, b, "`effort` is not one of low, medium, high, xhigh, max; ");
+    }
+    if json.get(src, tape, node, "file") >= 0 {
+        b = buffer.append(heap, b, "`file` is not a field of a component unit (every component is written into the profile's one entry file); ");
+    }
+    return b;
+}
+
+// Does the trace at node `tr` (an object, or a string that parses as one) have a string `component` equal to `name`? 0 it does, 1 the trace is
+// neither an object nor a string, 2 the string does not parse as a JSON object, 3 it names no component, 4 it names another one.
+fn trace_names[&h, &s, &t, &n](heap: &!h Heap, src: &s [byte], tape: &t [int], tr: int, name: &n [byte]) -> [heap] int {
+    if json.is_object(tape, tr) {
+        let c = json.get(src, tape, tr, "component");
+        if c < 0 || !json.is_string(tape, c) {
+            return 3;
+        }
+        if json.string_equals(src, tape, c, name) {
+            return 0;
+        }
+        return 4;
+    }
+    if !json.is_string(tape, tr) {
+        return 1;
+    }
+    let dn = json.string_length(src, tape, tr);
+    if dn <= 0 {
+        return 2;
+    }
+    var r = 2;
+    let db = box_slice(heap, dn + 1, byte_of(0));
+    borrow mut db as &!dw in {
+        let got = json.string_into(src, tape, tr, contents(dw));
+        if got > 0 {
+            let text = contents(dw)[0..got];
+            let ib = box_slice(heap, json.tape_len(text), 0);
+            borrow mut ib as &!iw in {
+                let itape = contents(iw);
+                if json.parse(text, itape) >= 0 && json.is_object(itape, 0) {
+                    let c = json.get(text, itape, 0, "component");
+                    if c < 0 || !json.is_string(itape, c) {
+                        r = 3;
+                    } else if json.string_equals(text, itape, c, name) {
+                        r = 0;
+                    } else {
+                        r = 4;
+                    }
+                }
+            }
+            unbox_slice(heap, ib);
+        }
+    }
+    unbox_slice(heap, db);
+    return r;
+}
+
+fn report_component[&h, &s, &t, &i](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], info: &!i [int], n: int, u: int) -> [heap] buffer.Buffer {
+    var b = out;
+    let who = label(src, tape, info, u);
+    if get_f(info, u, f_ok()) != 1 {
+        let why = component_problems(heap, src, tape, get_f(info, u, f_node()));
+        var msg = buffer.append(heap, buffer.empty(heap, 128), "the unit cannot be read: ");
+        borrow why as &wr in {
+            msg = buffer.append(heap, msg, buffer.bytes(wr));
+        }
+        buffer.drop(heap, why);
+        borrow msg as &mr in {
+            b = emit(heap, b, "unit-field", who, buffer.bytes(mr));
+        }
+        buffer.drop(heap, msg);
+        return b;
+    }
+    if find_id(src, tape, info, n, who) != u {
+        b = emit(heap, b, "duplicate-id", who, "another unit already has this id");
+    }
+    if get_f(info, u, f_ns()) < 0 {
+        b = emit(heap, b, "bad-component", who, "`component` must be the component's name: one identifier (letters, digits, underscore; not a digit first), such as `Counter`");
+    } else {
+        let name = fn_name(src, tape, info, u);
+        if find_fn(src, tape, info, n, name) != u {
+            var msg = buffer.append(heap, buffer.empty(heap, 160), "the component `");
+            msg = buffer.append(heap, msg, name);
+            msg = buffer.append(heap, msg, "` is already the component of an earlier unit: a component is added by exactly one unit");
+            borrow msg as &mr in {
+                b = emit(heap, b, "bad-component", who, buffer.bytes(mr));
+            }
+            buffer.drop(heap, msg);
+        }
+        let tn = trace_names(heap, src, tape, json.get(src, tape, get_f(info, u, f_node()), "trace"), name);
+        if tn != 0 {
+            var msg = buffer.empty(heap, 256);
+            if tn == 1 {
+                msg = buffer.append(heap, msg, "`trace` must be the component's trace: a JSON object (or a string that holds one)");
+            } else if tn == 2 {
+                msg = buffer.append(heap, msg, "`trace` is a string that is not a JSON object: write the trace as an object, or fix its JSON");
+            } else if tn == 3 {
+                msg = buffer.append(heap, msg, "the trace names no component: give it `\"component\": \"");
+                msg = buffer.append(heap, msg, name);
+                msg = buffer.append(heap, msg, "\"` (a trace without one replays some other component)");
+            } else {
+                msg = buffer.append(heap, msg, "the trace's `component` is not this unit's component: it must be `");
+                msg = buffer.append(heap, msg, name);
+                msg = buffer.append(heap, msg, "`");
+            }
+            borrow msg as &mr in {
+                b = emit(heap, b, "bad-trace", who, buffer.bytes(mr));
+            }
+            buffer.drop(heap, msg);
+        }
+    }
+    let deps = get_f(info, u, f_dep());
+    var q = 0;
+    while q < json.count(tape, deps) {
+        let d = node_text(src, tape, json.at(tape, deps, q));
+        if find_id(src, tape, info, n, d) < 0 {
+            b = emit(heap, b, "unknown-dep", who, "a dependency names no unit in this plan");
+        }
+        q = q + 1;
+    }
+    if get_f(info, u, f_cyc()) == 1 {
+        b = emit(heap, b, "cycle", who, "the dependencies of this unit lead back to it");
+    }
+    return b;
+}
+
 // ---- files (docs/plan.md, "Files") ------------------------------------------------------------------------------------------------------
 //
 // A unit may name the module file it belongs to (`file`), and the plan may declare the files (`files`: each with its `module` and the `imports` it
@@ -1418,7 +1626,7 @@ pub fn extra_files[&h, &s, &t](heap: &!h Heap, src: &s [byte], tape: &t [int]) -
     return b;
 }
 
-fn check_units[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], units: int) -> [heap] buffer.Buffer {
+fn check_units[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], units: int, components: bool) -> [heap] buffer.Buffer {
     var b = out;
     let n = json.count(tape, units);
     let ib = box_slice(heap, stride() * (n + 1), 0 - 1);
@@ -1434,21 +1642,114 @@ fn check_units[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], t
                 set_f(info, u, f_cyc(), 0);
                 u = u + 1;
             }
-            collect(src, tape, info, units, n);
-            assign_files(src, tape, info, n);
-            cycles(src, tape, info, stack, n);
-            b = integration_rules(heap, b, src, tape, info, n);
-            let integ = integration_unit(src, tape, info, n);
-            u = 0;
-            while u < n {
-                b = report_unit(heap, b, src, tape, info, n, u, integ);
-                u = u + 1;
+            if components {
+                // a plan of components (docs/profile.md `units`): one entry file, so no file rules
+                collect_components(src, tape, info, units, n);
+                cycles(src, tape, info, stack, n);
+                b = integration_rules(heap, b, src, tape, info, n);
+                u = 0;
+                while u < n {
+                    b = report_component(heap, b, src, tape, info, n, u);
+                    u = u + 1;
+                }
+            } else {
+                collect(src, tape, info, units, n);
+                assign_files(src, tape, info, n);
+                cycles(src, tape, info, stack, n);
+                b = integration_rules(heap, b, src, tape, info, n);
+                let integ = integration_unit(src, tape, info, n);
+                u = 0;
+                while u < n {
+                    b = report_unit(heap, b, src, tape, info, n, u, integ);
+                    u = u + 1;
+                }
+                b = file_rules(heap, b, src, tape, info, n);
             }
-            b = file_rules(heap, b, src, tape, info, n);
         }
     }
     unbox_slice(heap, sb);
     unbox_slice(heap, ib);
+    return b;
+}
+
+// The JSON value at node `i`, written compactly as the source has it: strings with their escapes as written, numbers as their text.
+fn add_json[&h, &s, &t](heap: &!h Heap, out: buffer.Buffer, src: &s [byte], tape: &t [int], i: int) -> [heap] buffer.Buffer {
+    var b = out;
+    let k = json.kind(tape, i);
+    if k == json.kind_object() || k == json.kind_array() {
+        let obj = k == json.kind_object();
+        if obj {
+            b = buffer.push(heap, b, byte_of(123));
+        } else {
+            b = buffer.push(heap, b, byte_of(91));
+        }
+        var j = i + 1;
+        var left = json.count(tape, i);
+        var first = true;
+        while left > 0 {
+            if !first {
+                b = buffer.push(heap, b, byte_of(44));
+            }
+            first = false;
+            if obj {
+                b = add_json(heap, b, src, tape, j);
+                b = buffer.push(heap, b, byte_of(58));
+                j = j + 1;
+            }
+            b = add_json(heap, b, src, tape, j);
+            j = json.skip(tape, j);
+            left = left - 1;
+        }
+        if obj {
+            return buffer.push(heap, b, byte_of(125));
+        }
+        return buffer.push(heap, b, byte_of(93));
+    }
+    if k == json.kind_string() {
+        b = buffer.push(heap, b, byte_of(34));
+        b = buffer.append(heap, b, node_text(src, tape, i));
+        return buffer.push(heap, b, byte_of(34));
+    }
+    if k == json.kind_int() || k == json.kind_float() {
+        return buffer.append(heap, b, node_text(src, tape, i));
+    }
+    if k == json.kind_true() {
+        return buffer.append(heap, b, "true");
+    }
+    if k == json.kind_false() {
+        return buffer.append(heap, b, "false");
+    }
+    return buffer.append(heap, b, "null");
+}
+
+// The trace of the component unit at `node` (docs/profile.md, `unit_tests: "trace"`), as the unit's tests file holds it: a `trace` that is an
+// object written compactly (add_json), one that is a string decoded as it stands; a newline at the end when the text has none.
+pub fn trace_text[&h, &s, &t](heap: &!h Heap, src: &s [byte], tape: &t [int], node: int) -> [heap] buffer.Buffer {
+    let tr = json.get(src, tape, node, "trace");
+    var b = buffer.empty(heap, 512);
+    if json.is_string(tape, tr) {
+        let n = json.string_length(src, tape, tr);
+        if n > 0 {
+            let db = box_slice(heap, n + 1, byte_of(0));
+            borrow mut db as &!dw in {
+                let got = json.string_into(src, tape, tr, contents(dw));
+                if got > 0 {
+                    b = buffer.append(heap, b, contents(dw)[0..got]);
+                }
+            }
+            unbox_slice(heap, db);
+        }
+    } else if tr >= 0 {
+        b = add_json(heap, b, src, tape, tr);
+    }
+    var ends = false;
+    borrow b as &bq in {
+        let t = buffer.bytes(bq);
+        ends = len(t) > 0 && int_of(t[len(t) - 1]) == 10;
+    }
+    if !ends {
+        b = buffer.push(heap, b, byte_of(10));
+    }
     return b;
 }
 
@@ -1732,6 +2033,12 @@ pub fn brief_report[&h, &b, &s](heap: &!h Heap, brief: &b [byte], plan: &s [byte
 
 // Check the plan in `src`: the output text and the exit code (0 valid, 1 invalid).
 pub fn check[&h, &s](heap: &!h Heap, src: &s [byte]) -> [heap] (buffer.Buffer, int) {
+    return check_as(heap, src, false);
+}
+
+// `check` for a plan whose units are functions (`components` false: the default, cancho's) or components (a build profile's `units:
+// "components"`, docs/profile.md): a unit is then `component` and `trace` instead of `signature` and `examples` (`collect_components`).
+pub fn check_as[&h, &s](heap: &!h Heap, src: &s [byte], components: bool) -> [heap] (buffer.Buffer, int) {
     var out = buffer.empty(heap, 512);
     let tb = box_slice(heap, json.tape_len(src), 0);
     borrow mut tb as &!tw in {
@@ -1745,7 +2052,7 @@ pub fn check[&h, &s](heap: &!h Heap, src: &s [byte]) -> [heap] (buffer.Buffer, i
             if !json.is_object(tape, 0) || name < 0 || !json.is_string(tape, name) || units < 0 || !json.is_array(tape, units) {
                 out = emit(heap, out, "plan-json", "-", "the root must be an object with a string `name` and an array `units`");
             } else {
-                out = check_units(heap, out, src, tape, units);
+                out = check_units(heap, out, src, tape, units, components);
             }
         }
     }
