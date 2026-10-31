@@ -29,7 +29,7 @@ edition 7;
 //   --tls           on | off                                     (on; ollama off)
 //   --num-ctx       ollama's context window in tokens            (8192)
 //   --num-predict   ollama's bound on one answer (= --max-tokens) (8192)
-//   --max-tokens    the bound on one answer                      (8192); a reply cut off by it is asked again with the bound doubled (at most 32000)
+//   --max-tokens    the bound on one answer                      (8192); a reply cut off by it is asked again with the bound doubled (at most 32000); with no text and the bound all thinking, also one effort lower
 //   --primer        a file with the language page, cached        (none)
 //   --thinking      adaptive | disabled                          (the model's own)
 //   --effort        low | medium | high | xhigh | max            (the model's own)
@@ -555,6 +555,19 @@ fn grown_bound(bound: int) -> [] int {
     return bound * 2;
 }
 
+// The effort for the round after a cut-off (src/reply.cho `next_effort`): the one in force is the last lowered one, else the task's `EFFORT:` line, else
+// the flag's; lowered one step when the sample thought the whole bound and wrote nothing, else it stays.
+fn effort_after_cut[&t, &e](task: &t [byte], flag: &e [byte], over: &static [byte], reply_len: int, thinking: int, bound: int) -> [] &static [byte] {
+    let te = task_effort(task);
+    if len(over) > 0 {
+        return reply.next_effort(over, reply_len, thinking, bound);
+    }
+    if len(te) > 0 {
+        return reply.next_effort(te, reply_len, thinking, bound);
+    }
+    return reply.next_effort(flag, reply_len, thinking, bound);
+}
+
 // ---- the work ------------------------------------------------------------
 
 fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), clock: &c Clock, io: &!i Io, args: &g Args) -> [heap, fs_read(""), fs_write(""), net_out(""), conn_read, conn_write, poll, clock, err_write, args] int {
@@ -823,6 +836,9 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
     // The bound on one answer. A reply (a plan, a patch) cut off by it is asked again with the bound doubled (at most 32000): a model that thinks first can spend the
     // whole bound before the first byte of the plan (the `semver` plan failed three rounds of three with 16000 tokens of thinking and no JSON).
     var bound = max_tokens;
+    // The effort after a cut-off that thought the whole bound and wrote nothing (src/reply.cho `next_effort`): one step lower than the one used, with the
+    // bound raised. Empty until then: the unit's `EFFORT:` line, else `--effort`, else the model's default.
+    var eff_over = "";
     var backoff_ms = 2000;
     if len(opt(args, "--backoff-ms")) > 0 {
         backoff_ms = number(opt(args, "--backoff-ms"));
@@ -894,7 +910,9 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                 calls.keep_primer(heap, fs, jdir, project, plan_mode, buffer.bytes(pr));
                             }
                             let te = task_effort(buffer.bytes(tr));
-                            if len(te) > 0 {
+                            if len(eff_over) > 0 {
+                                body = make_body(heap, local, plan_mode, patch_out, model, num_ctx, bound, thinking, eff_over, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                            } else if len(te) > 0 {
                                 body = make_body(heap, local, plan_mode, patch_out, model, num_ctx, bound, thinking, te, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
                             } else {
                                 body = make_body(heap, local, plan_mode, patch_out, model, num_ctx, bound, thinking, effort, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
@@ -1115,6 +1133,15 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                             }
                                             if cut {
                                                 io.error_all(io, "cancho-agent: a sample was cut off by the bound (--max-tokens / --num-predict)\n");
+                                                let eff_was = eff_over;
+                                                borrow task as &lte in {
+                                                    eff_over = effort_after_cut(buffer.bytes(lte), effort, eff_over, len(buffer.bytes(xr)), tthink, bound);
+                                                }
+                                                if bytes.equal(eff_was, eff_over) == false {
+                                                    io.error_all(io, "cancho-agent: the effort for the next round is ");
+                                                    io.error_all(io, eff_over);
+                                                    io.error_all(io, "\n");
+                                                }
                                                 if grown_bound(bound) > bound {
                                                     bound = grown_bound(bound);
                                                     var said = buffer.append(heap, buffer.empty(heap, 96), "cancho-agent: the bound for the next round is ");
@@ -1257,6 +1284,15 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                         if cut {
                                             gave = 10;
                                             io.error_all(io, "cancho-agent: a sample was cut off by the bound (--max-tokens / --num-predict)\n");
+                                            let eff_was = eff_over;
+                                            borrow task as &lte in {
+                                                eff_over = effort_after_cut(buffer.bytes(lte), effort, eff_over, len(buffer.bytes(xr)), tthink, bound);
+                                            }
+                                            if bytes.equal(eff_was, eff_over) == false {
+                                                io.error_all(io, "cancho-agent: the effort for the next round is ");
+                                                io.error_all(io, eff_over);
+                                                io.error_all(io, "\n");
+                                            }
                                             if grown_bound(bound) > bound {
                                                 bound = grown_bound(bound);
                                                 var said = buffer.append(heap, buffer.empty(heap, 96), "cancho-agent: the bound for the next round is ");

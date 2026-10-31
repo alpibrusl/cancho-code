@@ -19,6 +19,7 @@
 #   workspace the id is sent as anthropic-workspace-id only when named
 #   thinking  thinking and effort are sent only when named; a bad value is exit 2 and no request; an all-thinking reply says so
 #   cut off   a reply that stopped at max_tokens is retried, never written, and the next request has the bound doubled (at most 32000)
+#   cut effort a cut-off with no reply text whose thinking filled the bound is retried one effort step LOWER (default -> medium -> low) as well as with the bound raised; the unit's EFFORT is the start
 #   no program three replies with no program in them: exit 11 (gave up); every sample cut off by the bound: exit 10; the file untouched
 #   error     an HTTP error (500; 429 and 529 are waited out, scripts/test-parallel.sh) is exit 1 (the provider failed, not "gave up") with the API's own message, one request, the file untouched
 #   required  no --provider, no --model: exit 2 before any request (there is no default)
@@ -76,8 +77,10 @@ class H(http.server.BaseHTTPRequestHandler):
                 except OSError: reply = "```cancho\nedition 7;\nfn fixed() -> [] int { return 1; }\n```\n"
             try: stop = open(out + "/response.%d.stop" % n_requests).read().strip()
             except OSError: stop = "end_turn"
+            try: think = int(open(out + "/response.%d.think" % n_requests).read().strip())
+            except (OSError, ValueError): think = 7
             data = json.dumps({"id": "msg_x", "type": "message", "role": "assistant", "model": "stub",
-                               "content": [{"type": "text", "text": reply}], "stop_reason": stop, "usage": {"input_tokens": 11, "output_tokens": 22, "cache_creation_input_tokens": 33, "cache_read_input_tokens": 44, "output_tokens_details": {"thinking_tokens": 7}}}).encode()
+                               "content": [{"type": "text", "text": reply}], "stop_reason": stop, "usage": {"input_tokens": 11, "output_tokens": 22, "cache_creation_input_tokens": 33, "cache_read_input_tokens": 44, "output_tokens_details": {"thinking_tokens": think}}}).encode()
             self.send_response(200)
         self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(data)))
         self.end_headers(); self.wfile.write(data)
@@ -325,6 +328,37 @@ printf 'edition 7;\nfn whole() -> [] int { return 2; }\n' > "$d/response.2.txt"
 broken; agent --max-tokens 3000 >/dev/null 2>&1
 expect "cut off bound: 3000 doubles to 6000" "$(mtok 2)" 6000
 rm -f "$d/response"*
+
+# cut off with thinking filling the bound and no reply text: the retry lowers the effort one step (default -> medium -> low) and raises the bound
+eff() { python3 -c "import json; print(json.load(open('$d/request.$1.json')).get('output_config'))"; }
+allthink() { : > "$d/response.$1.txt"; printf 'max_tokens' > "$d/response.$1.stop"; printf '%s' "$2" > "$d/response.$1.think"; }
+stop; start; rm -f "$d/response"* "$F.task"
+allthink 1 16000; allthink 2 32000
+printf 'edition 7;\nfn whole() -> [] int { return 2; }\n' > "$d/response.3.txt"
+broken; agent --max-tokens 16000 >/dev/null 2>"$d/err.txt"; rc=$?
+expect "cut effort: exit code" "$rc" 0
+expect "cut effort: the first request has no effort" "$(eff 1)" "None"
+expect "cut effort: default -> medium, bound doubled" "$(eff 2) $(mtok 2)" "{'effort': 'medium'} 32000"
+expect "cut effort: medium -> low, bound at the ceiling" "$(eff 3) $(mtok 3)" "{'effort': 'low'} 32000"
+case "$(cat "$d/err.txt")" in *"the effort for the next round is medium"*) ;; *) echo "FAIL: cut effort: the lowered effort is not on stderr" >&2; fail=1 ;; esac
+# the unit's EFFORT is the starting point; low is the floor
+stop; start; rm -f "$d/response"*
+allthink 1 16000; allthink 2 32000; allthink 3 32000
+broken; printf 'UNIT: u\nEFFORT: high\n' > "$F.task"; agent --max-tokens 16000 >/dev/null 2>&1
+expect "cut effort: the unit's high is sent first" "$(eff 1)" "{'effort': 'high'}"
+expect "cut effort: high -> medium" "$(eff 2)" "{'effort': 'medium'}"
+expect "cut effort: medium -> low" "$(eff 3)" "{'effort': 'low'}"
+stop; start; rm -f "$d/response"*
+allthink 1 16000; allthink 2 32000; allthink 3 32000
+broken; printf 'UNIT: u\nEFFORT: low\n' > "$F.task"; agent --max-tokens 16000 >/dev/null 2>&1
+expect "cut effort: never below low" "$(eff 3)" "{'effort': 'low'}"
+# thinking that did not fill the bound (here 7 of 16000), or a reply with text: the effort stays
+stop; start; rm -f "$d/response"*
+printf 'edition 7;\nfn cut_off() -> [] int {\n' > "$d/response.1.txt"; printf 'max_tokens' > "$d/response.1.stop"
+printf 'edition 7;\nfn whole() -> [] int { return 2; }\n' > "$d/response.2.txt"
+broken; printf 'UNIT: u\nEFFORT: high\n' > "$F.task"; agent --max-tokens 16000 >/dev/null 2>&1
+expect "cut effort: a cut-off with text keeps the effort" "$(eff 2)" "{'effort': 'high'}"
+rm -f "$d/response"* "$F.task"
 
 # no program in any of three replies
 stop; start
