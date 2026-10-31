@@ -1,0 +1,94 @@
+{
+ "name": "tier",
+ "units": [
+  {
+   "id": "a",
+   "signature": "fn a(n: int) -> [] int",
+   "examples": [
+    "a(1) == 1"
+   ],
+   "description": "Short.",
+   "deps": []
+  },
+  {
+   "id": "b",
+   "signature": "fn b(n: int) -> [] int",
+   "examples": [
+    "b(1) == 1"
+   ],
+   "description": "Short.",
+   "deps": []
+  },
+  {
+   "id": "c",
+   "signature": "fn c(n: int) -> [] int",
+   "examples": [
+    "c(1) == 1"
+   ],
+   "description": "Short.",
+   "deps": []
+  },
+  {
+   "id": "apply",
+   "signature": "fn apply(n: int) -> [] int",
+   "examples": [
+    "apply(1) == 1"
+   ],
+   "description": "Apply a unified diff to a text. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. ",
+   "deps": [
+    "a"
+   ]
+  },
+  {
+   "id": "many",
+   "signature": "fn many(n: int) -> [] int",
+   "examples": [
+    "many(1) == 1"
+   ],
+   "description": "Short.",
+   "deps": [
+    "a",
+    "b",
+    "c"
+   ]
+  },
+  {
+   "id": "lst",
+   "signature": "fn lst[&h](heap: &!h Heap) -> [heap] list.List[int]",
+   "examples": [
+    "lst(1) == 1"
+   ],
+   "description": "Short.",
+   "deps": [],
+   "tests": [
+    "pub fn test_lst() -> [] int { return 0; }"
+   ]
+  },
+  {
+   "id": "short",
+   "signature": "fn short(n: int) -> [] int",
+   "examples": [
+    "short(1) == 1"
+   ],
+   "description": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "deps": [
+    "a",
+    "b"
+   ]
+  },
+  {
+   "id": "kept",
+   "signature": "fn kept(n: int) -> [] int",
+   "examples": [
+    "kept(1) == 1"
+   ],
+   "description": "Apply a unified diff to a text. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. A hunk header names the lines it covers; context lines must match. ",
+   "deps": [
+    "a",
+    "b",
+    "c"
+   ],
+   "effort": "low"
+  }
+ ]
+}

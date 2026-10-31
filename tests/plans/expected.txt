@@ -60,3 +60,4 @@ file-import-root  1  file-import:t
 empty-file  1  empty-file:-
 files-field  1  files-field:-
 files-import-unknown  1  files-field:-
+tier  0

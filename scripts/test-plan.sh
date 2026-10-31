@@ -110,6 +110,24 @@ for p in "$root"/eval/*/plan.json; do
     expect "$(basename "$(dirname "$p")") plan with its brief: valid" "$out" "$(printf '[PLAN]\tvalid')"
 done
 
+# effort tiers (docs/plan.md, "Effort tiers"): `plancheck <plan> --tier` prints the plan with `"effort": "medium"` added to a unit that has none and
+# thinks long (a description of 900 characters or more, three or more deps, a list/vec result); an effort already written is kept, nothing else changes.
+tiered=$("$exe" "$root/tests/plans/tier.json" --tier 2>&1); rc=$?
+expect "tier: exit code" "$rc" 0
+expect "tier: units that got medium" "$(printf '%s\n' "$tiered" | python3 -c "
+import json, sys
+t = sys.stdin.read().rsplit('\n[TIER]', 1)[0]
+print(' '.join(u['id'] + ':' + u.get('effort', '-') for u in json.loads(t)['units']))")" "a:- b:- c:- apply:medium many:medium lst:medium short:- kept:low"
+expect "tier: count" "$(printf '%s\n' "$tiered" | tail -1)" "$(printf '[TIER]\t3')"
+expect "tier: nothing else changes" "$(printf '%s\n' "$tiered" | python3 -c "
+import json, sys
+t = json.loads(sys.stdin.read().rsplit('\n[TIER]', 1)[0])
+for u in t['units']:
+    if u['id'] in ('apply', 'many', 'lst'): del u['effort']
+print(t == json.load(open('$root/tests/plans/tier.json')))")" True
+tiered=$("$exe" "$root/tests/plans/valid-effort.json" --tier 2>&1)
+expect "tier: a plan with nothing long is unchanged" "$(printf '%s\n' "$tiered" | tail -1)" "$(printf '[TIER]\t0')"
+
 # a plan of 1 MiB or more is refused as a usage error, never read in part (a truncated plan would be checked as if it were the whole)
 big=$(mktemp -t cc-plan-big-XXXXXX)
 python3 -c "

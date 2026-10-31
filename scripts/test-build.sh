@@ -95,6 +95,38 @@ case "$sec" in ''|*[!0-9]*) echo "FAIL: happy: seconds '$sec' is not a number" >
 case "$(cat "$wd/build.json")" in "{"*"}") ;; *) echo "FAIL: happy: build.json is not an object" >&2; fail=1 ;; esac
 rm -rf "$wd" "$rc"
 
+# tiers: a unit the plan agent wrote that thinks long (a description of 900 characters or more) and has no effort gets "effort": "medium" in plan.json
+# (docs/plan.md, "Effort tiers"), and run.log says how many; an effort it wrote is kept; a plan.json that was already there is not touched
+tp=$(mktemp -t cc-build-tier-XXXXXX)
+python3 - "$P/plan.json" "$tp" "$tp.kept" <<'PY'
+import json, sys
+p = json.load(open(sys.argv[1]))
+p["units"][0]["description"] = "Double the number. " * 50
+json.dump(p, open(sys.argv[2], "w"))
+p["units"][0]["effort"] = "low"
+json.dump(p, open(sys.argv[3], "w"))
+PY
+set -- $(mk "$tp"); wd=$1; rc=$2; lg=$3
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "tiers: exit code" "$r" 0
+expect "tiers: the long unit has medium, the others none" "$(python3 -c "
+import json, sys
+print(' '.join(u['id'] + ':' + u.get('effort', '-') for u in json.load(open('$wd/plan.json'))['units']))")" "a:medium b:- c:-"
+expect "tiers: run.log says how many" "$(grep '^\[BUILD_STAGE\]	plan	tiered' "$wd/run.log" | tr '\t' ':')" "[BUILD_STAGE]:plan:tiered:1"
+rm -rf "$wd" "$rc"
+set -- $(mk "$tp.kept"); wd=$1; rc=$2; lg=$3
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "tiers: an effort the plan agent wrote is kept" "$(python3 -c "
+import json
+print(' '.join(u['id'] + ':' + u.get('effort', '-') for u in json.load(open('$wd/plan.json'))['units']))")" "a:low b:- c:-"
+expect "tiers: ... and nothing is said" "$(grep -c 'plan	tiered' "$wd/run.log")" 0
+rm -rf "$wd" "$rc"
+set -- $(mk); wd=$1; rc=$2; lg=$3
+cp "$tp" "$wd/plan.json"
+out=$(run "$wd" "$rc" "$lg"); r=$?
+expect "tiers: a plan.json that was already there is not touched" "$(cmp -s "$tp" "$wd/plan.json" && echo same)" same
+rm -rf "$wd" "$rc" "$tp" "$tp.kept"
+
 # args
 set -- $(mk); wd=$1; rc=$2; lg=$3
 mkdir -p "$wd.keys"; : > "$wd.keys/contract.txt"
