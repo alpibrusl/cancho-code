@@ -19,8 +19,61 @@
 #              nothing run
 #   static     the driver never runs git (no `git` word in its code outside comments)
 #
-# Needs the real cancho as CANCHO and python3 not at all (sh, tar, diff, patch). Exit 0: every case held.
+#   tests that prove something, the shape of a change: see docs/repo-patch.md (`test-passes-on-base` for a bug, `test-not-exercising` for a feature,
+#              `--constraints FILE`: `constraint-keep-names`, `constraint-max-added-items`, `constraint-max-added-lines`, `constraint-only-items`)
+#
+#   scripts/test-repo-patch.sh --mutants   prove the gate can fail: a copy of src/ with one rule broken must be RED, for every rule above (needs python3)
+#
+# Needs the real cancho as CANCHO and python3 not at all (sh, tar, diff, patch), except for --mutants. Exit 0: every case held.
 set -u
+
+if [ "${1:-}" = "--mutants" ]; then
+    work=$(mktemp -d -t cc-repopatch-mut-XXXXXX)
+    trap 'rm -rf "$work"' EXIT
+    root=$(cd "$(dirname "$0")/.." && pwd)
+    python3 - "$root/src" "$work" <<'PY' || exit 1
+import sys, os, shutil
+src, work = sys.argv[1:3]
+M = [
+ ("probe-off", "repochange.cho", 'if clean && bytes.equal(kind, "bug") {', 'if false && bytes.equal(kind, "bug") {'),
+ ("probe-on-the-fix", "repochange.cho", 'cp = buffer.append(heap, cp, "/base ");', 'cp = buffer.append(heap, cp, "/tree ");'),
+ ("passed-never-seen", "change.cho", 'bytes.equal(output[i + 1 + len(name)..i + 8 + len(name)], " ... ok")', 'bytes.equal(output[i + 1 + len(name)..i + 8 + len(name)], " ... xx")'),
+ ("exercising-off", "repochange.cho", 'if bytes.equal(kind, "feature") && tests_added > 0 {', 'if false && tests_added > 0 {'),
+ ("call-without-paren", "change.cho", "if j < len(text) && int_of(text[j]) == 40 {", "if j < len(text) {"),
+ ("call-inside-a-word", "change.cho", "(i == 0 || ident_byte(int_of(text[i - 1])) == false)", "true"),
+ ("public-or-not", "change.cho", '&& bytes.equal(ln[f0..f1], "1") {', '&& true {'),
+ ("removed-not-seen", "splice.cho", "if kept == false {\n                            out = delta_line", "if false {\n                            out = delta_line"),
+ ("constraints-off", "repochange.cho", "    if len(constraints) > 0 {\n        var added_lines = 0;", "    if false {\n        var added_lines = 0;"),
+ ("keep-names", "change.cho", 'if bytes.equal(status, "R") && bytes.equal(ln[c0..c1], "fn") {', 'if false {'),
+ ("max-added-items", "change.cho", "n_added > max_items {", "n_added > max_items + 1000 {"),
+ ("max-added-lines", "change.cho", "added_lines > max_lines {", "false {"),
+ ("lines-not-counted", "change.cho", 'return limit_of(heap, ctext, "max-added-lines") >= 0;', 'return limit_of(heap, ctext, "max-added-lines") >= 100000000;'),
+ ("only-items", "change.cho", "in_list(only, name) == false {", "false {"),
+ ("bad-constraint-accepted", "repochange.cho", "            if bad > 0 {\n                var m", "            if false {\n                var m"),
+]
+for name, fn, old, new in M:
+    d = os.path.join(work, name)
+    shutil.copytree(src, d)
+    p = os.path.join(d, fn)
+    t = open(p).read()
+    if t.count(old) != 1:
+        sys.exit("mutant %s: the text to break is in %s %d times, not once" % (name, fn, t.count(old)))
+    open(p, "w").write(t.replace(old, new))
+open(os.path.join(work, "names"), "w").write("\n".join(m[0] for m in M) + "\n")
+PY
+    fail=0
+    while read -r name; do
+        if REPOPATCH_SRC="$work/$name" sh "$0" >/dev/null 2>"$work/$name.err"; then
+            echo "FAIL: mutant $name is green" >&2; fail=1
+        elif grep -q '^FAIL:' "$work/$name.err"; then
+            echo "ok: mutant $name is red"
+        else
+            echo "FAIL: mutant $name is red for the wrong reason (no case failed: $(head -c 200 "$work/$name.err"))" >&2; fail=1
+        fi
+    done < "$work/names"
+    [ "$fail" = 0 ] && echo "repo.patch mutants: all red"
+    exit "$fail"
+fi
 
 CANCHO="${CANCHO:-cancho}"
 command -v "$CANCHO" >/dev/null 2>&1 || { echo "no cancho on PATH; set CANCHO=" >&2; exit 2; }
@@ -84,6 +137,111 @@ expect "tests: a new test counts" "$("$G" tests "$F/t.base" "$F/t.new")" 1
 expect "tests: nothing new" "$("$G" tests "$F/t.base" "$F/t.base")" 0
 expect "tests: a changed test counts, a changed helper does not" "$("$G" tests "$F/t.base" "$F/t.changed")" 1
 expect "tests: a new file counts every test in it" "$("$G" tests /dev/null "$F/t.new")" 2
+
+# the shape of a change, from the items of a file against its base (splice.item_delta), the tests it adds (changed_test_items), what the tests call
+cat > "$d/dl.base" <<'EOT'
+edition 7;
+
+module m;
+
+struct Point { x: int }
+
+pub fn keep() -> [] int {
+    return 1;
+}
+
+pub fn change() -> [] int {
+    return 1;
+}
+
+fn gone() -> [] int {
+    return 1;
+}
+EOT
+cat > "$d/dl.new" <<'EOT'
+edition 7;
+
+module m;
+
+struct Point { x: int }
+
+pub fn keep() -> [] int {
+    return 1;
+}
+
+pub fn change() -> [] int {
+    return 2;
+}
+
+pub fn fresh(a: int) -> [] int {
+    return a;
+}
+
+fn helper() -> [] int {
+    let x = 1;
+    return x;
+}
+
+pub fn test_t() -> [] int {
+    return 0;
+}
+EOT
+tab=$(printf '\t')
+expect "delta: added, replaced and removed items, kept ones left out" "$("$G" delta "$d/dl.base" "$d/dl.new" src/m.cho | tr '\t' ' ' | tr '\n' ';')" "src/m.cho C fn change 1 3;src/m.cho A fn fresh 1 3;src/m.cho A fn helper 0 4;src/m.cho A fn test_t 1 3;src/m.cho R fn gone 0 3;"
+expect "delta: a new file is all additions" "$("$G" delta - "$d/dl.base" src/n.cho | tr '\t' ' ' | tr '\n' ';')" "src/n.cho A type Point 0 1;src/n.cho A fn keep 1 3;src/n.cho A fn change 1 3;src/n.cho A fn gone 0 3;"
+expect "delta: nothing changed, nothing said" "$("$G" delta "$d/dl.base" "$d/dl.base" src/m.cho)" ""
+"$G" delta "$d/dl.base" "$d/dl.new" src/m.cho > "$d/dl.rec"
+expect "public fns: the added and replaced public functions only" "$("$G" publicfns "$d/dl.rec" | tr '\n' ' ')" "change fresh test_t "
+printf 'src/a.cho\tA\tfn\tx\t1\t1\ntests/a_test.cho\tA\tfn\ty\t1\t1\nsrc/a.cho\tR\tfn\tz\t1\t1\nsrc/a.cho\tA\ttype\tw\t1\t1\n' > "$d/pf.rec"
+expect "public fns: not tests/, not removed, not a type" "$("$G" publicfns "$d/pf.rec" | tr '\n' ' ')" "x "
+expect "test items: the names of the tests a file adds" "$("$G" testitems "$F/t.base" "$F/t.new" names | tr '\n' ' ')" "test_two "
+txt=$("$G" testitems "$F/t.base" "$F/t.changed" text)
+has "test items: the text of a changed test is the item, from its keyword" "$txt" "pub fn test_one() -> [] int {"
+has "test items: and has its body" "$txt" "test.assert(true);"
+hasnt "test items: and not a changed helper" "$txt" "helper"
+expect "test items: a changed test is named" "$("$G" testitems "$F/t.base" "$F/t.changed" names)" "test_one"
+
+printf 'test.assert(m.fresh(2) == 2);\n' > "$d/ex.call"; printf 'fresh\nchange\n' > "$d/ex.names"; : > "$d/ex.none"
+expect "exercise: a call of one of the names" "$("$G" exercise "$d/ex.call" "$d/ex.names")" yes
+printf 'test.assert(m.keep() == 1); let fresh_one = 1; test_fresh(3); fresher(2); fresh;\n' > "$d/ex.nocall"
+expect "exercise: other calls, a longer name, a name that is not called: no" "$("$G" exercise "$d/ex.nocall" "$d/ex.names")" no
+printf 'let a = fresh (4);\n' > "$d/ex.space"; expect "exercise: a space before the parenthesis" "$("$G" exercise "$d/ex.space" "$d/ex.names")" yes
+expect "exercise: nothing to call is a pass" "$("$G" exercise "$d/ex.nocall" "$d/ex.none")" yes
+printf 'running 4 tests\ntest m_test.test_a ... ok\ntest m_test.test_ab ... FAILED\ntest m_test.test_b ... ok\ntest m_test.test_d ... FAILED\n' > "$d/ps.out"
+printf 'test_a\ntest_ab\ntest_c\ntest_d\n' > "$d/ps.names"
+expect "passed: only the names with an ok line, not a longer name" "$("$G" passed "$d/ps.out" "$d/ps.names" | tr '\n' ' ')" "test_a "
+printf 'tests/m_test.cho:3:1: error: `x` is not a function\n' > "$d/ps.err"; expect "passed: a compile error passes none" "$("$G" passed "$d/ps.err" "$d/ps.names")" ""
+
+cons() { printf '%s\n' "$1" > "$d/c.txt"; "$G" constraint "$d/c.txt" | tr '\t' ' '; }
+expect "constraints: all four kinds, with comments and blanks" "$(printf '# a comment\n\nkeep-names tests/*\nkeep-names src/diff.cho\nmax-added-items 2\nmax-added-lines 40\nonly-items a,b_2,c\n' > "$d/c.txt"; "$G" constraint "$d/c.txt")" ok
+expect "constraints: an empty file is fine" "$(: > "$d/c.txt"; "$G" constraint "$d/c.txt")" ok
+expect "constraints: unknown line" "$(cons 'max-lines 3')" "1 unknown constraint (keep-names, max-added-items, max-added-lines, only-items)"
+expect "constraints: the line number" "$(printf 'max-added-items 3\n\nbogus\n' > "$d/c.txt"; "$G" constraint "$d/c.txt" | tr '\t' ' ' | cut -c1-9)" "3 unknown"
+expect "constraints: a number is a number" "$(cons 'max-added-items many')" "1 max-added-items takes a number"
+expect "constraints: a number is given" "$(cons 'max-added-lines')" "1 max-added-lines takes a number"
+expect "constraints: a number, twice" "$(printf 'max-added-lines 3\nmax-added-lines 4\n' > "$d/c.txt"; "$G" constraint "$d/c.txt" | tr '\t' ' ')" "2 max-added-lines is given twice"
+expect "constraints: only-items twice" "$(printf 'only-items a\nonly-items b\n' > "$d/c.txt"; "$G" constraint "$d/c.txt" | tr '\t' ' ')" "2 only-items is given twice"
+expect "constraints: only-items with an empty name" "$(cons 'only-items a,,b')" "1 only-items takes item names separated by commas"
+expect "constraints: only-items with a bad name" "$(cons 'only-items a;b')" "1 only-items takes item names separated by commas"
+expect "constraints: a glob outside src/ and tests/" "$(cons 'keep-names lib/*')" "1 keep-names takes a path under src/ or tests/, with a * only at its end"
+expect "constraints: a * in the middle" "$(cons 'keep-names tests/*_test.cho')" "1 keep-names takes a path under src/ or tests/, with a * only at its end"
+expect "constraints: a .. in a glob" "$(cons 'keep-names tests/../x')" "1 keep-names takes a path under src/ or tests/, with a * only at its end"
+
+# the violations: records of a change that renamed a test, added two items and a helper
+printf 'src/d.cho\tR\tfn\tedit_count\t1\t5\nsrc/d.cho\tA\tfn\tedit_distance\t1\t5\nsrc/d.cho\tA\tfn\tdiff_lcs\t0\t40\nsrc/d.cho\tC\tfn\tdiff_stat\t1\t9\ntests/d_test.cho\tR\tfn\ttest_edit_count_1\t1\t3\ntests/d_test.cho\tA\tfn\ttest_edit_distance_1\t1\t3\ntests/d_test.cho\tC\tfn\ttest_other\t1\t3\ntests/d_test.cho\tR\tfn\thelper_x\t0\t3\n' > "$d/vi.rec"
+viol() { printf '%s\n' "$1" > "$d/c.txt"; "$G" violate "$d/c.txt" "$d/vi.rec" "${2:-0}" | cut -f2,4 | tr '\t\n' ' :' | sed 's/:$//'; }
+expect "violations: keep-names tests/* names the removed tests and helpers" "$(viol 'keep-names tests/*')" "constraint-keep-names these functions were removed or renamed, and the request keeps their names: test_edit_count_1, helper_x"
+expect "violations: keep-names of a src file: its removed function" "$(viol 'keep-names src/d.cho')" "constraint-keep-names these functions were removed or renamed, and the request keeps their names: edit_count"
+expect "violations: keep-names of another file: nothing" "$(viol 'keep-names src/other.cho')" ""
+expect "violations: changing a test is not removing it" "$(viol 'keep-names tests/d_test.cho' | grep -c test_other)" 0
+expect "violations: max-added-items counts the additions in src/ only" "$(viol 'max-added-items 1')" "constraint-max-added-items the change adds 2 items to src/ (edit_distance, diff_lcs); at most 1"
+expect "violations: max-added-items met" "$(viol 'max-added-items 2')" ""
+expect "violations: max-added-items 0" "$(viol 'max-added-items 0' | cut -d' ' -f1)" "constraint-max-added-items"
+expect "violations: max-added-lines" "$(viol 'max-added-lines 10' 41)" "constraint-max-added-lines the change adds 41 lines to src/; at most 10"
+expect "violations: max-added-lines met exactly" "$(viol 'max-added-lines 41' 41)" ""
+expect "violations: only-items names what is outside the list, in src/ only" "$(viol 'only-items edit_distance,diff_stat')" "constraint-only-items the change touches items of src/ the request does not allow: edit_count, diff_lcs"
+expect "violations: only-items met" "$(viol 'only-items edit_count,edit_distance,diff_lcs,diff_stat')" ""
+expect "violations: several at once, in a fixed order" "$(printf 'keep-names src/d.cho\nmax-added-items 1\nmax-added-lines 3\nonly-items diff_stat\n' > "$d/c.txt"; "$G" violate "$d/c.txt" "$d/vi.rec" 41 | cut -f2 | tr '\n' ' ')" "constraint-keep-names constraint-max-added-items constraint-max-added-lines constraint-only-items "
 
 # ---- the driver ---------------------------------------------------------------------------------------------------------------------------
 R="$root/tests/repochange"
@@ -210,15 +368,158 @@ rp=$(newrepo); rc=$(newrc); w="$d/w-notest-refactor"; printf '=== FILE src/mathx
 out=$(run "$rp" "$rc" "$w" refactor --attempts 1); expect "no test: a refactor does not" "$(verdict "$out")" done
 rp=$(newrepo); rc=$(newrc); w="$d/w-notest-rename"; printf '=== FILE src/mathx.cho\npub fn quarter(x: int) -> [] int { return x / 4; }\n' > "$rc/reply.1"
 out=$(run "$rp" "$rc" "$w" rename --attempts 1); expect "no test: a rename does not" "$(verdict "$out")" done
-# a changed test function counts (a bug fix that makes a test stricter)
+# a changed test function counts (a feature that makes a test stricter and calls the new function in it)
 rp=$(newrepo); rc=$(newrc); w="$d/w-changedtest"
-printf '=== FILE tests/mathx_test.cho\npub fn test_double() -> [] int { test.assert(mathx.double(4) == 8); test.assert(mathx.double(0) == 0); return 0; }\n' > "$rc/reply.1"
-out=$(run "$rp" "$rc" "$w" bug --attempts 1); expect "changed test: counts" "$(verdict "$out")" done
+printf '=== FILE src/mathx.cho\npub fn quarter(x: int) -> [] int { return x / 4; }\n=== FILE tests/mathx_test.cho\npub fn test_double() -> [] int { test.assert(mathx.double(4) == 8); test.assert(mathx.quarter(8) == 2); return 0; }\n' > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" feature --attempts 1); expect "changed test: counts" "$(verdict "$out")" done
 
 # a test that fails on the code is the gate's refusal
 rp=$(newrepo); rc=$(newrc); w="$d/w-failing"
 printf '=== FILE tests/mathx_test.cho\npub fn test_double() -> [] int { test.assert(mathx.double(4) == 9); return 0; }\n' > "$rc/reply.1"
 out=$(run "$rp" "$rc" "$w" bug --attempts 1); expect "failing test: refused" "$(attempts "$out")" "1:refused:tests-failed"
+
+# a bug fix: the tests it adds or changes must FAIL on the base (the code as it was), pass on the fix. The base here has the bug `half` = x / 3
+newbug() { r=$(newrepo); sed -i 's|return x / 2;|return x / 3;|' "$r/src/mathx.cho"; echo "$r"; }
+FIX='=== FILE src/mathx.cho
+pub fn half(x: int) -> [] int { return x / 2; }'
+rp=$(newbug); rc=$(newrc); w="$d/w-bug-ok"
+printf '%s\n=== FILE tests/mathx_test.cho\npub fn test_half_ten() -> [] int { test.assert(mathx.half(10) == 5); return 0; }\n' "$FIX" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" bug --attempts 1); expect "bug: a test that fails on the base and passes on the fix: done" "$(attempts "$out")" "1:passed"
+expect "bug: the base is not touched by the probe" "$(grep -c 'x / 3' "$w/base/src/mathx.cho")" 1
+expect "bug: the fix is in the tree" "$(grep -c 'x / 2' "$w/tree/src/mathx.cho")" 1
+rp=$(newbug); rc=$(newrc); w="$d/w-bug-pass"
+printf '%s\n=== FILE tests/mathx_test.cho\npub fn test_half_zero() -> [] int { test.assert(mathx.half(0) == 0); return 0; }\n' "$FIX" > "$rc/reply.1"
+printf '%s\n=== FILE tests/mathx_test.cho\npub fn test_half_ten() -> [] int { test.assert(mathx.half(10) == 5); return 0; }\n' "$FIX" > "$rc/reply.2"
+out=$(run "$rp" "$rc" "$w" bug); expect "bug: a test that passes on the base is refused by name, the retry passes" "$(attempts "$out")" "1:refused:test-passes-on-base 2:passed"
+has "bug: the refusal names the test" "$out" "test_half_zero"
+has "bug: the feedback names the tag, the test and what to do" "$(cat "$rc/feedback.2")" "test-passes-on-base"
+has "bug: the feedback names the test" "$(cat "$rc/feedback.2")" "test_half_zero"
+has "bug: the feedback says what to do" "$(cat "$rc/feedback.2")" "must fail without the fix"
+rp=$(newbug); rc=$(newrc); w="$d/w-bug-mixed"
+printf '%s\n=== FILE tests/mathx_test.cho\npub fn test_half_zero() -> [] int { test.assert(mathx.half(0) == 0); return 0; }\npub fn test_half_ten() -> [] int { test.assert(mathx.half(10) == 5); return 0; }\n' "$FIX" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" bug --attempts 1); expect "bug: one test that fails on the base is not enough: every added test must" "$(attempts "$out")" "1:refused:test-passes-on-base"
+has "bug: the one that passes is named" "$out" "test_half_zero"
+hasnt "bug: the one that fails on the base is not" "$(grep CHANGE_ERROR "$w/run.log")" "test_half_ten"
+rp=$(newbug); rc=$(newrc); w="$d/w-bug-nocompile"
+cat > "$rc/reply.1" <<'EOT'
+=== FILE src/mathx.cho
+pub fn half(x: int) -> [] int { return x / 2; }
+pub fn tenth(x: int) -> [] int { return x / 10; }
+=== FILE tests/mathx_test.cho
+pub fn test_tenth() -> [] int { test.assert(mathx.tenth(30) == 3); return 0; }
+EOT
+out=$(run "$rp" "$rc" "$w" bug --attempts 1); expect "bug: a test that does not compile on the base fails there: done" "$(attempts "$out")" "1:passed"
+rp=$(newbug); rc=$(newrc); w="$d/w-bug-nofix"
+printf '=== FILE tests/mathx_test.cho\npub fn test_half_ten() -> [] int { test.assert(mathx.half(10) == 5); return 0; }\n' > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" bug --attempts 1); expect "bug: a test and no fix is the tests' refusal, not the base probe's" "$(attempts "$out")" "1:refused:tests-failed"
+# a feature is not run against the base
+rp=$(newrepo); rc=$(newrc); w="$d/w-feature-nobase"; printf '%s\n' "$QUARTER" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" feature --attempts 1); expect "feature: no base probe" "$(attempts "$out")" "1:passed"
+[ -e "$w/probe" ] && { echo "FAIL: feature: a base probe was run" >&2; fail=1; }
+
+# a feature: the tests it adds must call what it adds
+rp=$(newrepo); rc=$(newrc); w="$d/w-notexercising"
+printf '=== FILE src/mathx.cho\npub fn quarter(x: int) -> [] int { return x / 4; }\n=== FILE tests/mathx_test.cho\npub fn test_double_again() -> [] int { test.assert(mathx.double(5) == 10); return 0; }\n' > "$rc/reply.1"
+printf '%s\n' "$QUARTER" > "$rc/reply.2"
+out=$(run "$rp" "$rc" "$w" feature); expect "exercising: a test that does not call the new function is refused by name, the retry passes" "$(attempts "$out")" "1:refused:test-not-exercising 2:passed"
+has "exercising: the feedback names the tag and the function" "$(cat "$rc/feedback.2")" "test-not-exercising"
+has "exercising: and the function" "$(cat "$rc/feedback.2")" "quarter"
+rp=$(newrepo); rc=$(newrc); w="$d/w-exercising-replaced"
+printf '=== FILE src/mathx.cho\npub fn double(x: int) -> [] int { return x + x; }\n=== FILE tests/mathx_test.cho\npub fn test_double_seven() -> [] int { test.assert(mathx.double(7) == 14); return 0; }\n' > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" feature --attempts 1); expect "exercising: a replaced public function counts as the thing to call" "$(attempts "$out")" "1:passed"
+rp=$(newrepo); rc=$(newrc); w="$d/w-exercising-replaced-no"
+printf '=== FILE src/mathx.cho\npub fn double(x: int) -> [] int { return x + x; }\n=== FILE tests/mathx_test.cho\npub fn test_half_seven() -> [] int { test.assert(mathx.half(14) == 7); return 0; }\n' > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" feature --attempts 1); expect "exercising: a test of another function does not" "$(attempts "$out")" "1:refused:test-not-exercising"
+rp=$(newrepo); rc=$(newrc); w="$d/w-exercising-private"
+printf '=== FILE src/mathx.cho\nfn secret(x: int) -> [] int { return x; }\n=== FILE tests/mathx_test.cho\npub fn test_half_seven() -> [] int { test.assert(mathx.half(14) == 7); return 0; }\n' > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" feature --attempts 1); expect "exercising: a change that adds no public function has nothing to call" "$(attempts "$out")" "1:passed"
+rp=$(newrepo); rc=$(newrc); w="$d/w-exercising-bug"
+printf '=== FILE src/mathx.cho\npub fn quarter(x: int) -> [] int { return x / 4; }\n=== FILE tests/mathx_test.cho\npub fn test_double_again() -> [] int { test.assert(mathx.double(5) == 10); return 0; }\n' > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" refactor --attempts 1); expect "exercising: not asked of a refactor" "$(attempts "$out")" "1:passed"
+
+# constraints on the shape of a change (--constraints FILE)
+CF="$d/constraints.txt"
+# a rename of the test functions against keep-names tests/*; the retry keeps them
+rp=$(newrepo); rc=$(newrc); w="$d/w-keep"
+printf '# keep the tests as they are\n\nkeep-names tests/*\n' > "$CF"
+cat > "$rc/reply.1" <<'EOT'
+=== FILE src/mathx.cho
+remove fn half
+pub fn halve(x: int) -> [] int { return x / 2; }
+=== FILE tests/mathx_test.cho
+remove fn test_half
+pub fn test_halve() -> [] int { test.assert(mathx.halve(9) == 4); return 0; }
+EOT
+cp "$rc/reply.1" "$rc/reply.3"
+cat > "$rc/reply.2" <<'EOT'
+=== FILE src/mathx.cho
+remove fn half
+pub fn halve(x: int) -> [] int { return x / 2; }
+=== FILE tests/mathx_test.cho
+pub fn test_half() -> [] int { test.assert(mathx.halve(9) == 4); return 0; }
+EOT
+out=$(run "$rp" "$rc" "$w" rename --constraints "$CF"); expect "keep-names: a renamed test is refused by name, the retry that keeps it passes" "$(attempts "$out")" "1:refused:constraint-keep-names 2:passed"
+has "keep-names: the feedback names the tag and the test" "$(cat "$rc/feedback.2")" "constraint-keep-names"
+has "keep-names: the test" "$(cat "$rc/feedback.2")" "test_half"
+has "keep-names: the task shows the constraint to the model" "$(cat "$rc/task.1")" "keep-names tests/*"
+rp=$(newrepo); rc=$(newrc); w="$d/w-keep-none"; printf '=== FILE src/mathx.cho\npub fn quarter(x: int) -> [] int { return x / 4; }\n' > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" refactor --attempts 1); hasnt "no constraints: the task has none" "$(cat "$rc/task.1")" "constraints on the shape"
+# max-added-items: two new items against a limit of one, then one
+rp=$(newrepo); rc=$(newrc); w="$d/w-items"
+printf 'max-added-items 1\n' > "$CF"
+printf '=== FILE src/mathx.cho\npub fn quarter(x: int) -> [] int { return x / 4; }\nfn helper(x: int) -> [] int { return x; }\n' > "$rc/reply.1"
+printf '=== FILE src/mathx.cho\npub fn quarter(x: int) -> [] int { return x / 4; }\n' > "$rc/reply.2"
+out=$(run "$rp" "$rc" "$w" refactor --constraints "$CF"); expect "max-added-items: two items against one is refused, one passes" "$(attempts "$out")" "1:refused:constraint-max-added-items 2:passed"
+has "max-added-items: the feedback names the items" "$(cat "$rc/feedback.2")" "quarter, helper"
+rp=$(newrepo); rc=$(newrc); w="$d/w-items-tests"
+printf '=== FILE src/mathx.cho\npub fn quarter(x: int) -> [] int { return x / 4; }\n=== FILE tests/mathx_test.cho\npub fn test_quarter() -> [] int { test.assert(mathx.quarter(8) == 2); return 0; }\npub fn test_quarter2() -> [] int { test.assert(mathx.quarter(12) == 3); return 0; }\n' > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" feature --attempts 1 --constraints "$CF"); expect "max-added-items: the tests added do not count against it" "$(attempts "$out")" "1:passed"
+# max-added-lines
+rp=$(newrepo); rc=$(newrc); w="$d/w-lines"
+printf 'max-added-lines 4\n' > "$CF"
+cat > "$rc/reply.1" <<'EOT'
+=== FILE src/mathx.cho
+pub fn quarter(x: int) -> [] int {
+    let a = x / 2;
+    let b = a / 2;
+    let c = b;
+    return c;
+}
+EOT
+printf '=== FILE src/mathx.cho\npub fn quarter(x: int) -> [] int { return x / 4; }\n' > "$rc/reply.2"
+out=$(run "$rp" "$rc" "$w" refactor --constraints "$CF"); expect "max-added-lines: seven added lines against four is refused, a short one passes" "$(attempts "$out")" "1:refused:constraint-max-added-lines 2:passed"
+has "max-added-lines: the feedback has the counts" "$(cat "$rc/feedback.2")" "adds 7 lines to src/; at most 4"
+# only-items
+rp=$(newrepo); rc=$(newrc); w="$d/w-only"
+printf 'only-items half\n' > "$CF"
+printf '=== FILE src/mathx.cho\npub fn double(x: int) -> [] int { return x + x; }\n' > "$rc/reply.1"
+printf '=== FILE src/mathx.cho\npub fn half(x: int) -> [] int { return x / 2 + 0; }\n=== FILE tests/mathx_test.cho\npub fn test_half() -> [] int { test.assert(mathx.half(9) == 4); return 0; }\n' > "$rc/reply.2"
+out=$(run "$rp" "$rc" "$w" refactor --constraints "$CF"); expect "only-items: a change to another item is refused, a change to the item passes (its tests may change)" "$(attempts "$out")" "1:refused:constraint-only-items 2:passed"
+has "only-items: the feedback names the item" "$(cat "$rc/feedback.2")" "double"
+# the constraints are checked with the other refusals, all reported together
+rp=$(newrepo); rc=$(newrc); w="$d/w-together"
+printf 'only-items half\nmax-added-items 0\n' > "$CF"
+printf '=== FILE src/mathx.cho\npub fn quarter(x: int) -> [] int { return x / 4; }\n' > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" feature --attempts 1 --constraints "$CF"); expect "constraints: with no-test-added, in one report" "$(attempts "$out")" "1:refused:no-test-added,constraint-max-added-items,constraint-only-items"
+
+# constraints: a line that is not one, a file that is not there, a relative path: usage errors, nothing run
+cusage() { # <name> <file text>
+    nm=$1; printf '%s\n' "$2" > "$CF"; rp=$(newrepo); rc=$(newrc); w="$d/w-cu-$nm"
+    out=$(run "$rp" "$rc" "$w" feature --constraints "$CF"); r=$?
+    expect "constraints usage $nm: exit 2" "$r" 2
+    has "constraints usage $nm: the line is named" "$out" "--constraints line $3"
+    [ -s "$rc/log" ] && { echo "FAIL: constraints usage $nm: the agent was run" >&2; fail=1; }
+    [ -e "$w/base" ] && { echo "FAIL: constraints usage $nm: a work directory was made" >&2; fail=1; }
+    return 0
+}
+cusage unknown 'max-added-items 3
+frobnicate 2' 2
+cusage number 'max-added-lines lots' 1
+cusage glob 'keep-names lib/*' 1
+cusage twice 'only-items a
+only-items b' 2
+rp=$(newrepo); rc=$(newrc); out=$(run "$rp" "$rc" "$d/w-cu-missing" feature --constraints "$d/no-such-file.txt"); expect "constraints usage: a file that is not there: exit 2" "$?" 2
+rp=$(newrepo); rc=$(newrc); out=$(run "$rp" "$rc" "$d/w-cu-rel" feature --constraints relative.txt); expect "constraints usage: a relative path: exit 2" "$?" 2
 
 # bounds
 bound() { # <name> <tag> <envelope text> [options]

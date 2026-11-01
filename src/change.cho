@@ -313,3 +313,437 @@ pub fn apply[&h, &e, &b, &p](heap: &!h Heap, existing: &e [byte], exists: bool, 
     }
     return (out, rep, code);
 }
+
+// ---- tests that prove something (docs/repo-patch.md) -----------------------------------------------------------------------------------------
+
+fn ident_byte(c: int) -> [] bool {
+    return c >= 48 && c <= 57 || c >= 65 && c <= 90 || c >= 97 && c <= 122 || c == 95;
+}
+
+// Is `name` called in `text`: it stands as a whole word (no identifier byte before it) and a `(` follows, spaces aside?
+fn calls[&t, &n](text: &t [byte], name: &n [byte]) -> [] bool {
+    if len(name) == 0 {
+        return false;
+    }
+    var i = 0;
+    while i + len(name) <= len(text) {
+        if bytes.equal(text[i..i + len(name)], name) && (i == 0 || ident_byte(int_of(text[i - 1])) == false) {
+            var j = i + len(name);
+            while j < len(text) && int_of(text[j]) == 32 {
+                j = j + 1;
+            }
+            if j < len(text) && int_of(text[j]) == 40 {
+                return true;
+            }
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+// Does `text` (the text of the tests a change adds or changes) call any of the `names` (one per line)? True when `names` is empty: a change that
+// adds no public function has nothing a test could be asked to call.
+pub fn exercised[&t, &n](text: &t [byte], names: &n [byte]) -> [] bool {
+    var any = false;
+    var hit = false;
+    var p = 0;
+    while p < len(names) {
+        let e = line_end(names, p);
+        if e > p {
+            any = true;
+            if calls(text, names[p..e]) {
+                hit = true;
+            }
+        }
+        p = e + 1;
+    }
+    return any == false || hit;
+}
+
+// The field `k` (0-based, tab separated) of `line`, as (start, end).
+fn field_of[&l](line: &l [byte], k: int) -> [] (int, int) {
+    var start = 0;
+    var seen = 0;
+    var i = 0;
+    while i <= len(line) {
+        if i == len(line) || int_of(line[i]) == 9 {
+            if seen == k {
+                return (start, i);
+            }
+            seen = seen + 1;
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    return (0, 0);
+}
+
+// The public functions a change added or replaced in `src/`, from `splice.item_delta` lines, one name per line.
+pub fn public_fns[&h, &r](heap: &!h Heap, records: &r [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 32);
+    var p = 0;
+    while p < len(records) {
+        let e = line_end(records, p);
+        let ln = records[p..e];
+        let (a0, a1) = field_of(ln, 0);
+        let (b0, b1) = field_of(ln, 1);
+        let (c0, c1) = field_of(ln, 2);
+        let (d0, d1) = field_of(ln, 3);
+        let (f0, f1) = field_of(ln, 4);
+        if bytes.starts_with(ln[a0..a1], "src/") && (bytes.equal(ln[b0..b1], "A") || bytes.equal(ln[b0..b1], "C")) && bytes.equal(ln[c0..c1], "fn") && bytes.equal(ln[f0..f1], "1") {
+            out = buffer.append(heap, out, ln[d0..d1]);
+            out = buffer.push(heap, out, byte_of(10));
+        }
+        p = e + 1;
+    }
+    return out;
+}
+
+// Of the `names` (one per line) the ones the `cancho test` output shows as passed (`test MODULE.NAME ... ok`).
+pub fn passed_in[&h, &o, &n](heap: &!h Heap, output: &o [byte], names: &n [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 32);
+    var p = 0;
+    while p < len(names) {
+        let e = line_end(names, p);
+        if e > p {
+            let name = names[p..e];
+            var found = false;
+            var i = 0;
+            while i + len(name) + 7 <= len(output) {
+                if int_of(output[i]) == 46 && bytes.equal(output[i + 1..i + 1 + len(name)], name) && bytes.equal(output[i + 1 + len(name)..i + 8 + len(name)], " ... ok") {
+                    found = true;
+                }
+                i = i + 1;
+            }
+            if found {
+                out = buffer.append(heap, out, name);
+                out = buffer.push(heap, out, byte_of(10));
+            }
+        }
+        p = e + 1;
+    }
+    return out;
+}
+
+// ---- constraints on the shape of a change ---------------------------------------------------------------------------------------------------
+//
+// `--constraints FILE`: lines `keep-names GLOB`, `max-added-items N`, `max-added-lines N`, `only-items a,b,c`; blank lines and `#` comments are
+// skipped. A GLOB is a path under `src/` or `tests/`, with a `*` only at its end.
+
+fn digits_value[&a](t: &a [byte]) -> [] int {
+    if len(t) == 0 || len(t) > 8 {
+        return 0 - 1;
+    }
+    var n = 0;
+    var i = 0;
+    while i < len(t) {
+        let c = int_of(t[i]);
+        if c < 48 || c > 57 {
+            return 0 - 1;
+        }
+        n = n * 10 + c - 48;
+        i = i + 1;
+    }
+    return n;
+}
+
+fn glob_ok[&a](g: &a [byte]) -> [] bool {
+    if bytes.starts_with(g, "src/") == false && bytes.starts_with(g, "tests/") == false {
+        return false;
+    }
+    var i = 0;
+    while i < len(g) {
+        let c = int_of(g[i]);
+        if path_byte(c) == false && (c != 42 || i != len(g) - 1) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return bytes.find(g, "..") < 0;
+}
+
+fn names_ok[&a](list: &a [byte]) -> [] bool {
+    var start = 0;
+    var i = 0;
+    while i <= len(list) {
+        if i == len(list) || int_of(list[i]) == 44 {
+            if i == start {
+                return false;
+            }
+            var j = start;
+            while j < i {
+                if ident_byte(int_of(list[j])) == false {
+                    return false;
+                }
+                j = j + 1;
+            }
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+// The key and the value of a constraint line (trimmed), or two empty slices for a blank line or a comment.
+fn constraint_parts[&l](ln: &l [byte]) -> [] (int, int, int, int) {
+    if len(ln) == 0 || int_of(ln[0]) == 35 {
+        return (0, 0, 0, 0);
+    }
+    var s = 0;
+    while s < len(ln) && int_of(ln[s]) > 32 {
+        s = s + 1;
+    }
+    var v = s;
+    while v < len(ln) && int_of(ln[v]) <= 32 {
+        v = v + 1;
+    }
+    return (0, s, v, len(ln));
+}
+
+// The first line of the constraints that is not one: (its number, why), or (0, "") when all are good.
+pub fn constraint_problem[&c](text: &c [byte]) -> [] (int, &static [byte]) {
+    var items = 0;
+    var lines = 0;
+    var only = 0;
+    var lineno = 0;
+    var p = 0;
+    while p < len(text) {
+        let e = line_end(text, p);
+        lineno = lineno + 1;
+        let ln = bytes.trim(text[p..e]);
+        let (k0, k1, v0, v1) = constraint_parts(ln);
+        if k1 > 0 {
+            let key = ln[k0..k1];
+            let operand = ln[v0..v1];
+            if bytes.equal(key, "keep-names") {
+                if glob_ok(operand) == false {
+                    return (lineno, "keep-names takes a path under src/ or tests/, with a * only at its end");
+                }
+            } else if bytes.equal(key, "max-added-items") {
+                if digits_value(operand) < 0 {
+                    return (lineno, "max-added-items takes a number");
+                }
+                if items > 0 {
+                    return (lineno, "max-added-items is given twice");
+                }
+                items = 1;
+            } else if bytes.equal(key, "max-added-lines") {
+                if digits_value(operand) < 0 {
+                    return (lineno, "max-added-lines takes a number");
+                }
+                if lines > 0 {
+                    return (lineno, "max-added-lines is given twice");
+                }
+                lines = 1;
+            } else if bytes.equal(key, "only-items") {
+                if names_ok(operand) == false {
+                    return (lineno, "only-items takes item names separated by commas");
+                }
+                if only > 0 {
+                    return (lineno, "only-items is given twice");
+                }
+                only = 1;
+            } else {
+                return (lineno, "unknown constraint (keep-names, max-added-items, max-added-lines, only-items)");
+            }
+        }
+        p = e + 1;
+    }
+    return (0, "");
+}
+
+// The values of every line with the key `key`, one per line.
+fn values_of[&h, &c](heap: &!h Heap, text: &c [byte], key: &static [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 32);
+    var p = 0;
+    while p < len(text) {
+        let e = line_end(text, p);
+        let ln = bytes.trim(text[p..e]);
+        let (k0, k1, v0, v1) = constraint_parts(ln);
+        if k1 > 0 && bytes.equal(ln[k0..k1], key) {
+            out = buffer.append(heap, out, ln[v0..v1]);
+            out = buffer.push(heap, out, byte_of(10));
+        }
+        p = e + 1;
+    }
+    return out;
+}
+
+fn limit_of[&h, &c](heap: &!h Heap, text: &c [byte], key: &static [byte]) -> [heap] int {
+    let v = values_of(heap, text, key);
+    var n = 0 - 1;
+    borrow v as &vr in {
+        let b = buffer.bytes(vr);
+        if len(b) > 0 {
+            n = digits_value(b[0..line_end(b, 0)]);
+        }
+    }
+    buffer.drop(heap, v);
+    return n;
+}
+
+// Does the glob (a path, or a path with a `*` at its end) match `path`?
+pub fn glob_match[&g, &p](glob: &g [byte], path: &p [byte]) -> [] bool {
+    if len(glob) > 0 && int_of(glob[len(glob) - 1]) == 42 {
+        return bytes.starts_with(path, glob[0..len(glob) - 1]);
+    }
+    return bytes.equal(glob, path);
+}
+
+fn in_list[&l, &n](list: &l [byte], name: &n [byte]) -> [] bool {
+    var start = 0;
+    var i = 0;
+    while i <= len(list) {
+        if i == len(list) || int_of(list[i]) == 44 {
+            if bytes.equal(list[start..i], name) {
+                return true;
+            }
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+// `item` added to a list of at most 8 names for a message.
+fn note[&h, &i](heap: &!h Heap, out: buffer.Buffer, count: int, item: &i [byte]) -> [heap] buffer.Buffer {
+    if count < 8 {
+        var b = out;
+        if count > 0 {
+            b = buffer.append(heap, b, ", ");
+        }
+        return buffer.append(heap, b, item);
+    }
+    return out;
+}
+
+fn more[&h](heap: &!h Heap, out: buffer.Buffer, count: int) -> [heap] buffer.Buffer {
+    if count > 8 {
+        var b = buffer.append(heap, out, " and ");
+        b = buffer.push_nat(heap, b, count - 8);
+        return buffer.append(heap, b, " more");
+    }
+    return out;
+}
+
+// The constraints `ctext` against what a change did: `records` are the `splice.item_delta` lines of every file written, `added_lines` the lines added
+// to files of `src/`. The answer is `[CHANGE_ERROR]` lines, one per constraint broken (empty: all hold).
+pub fn violations[&h, &c, &r](heap: &!h Heap, ctext: &c [byte], records: &r [byte], added_lines: int) -> [heap] buffer.Buffer {
+    var rep = buffer.empty(heap, 64);
+    let globs = values_of(heap, ctext, "keep-names");
+    let onlyv = values_of(heap, ctext, "only-items");
+    let max_items = limit_of(heap, ctext, "max-added-items");
+    let max_lines = limit_of(heap, ctext, "max-added-lines");
+    var gone = buffer.empty(heap, 32);
+    var n_gone = 0;
+    var added = buffer.empty(heap, 32);
+    var n_added = 0;
+    var off = buffer.empty(heap, 32);
+    var n_off = 0;
+    borrow globs as &gr in {
+        borrow onlyv as &ovr in {
+            let gl = buffer.bytes(gr);
+            let ov = buffer.bytes(ovr);
+            var only = ov;
+            if len(ov) > 0 {
+                only = ov[0..line_end(ov, 0)];
+            }
+            var p = 0;
+            while p < len(records) {
+                let e = line_end(records, p);
+                let ln = records[p..e];
+                let (a0, a1) = field_of(ln, 0);
+                let (b0, b1) = field_of(ln, 1);
+                let (c0, c1) = field_of(ln, 2);
+                let (d0, d1) = field_of(ln, 3);
+                let path = ln[a0..a1];
+                let status = ln[b0..b1];
+                let name = ln[d0..d1];
+                if bytes.equal(status, "R") && bytes.equal(ln[c0..c1], "fn") {
+                    var q = 0;
+                    var hit = false;
+                    while q < len(gl) {
+                        let ge = line_end(gl, q);
+                        if glob_match(gl[q..ge], path) {
+                            hit = true;
+                        }
+                        q = ge + 1;
+                    }
+                    if hit {
+                        gone = note(heap, gone, n_gone, name);
+                        n_gone = n_gone + 1;
+                    }
+                }
+                if bytes.starts_with(path, "src/") {
+                    if bytes.equal(status, "A") {
+                        added = note(heap, added, n_added, name);
+                        n_added = n_added + 1;
+                    }
+                    if len(ov) > 0 && in_list(only, name) == false {
+                        off = note(heap, off, n_off, name);
+                        n_off = n_off + 1;
+                    }
+                }
+                p = e + 1;
+            }
+        }
+    }
+    if n_gone > 0 {
+        var d = buffer.append(heap, buffer.empty(heap, 64), "these functions were removed or renamed, and the request keeps their names: ");
+        borrow gone as &goner in {
+            d = buffer.append(heap, d, buffer.bytes(goner));
+        }
+        d = more(heap, d, n_gone);
+        borrow d as &dr in {
+            rep = error_line(heap, rep, "constraint-keep-names", "-", buffer.bytes(dr));
+        }
+        buffer.drop(heap, d);
+    }
+    if max_items >= 0 && n_added > max_items {
+        var d = buffer.append(heap, buffer.empty(heap, 64), "the change adds ");
+        d = buffer.push_nat(heap, d, n_added);
+        d = buffer.append(heap, d, " items to src/ (");
+        borrow added as &addedr in {
+            d = buffer.append(heap, d, buffer.bytes(addedr));
+        }
+        d = more(heap, d, n_added);
+        d = buffer.append(heap, d, "); at most ");
+        d = buffer.push_nat(heap, d, max_items);
+        borrow d as &dr in {
+            rep = error_line(heap, rep, "constraint-max-added-items", "-", buffer.bytes(dr));
+        }
+        buffer.drop(heap, d);
+    }
+    if max_lines >= 0 && added_lines > max_lines {
+        var d = buffer.append(heap, buffer.empty(heap, 64), "the change adds ");
+        d = buffer.push_nat(heap, d, added_lines);
+        d = buffer.append(heap, d, " lines to src/; at most ");
+        d = buffer.push_nat(heap, d, max_lines);
+        borrow d as &dr in {
+            rep = error_line(heap, rep, "constraint-max-added-lines", "-", buffer.bytes(dr));
+        }
+        buffer.drop(heap, d);
+    }
+    if n_off > 0 {
+        var d = buffer.append(heap, buffer.empty(heap, 64), "the change touches items of src/ the request does not allow: ");
+        borrow off as &offr in {
+            d = buffer.append(heap, d, buffer.bytes(offr));
+        }
+        d = more(heap, d, n_off);
+        borrow d as &dr in {
+            rep = error_line(heap, rep, "constraint-only-items", "-", buffer.bytes(dr));
+        }
+        buffer.drop(heap, d);
+    }
+    buffer.drop(heap, globs);
+    buffer.drop(heap, onlyv);
+    buffer.drop(heap, gone);
+    buffer.drop(heap, added);
+    buffer.drop(heap, off);
+    return rep;
+}
+
+// How many lines of `constraints` limit lines added (-1: none): the driver counts them only then.
+pub fn wants_line_count[&h, &c](heap: &!h Heap, ctext: &c [byte]) -> [heap] bool {
+    return limit_of(heap, ctext, "max-added-lines") >= 0;
+}
