@@ -116,11 +116,11 @@ fn main(world: World) -> [] int {
                     region cm {
                         // The checker command, one shell element after
                         // `-c`: "<checker> check --output json
-                        // --backend cranelift <file>".
+                        // <file>".
                         var cmd = buffer.empty(hh, 512);
                         cmd = buffer.append(hh, cmd, "-c\0");
                         cmd = buffer.append(hh, cmd, checker_path);
-                        cmd = buffer.append(hh, cmd, " check --std --output json --backend cranelift ");
+                        cmd = buffer.append(hh, cmd, " check --std --output json ");
                         cmd = buffer.append(hh, cmd, file);
                         if len(extra) > 0 {
                             cmd = buffer.append(hh, cmd, " ");

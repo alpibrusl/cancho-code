@@ -90,7 +90,7 @@ fn main(world: World) -> [] int {
                             var cmd = buffer.empty(hh, 192);
                             cmd = buffer.append(hh, cmd, "-c\0");
                             cmd = buffer.append(hh, cmd, checker_path);
-                            cmd = buffer.append(hh, cmd, " check --output json --backend cranelift ");
+                            cmd = buffer.append(hh, cmd, " check --output json ");
                             cmd = buffer.append(hh, cmd, dir);
                             cmd = buffer.append(hh, cmd, "/project.cho\0");
                             // The stand-in agents. `fix` repairs the file on

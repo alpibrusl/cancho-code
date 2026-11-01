@@ -585,7 +585,7 @@ fn profile_parse[&h, &z, &s, &k](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], 
                 errs = e9;
                 borrow wc as &wcq in {
                     if len(buffer.bytes(wcq)) > 0 {
-                        tool = put_field(heap, tool, "check", buffer.bytes(wcq), "check --std --output json --backend cranelift");
+                        tool = put_field(heap, tool, "check", buffer.bytes(wcq), "check --std --output json");
                     }
                 }
                 buffer.drop(heap, wc);
@@ -593,7 +593,7 @@ fn profile_parse[&h, &z, &s, &k](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], 
                 errs = e10;
                 borrow wp as &wpq in {
                     if len(buffer.bytes(wpq)) > 0 {
-                        tool = put_field(heap, tool, "compile", buffer.bytes(wpq), "check --std --backend cranelift");
+                        tool = put_field(heap, tool, "compile", buffer.bytes(wpq), "check --std");
                     }
                 }
                 buffer.drop(heap, wp);
@@ -601,7 +601,7 @@ fn profile_parse[&h, &z, &s, &k](heap: &!h Heap, fs: &z Fs(""), src: &s [byte], 
                 errs = e11;
                 borrow wt as &wtq in {
                     if len(buffer.bytes(wtq)) > 0 {
-                        tool = put_field(heap, tool, "test", buffer.bytes(wtq), "test --std --backend cranelift");
+                        tool = put_field(heap, tool, "test", buffer.bytes(wtq), "test --std");
                     }
                 }
                 buffer.drop(heap, wt);

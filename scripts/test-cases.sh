@@ -297,7 +297,7 @@ def assemble(name, ref, plan_obj, expect_pass=None, expect_fail=None):
         names.extend(re.findall(r"pub fn (test_\w+)", " ".join(u["tests"])))
     tf = os.path.join(tmp, name + ".tests.cho")
     open(tf, "w").write("edition 7;\nimport std.test;\n" + "\n".join(tests) + "\n")
-    p = subprocess.run([cancho, "test", "--std", "--backend", "cranelift", ref, tf], capture_output=True, cwd=tmp)
+    p = subprocess.run([cancho, "test", "--std", ref, tf], capture_output=True, cwd=tmp)
     text = p.stdout.decode("utf-8", "replace") + p.stderr.decode("utf-8", "replace")
     status = dict(re.findall(r"^test (\w+) \.\.\. (\w+)", text, re.M))
     if len(set(names)) != len(names):

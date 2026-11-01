@@ -94,7 +94,7 @@ export CANCHO_PACKAGES=&lt;compiler-checkout&gt;/packages
 "$CANCHO" build tests/programs/fix.cho \
     src/driver.cho src/checker.cho src/signature.cho \
     src/loop_check.cho src/snapshot.cho src/trail.cho src/acceptance.cho \
-    --std --backend cranelift -o ./fix</code></pre>
+    --std -o ./fix</code></pre>
 <p>Then point it at a broken program and an agent:</p>
 <pre><code>./fix "$CANCHO" /abs/path/project.cho "$(pwd)/scripts/cancho-agent.sh --provider ollama --model qwen3.8:27b" 4</code></pre>
 <p>The three arguments are the compiler (by its absolute path — the child of <code>exec_spawn</code> gets no <code>PATH</code> of its own), the file to fix, and the agent: any shell command that edits the file. The fourth is the attempt ceiling; an optional fifth is the seconds one agent turn may take (default 30), and a sixth is an acceptance command that must also hold before a file counts as verified. Exit codes: 0 verified, 1 the budgets named a stop, 2 usage, 3 the checker or the agent is away — a wait, rerun. Beside the file the run leaves <code>&lt;file&gt;.trail.jsonl</code> (one record per attempt), <code>&lt;file&gt;.feedback</code> (what the agent is shown) and, once verified, <code>&lt;file&gt;.snap0.cho</code>.</p>
@@ -151,7 +151,7 @@ fn main(world: World) -> [] int {
 }
 EOF</code></pre>
 <p>Two errors, both <code>type-mismatch</code> with different messages: <code>counts</code> returns a <code>bool</code> where its signature says <code>int</code>, and <code>label</code> returns a string where it says <code>int</code>. The checker answers both in one pass:</p>
-<pre><code>"$CANCHO" check demo/wordcount.cho --output json --backend cranelift</code></pre>
+<pre><code>"$CANCHO" check demo/wordcount.cho --output json</code></pre>
 
 <h3>3. Run the loop with the local model as the agent</h3>
 <pre><code>./fix "$CANCHO" "$(pwd)/demo/wordcount.cho" \
@@ -172,7 +172,7 @@ EOF</code></pre>
 [ISSUE_VERDICT]	verified	attempts 2
 $ echo $?
 0
-$ "$CANCHO" check demo/wordcount.cho --output json --backend cranelift
+$ "$CANCHO" check demo/wordcount.cho --output json
 {
   "refused": []
 }</code></pre>
@@ -199,9 +199,9 @@ $ echo $?
 "$CANCHO" build tests/programs/project.cho src/project.cho src/plan.cho \
     src/driver.cho src/checker.cho src/signature.cho src/loop_check.cho \
     src/snapshot.cho src/trail.cho src/acceptance.cho src/splice.cho src/pool.cho src/parallel.cho \
-    --std --backend cranelift -o ./project</code></pre>
+    --std -o ./project</code></pre>
 <pre data-check="build" data-out="plancheck"><code>"$CANCHO" build tests/programs/plancheck.cho src/plan.cho \
-    --std --backend cranelift -o ./plancheck</code></pre>
+    --std -o ./plancheck</code></pre>
 
 <h3>2. Prepare the input</h3>
 <p>A run needs four things, none of which the model sees except the first three.</p>

@@ -77,11 +77,11 @@ fn add_command[&h, &k](heap: &!h Heap, b: buffer.Buffer, tool: &k [byte], which:
     var r = buffer.append(heap, b, tool_program(tool));
     r = buffer.append(heap, r, " ");
     if bytes.equal(which, "check") {
-        r = buffer.append(heap, r, tool_get(tool, "check", "check --std --output json --backend cranelift"));
+        r = buffer.append(heap, r, tool_get(tool, "check", "check --std --output json"));
     } else if bytes.equal(which, "compile") {
-        r = buffer.append(heap, r, tool_get(tool, "compile", "check --std --backend cranelift"));
+        r = buffer.append(heap, r, tool_get(tool, "compile", "check --std"));
     } else {
-        r = buffer.append(heap, r, tool_get(tool, "test", "test --std --backend cranelift"));
+        r = buffer.append(heap, r, tool_get(tool, "test", "test --std"));
     }
     return buffer.append(heap, r, " ");
 }
@@ -1660,7 +1660,7 @@ pub fn unit_worker[&h, &x, &c, &i, &z, &g](heap: &!h Heap, exec: &x Exec(""), cl
     let file = in_wd(heap, ws, uf, "", "");
     var cmd = buffer.append(heap, buffer.empty(heap, 512), "-c\0");
     cmd = buffer.append(heap, cmd, tool_program(checker));
-    cmd = buffer.append(heap, cmd, " check --std --output json --backend cranelift ");
+    cmd = buffer.append(heap, cmd, " check --std --output json ");
     cmd = buffer.append(heap, cmd, ws);
     cmd = buffer.append(heap, cmd, "/project.cho ");
     cmd = add_files(heap, cmd, ws, names);
@@ -1934,7 +1934,7 @@ fn unit_says[&h, &x, &c, &s, &t, &n, &k, &w, &ac, &lb](heap: &!h Heap, exec: &x 
 fn combined_holds[&h, &x, &c, &s, &t, &n, &m, &k, &w, &ac, &lb](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, src: &s [byte], tape: &t [int], nodes: &n [int], meta: &m [int], count: int, u: int, others: bool, checker: &k [byte], wd: &w [byte], integ: int, accept: &ac [byte], libs: &lb [byte]) -> [heap, exec(""), clock, poll] buffer.Buffer {
     var bad = buffer.empty(heap, 64);
     var cmd = buffer.append(heap, buffer.empty(heap, 512), tool_program(checker));
-    cmd = buffer.append(heap, cmd, " check --std --backend cranelift ");
+    cmd = buffer.append(heap, cmd, " check --std ");
     cmd = buffer.append(heap, cmd, wd);
     cmd = buffer.append(heap, cmd, "/project.cho ");
     let fl = plan.extra_files(heap, src, tape);

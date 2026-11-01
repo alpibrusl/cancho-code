@@ -122,7 +122,7 @@ def checks(path, service):
             return None
     else:
         files = [path, stub]
-    p = subprocess.run([cancho, "check", "--std", "--backend", "cranelift"] + files, capture_output=True)
+    p = subprocess.run([cancho, "check", "--std"] + files, capture_output=True)
     return p.returncode == 0
 
 def item_texts(text):

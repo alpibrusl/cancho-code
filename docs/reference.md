@@ -17,7 +17,7 @@ Ollama agent, and the `fix` front door — all in cancho, all gated.
 # Build the tool.
 "$CANCHO" build tests/programs/fix.cho src/driver.cho src/checker.cho \
     src/signature.cho src/loop_check.cho src/snapshot.cho src/trail.cho src/acceptance.cho \
-    --std --backend cranelift -o ./fix
+    --std -o ./fix
 
 # Fix a broken program with a local model (no key, no egress).
 ollama pull qwen3.8:27b
@@ -96,7 +96,7 @@ cancho agent-guidelines > guidelines.md
 ## Running the gates
 
 ```sh
-cancho test tests/loop_check_test.cho tests/signature_test.cho src/loop_check.cho src/signature.cho --std --backend cranelift
+cancho test tests/loop_check_test.cho tests/signature_test.cho src/loop_check.cho src/signature.cho --std
 CANCHO=<path> scripts/test-checker.sh
 CANCHO=<path> scripts/test-snapshot.sh
 CANCHO=<path> scripts/test-trail.sh

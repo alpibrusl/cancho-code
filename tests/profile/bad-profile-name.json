@@ -12,21 +12,15 @@
    "check",
    "--std",
    "--output",
-   "json",
-   "--backend",
-   "cranelift"
+   "json"
   ],
   "compile": [
    "check",
-   "--std",
-   "--backend",
-   "cranelift"
+   "--std"
   ],
   "test": [
    "test",
-   "--std",
-   "--backend",
-   "cranelift"
+   "--std"
   ]
  },
  "units": "functions",

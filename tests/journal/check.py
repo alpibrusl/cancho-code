@@ -54,7 +54,7 @@ elif what == "refusal":
     e = att(u, n)
     code = os.path.join(j, "blobs", e["code"])
     tmp = os.path.join(wd, "probe.cho"); open(tmp, "wb").write(blob(e["code"]))
-    r = subprocess.run([os.environ["CANCHO"], "check", "--std", "--output", "json", "--backend", "cranelift", tmp, os.path.join(wd, "main.cho")], capture_output=True)
+    r = subprocess.run([os.environ["CANCHO"], "check", "--std", "--output", "json", tmp, os.path.join(wd, "main.cho")], capture_output=True)
     os.remove(tmp)
     # the compiler names the file it was given: the journal's answer names the project file, the probe has a path of its own
     want = blob(e["checker"]).replace(os.path.join(wd, "project.cho").encode(), tmp.encode())

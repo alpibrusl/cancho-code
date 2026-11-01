@@ -51,7 +51,7 @@ pub fn drop[&h](heap: &!h Heap, a: Answer) -> [heap] int {
 //             a checker that never answers is `TimedOut`, below)
 //   `file`    the `.cho` path to check (named in `cmd` by the caller)
 //   `cmd`     the shell argv for the checker, built with `std.process.Argv`:
-//             `sh -c '<checker> check --output json --backend cranelift
+//             `sh -c '<checker> check --output json
 //             <file>'`. Measured, twice over: the child of `exec_spawn`
 //             gets exactly the environment passed and no PATH of its own
 //             (processes.md §4.3), so the checker runs by its absolute

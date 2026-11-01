@@ -436,7 +436,7 @@ else:
     def run(tests):
         tf = os.path.join(d, "guide-tests.cho")
         open(tf, "w").write("edition 7;\nimport std.test;\n" + "\n".join(tests) + "\n")
-        return subprocess.run([cancho, "test", "--std", "--backend", "cranelift", os.path.join(root, "tests", "fixtures", "guide", "kvfind.cho"), tf], capture_output=True, cwd=d)
+        return subprocess.run([cancho, "test", "--std", os.path.join(root, "tests", "fixtures", "guide", "kvfind.cho"), tf], capture_output=True, cwd=d)
     r = run(unit["tests"])
     if r.returncode != 0: bad.append("the guide's tests do not pass against the reference: " + (r.stdout + r.stderr).decode()[-300:])
     flipped = [t.replace('"a=1", "a", "1"', '"a=1", "a", "2"') for t in unit["tests"]]

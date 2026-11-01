@@ -17,9 +17,9 @@ The point is a second target language (the first one in view is cancho-ui: the U
 | `files.entry` | the file the units are written into (replaces `project.cho`) | `"project.cho"` |
 | `files.main` | the fixed program file every check compiles beside the entry (replaces `main.cho`; the build writes cancho's fixed `main` into it); `""` (none) is in the schema and refused as not implemented yet | `"main.cho"` |
 | `files.tests` | a unit's tests file; `{id}` (exactly once) is the unit's id (replaces `tests-<id>.cho`) | `"tests-{id}.cho"` |
-| `commands.check` | the words after the compiler for the unit's check, whose JSON answer is the loop's oracle | `["check","--std","--output","json","--backend","cranelift"]` |
-| `commands.compile` | the words after the compiler for the whole-program check whose exit code alone is read (the integration of parallel units) | `["check","--std","--backend","cranelift"]` |
-| `commands.test` | the words after the compiler for a unit's tests (the unit's verify, and the final gate) | `["test","--std","--backend","cranelift"]` |
+| `commands.check` | the words after the compiler for the unit's check, whose JSON answer is the loop's oracle | `["check","--std","--output","json"]` |
+| `commands.compile` | the words after the compiler for the whole-program check whose exit code alone is read (the integration of parallel units) | `["check","--std"]` |
+| `commands.test` | the words after the compiler for a unit's tests (the unit's verify, and the final gate) | `["test","--std"]` |
 | `units` | what a unit of the plan is: `"functions"` (a `signature` and its `examples`/`tests`) or `"components"` | `"functions"` |
 | `unit_tests` | how a unit's tests file is made: `"examples"` (each `CALL == EXPECTED` becomes a `test_<id>_<k>` cancho test, `src/project.cho` `write_tests`) or `"trace"` | `"examples"` |
 | `findings.key` | the key of a finding's rule in the check's JSON answer | `"rule"` |

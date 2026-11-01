@@ -19,7 +19,7 @@ After a build whose verdict is `done`, and only then, it writes
 Private helper units keep only their in-build tests (`tests-<id>.cho`). A plan that still has `cases` and no `tests` is expanded first (`src/cases.cho`), the way the
 plan agent does.
 
-It then runs the checker over both: `fmt --check`, and `test --std --backend cranelift tests/NAME_test.cho src/NAME.cho`. A library that does not compile with its tests
+It then runs the checker over both: `fmt --check`, and `test --std tests/NAME_test.cho src/NAME.cho`. A library that does not compile with its tests
 is not a library, and the step says so.
 
 ## The result
