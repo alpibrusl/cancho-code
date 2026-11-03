@@ -46,6 +46,7 @@ def main():
     ap.add_argument("--patch", action="store_true", help="the model returns only the code to add or change; a program splices it into the project (agent --output patch)")
     ap.add_argument("--plan", help="a plan to build instead of eval/<item>/plan.json (e.g. one a model wrote)")
     ap.add_argument("--jobs", type=int, default=1, help="how many units to build at once (project --jobs); 1 is the driver one unit at a time")
+    ap.add_argument("--agent-arg", action="append", default=[], help="an extra argument for the agent (repeatable), e.g. --agent-arg=--num-ctx --agent-arg=16384 --agent-arg=--port --agent-arg=11435 for a local server")
     ap.add_argument("--tools", default="/tmp/evaltools")
     ap.add_argument("--timeout", type=int, default=3600)
     a = ap.parse_args()
@@ -70,6 +71,7 @@ def main():
         if a.key_file: agent += ["--key-file", os.path.expanduser(a.key_file)]
         if a.workspace: agent += ["--workspace", a.workspace]
         if a.primer: agent += ["--primer", os.path.abspath(a.primer)]
+        agent += a.agent_arg
         if a.patch: agent += ["--output", "patch"]
         if a.thinking: agent += ["--thinking", a.thinking]
         if a.effort: agent += ["--effort", a.effort]
@@ -85,7 +87,7 @@ def main():
         open(os.path.join(wd, "run.log"), "w").write(out)
         json.dump({"item": a.item, "label": a.label, "run": i, "provider": a.provider, "model": a.model, "scaffold_chars": len(scaffold),
                    "seconds": seconds, "exit": rc, "cancho": cancho, "primer": a.primer, "max_tokens": a.max_tokens,
-                   "thinking": a.thinking, "effort": a.effort, "plan": plan_path, "patch": a.patch, "jobs": a.jobs}, open(os.path.join(wd, "run.json"), "w"), indent=1)
+                   "thinking": a.thinking, "effort": a.effort, "plan": plan_path, "patch": a.patch, "jobs": a.jobs, "agent_args": a.agent_arg}, open(os.path.join(wd, "run.json"), "w"), indent=1)
         env = dict(os.environ, CANCHO=cancho)
         ap_ = subprocess.run([sys.executable, audit, os.path.join(wd, "project.cho")], capture_output=True, text=True, env=env)
         open(os.path.join(wd, "audit.txt"), "w").write(ap_.stdout + ap_.stderr)
