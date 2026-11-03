@@ -216,6 +216,27 @@ fn segment_program[&s](s: &s [byte], lo: int, hi: int) -> [] (int, int) {
     return (start, end);
 }
 
+// Whether `answer` has a line that starts like cancho code (`fn `, `pub fn `, `struct `, `enum `, `import std.`), leading blanks aside. A reply with code in it and no
+// `edition N;` line is not a program (`program_span`), and the agent says so (exit 13) instead of calling it reasoning.
+pub fn has_code[&s](answer: &s [byte]) -> [] bool {
+    var i = 0;
+    var found = false;
+    while i < len(answer) && found == false {
+        var k = i;
+        while k < len(answer) && (int_of(answer[k]) == 32 || int_of(answer[k]) == 9) {
+            k = k + 1;
+        }
+        if match_at(answer, k, "fn ") || match_at(answer, k, "pub fn ") || match_at(answer, k, "struct ") || match_at(answer, k, "enum ") || match_at(answer, k, "import std.") {
+            found = true;
+        }
+        while i < len(answer) && int_of(answer[i]) != 10 {
+            i = i + 1;
+        }
+        i = i + 1;
+    }
+    return found;
+}
+
 // The file in a model's answer: where it starts and ends in `answer`, or
 // (-1, -1). Models leak their reasoning markers into the answer; what follows
 // the last `</think>` is the answer, and when nothing there is a program the

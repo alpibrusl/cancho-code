@@ -93,10 +93,19 @@ fn source_line[&s](source: &s [byte], line: int) -> [] (int, int) {
     return (start, end);
 }
 
+// The last path component of `path` (after the last `/`).
+pub fn base_name[&t](path: &t [byte]) -> [] &t [byte] {
+    var k = len(path);
+    while k > 0 && int_of(path[k - 1]) != 47 {
+        k = k - 1;
+    }
+    return path[k..len(path)];
+}
+
 // One line per refusal (at most eight), each with the source line and a caret
 // under the column: "line 9, column 39" is hard to find by counting. When the
 // feedback is not the checker's JSON, its first 1,500 bytes as they are.
-pub fn feedback_text[&h, &s, &f](heap: &!h Heap, source: &s [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
+pub fn feedback_text[&h, &s, &w, &f](heap: &!h Heap, source: &s [byte], own: &w [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
     var out = buffer.empty(heap, 512);
     var valid = true;
     let tape_box = box_slice(heap, json.tape_len(feedback), 0);
@@ -116,12 +125,34 @@ pub fn feedback_text[&h, &s, &f](heap: &!h Heap, source: &s [byte], feedback: &f
                     let col = json.get(feedback, tape, pos, "column");
                     let msg = json.get(feedback, tape, r, "message");
                     let rule = json.get(feedback, tape, r, "rule");
+                    let pfile = json.get(feedback, tape, pos, "file");
                     if pos < 0 || line < 0 || col < 0 || msg < 0 || rule < 0 || json.is_int(tape, line) == false || json.is_int(tape, col) == false || json.is_string(tape, msg) == false || json.is_string(tape, rule) == false {
                         valid = false;
                     } else {
                         let l = json.to_int(feedback, tape, line);
                         let c = json.to_int(feedback, tape, col);
-                        out = buffer.append(heap, out, "- line ");
+                        // a refusal in another file (main.cho, a module file) is named by that file: the number is that file's, so the excerpt below, which is this file's, would be a different line
+                        var other = false;
+                        var fname = buffer.empty(heap, 16);
+                        if pfile >= 0 && json.is_string(tape, pfile) {
+                            buffer.drop(heap, fname);
+                            fname = append_string(heap, buffer.empty(heap, 64), feedback, tape, pfile);
+                            borrow fname as &fnr in {
+                                let bn = base_name(buffer.bytes(fnr));
+                                if len(bn) > 0 && bytes.equal(bn, own) == false {
+                                    other = true;
+                                }
+                            }
+                        }
+                        out = buffer.append(heap, out, "- ");
+                        if other {
+                            borrow fname as &fnr2 in {
+                                out = buffer.append(heap, out, base_name(buffer.bytes(fnr2)));
+                            }
+                            out = buffer.push(heap, out, byte_of(32));
+                        }
+                        buffer.drop(heap, fname);
+                        out = buffer.append(heap, out, "line ");
                         out = append_int(heap, out, l);
                         out = buffer.append(heap, out, ", column ");
                         out = append_int(heap, out, c);
@@ -131,7 +162,7 @@ pub fn feedback_text[&h, &s, &f](heap: &!h Heap, source: &s [byte], feedback: &f
                         out = append_string(heap, out, feedback, tape, rule);
                         out = buffer.append(heap, out, ")\n");
                         let (a, b) = source_line(source, l);
-                        if a >= 0 {
+                        if a >= 0 && other == false {
                             out = buffer.append(heap, out, "    ");
                             out = buffer.append(heap, out, source[a..b]);
                             out = buffer.append(heap, out, "\n    ");
@@ -211,7 +242,7 @@ fn lead_lines[&h, &t](heap: &!h Heap, out: buffer.Buffer, text: &t [byte], lead:
 
 // The prompt: the task (or the instruction to fix), the checker's current
 // output, then the file between rules.
-fn compose[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte], mode: int) -> [heap] buffer.Buffer {
+fn compose[&h, &s, &w, &k, &f](heap: &!h Heap, source: &s [byte], own: &w [byte], task: &k [byte], feedback: &f [byte], mode: int) -> [heap] buffer.Buffer {
     let patch = mode == 1;
     let change = mode == 2;
     var p = buffer.empty(heap, 4096);
@@ -267,7 +298,7 @@ fn compose[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], f
     }
     buffer.drop(heap, rest);
     buffer.drop(heap, hint);
-    let fb = feedback_text(heap, source, feedback);
+    let fb = feedback_text(heap, source, own, feedback);
     borrow fb as &fr in {
         if len(buffer.bytes(fr)) > 0 {
             p = buffer.append(heap, p, "The current output of the compiler and of the checks on the file:\n");
@@ -297,16 +328,16 @@ fn compose[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], f
 }
 
 // The prompt that asks for the complete file.
-pub fn build[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
-    return compose(heap, source, task, feedback, 0);
+pub fn build[&h, &s, &w, &k, &f](heap: &!h Heap, source: &s [byte], own: &w [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
+    return compose(heap, source, own, task, feedback, 0);
 }
 
 // The prompt that asks for only the code to add or change: what the model re-emits is the unit, not the whole file (`splice` puts it in).
-pub fn build_patch[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
-    return compose(heap, source, task, feedback, 1);
+pub fn build_patch[&h, &s, &w, &k, &f](heap: &!h Heap, source: &s [byte], own: &w [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
+    return compose(heap, source, own, task, feedback, 1);
 }
 
 // The prompt of a change request for a repository: `source` is the bundle of its files (`=== FILE <path>` and the text), the answer an envelope.
-pub fn build_change[&h, &s, &k, &f](heap: &!h Heap, source: &s [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
-    return compose(heap, source, task, feedback, 2);
+pub fn build_change[&h, &s, &w, &k, &f](heap: &!h Heap, source: &s [byte], own: &w [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
+    return compose(heap, source, own, task, feedback, 2);
 }

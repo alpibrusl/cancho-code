@@ -65,7 +65,7 @@ fn main(world: World) -> [] int {
                 borrow source as &sq in {
                     borrow task as &tq in {
                         borrow feedback as &fq2 in {
-                            let asked = prompt.build_patch(hh, buffer.bytes(sq), buffer.bytes(tq), buffer.bytes(fq2));
+                            let asked = prompt.build_patch(hh, buffer.bytes(sq), "project.cho", buffer.bytes(tq), buffer.bytes(fq2));
                             borrow asked as &aq in {
                                 io.write_all(i, buffer.bytes(aq));
                             }

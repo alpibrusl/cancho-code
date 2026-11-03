@@ -77,6 +77,12 @@ expect "gave up no-program: verdict" "$(printf '%s' "$out" | grep ISSUE_VERDICT)
 expect "gave up no-program: the signature is named" "$(trailf "$t" sig)" "agent:gave-up:no-program agent:gave-up:no-program "
 rm -rf "$d"
 d=$(fresh)
+out=$("$exe" custom "$CANCHO" "$d" "exit 13" 2>&1); t="$d/project.cho.trail.jsonl"
+expect "gave up no-edition: verdict" "$(printf '%s' "$out" | grep ISSUE_VERDICT)" "$(printf '[ISSUE_VERDICT]\tfailed\tsignature')"
+expect "gave up no-edition: the signature is named" "$(trailf "$t" sig)" "agent:gave-up:no-edition agent:gave-up:no-edition "
+grep -q 'no `edition N;` line' "$d/project.cho.feedback" || { echo "FAIL: gave up no-edition: the next turn's feedback does not say the edition line is missing" >&2; fail=1; }
+rm -rf "$d"
+d=$(fresh)
 out=$("$exe" custom "$CANCHO" "$d" "exit 12" 2>&1)
 expect "gave up splice: the signature is named" "$(trailf "$d/project.cho.trail.jsonl" sig)" "agent:gave-up:splice agent:gave-up:splice "
 rm -rf "$d"
@@ -93,7 +99,7 @@ out=$("$exe" custom "$CANCHO" "$d" "if [ -f $d/seen ]; then cp $d/fixed.cho $d/p
 expect "gave up then fixed: verdict" "$(printf '%s' "$out" | grep ISSUE_VERDICT)" "$(printf '[ISSUE_VERDICT]\tverified\tattempts 2')"
 rm -rf "$d"
 # every other non-zero exit keeps its meaning: the agent is away (a plain failure, a usage error, a provider code of a third-party agent)
-for code in 1 2 3 4 9 13 127; do
+for code in 1 2 3 4 9 14 127; do
     d=$(fresh)
     out=$("$exe" custom "$CANCHO" "$d" "exit $code" 2>&1)
     expect "plain exit $code: verdict" "$(printf '%s' "$out" | grep ISSUE_VERDICT)" "$(printf '[ISSUE_VERDICT]\tunavailable\tagent')"

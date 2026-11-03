@@ -67,9 +67,9 @@ fn main(world: World) -> [] int {
                             var p = buffer.empty(hh, 16);
                             buffer.drop(hh, p);
                             if bytes.equal(mode, "patch") {
-                                p = prompt.build_patch(hh, buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                                p = prompt.build_patch(hh, buffer.bytes(sr), "project.cho", buffer.bytes(tr), buffer.bytes(fr));
                             } else {
-                                p = prompt.build(hh, buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                                p = prompt.build(hh, buffer.bytes(sr), "project.cho", buffer.bytes(tr), buffer.bytes(fr));
                             }
                             borrow p as &pr in {
                                 io.write_all(i, buffer.bytes(pr));

@@ -197,6 +197,15 @@ printf 'edition 7;\nfn keep() -> [] int { return 8; }\n' > "$d/prose.cho"; cp "$
 ag "$d/prose.cho" >/dev/null 2>&1; rc=$?
 [ "$rc" != 0 ] || { echo "FAIL: reasoning: exit code 0 when every sample was prose" >&2; fail=1; }
 expect "reasoning: the file is untouched" "$(cat "$d/prose.cho")" "$(cat "$d/prose.before")"
+# code with no `edition N;` line is not a program, and the agent says so (exit 13), apart from prose (exit 11): the model is told what is missing
+printf '```cho\nimport std.math;\n\nfn clamp(x: int) -> [] int {\n    return x;\n}\n```\n' > "$d/response.txt"
+printf 'edition 7;\nfn keep() -> [] int { return 8; }\n' > "$d/noed.cho"; cp "$d/noed.cho" "$d/noed.before"
+ag "$d/noed.cho" >/dev/null 2>"$d/noed.err"; rc=$?
+expect "no edition line: code is exit 13 (gave up, no edition line)" "$rc" 13
+expect "no edition line: the file is untouched" "$(cat "$d/noed.cho")" "$(cat "$d/noed.before")"
+printf 'UNIT: roman\nSIGNATURE: fn to_roman(n: int) -> [] int\nDESCRIPTION: Roman numeral.\n' > "$d/response.txt"
+ag "$d/noed.cho" >/dev/null 2>&1; rc=$?
+expect "no edition line: the task text echoed back (no code line) is still exit 11" "$rc" 11
 # a leaked reasoning marker: the program, then a closing fence and `</think>` (seen on the first real acceptance runs: it left a stray
 # backtick at the end of the file), or reasoning, `</think>`, then the program
 printf 'edition 7;\nfn before() -> [] int { return 10; }\n```\n</think>\n' > "$d/response.txt"

@@ -145,5 +145,31 @@ print("planprompt: 6 cases")
 sys.exit(1 if fails else 0)
 PY
 rc=$?
+[ "$rc" = 0 ] || { rm -rf "$d"; echo "prompt gate: FAILED" >&2; exit 1; }
+
+# a refusal in another file (the driver's fixed main.cho): named by that file, its line number is that file's, and the excerpt is NOT taken from this file.
+# The bug it fixes: A-basics-1 (unit leap, M8) showed "line 3, column 1: function `main` is defined twice" over the line `import std.math;` of project.cho.
+other_case() { # gate-binary
+    mkdir -p "$d/oc"; f="$d/oc/project.cho"
+    printf 'edition 7;\n\nimport std.math;\n\nfn is_leap_year(y: int) -> [] bool {\n    return true;\n}\n\nfn main(world: World) -> [] int {\n    return 0;\n}\n' > "$f"
+    printf '{"refused":[{"rule":"duplicate-declaration","message":"function `main` is defined twice","position":{"file":"/w/main.cho","line":3,"column":1}},{"rule":"type-mismatch","message":"expected `bool`","position":{"file":"/w/project.cho","line":6,"column":12}}]}' > "$f.feedback"
+    "$1" "$f" x x x
+}
+"$CANCHO" build "$root/tests/programs/prompt_gate.cho" "$root/src/prompt.cho" --std --backend cranelift -o "$d/gate2" >/dev/null 2>&1 || { echo "gate did not rebuild" >&2; exit 2; }
+out=$(other_case "$d/gate2")
+want1='- main.cho line 3, column 1: function `main` is defined twice (rule duplicate-declaration)'
+want2='- line 6, column 12: expected `bool` (rule type-mismatch)
+    '"    return true;"
+printf '%s\n' "$out" | grep -qF -- "$want1" || { echo "FAIL: a refusal in main.cho is not named by its file" >&2; rc=1; }
+printf '%s\n' "$out" | grep -qF -- "    import std.math;" && { echo "FAIL: main.cho's line number was shown over project.cho's line" >&2; rc=1; }
+printf '%s\n' "$out" | grep -qF -- "$want2" || { echo "FAIL: a refusal in project.cho lost its excerpt" >&2; rc=1; }
+# the mutant that restores the bug (every refusal is taken as this file's) must fail the same checks
+sed 's/if len(bn) > 0 \&\& bytes.equal(bn, own) == false {/if false {/' "$root/src/prompt.cho" > "$d/prompt.cho"
+cmp -s "$d/prompt.cho" "$root/src/prompt.cho" && { echo "FAIL: the mutation did not apply" >&2; rc=1; }
+mkdir -p "$d/mut"; cp "$d/prompt.cho" "$d/mut/prompt.cho"
+"$CANCHO" build "$root/tests/programs/prompt_gate.cho" "$d/mut/prompt.cho" --std --backend cranelift -o "$d/gate3" >/dev/null 2>&1 || { echo "mutant did not build" >&2; exit 2; }
+mout=$(other_case "$d/gate3")
+printf '%s\n' "$mout" | grep -qF -- "$want1" && { echo "FAIL: the mutant (bug restored) passed the main.cho check" >&2; rc=1; }
+echo "prompt other-file refusals: ok"
 rm -rf "$d"
 [ "$rc" = 0 ] && echo "prompt gate: ok" || { echo "prompt gate: FAILED" >&2; exit 1; }
