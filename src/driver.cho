@@ -68,6 +68,9 @@ pub fn gave_up_sig(code: int) -> [] &static [byte] {
     if code == 12 {
         return "agent:gave-up:splice";
     }
+    if code == 13 {
+        return "agent:gave-up:no-edition";
+    }
     return "";
 }
 
@@ -296,6 +299,12 @@ fn run_core[&h, &x, &c, &i, &z, &f, &a, &k, &p, &q, &j, &u, &ht, &fk, &fc](heap:
                                 // signature, and the file is as it was (docs/project.md, "The agent's exit codes").
                                 var oc = loop_check.Outcome::Retryable;
                                 var sg = buffer.append(heap, buffer.empty(heap, 64), gave);
+                                if n == 13 {
+                                    // the model wrote code with no `edition N;` line: the next turn is told so, through the channel the acceptance output uses (it follows the checker's answer in `<file>.feedback`)
+                                    borrow accpath as &aq13 in {
+                                        acceptance.note(heap, fs, buffer.bytes(aq13), "your last reply had code in it but no `edition N;` line, so it was not read as a program: a program starts with that line (the file below starts with it). Reply with the complete file, beginning with it.\n");
+                                    }
+                                }
                                 if n == 0 {
                                     let (answer, said_by_checker) = checker.run_said_as(heap, exec, clock, file, check_cmd, 4096, 30000, key, clean_text);
                                     buffer.drop(heap, jchk);

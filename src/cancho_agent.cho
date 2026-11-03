@@ -809,17 +809,17 @@ fn go[&h, &f, &n, &c, &i, &g](heap: &!h Heap, fs: &f Fs(""), net: &n Net(""), cl
 }
 
 // The request body for this round: the prompt (to fix a program, or to write a plan) in the provider's wire form.
-fn make_body[&h, &m, &y, &s, &p, &g, &r, &k, &f](heap: &!h Heap, local: bool, plan_mode: bool, patch_out: bool, change_out: bool, model: &m [byte], num_ctx: int, max_tokens: int, thinking: &y [byte], effort: &s [byte], primer: &p [byte], guide: &g [byte], source: &r [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
+fn make_body[&h, &m, &y, &s, &p, &g, &r, &w, &k, &f](heap: &!h Heap, local: bool, plan_mode: bool, patch_out: bool, change_out: bool, model: &m [byte], num_ctx: int, max_tokens: int, thinking: &y [byte], effort: &s [byte], primer: &p [byte], guide: &g [byte], source: &r [byte], own: &w [byte], task: &k [byte], feedback: &f [byte]) -> [heap] buffer.Buffer {
     var asked = buffer.empty(heap, 16);
     buffer.drop(heap, asked);
     if plan_mode {
         asked = planprompt.build(heap, guide, source, task, feedback);
     } else if change_out {
-        asked = prompt.build_change(heap, source, task, feedback);
+        asked = prompt.build_change(heap, source, own, task, feedback);
     } else if patch_out {
-        asked = prompt.build_patch(heap, source, task, feedback);
+        asked = prompt.build_patch(heap, source, own, task, feedback);
     } else {
-        asked = prompt.build(heap, source, task, feedback);
+        asked = prompt.build(heap, source, own, task, feedback);
     }
     var body = buffer.empty(heap, 16);
     borrow asked as &ar in {
@@ -909,18 +909,18 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                         borrow feedback as &fr in {
                             buffer.drop(heap, body);
                             buffer.drop(heap, asked_now);
-                            asked_now = calls.asked_text(heap, plan_mode, patch_out, change_out, buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                            asked_now = calls.asked_text(heap, plan_mode, patch_out, change_out, buffer.bytes(gdr), buffer.bytes(sr), prompt.base_name(project), buffer.bytes(tr), buffer.bytes(fr));
                             has_primer = len(buffer.bytes(pr)) > 0;
                             if attempt == 1 {
                                 calls.keep_primer(heap, fs, jdir, project, plan_mode, buffer.bytes(pr));
                             }
                             let te = task_effort(buffer.bytes(tr));
                             if len(eff_over) > 0 {
-                                body = make_body(heap, local, plan_mode, patch_out, change_out, model, num_ctx, bound, thinking, eff_over, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                                body = make_body(heap, local, plan_mode, patch_out, change_out, model, num_ctx, bound, thinking, eff_over, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), prompt.base_name(project), buffer.bytes(tr), buffer.bytes(fr));
                             } else if len(te) > 0 {
-                                body = make_body(heap, local, plan_mode, patch_out, change_out, model, num_ctx, bound, thinking, te, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                                body = make_body(heap, local, plan_mode, patch_out, change_out, model, num_ctx, bound, thinking, te, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), prompt.base_name(project), buffer.bytes(tr), buffer.bytes(fr));
                             } else {
-                                body = make_body(heap, local, plan_mode, patch_out, change_out, model, num_ctx, bound, thinking, effort, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), buffer.bytes(tr), buffer.bytes(fr));
+                                body = make_body(heap, local, plan_mode, patch_out, change_out, model, num_ctx, bound, thinking, effort, buffer.bytes(pr), buffer.bytes(gdr), buffer.bytes(sr), prompt.base_name(project), buffer.bytes(tr), buffer.bytes(fr));
                             }
                         }
                     }
@@ -1347,7 +1347,10 @@ fn ask_and_write[&h, &f, &n, &c, &i, &g, &p, &m, &o, &q, &y, &s](heap: &!h Heap,
                                             }
                                         } else {
                                             let (a, z) = reply.program_span(buffer.bytes(xr));
-                                            if a < 0 {
+                                            if a < 0 && reply.has_code(buffer.bytes(xr)) {
+                                                gave = 13;
+                                                io.error_all(io, "cancho-agent: a sample has code but no `edition N;` line, so it is not a program\n");
+                                            } else if a < 0 {
                                                 gave = 11;
                                                 io.error_all(io, "cancho-agent: a sample has no program in it (reasoning, not a file)\n");
                                             } else {

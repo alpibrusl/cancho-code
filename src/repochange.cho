@@ -870,7 +870,7 @@ pub fn run[&h, &x, &c, &i, &z, &a, &r, &w, &q, &k, &d, &p, &m, &g, &o](heap: &!h
                             }
                         }
                         buffer.drop(heap, rep);
-                    } else if acode == 10 || acode == 11 || acode == 12 {
+                    } else if acode == 10 || acode == 11 || acode == 12 || acode == 13 {
                         l2 = buffer.append(heap, l2, "\trefused\tagent-gave-up\n");
                         borrow l2 as &l2r in {
                             say(heap, io, fs, buffer.bytes(lg), buffer.bytes(l2r));

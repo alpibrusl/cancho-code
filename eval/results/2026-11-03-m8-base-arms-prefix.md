@@ -1,6 +1,8 @@
-# M8 phase 0: the untuned Qwen2.5-1.5B-Instruct on the 13 hand-planned items (arms A and B)
+# PRE-FIX: M8 phase 0: the untuned Qwen2.5-1.5B-Instruct on the 13 hand-planned items (arms A and B)
 
 Experiment M8 of cancho-gpu (`docs/roadmap-models.md` section 7): does a small local model fine-tuned on cancho do cancho-code's job better than the same model untuned? This file is the untuned half: arm A (the standard primer in context) and arm B (no primer). The tuned arms C and D are a later phase; the decision rule is pre-registered in that document. Raw numbers: `2026-11-03-m8-base-arms.json` (per run); the run directories (journals, prompts, replies) are kept outside git.
+
+> **Pre-fix baseline, kept for the record.** Run before the two harness defects below were fixed (the refusal excerpt from the wrong file; the generic `no-program` for code without an `edition N;` line). Because the fixes change the feedback the model sees, arms A and B were re-run from scratch: see `2026-11-03-m8-base-arms-fixed.md`. Both files precede any tuned result.
 
 ## Conditions
 
