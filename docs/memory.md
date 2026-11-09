@@ -75,6 +75,10 @@ build/cancho-build "$CANCHO" brief.txt run "$AGENT" --provider ... --model ... -
 
 Before the journal, a run left `trail-<unit>.jsonl` (the signature and the outcome of each attempt) but no code. `--legacy` reads those: counts, runs, units and the success of the next attempt, never a fix. Raw replies (`raw.txt`) are not matched to attempts: it would be a guess.
 
+## Next: decisions
+
+`--promote` writes nothing and nothing records what a person did with it. [memory-decisions.md](memory-decisions.md) is a design (not built) for accepting or rejecting a proposal, recorded on disk.
+
 ## What the board can show later
 
 `src/board.cho` and `docs/board.html` are not touched by this work. The contract is the `memory` field of the `attempt` events ([journal.md](journal.md)): a unit's attempts that carried a lesson, with its id and text. `lessons.jsonl` is one more plain file the board could list.
