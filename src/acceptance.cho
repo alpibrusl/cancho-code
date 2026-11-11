@@ -105,6 +105,9 @@ fn line_sig[&h, &o](heap: &!h Heap, sig: buffer.Buffer, out: &o [byte]) -> [heap
     return b;
 }
 
+// The command runs with `CANCHO_NO_DEPRECATION_WARNING=1`: a compiler that still builds through its deprecated Rust path says so on standard error,
+// and the command's standard error is part of `said` (`exec 2>&1`), so the warning would lead the note the agent reads and the journal's acceptance blob,
+// ahead of the failure it is there to show. A compiler that has no such warning ignores the variable.
 pub fn run[&h, &x, &c, &k, &p](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, text: &k [byte], file: &p [byte], most: int, timeout: int) -> [heap, exec(""), clock, poll] Result {
     var argv = buffer.empty(heap, len(text) + len(file) + 32);
     argv = buffer.append(heap, argv, "-c\0exec 2>&1; ");
@@ -121,7 +124,7 @@ pub fn run[&h, &x, &c, &k, &p](heap: &!h Heap, exec: &x Exec(""), clock: &c Cloc
         }
         process.Channels::Ok(to_child, child_in, from_child, child_out) => {
             borrow argv as &av in {
-                match exec_spawn(exec, "/bin/sh", buffer.bytes(av), "PATH=/usr/local/bin:/usr/bin:/bin\0", Stdio::Pipe(child_in), Stdio::Pipe(child_out), Stdio::Null) {
+                match exec_spawn(exec, "/bin/sh", buffer.bytes(av), "PATH=/usr/local/bin:/usr/bin:/bin\0CANCHO_NO_DEPRECATION_WARNING=1\0", Stdio::Pipe(child_in), Stdio::Pipe(child_out), Stdio::Null) {
                     Spawned::Failed(e) => {
                         process.close(to_child, from_child);
                         why = buffer.append(heap, why, "acceptance:error");
