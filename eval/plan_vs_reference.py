@@ -26,7 +26,7 @@ def run(ref_path, body, module=""):
     d = tempfile.mkdtemp(prefix="pvr-")
     t = os.path.join(d, "tests.cho")
     open(t, "w").write("edition 7;\n" + ("module %s;\n" % module if module else "") + "import std.test;\n" + body + "\n")
-    p = subprocess.run([C, "test", "--std", "--backend", "cranelift"] + (ref_path if isinstance(ref_path, list) else [ref_path]) + [t], capture_output=True, text=True)
+    p = subprocess.run([C, "test", "--std"] + (ref_path if isinstance(ref_path, list) else [ref_path]) + [t], capture_output=True, text=True)
     out = p.stdout + p.stderr
     m = re.search(r"test result: \w+\. (\d+) passed; (\d+) failed", out)
     if m:

@@ -30,7 +30,7 @@ expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail
 d=$(mktemp -d -t cc-native-XXXXXX)
 exe="$d/post_gate"
 "$CANCHO" build "$root/tests/programs/post_gate.cho" "$root/src/provider.cho" "$root/vendor/fetch_io.cho" \
-    "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho --std --backend cranelift -o "$exe" >/dev/null 2>"$d/build.err" \
+    "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho --std -o "$exe" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }
 
 cat > "$d/stub.py" <<'PY'

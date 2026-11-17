@@ -22,7 +22,7 @@ command -v python3 >/dev/null 2>&1 || { echo "no python3 on PATH" >&2; exit 2; }
 root=$(cd "$(dirname "$0")/.." && pwd)
 src="${REVIEW_SRC:-$root/src/review.cho}"
 d=$(mktemp -d -t cc-review-XXXXXX)
-build() { "$CANCHO" build "$@" --std --backend cranelift >/dev/null 2>"$d/build.err" || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }; }
+build() { "$CANCHO" build "$@" --std >/dev/null 2>"$d/build.err" || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }; }
 build "$root/tests/programs/review_gate.cho" "$src" -o "$d/gate"
 build "$root/tests/programs/cases_gate.cho" "$root/src/cases.cho" -o "$d/cases"
 build "$root/tests/programs/plancheck.cho" "$root/src/plan.cho" -o "$d/plancheck"

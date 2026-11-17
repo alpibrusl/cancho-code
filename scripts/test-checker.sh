@@ -27,7 +27,7 @@ exe=$(mktemp -t cc-gate-XXXXXX)
 
 "$CANCHO" build "$root/tests/programs/checker_gate.cho" "$root/src/checker.cho" \
     "$root/src/signature.cho" "$root/src/loop_check.cho" \
-    --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
+    --std -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 ok_file=/tmp/cc_gate_ok.cho
 bad_file=/tmp/cc_gate_bad.cho

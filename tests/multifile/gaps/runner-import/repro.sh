@@ -8,6 +8,6 @@
 # files import"): both runs pass, the second import being the same one.
 cd "$(dirname "$0")" || exit 2
 echo "--- with the root file that imports store:"
-"${CANCHO:-cancho}" test --std --backend cranelift project.cho store.cho tests-store.cho 2>&1 | grep -v '^ld:' | head -6
+"${CANCHO:-cancho}" test --std project.cho store.cho tests-store.cho 2>&1 | grep -v '^ld:' | head -6
 echo "--- without it:"
-"${CANCHO:-cancho}" test --std --backend cranelift store.cho tests-store.cho 2>&1 | grep -v '^ld:' | head -6
+"${CANCHO:-cancho}" test --std store.cho tests-store.cho 2>&1 | grep -v '^ld:' | head -6

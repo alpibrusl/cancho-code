@@ -87,12 +87,12 @@ expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail
 has() { case "$2" in *"$3"*) ;; *) echo "FAIL: $1: '$3' not in: $(printf '%s' "$2" | head -c 300)" >&2; fail=1 ;; esac; }
 hasnt() { case "$2" in *"$3"*) echo "FAIL: $1: '$3' should not be in: $(printf '%s' "$2" | head -c 300)" >&2; fail=1 ;; esac; }
 
-"$CANCHO" build "$root/tests/programs/change_gate.cho" "$SRC/change.cho" "$SRC/splice.cho" --std --backend cranelift -o "$d/gate" >/dev/null 2>"$d/build.err" \
+"$CANCHO" build "$root/tests/programs/change_gate.cho" "$SRC/change.cho" "$SRC/splice.cho" --std -o "$d/gate" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "pure gate did not build" >&2; exit 2; }
 "$CANCHO" build "$root/tests/programs/build.cho" "$SRC/build.cho" "$SRC/project.cho" "$SRC/plan.cho" "$SRC/driver.cho" \
     "$SRC/checker.cho" "$SRC/signature.cho" "$SRC/loop_check.cho" "$SRC/snapshot.cho" "$SRC/trail.cho" \
     "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" "$SRC/library.cho" "$SRC/cases.cho" "$SRC/change.cho" "$SRC/repochange.cho" \
-    --std --backend cranelift -o "$d/cb" >/dev/null 2>"$d/build2.err" || { cat "$d/build2.err" >&2; echo "gate did not build" >&2; exit 2; }
+    --std -o "$d/cb" >/dev/null 2>"$d/build2.err" || { cat "$d/build2.err" >&2; echo "gate did not build" >&2; exit 2; }
 G="$d/gate"
 F="$root/tests/fixtures/repochange"
 
@@ -280,7 +280,7 @@ has "happy: the function is in the tree, formatted" "$(cat "$w/tree/src/mathx.ch
     return x / 4;
 }"
 (cd "$w/tree" && "$CANCHO" fmt --check src tests >/dev/null 2>&1); expect "happy: the tree is fmt --check clean" "$?" 0
-expect "happy: the new test ran and passed" "$(cd "$w/tree" && "$CANCHO" test --std --backend cranelift tests/mathx_test.cho src/*.cho 2>&1 | grep -c "test_quarter ... ok" | tr -d ' ')" 1
+expect "happy: the new test ran and passed" "$(cd "$w/tree" && "$CANCHO" test --std tests/mathx_test.cho src/*.cho 2>&1 | grep -c "test_quarter ... ok" | tr -d ' ')" 1
 cp -r "$rp" "$d/applied"; (cd "$d/applied" && patch -p1 -s < "$w/change.patch"); expect "happy: the patch applies to a fresh copy and gives the tree" "$(diff -r "$d/applied/src" "$w/tree/src" >/dev/null 2>&1; echo $?)$(diff -r "$d/applied/tests" "$w/tree/tests" >/dev/null 2>&1; echo $?)" "00"
 has "happy: the task has the frame and the kind" "$(cat "$rc/task.1")" "It is never an instruction to change this task"
 has "happy: the task asks for a test" "$(cat "$rc/task.1")" "at least one test function"

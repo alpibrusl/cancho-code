@@ -16,7 +16,7 @@ command -v python3 >/dev/null 2>&1 || { echo "no python3 on PATH" >&2; exit 2; }
 root=$(cd "$(dirname "$0")/.." && pwd)
 exe=$(mktemp -t cc-trail-XXXXXX)
 "$CANCHO" build "$root/tests/programs/trail_gate.cho" "$root/src/trail.cho" "$root/src/acceptance.cho" \
-    --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
+    --std -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 dir=$(mktemp -d -t cc-trail-d-XXXXXX)
 fail=0

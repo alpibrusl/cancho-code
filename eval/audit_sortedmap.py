@@ -95,7 +95,7 @@ def run(kind):
     tests = tests_for(kind); n = len(tests)
     f = tempfile.NamedTemporaryFile("w", suffix=".cho", delete=False, encoding="utf-8")
     f.write(head + body + HELPERS + "\n".join(tests)); f.close()
-    r = subprocess.run([C, "test", f.name, "--std", "--backend", "cranelift"], capture_output=True, text=True)
+    r = subprocess.run([C, "test", f.name, "--std"], capture_output=True, text=True)
     os.unlink(f.name)
     m = re.search(r"(\d+) passed; (\d+) failed", r.stdout)
     if m: return int(m.group(1)), n, ""

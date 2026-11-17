@@ -524,7 +524,7 @@ fn format_and_run[&h, &x, &c, &i, &z, &k, &n, &l, &sp, &tp, &sk](heap: &!h Heap,
         run = buffer.append(heap, run, tstpath);
         run = buffer.append(heap, run, " && ");
         run = buffer.append(heap, run, checker);
-        run = buffer.append(heap, run, " test --std --backend cranelift ");
+        run = buffer.append(heap, run, " test --std ");
         run = buffer.append(heap, run, tstpath);
         run = buffer.append(heap, run, " ");
         run = buffer.append(heap, run, srcpath);

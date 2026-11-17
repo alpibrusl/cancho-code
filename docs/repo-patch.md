@@ -54,7 +54,7 @@ Each attempt starts from a fresh copy of the base (`WORKDIR/tree`), so a retry n
    * **a test is required**: see below, `no-test-added`; for a feature the tests must call the new code (`test-not-exercising`);
    * **the constraints**, when `--constraints` was given: see below, `constraint-*`;
    * the repo's own `cancho fmt --check src tests` (`fmt-check-failed`);
-   * `cancho test --std --backend cranelift tests/X_test.cho src/*.cho` for every `tests/*_test.cho` (`tests-failed`, the first lines of the compiler's or the runner's answer); no such test file at all is `no-tests`;
+   * `cancho test --std tests/X_test.cho src/*.cho` for every `tests/*_test.cho` (`tests-failed`, the first lines of the compiler's or the runner's answer); no such test file at all is `no-tests`;
    * for kind `bug`, the tests that were added or changed are run against the **base** and must fail there (`test-passes-on-base`);
 6. **`change.patch`** is `diff -ruN base tree` run in the work directory (so the paths read `base/src/x.cho` and `tree/src/x.cho`; `patch -p1` applies it to a fresh copy of the checkout). A tree equal to the base is `empty-change`.
 

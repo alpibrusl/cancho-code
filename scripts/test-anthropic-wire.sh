@@ -15,7 +15,7 @@ command -v python3 >/dev/null 2>&1 || { echo "no python3 on PATH" >&2; exit 2; }
 root=$(cd "$(dirname "$0")/.." && pwd)
 fail=0
 d=$(mktemp -d -t cc-wire-XXXXXX)
-"$CANCHO" build "$root/tests/programs/anthropic_gate.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" --std --backend cranelift -o "$d/gate" >/dev/null 2>"$d/build.err" \
+"$CANCHO" build "$root/tests/programs/anthropic_gate.cho" "$root/src/anthropic.cho" "$root/src/ollama.cho" --std -o "$d/gate" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }
 
 python3 - "$d" <<'PY'

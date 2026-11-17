@@ -43,7 +43,7 @@ def build_and_test(tests):
     f = tempfile.NamedTemporaryFile("w", suffix=".cho", delete=False, encoding="utf-8")
     f.write(head + body + "\n" + tests); f.close()
     try:
-        r = subprocess.run([C, "test", f.name, "--std", "--backend", "cranelift"], capture_output=True, text=True, timeout=300)
+        r = subprocess.run([C, "test", f.name, "--std"], capture_output=True, text=True, timeout=300)
     except subprocess.TimeoutExpired:
         return None, "timed out"
     finally:

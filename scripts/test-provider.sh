@@ -32,7 +32,7 @@ C="${CANCHO_PACKAGES:-}"
     "$root/src/provider.cho" \
     "$P/fetch_io.cho" \
     "$C"/http-client/*.cho "$C"/tls/*.cho "$C"/x509/*.cho \
-    --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
+    --std -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 fail=0
 
@@ -61,8 +61,8 @@ FIX
     echo "$out"
     echo "$out" | grep -q '\[PROVIDER\] written' || { echo "FAIL: the provider did not write ($out)" >&2; fail=1; }
     # The real checker is the oracle: the model's answer must verify.
-    "$CANCHO" check "$dir/project.cho" --output json --backend cranelift | grep -q '"refused": \[\]' \
-        || { echo "FAIL: the model's answer does not check" >&2; "$CANCHO" check "$dir/project.cho" --backend cranelift >&2; fail=1; }
+    "$CANCHO" check "$dir/project.cho" --output json | grep -q '"refused": \[\]' \
+        || { echo "FAIL: the model's answer does not check" >&2; "$CANCHO" check "$dir/project.cho" >&2; fail=1; }
     rm -rf "$dir" "$roots"
 fi
 
