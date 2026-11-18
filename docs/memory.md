@@ -49,7 +49,7 @@ Outside backticks a number is `#`, a path (a word starting `/` after a colon or 
 
 ## The files
 
-`lessons.jsonl`, one object per line, most evidence first (active, then superseded, then insufficient): `id`, `rule`, `class`, `example` (the first signature seen), `status` (`active`, `insufficient`, `superseded`), `count`, `runs`, `units`, `next_seen`, `next_verified`, `first`, `last` (Unix ms from the journal; 0 for legacy), `contradicted`, `confirmed`, `source` (`journal`, `legacy`, `mixed`), `fixes` [{`run`, `unit`, `attempt`, `diff`}], `evidence` [{`run`, `unit`, `attempt`}]. A run is named by its directory's name.
+`lessons.jsonl`, one object per line, most evidence first (active, then superseded, then insufficient): `id`, `rule`, `class`, `example` (the first signature seen), `status` (`active`, `insufficient`, `superseded`), `count`, `runs`, `units`, `next_seen`, `next_verified`, `first`, `last` (Unix ms from the journal; 0 for legacy), `contradicted`, `confirmed`, `source` (`journal`, `legacy`, `mixed`), `fixes` [{`run`, `model`, `unit`, `attempt`, `diff`}], `evidence` [{`run`, `model`, `unit`, `attempt`}]. A run is named by its directory's name.
 
 The file is **rewritten from the journals each time** (that is what makes it reproducible): to remove a lesson for good, put its id on a line of `ignore.txt` in the same directory. Deleting a line from `lessons.jsonl` removes it from what the agent recalls until the next mining. Files are plain text; nothing else is kept.
 
@@ -61,6 +61,12 @@ build/cancho-build "$CANCHO" brief.txt run "$AGENT" --provider ... --model ... -
 ```
 
 `project` and `fix` take `--memory <dir>` the way they take `--primer`: it is a flag of the agent, so it goes in the agent command (`scripts/cancho-agent.sh --key-file ... --memory ~/cancho-memory`). `build` adds it to the unit agent's command itself, and only to that: the plan agent has no unit, no refusal and no use for it. Inside the agent the lines the memory adds to the task begin with a NUL byte, so that a line of a plan's own text that starts `MEMORY:` or `FACT:` is only text.
+
+## Provenance: which model the evidence came from
+
+A lesson mined from runs of one model is not yet evidence about another. Each evidence item and fix carries `model`: the `model` of its run's `run_start` event, the first valid one when a journal has several, and `""` when the run did not name one (a legacy run, a hand-run `project`) or named one outside `[A-Za-z0-9._:/-]` (at most 64 bytes, no leading dot, no `..`). It is copied as written, not redacted: a model name is not a secret, and a key-shaped redaction would turn `claude-sonnet-4-5-20250929` into `[redacted]`.
+
+This is provenance only; **nothing recalls differently because of it yet.** It is what the next step needs to be measured rather than guessed: whether a lesson confirmed under model A holds under model B, and whether recall should prefer evidence from the model in use. The idea comes from *Self-Improvement Memory* (arXiv 2611.18856), which keeps the model behind every memory entry and weighs task-specific evidence more when only the model changes; its other ideas (the model proposing the diagnosis, merging entries by the model's judgement, the whole memory in the prompt) are the opposite of this document's rule that no model writes the memory, and are not adopted. `tests/lessons/models/` pins the cases and the oracle must agree.
 
 ## Safety
 

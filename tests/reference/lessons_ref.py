@@ -89,6 +89,10 @@ def excerpt(text):
     return "".join(x + "\n" for x in out)
 
 
+def model_name(n):
+    return 0 < len(n.encode()) <= 64 and n[0] != "." and re.fullmatch(r"[A-Za-z0-9._:/-]+", n) is not None and ".." not in n
+
+
 def plain(n):
     return 0 < len(n) <= 128 and n[0] != "." and re.fullmatch(r"[A-Za-z0-9._-]+", n) is not None and ".." not in n
 
@@ -96,7 +100,7 @@ def plain(n):
 class Miner:
     def __init__(self, min_count, min_runs):
         self.cl = {}; self.order = []; self.runs = []; self.mc = min_count; self.mr = min_runs
-        self.units = {}
+        self.units = {}; self.rmodel = {}
 
     def klass(self, cls, example):
         if cls not in self.cl:
@@ -127,13 +131,13 @@ class Miner:
                             t = open(os.path.join(rd, "journal", "blobs", diff), "rb").read()[:262144].decode("utf-8", "replace")
                             ex = excerpt(t)
                             if ex:
-                                if len(p["fixes"]) < 3: p["fixes"].append((ex, self.runs[run], unit, attempt))
+                                if len(p["fixes"]) < 3: p["fixes"].append((ex, self.runs[run], unit, attempt, run))
                                 else:
                                     # the first of the longest is replaced, when the new one is shorter
                                     w = 0
                                     for i in range(1, 3):
                                         if len(p["fixes"][i][0].encode()) > len(p["fixes"][w][0].encode()): w = i
-                                    if len(ex.encode()) < len(p["fixes"][w][0].encode()): p["fixes"][w] = (ex, self.runs[run], unit, attempt)
+                                    if len(ex.encode()) < len(p["fixes"][w][0].encode()): p["fixes"][w] = (ex, self.runs[run], unit, attempt, run)
                         except OSError:
                             pass
                 elif recalled and class_of(sig) == prev:
@@ -150,7 +154,7 @@ class Miner:
                 c["last"] = max(c["last"], t_ms); c["sj"] += 1
             else:
                 c["sl"] += 1
-            if len(c["ev"]) < 12: c["ev"].append((self.runs[run], unit, attempt))
+            if len(c["ev"]) < 12: c["ev"].append((self.runs[run], unit, attempt, run))
             self.pend[unit] = c["cls"]
 
     def journal(self, rd):
@@ -168,6 +172,11 @@ class Miner:
             try:
                 e = json.loads(raw)
             except ValueError:
+                continue
+            if isinstance(e, dict) and e.get("kind") == "run_start":
+                m = e.get("model")
+                if isinstance(m, str) and model_name(m) and run not in self.rmodel:
+                    self.rmodel[run] = m
                 continue
             if not isinstance(e, dict) or e.get("kind") != "attempt" or not isinstance(e.get("unit"), str):
                 continue
@@ -221,8 +230,8 @@ class Miner:
             yield dict(id=lesson_id(c["cls"]), rule=c["cls"].split(":")[0], **{"class": c["cls"]}, example=c["example"],
                        status=["active", "superseded", "insufficient"][self.status(c)], count=c["count"], runs=c["runs"], units=c["units"],
                        next_seen=c["ns"], next_verified=c["nv"], first=c["first"], last=c["last"], contradicted=c["contra"], confirmed=c["confirm"],
-                       source=src, fixes=[dict(run=r, unit=u, attempt=a, diff=d) for d, r, u, a in c["fixes"]],
-                       evidence=[dict(run=r, unit=u, attempt=a) for r, u, a in c["ev"]])
+                       source=src, fixes=[dict(run=r, model=self.rmodel.get(ri, ""), unit=u, attempt=a, diff=d) for d, r, u, a, ri in c["fixes"]],
+                       evidence=[dict(run=r, model=self.rmodel.get(ri, ""), unit=u, attempt=a) for r, u, a, ri in c["ev"]])
 
 
 def main(argv):
