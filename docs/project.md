@@ -59,9 +59,9 @@ HINT: <only when the person re-opened the unit with --hint: their words, one lin
 An example `CALL == EXPECTED` becomes `pub fn test_<sid>_<k>() -> [] int { test.assert(CALL == EXPECTED); return 0; }` in `tests-<id>.cho` (which starts `edition 7;` and `import std.test;`); `<sid>` is the unit id with every character that is not a letter, digit or `_` turned into `_`. `==` compares scalars (int, bool, and a field read such as `f(1).ok`). The compiler has no `==` on enums, so the one enum an example may name is an `Option`: `CALL == option.Option::Some(X)` becomes a `match` on the call comparing `X`, and `CALL == option.Option::None` a `match` that expects `None`. The tests file does not `import std.option;` (files compiled together share their imports, and the project file must import it for the unit's signature to exist). A test file that does not build is the unit's failure, with the compiler's message in the feedback.
 
 A unit's **acceptance command** (the `fix` hook, docs: acceptance) is:
-`<checker> test --std --backend cranelift <workdir>/project.cho <workdir>/tests-<id>.cho || { cat <workdir>/legend-<id>.txt; exit 1; } #`
+`<checker> test --std <workdir>/project.cho <workdir>/tests-<id>.cho || { cat <workdir>/legend-<id>.txt; exit 1; } #`
 
-The loop's **check command** is `<checker> check --std --output json --backend cranelift <workdir>/project.cho <workdir>/main.cho`.
+The loop's **check command** is `<checker> check --std --output json <workdir>/project.cho <workdir>/main.cho`.
 
 A unit that carries `tests` (docs/plan.md) uses them instead: each is decoded and appended verbatim to `tests-<id>.cho`, the examples are not turned into tests, and the legend only says the tests are the unit's own. The author is then responsible for unique test names and for what the file imports: the tests file already has `import std.test;`, and must not import what `project.cho` imports (files compiled together share their imports), so `std.result`, `std.buffer`, `std.bytes` are named by `project.cho` and used here as `result.`, `buffer.`, `bytes.`.
 

@@ -40,7 +40,7 @@ if [ $stale = 1 ]; then
     CANCHO="${CANCHO:-cancho}"
     command -v "$CANCHO" >/dev/null 2>&1 || { echo "cancho-lessons: no cancho on PATH; set CANCHO=" >&2; exit 2; }
     mkdir -p "$root/build"
-    "$CANCHO" build "$root/tests/programs/lessons.cho" "$root/src/lessons.cho" "$root/src/memory.cho" "$root/src/signature.cho" --std --backend cranelift -o "$bin" >/dev/null 2>&1 \
+    "$CANCHO" build "$root/tests/programs/lessons.cho" "$root/src/lessons.cho" "$root/src/memory.cho" "$root/src/signature.cho" --std -o "$bin" >/dev/null 2>&1 \
         || { echo "cancho-lessons: the tool did not build" >&2; exit 2; }
 fi
 

@@ -1,0 +1,4 @@
+{"t_ms": 1792000000000, "kind": "run_start", "provider": "x"}
+{"t_ms": 1792000000001, "kind": "run_start", "provider": "x", "model": "late-model-1"}
+{"t_ms": 1792000001000, "kind": "attempt", "unit": "u1", "n": 0, "outcome": "refused", "decision": "retry", "signature": "type-mismatch:expected `&[byte]`, found `Buffer`"}
+{"t_ms": 1792000002000, "kind": "attempt", "unit": "u1", "n": 1, "outcome": "verified", "decision": "verified", "signature": "", "diff": "d1.txt"}

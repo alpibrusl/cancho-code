@@ -62,7 +62,10 @@ fn cstride() -> [] int { return 24; }
 fn ebase() -> [] int { return 64 + 2 * 2048 + 2 * 16384 + 256 + 24 * 512; }
 fn fbase() -> [] int { return 64 + 2 * 2048 + 2 * 16384 + 256 + 24 * 512 + 3 * 12 * 512; }
 fn obase() -> [] int { return 64 + 2 * 2048 + 2 * 16384 + 256 + 24 * 512 + 3 * 12 * 512 + 6 * 3 * 512; }
-fn t_size() -> [] int { return 64 + 2 * 2048 + 2 * 16384 + 256 + 24 * 512 + 3 * 12 * 512 + 6 * 3 * 512 + 512 + 8; }
+// The model each run named in its `run_start` (pool offset, length; length 0 is "not named"): provenance of an evidence item, so that a lesson mined
+// from runs of one model can be told from one confirmed under another (docs/memory.md, "Provenance").
+fn mbase() -> [] int { return 64 + 2 * 2048 + 2 * 16384 + 256 + 24 * 512 + 3 * 12 * 512 + 6 * 3 * 512 + 512 + 8; }
+fn t_size() -> [] int { return 64 + 2 * 2048 + 2 * 16384 + 256 + 24 * 512 + 3 * 12 * 512 + 6 * 3 * 512 + 512 + 8 + 2 * 2048; }
 
 fn c_off() -> [] int { return 0; }
 fn c_len() -> [] int { return 1; }
@@ -201,6 +204,23 @@ fn begin_run[&s, &q, &x](t: &!s [int], p: &!q [byte], name: &x [byte]) -> [] int
         z = z + 1;
     }
     return n;
+}
+
+// A model name as the journal's `run_start` gives it: letters, digits and . _ - : / , at most 64 bytes, no leading dot, no "..". Anything else is "not named".
+fn model_name[&x](name: &x [byte]) -> [] bool {
+    if len(name) == 0 || len(name) > 64 || int_of(name[0]) == 46 {
+        return false;
+    }
+    var i = 0;
+    while i < len(name) {
+        let c = int_of(name[i]);
+        let ok = (c >= 48 && c <= 58) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 46 || c == 95 || c == 45 || c == 47;
+        if !ok {
+            return false;
+        }
+        i = i + 1;
+    }
+    return bytes.find(name, "..") < 0;
 }
 
 // The unit `name` of the current run: its global index (found or new), or -1.
@@ -568,6 +588,18 @@ fn mine_journal[&h, &z, &s, &q, &b, &c, &e, &r, &w](heap: &!h Heap, fs: &z Fs(""
                 let kn = json.get(line, tb, 0, "kind");
                 if kn >= 0 && json.string_equals(line, tb, kn, "attempt") {
                     event(heap, fs, st, p, bl, sc, rd, run, line, tb);
+                } else if kn >= 0 && json.string_equals(line, tb, kn, "run_start") {
+                    let mn = json.get(line, tb, 0, "model");
+                    if mn >= 0 && json.is_string(tb, mn) && json.string_length(line, tb, mn) <= len(sc) {
+                        let mgot = json.string_into(line, tb, mn, sc);
+                        if model_name(sc[0..mgot]) && st[mbase() + 2 * run + 1] == 0 {
+                            let moff = pool_put(st, p, sc[0..mgot]);
+                            if moff >= 0 {
+                                st[mbase() + 2 * run] = moff;
+                                st[mbase() + 2 * run + 1] = mgot;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -679,6 +711,10 @@ fn run_name[&s, &q](st: &s [int], p: &q [byte], r: int) -> [] &q [byte] {
     return p[st[rbase() + 2 * r]..st[rbase() + 2 * r] + st[rbase() + 2 * r + 1]];
 }
 
+fn run_model[&s, &q](st: &s [int], p: &q [byte], r: int) -> [] &q [byte] {
+    return p[st[mbase() + 2 * r]..st[mbase() + 2 * r] + st[mbase() + 2 * r + 1]];
+}
+
 fn unit_name[&s, &q](st: &s [int], p: &q [byte], u: int) -> [] &q [byte] {
     return p[st[ubase() + 2 * u]..st[ubase() + 2 * u] + st[ubase() + 2 * u + 1]];
 }
@@ -731,6 +767,7 @@ fn lesson_line[&h, &s, &q](heap: &!h Heap, st: &s [int], p: &q [byte], c: int, s
         let at = fbase() + (c * 3 + k) * 6;
         w = json.begin_object(heap, w);
         w = put_str(heap, w, "run", run_name(st, p, st[at + 2]));
+        w = put_str(heap, w, "model", run_model(st, p, st[at + 2]));
         w = put_str(heap, w, "unit", unit_name(st, p, st[at + 3]));
         w = put_num(heap, w, "attempt", st[at + 4]);
         w = put_str(heap, w, "diff", p[st[at]..st[at] + st[at + 1]]);
@@ -745,6 +782,7 @@ fn lesson_line[&h, &s, &q](heap: &!h Heap, st: &s [int], p: &q [byte], c: int, s
         let at = ebase() + (c * 12 + k) * 3;
         w = json.begin_object(heap, w);
         w = put_str(heap, w, "run", run_name(st, p, st[at]));
+        w = put_str(heap, w, "model", run_model(st, p, st[at]));
         w = put_str(heap, w, "unit", unit_name(st, p, st[at + 1]));
         w = put_num(heap, w, "attempt", st[at + 2]);
         w = json.end_object(heap, w);

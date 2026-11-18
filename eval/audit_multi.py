@@ -129,7 +129,7 @@ def run(name, group, mods, fn, size):
     f = tempfile.NamedTemporaryFile("w", suffix=".cho", delete=False, encoding="utf-8")
     f.write(head + "\n".join(tests))
     f.close()
-    r = subprocess.run([C, "test"] + files + [f.name, "--std", "--backend", "cranelift"], capture_output=True, text=True)
+    r = subprocess.run([C, "test"] + files + [f.name, "--std"], capture_output=True, text=True)
     os.unlink(f.name)
     m = re.search(r"(\d+) passed; (\d+) failed", r.stdout)
     if m:

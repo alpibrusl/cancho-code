@@ -32,7 +32,7 @@ def main():
     project = os.path.abspath(a.project)
     files = service_run.service_files(cancho, project, False, a.service)
     out = tempfile.mkdtemp(prefix="demo-"); binary = os.path.join(out, "service")
-    b = subprocess.run([cancho, "build", "--std", "--backend", "cranelift"] + files + ["-o", binary], capture_output=True, text=True)
+    b = subprocess.run([cancho, "build", "--std"] + files + ["-o", binary], capture_output=True, text=True)
     if b.returncode != 0:
         print("the project does not build:\n" + "\n".join(l for l in b.stderr.splitlines() if "error" in l)[:600]); sys.exit(1)
     argv = [binary, "--port", str(a.port)] + [x.replace("{tmp}", out) for x in launch["args"]]

@@ -16,10 +16,10 @@ command -v "$CANCHO" >/dev/null 2>&1 || { echo "no cancho on PATH; set CANCHO=" 
 command -v python3 >/dev/null 2>&1 || { echo "no python3 on PATH" >&2; exit 2; }
 root=$(cd "$(dirname "$0")/.." && pwd)
 d=$(mktemp -d -t cc-prompt-XXXXXX)
-"$CANCHO" build "$root/tests/programs/prompt_gate.cho" "$root/src/prompt.cho" --std --backend cranelift -o "$d/gate" >/dev/null 2>"$d/build.err" \
+"$CANCHO" build "$root/tests/programs/prompt_gate.cho" "$root/src/prompt.cho" --std -o "$d/gate" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }
 
-"$CANCHO" build "$root/tests/programs/planprompt_gate.cho" "$root/src/planprompt.cho" --std --backend cranelift -o "$d/pgate" >/dev/null 2>"$d/build2.err" \
+"$CANCHO" build "$root/tests/programs/planprompt_gate.cho" "$root/src/planprompt.cho" --std -o "$d/pgate" >/dev/null 2>"$d/build2.err" \
     || { cat "$d/build2.err" >&2; echo "planprompt gate did not build" >&2; exit 2; }
 
 python3 - "$d" "$root" <<'PY'
@@ -155,7 +155,7 @@ other_case() { # gate-binary
     printf '{"refused":[{"rule":"duplicate-declaration","message":"function `main` is defined twice","position":{"file":"/w/main.cho","line":3,"column":1}},{"rule":"type-mismatch","message":"expected `bool`","position":{"file":"/w/project.cho","line":6,"column":12}}]}' > "$f.feedback"
     "$1" "$f" x x x
 }
-"$CANCHO" build "$root/tests/programs/prompt_gate.cho" "$root/src/prompt.cho" --std --backend cranelift -o "$d/gate2" >/dev/null 2>&1 || { echo "gate did not rebuild" >&2; exit 2; }
+"$CANCHO" build "$root/tests/programs/prompt_gate.cho" "$root/src/prompt.cho" --std -o "$d/gate2" >/dev/null 2>&1 || { echo "gate did not rebuild" >&2; exit 2; }
 out=$(other_case "$d/gate2")
 want1='- main.cho line 3, column 1: function `main` is defined twice (rule duplicate-declaration)'
 want2='- line 6, column 12: expected `bool` (rule type-mismatch)
@@ -167,7 +167,7 @@ printf '%s\n' "$out" | grep -qF -- "$want2" || { echo "FAIL: a refusal in projec
 sed 's/if len(bn) > 0 \&\& bytes.equal(bn, own) == false {/if false {/' "$root/src/prompt.cho" > "$d/prompt.cho"
 cmp -s "$d/prompt.cho" "$root/src/prompt.cho" && { echo "FAIL: the mutation did not apply" >&2; rc=1; }
 mkdir -p "$d/mut"; cp "$d/prompt.cho" "$d/mut/prompt.cho"
-"$CANCHO" build "$root/tests/programs/prompt_gate.cho" "$d/mut/prompt.cho" --std --backend cranelift -o "$d/gate3" >/dev/null 2>&1 || { echo "mutant did not build" >&2; exit 2; }
+"$CANCHO" build "$root/tests/programs/prompt_gate.cho" "$d/mut/prompt.cho" --std -o "$d/gate3" >/dev/null 2>&1 || { echo "mutant did not build" >&2; exit 2; }
 mout=$(other_case "$d/gate3")
 printf '%s\n' "$mout" | grep -qF -- "$want1" && { echo "FAIL: the mutant (bug restored) passed the main.cho check" >&2; rc=1; }
 echo "prompt other-file refusals: ok"

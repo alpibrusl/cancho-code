@@ -378,7 +378,7 @@ fn base_probe[&h, &x, &c, &z, &w, &k, &q](heap: &!h Heap, exec: &x Exec(""), clo
                             if copied == 0 {
                                 var t = cat3(heap, "exec 2>&1; cd ", wd, "/probe && ");
                                 t = buffer.append(heap, t, checker);
-                                t = buffer.append(heap, t, " test --std --backend cranelift ");
+                                t = buffer.append(heap, t, " test --std ");
                                 t = buffer.append(heap, t, tf);
                                 t = buffer.append(heap, t, " src/*.cho");
                                 borrow t as &tq in {
@@ -578,7 +578,7 @@ fn gate[&h, &x, &c, &z, &w, &k, &p, &q, &o](heap: &!h Heap, exec: &x Exec(""), c
                 ran = ran + 1;
                 var t = cat3(heap, "exec 2>&1; cd ", wd, "/tree && ");
                 t = buffer.append(heap, t, checker);
-                t = buffer.append(heap, t, " test --std --backend cranelift ");
+                t = buffer.append(heap, t, " test --std ");
                 t = buffer.append(heap, t, tf);
                 t = buffer.append(heap, t, " src/*.cho");
                 borrow t as &tq in {

@@ -21,9 +21,9 @@ command -v python3 >/dev/null 2>&1 || { echo "no python3 on PATH" >&2; exit 2; }
 root=$(cd "$(dirname "$0")/.." && pwd)
 src="${CASES_SRC:-$root/src/cases.cho}"
 d=$(mktemp -d -t cc-cases-XXXXXX)
-"$CANCHO" build "$root/tests/programs/cases_gate.cho" "$src" --std --backend cranelift -o "$d/gate" >/dev/null 2>"$d/build.err" \
+"$CANCHO" build "$root/tests/programs/cases_gate.cho" "$src" --std -o "$d/gate" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "gate did not build" >&2; exit 2; }
-"$CANCHO" build "$root/tests/programs/plancheck.cho" "$root/src/plan.cho" --std --backend cranelift -o "$d/plancheck" >/dev/null 2>"$d/build.err" \
+"$CANCHO" build "$root/tests/programs/plancheck.cho" "$root/src/plan.cho" --std -o "$d/plancheck" >/dev/null 2>"$d/build.err" \
     || { cat "$d/build.err" >&2; echo "plancheck did not build" >&2; exit 2; }
 
 python3 - "$d" "$root" "$CANCHO" <<'PY' || { echo "cases gate: FAILED" >&2; exit 1; }
@@ -297,7 +297,7 @@ def assemble(name, ref, plan_obj, expect_pass=None, expect_fail=None):
         names.extend(re.findall(r"pub fn (test_\w+)", " ".join(u["tests"])))
     tf = os.path.join(tmp, name + ".tests.cho")
     open(tf, "w").write("edition 7;\nimport std.test;\n" + "\n".join(tests) + "\n")
-    p = subprocess.run([cancho, "test", "--std", "--backend", "cranelift", ref, tf], capture_output=True, cwd=tmp)
+    p = subprocess.run([cancho, "test", "--std", ref, tf], capture_output=True, cwd=tmp)
     text = p.stdout.decode("utf-8", "replace") + p.stderr.decode("utf-8", "replace")
     status = dict(re.findall(r"^test (\w+) \.\.\. (\w+)", text, re.M))
     if len(set(names)) != len(names):

@@ -85,15 +85,15 @@ expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail
 fails() { echo "FAIL: $1" >&2; fail=1; }
 
 # ---- the class of a refusal --------------------------------------------------------------------------------------------------------------
-"$CANCHO" test "$root/tests/memory_test.cho" "$memory_src" "$root/src/signature.cho" --std --backend cranelift >"$work/unit.out" 2>&1 \
+"$CANCHO" test "$root/tests/memory_test.cho" "$memory_src" "$root/src/signature.cho" --std >"$work/unit.out" 2>&1 \
     || { fails "class: the unit tests of the normalisation fail"; grep -E "FAILED|error" "$work/unit.out" | head -5 >&2; }
 
 # ---- the tool and the recall gate program -----------------------------------------------------------------------------------------------
 tool="$work/lessons"
-"$CANCHO" build "$root/tests/programs/lessons.cho" "$lessons_src" "$memory_src" "$root/src/signature.cho" --std --backend cranelift -o "$tool" >/dev/null 2>"$work/build.err" \
+"$CANCHO" build "$root/tests/programs/lessons.cho" "$lessons_src" "$memory_src" "$root/src/signature.cho" --std -o "$tool" >/dev/null 2>"$work/build.err" \
     || { cat "$work/build.err" >&2; echo "gate did not build the tool" >&2; exit 2; }
 rgate="$work/memory_gate"
-"$CANCHO" build "$root/tests/programs/memory_gate.cho" "$memory_src" "$root/src/prompt.cho" "$root/src/signature.cho" --std --backend cranelift -o "$rgate" >/dev/null 2>"$work/build2.err" \
+"$CANCHO" build "$root/tests/programs/memory_gate.cho" "$memory_src" "$root/src/prompt.cho" "$root/src/signature.cho" --std -o "$rgate" >/dev/null 2>"$work/build2.err" \
     || { cat "$work/build2.err" >&2; echo "gate did not build the recall program" >&2; exit 2; }
 
 ref="$root/tests/reference/lessons_ref.py"
@@ -149,7 +149,7 @@ PY
 before=$(cd "$fx" && find . -type f | sort | xargs cksum | cksum)
 
 # ---- mining ----------------------------------------------------------------------------------------------------------------------------------
-for g in recurring contradicted held secrets traversal killed empty legacy; do
+for g in recurring contradicted held secrets traversal killed empty legacy models; do
     mine "$g" $(inputs $g); expect "mining $g: exit code" "$?" 0
     same_as_oracle "$g" $(inputs $g)
 done
@@ -160,11 +160,15 @@ expect "recurring: the attempt after it verified in 2 of 3" "$(q $m "[by['$A']['
 expect "recurring: the fix is the shortest diff, an excerpt of changed lines" "$(q $m "by['$A']['fixes'][0]['diff']")" "-    let n = len(b);
 +    let n = len(buffer.bytes(b));"
 expect "recurring: every fix is a bounded excerpt" "$(q $m "all(len(f['diff'].encode()) <= 600 and len(f['diff'].splitlines()) <= 14 for l in L for f in l['fixes'])")" True
-expect "recurring: the evidence names run, unit and attempt" "$(q $m "by['$A']['evidence']")" "[{'run': 'r1', 'unit': 'u1', 'attempt': 0}, {'run': 'r1', 'unit': 'u2', 'attempt': 0}, {'run': 'r2', 'unit': 'u1', 'attempt': 0}]"
+expect "recurring: the evidence names run, unit and attempt" "$(q $m "by['$A']['evidence']")" "[{'run': 'r1', 'model': '', 'unit': 'u1', 'attempt': 0}, {'run': 'r1', 'model': '', 'unit': 'u2', 'attempt': 0}, {'run': 'r2', 'model': '', 'unit': 'u1', 'attempt': 0}]"
 expect "recurring: first and last seen are the journal's own times" "$(q $m "[by['$A']['first'], by['$A']['last']]")" "[1792000001000, 1792000008000]"
 expect "recurring: the class and the id" "$(q $m "[by['$A']['class'], by['$A']['rule']]")" "['type-mismatch:expected \`T\`, found \`Buffer\`', 'type-mismatch']"
 expect "recurring: seen twice in one run is insufficient" "$(q $m "[by['$B']['status'], by['$B']['count'], by['$B']['runs']]")" "['insufficient', 2, 1]"
 expect "recurring: active comes first" "$(q $m "L[0]['id']")" "$A"
+# provenance: the model a run named in its run_start rides on every evidence item and fix that came from that run
+mm="$work/mem-models/lessons.jsonl"
+expect "models: each evidence item carries its run's model; a name outside [A-Za-z0-9._:/-] is empty, the first valid run_start names the run" "$(q $mm "[e['model'] for e in L[0]['evidence']]")" "['claude-haiku-5-5', 'qwen3.8:27b', '', 'late-model-1']"
+expect "models: the fixes carry the model of the run they came from" "$(q $mm "[(f['run'], f['model']) for f in sorted(L[0]['fixes'], key=lambda f: f['run'])]")" "[('r1', 'claude-haiku-5-5'), ('r2', 'qwen3.8:27b'), ('r3', '')]"
 mine strict --min-count 4 $(inputs recurring)
 expect "threshold: --min-count 4 makes the lesson insufficient" "$(q $work/mem-strict/lessons.jsonl "by['$A']['status']")" insufficient
 mine strict2 --min-runs 3 $(inputs recurring)

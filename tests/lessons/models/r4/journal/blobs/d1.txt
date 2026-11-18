@@ -1,0 +1,2 @@
+-    let n = len(b);
++    let n = len(buffer.bytes(b));

@@ -12,7 +12,7 @@ command -v "$CANCHO" >/dev/null 2>&1 || { echo "no cancho on PATH; set CANCHO=" 
 root=$(cd "$(dirname "$0")/.." && pwd)
 exe=$(mktemp -t cc-plan-XXXXXX)
 "$CANCHO" build "$root/tests/programs/plancheck.cho" "$root/src/plan.cho" \
-    --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
+    --std -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }

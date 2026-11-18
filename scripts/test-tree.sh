@@ -68,7 +68,7 @@ command -v "$CANCHO" >/dev/null 2>&1 || { echo "no cancho on PATH; set CANCHO=" 
 root=$(cd "$(dirname "$0")/.." && pwd)
 SRC="${TREE_SRC:-$root/src}"   # a directory to take src/ from: how the mutation runs judge a broken copy
 exe=$(mktemp -t cc-tree-XXXXXX)
-"$CANCHO" build "$root/tests/programs/treecheck.cho" "$SRC/tree.cho" --std --backend cranelift -o "$exe" >/dev/null 2>"$exe.err" \
+"$CANCHO" build "$root/tests/programs/treecheck.cho" "$SRC/tree.cho" --std -o "$exe" >/dev/null 2>"$exe.err" \
     || { cat "$exe.err" >&2; echo "gate did not build" >&2; exit 2; }
 
 fail=0

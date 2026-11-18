@@ -93,7 +93,7 @@ exe=$(mktemp -t cc-board-XXXXXX)
 work=$(mktemp -d -t cc-board-work-XXXXXX)
 trap 'rm -rf "$work" "$exe"' EXIT
 "$CANCHO" build "$root/tests/programs/board.cho" "$src" "$root/src/plan.cho" \
-    --std --backend cranelift -o "$exe" >"$work/build.log" 2>&1 || { cat "$work/build.log" >&2; echo "FAIL: the board tool did not build" >&2; exit 1; }
+    --std -o "$exe" >"$work/build.log" 2>&1 || { cat "$work/build.log" >&2; echo "FAIL: the board tool did not build" >&2; exit 1; }
 
 fail=0
 bad() { echo "FAIL: $*" >&2; fail=1; }

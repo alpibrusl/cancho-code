@@ -19,7 +19,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 exe=$(mktemp -t cc-snap-XXXXXX)
 
 "$CANCHO" build "$root/tests/programs/snapshot_gate.cho" "$root/src/snapshot.cho" \
-    --std --backend cranelift -o "$exe" || { echo "gate did not build" >&2; exit 2; }
+    --std -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 store=$(mktemp -d -t cc-store-XXXXXX)
 fail=0

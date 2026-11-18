@@ -86,10 +86,10 @@ fn main(world: World) -> [] int {
                     region cm {
                         var cmd_ok = buffer.empty(hh, 128);
                         cmd_ok = buffer.append(hh, cmd_ok, checker_path);
-                        cmd_ok = buffer.append(hh, cmd_ok, " check --output json --backend cranelift /tmp/cc_gate_ok.cho");
+                        cmd_ok = buffer.append(hh, cmd_ok, " check --output json /tmp/cc_gate_ok.cho");
                         var cmd_bad = buffer.empty(hh, 128);
                         cmd_bad = buffer.append(hh, cmd_bad, checker_path);
-                        cmd_bad = buffer.append(hh, cmd_bad, " check --output json --backend cranelift /tmp/cc_gate_bad.cho");
+                        cmd_bad = buffer.append(hh, cmd_bad, " check --output json /tmp/cc_gate_bad.cho");
                         var l_ok = process.argv(hh, 32);
                         var l_bad = process.argv(hh, 32);
                         var l_slp = process.argv(hh, 8);
