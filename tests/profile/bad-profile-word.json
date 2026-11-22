@@ -15,15 +15,11 @@
   ],
   "compile": [
    "check",
-   "--std",
-   "--backend",
-   "cranelift"
+   "--std"
   ],
   "test": [
    "test",
-   "--std",
-   "--backend",
-   "cranelift"
+   "--std"
   ]
  },
  "units": "functions",

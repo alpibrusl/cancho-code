@@ -233,7 +233,7 @@ sleep 0.3; mkdir -p "$1.call"; echo '{}' > "$1.call/meta.json"; sleep 3
 printf '\n%s\n' 'fn b_n(x: int) -> [] int { if m.equal("ab", "ab") { return x + 1; } return 0; }' >> "$1"
 EOF
 cat > "$rc/b.2.sh" <<'EOF'
-grep -q 'already bound' "$1.task" || exit 9
+grep -q 'A name is introduced once' "$1.task" || exit 9
 { head -1 "$1"; printf 'import std.bytes as bb;\n'; tail -n +2 "$1"; } > "$1.new" && mv "$1.new" "$1"
 printf '\n%s\n' 'fn b_n(x: int) -> [] int { if bb.equal("ab", "ab") { return x + 1; } return 0; }' >> "$1"
 EOF

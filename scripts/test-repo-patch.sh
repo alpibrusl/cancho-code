@@ -325,7 +325,7 @@ has "rename: the old one is removed in the patch" "$(cat "$w/change.patch")" "-p
 # a removal of an item that does not exist: the splice error, the same way as the others; the retry is told
 rp=$(newrepo); rc=$(newrc); w="$d/w-missing"
 printf '=== FILE src/mathx.cho\nremove fn nothere\n' > "$rc/reply.1"
-cp "$rc/reply.1" "$rc/reply.2"; sed -i 's/nothere/half/' "$rc/reply.2"; cat >> "$rc/reply.2" <<'EOT'
+cp "$rc/reply.1" "$rc/reply.2"; sed -i.bak 's/nothere/half/' "$rc/reply.2"; rm -f "$rc/reply.2.bak"; cat >> "$rc/reply.2" <<'EOT'
 pub fn halve(x: int) -> [] int {
     return x / 2;
 }
@@ -379,7 +379,7 @@ printf '=== FILE tests/mathx_test.cho\npub fn test_double() -> [] int { test.ass
 out=$(run "$rp" "$rc" "$w" bug --attempts 1); expect "failing test: refused" "$(attempts "$out")" "1:refused:tests-failed"
 
 # a bug fix: the tests it adds or changes must FAIL on the base (the code as it was), pass on the fix. The base here has the bug `half` = x / 3
-newbug() { r=$(newrepo); sed -i 's|return x / 2;|return x / 3;|' "$r/src/mathx.cho"; echo "$r"; }
+newbug() { r=$(newrepo); sed -i.bak 's|return x / 2;|return x / 3;|' "$r/src/mathx.cho"; rm -f "$r/src/mathx.cho.bak"; echo "$r"; }
 FIX='=== FILE src/mathx.cho
 pub fn half(x: int) -> [] int { return x / 2; }'
 rp=$(newbug); rc=$(newrc); w="$d/w-bug-ok"

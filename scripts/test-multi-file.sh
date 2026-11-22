@@ -220,7 +220,7 @@ pub fn parse_width(n: int) -> [] int {
 EOS
 EOT
 cat > "$rc/width.2.sh" <<'EOT'
-grep -q 'tok_digits' "$1.feedback" || exit 9
+grep -q 'not-a-function' "$1.feedback" || exit 9
 sed 's/return tok_digits/return tokens.tok_digits/' "$1" > "$1.new" && cp "$1.new" "$1"
 EOT
 out=$(runp "$T/plan.json" "$wd" "$rc" "$lg" 1); r=$?
