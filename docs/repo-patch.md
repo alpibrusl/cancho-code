@@ -3,7 +3,7 @@
 Everything else in this repository builds from a brief to a new program. `repo.patch` is the other direction: a repository **already exists**, a person (or Forge) writes a *change request*, and the tool answers it with a patch to that checkout, gated by the repository's own checks. It is the agent-side half of the `repo.change` task type of cancho-forge's `docs/company-lifecycle.md` (section 4.2): Forge prepares the input and bounds the output, this command is the stand-in-free worker that fills the middle.
 
 ```
-cancho-build --repo DIR --change change.txt --checker CANCHO --work WORKDIR --agent CMD --provider P --model M [--kind bug|feature|refactor|rename] [--constraints FILE] [options]
+cancho-build --repo DIR --change change.txt --checker CANCHO --work WORKDIR --agent CMD --provider P --model M [--kind bug|feature|refactor|rename] [--constraints FILE] [--touch NAME,NAME] [options]
 ```
 
 It works on a **copy** of `DIR`. It never writes `DIR`, never runs `git` (there is no `git` in its code, and the copy leaves `.git` out), and ends with a `change.patch` and the changed tree in the work directory. Publishing, pushing and opening a pull request are somebody else's step.
@@ -18,12 +18,14 @@ It works on a **copy** of `DIR`. It never writes `DIR`, never runs `git` (there 
 | `--constraints FILE` | optional, absolute: a small closed file of bounds on the *shape* of the change, enforced by the command ([below](#constraints-on-the-shape-of-a-change)). A line it does not know is a usage error (exit 2) |
 | `--attempts N` (4), `--agent-seconds N` (300), `--test-seconds N` (300) | the attempt ceiling, the cap on one agent turn, the cap on one `cancho test` |
 | `--max-files N` (8, at most 64), `--max-bytes N` (65536, at most 1000000) | the bounds on a change: sections (files) and bytes of the reply |
+| `--max-bundle N` (400000, at most 1000000) | how many bytes the model is shown. A repository over it is shown as a selection ([below](#a-selection)) |
+| `--touch NAME,NAME` | names of functions and types of `src/` that a selection shows in full, besides the ones the request names |
 
 Paths are absolute, made of letters, digits and `. _ / + : = @ % , -`, with no `..` (they go into shell command lines, as in `build`).
 
 ## What the model is shown, and what it answers
 
-`WORKDIR/bundle.txt` is every `.cho` file of `src/` and `tests/` of the copy, each after a line `=== FILE <path>` (at most 400000 bytes, else exit 2 `bundle-too-large`). The task file beside it holds the frame, the kind and the request. The agent's third output mode, `--output change`, asks for an **envelope** and writes it over the bundle:
+`WORKDIR/bundle.txt` is every `.cho` file of `src/` and `tests/` of the copy, each after a line `=== FILE <path>`, when that is at most `--max-bundle` bytes (400000); a bigger repository is shown as [a selection](#a-selection). The task file beside it holds the frame, the kind and the request. The agent's third output mode, `--output change`, asks for an **envelope** and writes it over the bundle:
 
 ```
 === FILE src/diff.cho
@@ -40,6 +42,24 @@ edition 7;
 * **Removal** (`remove fn NAME`, `remove struct NAME`, `remove enum NAME`, or `remove type NAME`) is `splice.remove_items`: the item goes, its leading comment and the blank space after it with it. Removals are done first, then the items, so *a rename is a removal plus an addition*. Nothing looks for uses of the removed item: a use that is left is a compile error in the gate, in the compiler's words, and goes back to the model (`tests-failed`). A removal of an item the file does not have is a `[SPLICE_ERROR]<TAB>-<TAB>LINE:patch: remove fn NAME: the file has no such item` line, like the other splice errors; a removal in a file that is being created is `remove-in-new-file`; a `remove` line of another shape is `remove-syntax`.
 * **A new file** is its whole text and must start with `edition N;` (`new-file-no-edition`). A section with nothing in it is `section-empty`.
 * An envelope is read by `change.section_at`; text before the first header (a preamble, reasoning, a `</think>` block) is not part of it, and an agent answer with no header is exit 11, "gave up", like a patch with no code.
+
+## A selection
+
+A repository whose `src/` and `tests/` are over `--max-bundle` is not shown whole: the same sections are shown with most bodies left out (`src/selection.cho`). What is kept is decided by the compiler and by the words of the request, with no model call:
+
+1. `cancho ids --std --edges src/*.cho` is run on the copy (`WORKDIR/edges.json`): every declaration with its file, its lines, its signature and the types and functions it refers to (cancho#816). A checker without `ids --edges`, or a repository the checker refuses, is exit 2 `selection-failed`.
+2. **Seeds**: a declaration whose name is a whole word of the request (names of four bytes or more), one named in `--touch`, and every declaration of a file the request names (`src/x.cho`, or `x.cho`). None at all is exit 2 `selection-empty`: the request has to name something, or `--touch` has to.
+3. **Near**: what a seed refers to and what refers to a seed, one step each way.
+4. **Shown**: seeds and near declarations in full; every type in full; of every other function its signature and a `// body not shown: N lines` line; the text between declarations (imports, comments) as it is. A test file is shown in full when it is `tests/X_test.cho` of a `src/X.cho` with a seed or a near declaration, or when it names a seed; of another one, and of a file the compiler did not describe (one in a directory under `src/`), the `import` lines and the first line of each function.
+5. **Level 1**, when that is still over the limit: a file of `src/` with no seed and nothing near is its `pub` signatures only. Still over the limit is exit 2 `bundle-too-large`.
+
+The run says `[CHANGE_SELECTION]<TAB>seeds<TAB>bytes<TAB>level`. `WORKDIR/bundle.all` is the whole, `bundle.src` the selection, `bundle.hidden` the functions whose body was not shown (`path<TAB>name`).
+
+**A function that was not shown may not be changed blind.** A change that replaces or removes a function of `bundle.hidden` is refused as `item-not-shown`, before the repository's checks run; the function is added to the names to show and the next attempt gets a new selection with it in full (if that no longer fits, the selection stays as it was and the refusal repeats). Adding a function is never refused by this rule.
+
+**Measured once, with the stand-in agent** (no model): the 110 files of the cancho compiler as a repository, 4,239,113 bytes whole, and a request that names two functions and a file. The selection is 289,969 bytes at level 1 (15 seeds; 2,415 functions with their body not shown), and the copy, the compiler's answer (1.4 MB of JSON) and the selection take 3.7 seconds together. At level 0 it is over the limit: the signatures of 110 files are more than 400,000 bytes.
+
+What it is not: there is no ranking (a name that is a common word selects more than it should, and the only answer to "too big" is to name less), one step is a fixed radius, a use of a static, a field or a variant is not an edge (`ids --edges` does not report them), and a compiler error at a line that was not shown does not widen the selection: only `item-not-shown` does.
 
 ## One attempt
 
@@ -91,14 +111,14 @@ The last line is `[CHANGE_VERDICT]<TAB>done|stuck|provider_error`; with `done`, 
 |---|---|
 | 0 | `done`: the patch is written |
 | 1 | `stuck`: every attempt refused |
-| 2 | usage, or a repository that cannot be used (`repo-invalid`, `repo-copy`, `repo-bundle`, `bundle-too-large`); nothing was run |
+| 2 | usage, or a repository that cannot be used or shown (`repo-invalid`, `repo-copy`, `repo-bundle`, `bundle-too-large`, `selection-failed`, `selection-empty`); nothing was run |
 | 4 | `provider_error`: the agent could not be reached |
 
-`WORKDIR/`: `base/` (the pristine copy), `tree/` (the last attempt's, the changed tree when `done`), `change.patch`, `bundle.src` (what the model is shown), `bundle.txt` and its `.task` and `.feedback`, `agent.log` (the agent's standard error), `usage.jsonl`, `run.log`.
+`WORKDIR/`: `base/` (the pristine copy), `tree/` (the last attempt's, the changed tree when `done`), `change.patch`, `bundle.src` (what the model is shown; with a selection also `bundle.all`, `bundle.hidden` and `edges.json`), `bundle.txt` and its `.task` and `.feedback`, `agent.log` (the agent's standard error), `usage.jsonl`, `run.log`.
 
 ## What it does not do (yet)
 
-* **One model call per attempt, over all the files.** The model sees every file of `src/` and `tests/` (up to 400000 bytes): there is no selection of the files that matter, so a repository bigger than that is refused. M-1 measured one file per call.
+* **The selection is not measured with a model.** A repository over the limit is shown as [a selection](#a-selection), which the gate tests with the stand-in agent only: whether a model does as well on signatures as on whole files (share accepted, attempts) has not been run. The agent itself reads at most 1 MiB, so `--max-bundle` stops there. And this repository still cannot be given to `--repo`: its `src/` is several programs, not one that `cancho test tests/X_test.cho src/*.cho` builds.
 * **The stale-base rule is Forge's.** The lifecycle doc has Forge apply the accepted patch to the *current* tip at publish and re-derive once (`patch-base-stale`). This command works on the working tree it is given and records no base revision.
 * **The gate is the one the task named**: `fmt --check`, `test` of `tests/*_test.cho` against `src/*.cho`, the line guard. A repository with other checks (examples, a `main`, a doc build) gets those from its own CI, not here; and `fmt --check` runs on all of `src/` and `tests/`, so a base that is not formatted is refused until it is.
 * **The required test is not shown to be good.** A bug fix's tests must fail on the base and a feature's must call the new code, but nothing mutates the new code to see that the tests would notice a wrong one.

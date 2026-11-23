@@ -1,0 +1,442 @@
+edition 7;
+
+module selection;
+
+// `selection` -- what the model is shown of a repository that is too big to be shown whole (docs/repo-patch.md, "A selection").
+//
+// The whole bundle is every `.cho` file of `src/` and `tests/` after a `=== FILE <path>` line. The selection is the same sections with most bodies
+// left out, decided from what `cancho ids --edges` says of `src/*.cho` (each declaration with its file, its lines, its signature and the types and
+// functions it refers to) and from the words of the request. Nothing here reads a file or runs a program: the driver (`repochange`) hands in the texts.
+//
+//   seeds      a declaration whose name is a whole word of the request (names of four bytes or more), or is listed in `--touch`, or whose file is
+//              named in the request (`src/x.cho` or `x.cho`)
+//   near       what a seed refers to, and what refers to a seed (one step each way)
+//   shown      a seed and a near declaration in full; every type in full (a type is its own signature); of every other function its signature and a
+//              `// body not shown` line; the text between declarations (imports, comments) as it is
+//   level 1    when that is still too much: a file of `src/` with no seed and nothing near is its `pub` signatures only
+//   tests      a test file is shown in full when it is `tests/X_test.cho` of a `src/X.cho` with a seed or a near declaration, or names a seed; of
+//              another one the first line of each function
+//
+// A function whose body was not shown is listed (`path<TAB>name`): the gate refuses a change that replaces or removes one (`item-not-shown`), and the
+// next attempt is shown it.
+
+import std.buffer;
+import std.bytes;
+import std.json;
+
+fn ident_byte(c: int) -> [] bool {
+    return c >= 48 && c <= 57 || c >= 65 && c <= 90 || c >= 97 && c <= 122 || c == 95;
+}
+
+// Is `word` in `text` as a whole word (not inside a longer name)?
+pub fn has_word[&t, &w](text: &t [byte], word: &w [byte]) -> [] bool {
+    let n = len(word);
+    if n == 0 {
+        return false;
+    }
+    var i = 0;
+    while i + n <= len(text) {
+        if bytes.equal(text[i..i + n], word) && (i == 0 || ident_byte(int_of(text[i - 1])) == false) && (i + n == len(text) || ident_byte(int_of(text[i + n])) == false) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+// Is `name` one of the names of `list` (separated by commas)?
+pub fn listed[&l, &n](list: &l [byte], name: &n [byte]) -> [] bool {
+    var i = 0;
+    while i < len(list) {
+        var e = i;
+        while e < len(list) && int_of(list[e]) != 44 {
+            e = e + 1;
+        }
+        if e > i && bytes.equal(list[i..e], name) {
+            return true;
+        }
+        i = e + 1;
+    }
+    return false;
+}
+
+fn text_of[&e, &t](edges: &e [byte], t: &t [int], node: int, key: &static [byte]) -> [] &e [byte] {
+    return json.string_view(edges, t, json.get(edges, t, node, key));
+}
+
+// The string at `node`, decoded, added to `out`.
+fn put_string[&h, &e, &t](heap: &!h Heap, out: buffer.Buffer, edges: &e [byte], t: &t [int], node: int) -> [heap] buffer.Buffer {
+    if json.string_plain(t, node) {
+        return buffer.append(heap, out, json.string_view(edges, t, node));
+    }
+    let n = json.string_length(edges, t, node);
+    if n <= 0 {
+        return out;
+    }
+    let store = box_slice(heap, n, byte_of(0));
+    var b = out;
+    borrow mut store as &!sw in {
+        let got = json.string_into(edges, t, node, contents(sw));
+        if got > 0 {
+            b = buffer.append(heap, b, contents(sw)[0..got]);
+        }
+    }
+    unbox_slice(heap, store);
+    return b;
+}
+
+// Does the declaration at `node` refer to the declaration at `other`?
+fn refers_to[&e, &t](edges: &e [byte], t: &t [int], node: int, other: int) -> [] bool {
+    let home = text_of(edges, t, other, "module");
+    let name = text_of(edges, t, other, "name");
+    let refs = json.get(edges, t, node, "refers");
+    var r = refs + 1;
+    var k = 0;
+    while k < json.count(t, refs) {
+        if bytes.equal(text_of(edges, t, r, "name"), name) && bytes.equal(text_of(edges, t, r, "module"), home) {
+            return true;
+        }
+        r = json.skip(t, r);
+        k = k + 1;
+    }
+    return false;
+}
+
+// Does the request name the file: its path, or its path without the `src/` in front?
+fn names_file[&q, &f](request: &q [byte], file: &f [byte]) -> [] bool {
+    if len(file) == 0 {
+        return false;
+    }
+    if has_word(request, file) {
+        return true;
+    }
+    return len(file) > 4 && bytes.starts_with(file, "src/") && has_word(request, file[4..len(file)]);
+}
+
+// Fill `d` for the `n` declarations of the array `arr`: `d[2 * i]` the node of declaration `i`, `d[2 * i + 1]` 1 for a seed, 2 for a near one, 0 for
+// the rest. The answer is how many seeds there are.
+fn mark[&e, &t, &d, &q, &u](edges: &e [byte], t: &t [int], arr: int, n: int, d: &!d [int], request: &q [byte], touch: &u [byte]) -> [] int {
+    var node = arr + 1;
+    var seeds = 0;
+    var i = 0;
+    while i < n {
+        d[2 * i] = node;
+        d[2 * i + 1] = 0;
+        let name = text_of(edges, t, node, "name");
+        let file = text_of(edges, t, node, "file");
+        if listed(touch, name) || len(name) >= 4 && has_word(request, name) || names_file(request, file) {
+            d[2 * i + 1] = 1;
+            seeds = seeds + 1;
+        }
+        node = json.skip(t, node);
+        i = i + 1;
+    }
+    if seeds == 0 {
+        return 0;
+    }
+    // one step each way from a seed: what it refers to, and what refers to it
+    i = 0;
+    while i < n {
+        if d[2 * i + 1] == 1 {
+            var j = 0;
+            while j < n {
+                if d[2 * j + 1] == 0 && (refers_to(edges, t, d[2 * i], d[2 * j]) || refers_to(edges, t, d[2 * j], d[2 * i])) {
+                    d[2 * j + 1] = 2;
+                }
+                j = j + 1;
+            }
+        }
+        i = i + 1;
+    }
+    return seeds;
+}
+
+// The byte after `lines` more line ends from `pos`.
+fn after_lines[&b](body: &b [byte], pos: int, lines: int) -> [] int {
+    var p = pos;
+    var left = lines;
+    while left > 0 && p < len(body) {
+        if int_of(body[p]) == 10 {
+            left = left - 1;
+        }
+        p = p + 1;
+    }
+    return p;
+}
+
+// The name of the function a line starts (`fn NAME` or `pub fn NAME`), or nothing.
+fn fn_name_of[&l](line: &l [byte]) -> [] &l [byte] {
+    var i = 0;
+    if bytes.starts_with(line, "pub fn ") {
+        i = 7;
+    } else if bytes.starts_with(line, "fn ") {
+        i = 3;
+    } else {
+        return line[0..0];
+    }
+    var e = i;
+    while e < len(line) && ident_byte(int_of(line[e])) {
+        e = e + 1;
+    }
+    return line[i..e];
+}
+
+fn hide[&h, &p, &n](heap: &!h Heap, hidden: buffer.Buffer, path: &p [byte], name: &n [byte]) -> [heap] buffer.Buffer {
+    var b = buffer.append(heap, hidden, path);
+    b = buffer.push(heap, b, byte_of(9));
+    b = buffer.append(heap, b, name);
+    return buffer.push(heap, b, byte_of(10));
+}
+
+// A file of `src/` the compiler described: its text with the bodies of the functions that are neither seeds nor near left out; at level 1, with no
+// seed and nothing near in it, its `pub` signatures only.
+fn source_section[&h, &e, &t, &d, &p, &b](heap: &!h Heap, out: buffer.Buffer, hid: buffer.Buffer, edges: &e [byte], t: &t [int], d: &d [int], n: int, path: &p [byte], body: &b [byte], level: int) -> [heap] (buffer.Buffer, buffer.Buffer) {
+    var shown = out;
+    var hidden = hid;
+    var wanted = false;
+    var i = 0;
+    while i < n {
+        if d[2 * i + 1] > 0 && bytes.equal(text_of(edges, t, d[2 * i], "file"), path) {
+            wanted = true;
+        }
+        i = i + 1;
+    }
+    if level > 0 && wanted == false {
+        shown = buffer.append(heap, shown, "// NOT SHOWN: only the signatures of the public declarations of this file are below.\n");
+        i = 0;
+        while i < n {
+            let node = d[2 * i];
+            if bytes.equal(text_of(edges, t, node, "file"), path) {
+                if bytes.equal(text_of(edges, t, node, "kind"), "fn") {
+                    hidden = hide(heap, hidden, path, text_of(edges, t, node, "name"));
+                }
+                if json.to_bool(t, json.get(edges, t, node, "pub")) {
+                    shown = put_string(heap, shown, edges, t, json.get(edges, t, node, "signature"));
+                    shown = buffer.push(heap, shown, byte_of(10));
+                }
+            }
+            i = i + 1;
+        }
+        return (shown, hidden);
+    }
+    var pos = 0;
+    var line = 1;
+    i = 0;
+    while i < n {
+        let node = d[2 * i];
+        if bytes.equal(text_of(edges, t, node, "file"), path) {
+            let first = json.to_int(edges, t, json.get(edges, t, node, "line"));
+            let last = json.to_int(edges, t, json.get(edges, t, node, "end_line"));
+            if first >= line && last >= first {
+                // what is before the declaration (imports, comments, blank lines), as it is
+                let start = after_lines(body, pos, first - line);
+                shown = buffer.append(heap, shown, body[pos..start]);
+                let end = after_lines(body, start, last - first + 1);
+                if d[2 * i + 1] > 0 || bytes.equal(text_of(edges, t, node, "kind"), "fn") == false {
+                    shown = buffer.append(heap, shown, body[start..end]);
+                } else {
+                    shown = put_string(heap, shown, edges, t, json.get(edges, t, node, "signature"));
+                    shown = buffer.append(heap, shown, " {\n    // body not shown: ");
+                    shown = buffer.push_nat(heap, shown, last - first + 1);
+                    shown = buffer.append(heap, shown, " lines\n}\n");
+                    hidden = hide(heap, hidden, path, text_of(edges, t, node, "name"));
+                }
+                pos = end;
+                line = last + 1;
+            }
+        }
+        i = i + 1;
+    }
+    shown = buffer.append(heap, shown, body[pos..len(body)]);
+    return (shown, hidden);
+}
+
+// Is the test file `path` (its text `body`) one to show in full: the tests of a file with a seed or a near declaration, or one that names a seed?
+fn test_wanted[&e, &t, &d, &p, &b](edges: &e [byte], t: &t [int], d: &d [int], n: int, path: &p [byte], body: &b [byte]) -> [] bool {
+    var i = 0;
+    while i < n {
+        if d[2 * i + 1] > 0 {
+            let file = text_of(edges, t, d[2 * i], "file");
+            // src/X.cho and tests/X_test.cho
+            if len(file) > 8 && len(path) == len(file) + 7 && bytes.starts_with(file, "src/") && bytes.starts_with(path, "tests/") && bytes.ends_with(path, "_test.cho") && bytes.equal(file[4..len(file) - 4], path[6..len(path) - 9]) {
+                return true;
+            }
+            if d[2 * i + 1] == 1 && has_word(body, text_of(edges, t, d[2 * i], "name")) {
+                return true;
+            }
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+// A file the compiler did not describe, or a test file that is not wanted: its `edition`, `module` and `import` lines and the first line of each function.
+fn outline_section[&h, &p, &b](heap: &!h Heap, out: buffer.Buffer, hid: buffer.Buffer, path: &p [byte], body: &b [byte]) -> [heap] (buffer.Buffer, buffer.Buffer) {
+    var shown = buffer.append(heap, out, "// NOT SHOWN: only the first line of each function of this file is below.\n");
+    var hidden = hid;
+    var i = 0;
+    while i < len(body) {
+        var e = i;
+        while e < len(body) && int_of(body[e]) != 10 {
+            e = e + 1;
+        }
+        let line = body[i..e];
+        let name = fn_name_of(line);
+        if len(name) > 0 {
+            hidden = hide(heap, hidden, path, name);
+        }
+        if len(name) > 0 || bytes.starts_with(line, "edition ") || bytes.starts_with(line, "module ") || bytes.starts_with(line, "import ") {
+            shown = buffer.append(heap, shown, line);
+            shown = buffer.push(heap, shown, byte_of(10));
+        }
+        i = e + 1;
+    }
+    return (shown, hidden);
+}
+
+// The sections of `bundle`, each as the selection shows it.
+fn sections[&h, &e, &t, &d, &b](heap: &!h Heap, edges: &e [byte], t: &t [int], d: &d [int], n: int, bundle: &b [byte], level: int) -> [heap] (buffer.Buffer, buffer.Buffer) {
+    var shown = buffer.empty(heap, len(bundle) / 4 + 64);
+    var hidden = buffer.empty(heap, 64);
+    var i = 0;
+    while i < len(bundle) {
+        // a header line, then the text up to the next header
+        var e = i;
+        while e < len(bundle) && int_of(bundle[e]) != 10 {
+            e = e + 1;
+        }
+        var z = e + 1;
+        var more = true;
+        while more && z < len(bundle) {
+            if bytes.starts_with(bundle[z..len(bundle)], "=== FILE ") {
+                more = false;
+            } else {
+                while z < len(bundle) && int_of(bundle[z]) != 10 {
+                    z = z + 1;
+                }
+                z = z + 1;
+            }
+        }
+        if z > len(bundle) {
+            z = len(bundle);
+        }
+        if bytes.starts_with(bundle[i..e], "=== FILE ") && e + 1 <= z {
+            let path = bundle[i + 9..e];
+            let body = bundle[e + 1..z];
+            shown = buffer.append(heap, shown, bundle[i..e + 1]);
+            var described = false;
+            var k = 0;
+            while k < n && described == false {
+                described = bytes.equal(text_of(edges, t, d[2 * k], "file"), path);
+                k = k + 1;
+            }
+            if described {
+                let (s2, h2) = source_section(heap, shown, hidden, edges, t, d, n, path, body, level);
+                shown = s2;
+                hidden = h2;
+            } else if bytes.starts_with(path, "tests/") && test_wanted(edges, t, d, n, path, body) {
+                shown = buffer.append(heap, shown, body);
+            } else {
+                let (s2, h2) = outline_section(heap, shown, hidden, path, body);
+                shown = s2;
+                hidden = h2;
+            }
+        }
+        i = z;
+    }
+    return (shown, hidden);
+}
+
+// The selection of `bundle` for `request`: what is shown, the functions whose body is not (`path<TAB>name` lines), and how many seeds there are (0:
+// the request names nothing of the repository, and nothing is shown; -1: `edges` is not what `cancho ids --edges` writes).
+pub fn select[&h, &e, &b, &q, &u](heap: &!h Heap, edges: &e [byte], bundle: &b [byte], request: &q [byte], touch: &u [byte], level: int) -> [heap] (buffer.Buffer, buffer.Buffer, int) {
+    var shown = buffer.empty(heap, 16);
+    var hidden = buffer.empty(heap, 16);
+    var seeds = 0 - 1;
+    let tape = box_slice(heap, json.tape_len(edges), 0);
+    borrow mut tape as &!tw in {
+        let t = contents(tw);
+        if json.parse(edges, t) > 0 && json.is_array(t, json.get(edges, t, 0, "declarations")) {
+            let arr = json.get(edges, t, 0, "declarations");
+            let n = json.count(t, arr);
+            let info = box_slice(heap, 2 * n + 2, 0);
+            borrow mut info as &!iw in {
+                let d = contents(iw);
+                seeds = mark(edges, t, arr, n, d, request, touch);
+                if seeds > 0 {
+                    let (s2, h2) = sections(heap, edges, t, d, n, bundle, level);
+                    buffer.drop(heap, shown);
+                    buffer.drop(heap, hidden);
+                    shown = s2;
+                    hidden = h2;
+                }
+            }
+            unbox_slice(heap, info);
+        }
+    }
+    unbox_slice(heap, tape);
+    return (shown, hidden, seeds);
+}
+
+// The names of the `item-not-shown` lines of a report (`[CHANGE_ERROR]<TAB>item-not-shown<TAB>path<TAB>NAME: ...`), added to `touch` with commas.
+pub fn widen[&h, &r](heap: &!h Heap, touch: buffer.Buffer, rep: &r [byte]) -> [heap] buffer.Buffer {
+    var out = touch;
+    var p = 0;
+    while p < len(rep) {
+        var e = p;
+        while e < len(rep) && int_of(rep[e]) != 10 {
+            e = e + 1;
+        }
+        let line = rep[p..e];
+        if bytes.starts_with(line, "[CHANGE_ERROR]\titem-not-shown\t") {
+            var a = 30;
+            while a < len(line) && int_of(line[a]) != 9 {
+                a = a + 1;
+            }
+            a = a + 1;
+            var z = a;
+            while z < len(line) && ident_byte(int_of(line[z])) {
+                z = z + 1;
+            }
+            if z > a {
+                out = buffer.push(heap, out, byte_of(44));
+                out = buffer.append(heap, out, line[a..z]);
+            }
+        }
+        p = e + 1;
+    }
+    return out;
+}
+
+// The lines of `records` (`splice.item_delta`: `PATH<TAB>STATUS<TAB>KIND<TAB>NAME<TAB>...`) that replace (`C`) or remove (`R`) an item `hidden` lists,
+// as `path<TAB>name` lines.
+pub fn touched_hidden[&h, &r, &d](heap: &!h Heap, records: &r [byte], hidden: &d [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 32);
+    var p = 0;
+    while p < len(records) {
+        var e = p;
+        while e < len(records) && int_of(records[e]) != 10 {
+            e = e + 1;
+        }
+        let line = records[p..e];
+        let path = bytes.field(line, 9, 1);
+        let status = bytes.field(line, 9, 2);
+        let name = bytes.field(line, 9, 4);
+        if len(name) > 0 && (bytes.equal(status, "C") || bytes.equal(status, "R")) {
+            var q = 0;
+            while q < len(hidden) {
+                var f = q;
+                while f < len(hidden) && int_of(hidden[f]) != 10 {
+                    f = f + 1;
+                }
+                let h = hidden[q..f];
+                if len(h) == len(path) + 1 + len(name) && bytes.starts_with(h, path) && int_of(h[len(path)]) == 9 && bytes.ends_with(h, name) {
+                    out = hide(heap, out, path, name);
+                }
+                q = f + 1;
+            }
+        }
+        p = e + 1;
+    }
+    return out;
+}
