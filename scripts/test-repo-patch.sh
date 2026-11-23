@@ -17,6 +17,9 @@
 #   agent      the agent gives up (exit 11) and is asked again; the agent cannot be reached (exit 7): provider_error, exit 4
 #   usage      a repository with a link in src/, no src/, a work directory inside the repository, a relative path, an unknown kind, a missing option: exit 2,
 #              nothing run
+#   selection  a repository over --max-bundle: what the request names and what is one step from it shown in full, the rest as signatures; a change to
+#              a function whose body was not shown refused (`item-not-shown`) and shown in the next attempt; --touch; level 1; still too big and a
+#              request that names nothing refused before the agent runs; a repository that fits shown whole as before (needs a cancho with `ids --edges`)
 #   static     the driver never runs git (no `git` word in its code outside comments)
 #
 #   tests that prove something, the shape of a change: see docs/repo-patch.md (`test-passes-on-base` for a bug, `test-not-exercising` for a feature,
@@ -50,6 +53,15 @@ M = [
  ("lines-not-counted", "change.cho", 'return limit_of(heap, ctext, "max-added-lines") >= 0;', 'return limit_of(heap, ctext, "max-added-lines") >= 100000000;'),
  ("only-items", "change.cho", "in_list(only, name) == false {", "false {"),
  ("bad-constraint-accepted", "repochange.cho", "            if bad > 0 {\n                var m", "            if false {\n                var m"),
+ ("blind-change-accepted", "repochange.cho", "        if hok {\n            var blind", "        if false {\n            var blind"),
+ ("never-widened", "repochange.cho", 'if selected && bytes.find(buffer.bytes(rq2), "\\titem-not-shown\\t") >= 0 {', 'if false {'),
+ ("nothing-near", "selection.cho", "d[2 * j + 1] = 2;", "d[2 * j + 1] = 0;"),
+ ("no-seed-from-the-request", "selection.cho", "len(name) >= 4 && has_word(request, name)", "false"),
+ ("touch-ignored", "selection.cho", "if listed(touch, name) ||", "if false ||"),
+ ("every-body-shown", "selection.cho", 'if d[2 * i + 1] > 0 || bytes.equal(text_of(edges, t, node, "kind"), "fn") == false {', "if true {"),
+ ("tests-never-shown", "selection.cho", "} else if bytes.starts_with(path, \"tests/\") && test_wanted(edges, t, d, n, path, body) {", "} else if false {"),
+ ("level-1-off", "selection.cho", "if level > 0 && wanted == false {", "if false {"),
+ ("limit-not-held", "repochange.cho", "} else if len(buffer.bytes(sr)) > most {", "} else if false {"),
 ]
 for name, fn, old, new in M:
     d = os.path.join(work, name)
@@ -91,7 +103,7 @@ hasnt() { case "$2" in *"$3"*) echo "FAIL: $1: '$3' should not be in: $(printf '
     || { cat "$d/build.err" >&2; echo "pure gate did not build" >&2; exit 2; }
 "$CANCHO" build "$root/tests/programs/build.cho" "$SRC/build.cho" "$SRC/project.cho" "$SRC/plan.cho" "$SRC/driver.cho" \
     "$SRC/checker.cho" "$SRC/signature.cho" "$SRC/loop_check.cho" "$SRC/snapshot.cho" "$SRC/trail.cho" \
-    "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" "$SRC/library.cho" "$SRC/cases.cho" "$SRC/change.cho" "$SRC/repochange.cho" \
+    "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" "$SRC/library.cho" "$SRC/cases.cho" "$SRC/change.cho" "$SRC/repochange.cho" "$SRC/selection.cho" \
     --std -o "$d/cb" >/dev/null 2>"$d/build2.err" || { cat "$d/build2.err" >&2; echo "gate did not build" >&2; exit 2; }
 G="$d/gate"
 F="$root/tests/fixtures/repochange"
@@ -609,8 +621,146 @@ out=$("$d/cb" --repo "$(newrepo)" --change "$req" --checker "$CANCHO" --work "$d
 : > "$d/empty.txt"; out=$("$d/cb" --repo "$(newrepo)" --change "$d/empty.txt" --checker "$CANCHO" --work "$d/w-u-empty" --agent x --provider p --model m 2>&1); expect "usage empty request: exit 2" "$?" 2
 [ -e "$d/w-u-empty" ] && { echo "FAIL: usage empty request: a work directory was made" >&2; fail=1; }
 
+# ---- a selection: a repository too big to be shown whole (docs/repo-patch.md, "A selection"; src/selection.cho) ------------------------------------
+# The fixture with more in it (src/shapes.cho calls mathx.double; src/other.cho is 24 functions nothing here is about), and --max-bundle set under its size.
+bigrepo() {
+    r=$(newrepo)
+cat > "$r/src/shapes.cho" <<'EOT'
+edition 7;
+
+module shapes;
+
+import mathx;
+
+// The area of a square, twice.
+pub fn area(side: int) -> [] int {
+    return mathx.double(side * side);
+}
+
+pub fn perimeter(side: int) -> [] int {
+    let four = 4;
+    return side * four;
+}
+EOT
+cat > "$r/tests/shapes_test.cho" <<'EOT'
+edition 7;
+
+module shapes_test;
+
+import shapes;
+import std.test;
+
+pub fn test_area() -> [] int {
+    test.assert(shapes.area(3) == 18);
+    return 0;
+}
+EOT
+{ printf 'edition 7;\n\nmodule other;\n'; n=0; while [ $n -lt 24 ]; do v=pub; [ $((n % 2)) = 0 ] || v=; printf '\n%sfn noise_%s(x: int) -> [] int {\n    let a = x + %s;\n    let b = a * 3;\n    let c = b - a;\n    return c + %s;\n}\n' "${v:+pub }" "$n" "$n" "$n"; n=$((n + 1)); done; } > "$r/src/other.cho"
+cat > "$r/tests/other_test.cho" <<'EOT'
+edition 7;
+
+module other_test;
+
+import other;
+import std.test;
+
+pub fn test_noise() -> [] int {
+    test.assert(other.noise_0(1) == 2);
+    return 0;
+}
+EOT
+    echo "$r"
+}
+keep_req=$req
+req="$d/change-double.txt"; printf 'Make double add the number to itself instead of multiplying.\n' > "$req"
+DOUBLE='=== FILE src/mathx.cho
+pub fn double(x: int) -> [] int { return x + x; }'
+if "$CANCHO" ids --std --edges "$R/repo/src/mathx.cho" >/dev/null 2>&1; then
+    # the request names `double`: it and what refers to it (shapes.area) are shown in full, with their tests; of the rest, the signatures
+    rp=$(bigrepo); rc=$(newrc); w="$d/w-sel"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+    out=$(run "$rp" "$rc" "$w" refactor --max-bundle 3500); expect "selection: exit" "$?" 0
+    expect "selection: verdict" "$(verdict "$out")" done
+    has "selection: the run says what it selected (one seed, level 0)" "$out" "[CHANGE_SELECTION]	1	$(wc -c < "$w/bundle.src" | tr -d ' ')	0"
+    [ "$(wc -c < "$w/bundle.all")" -gt 3500 ] && [ "$(wc -c < "$w/bundle.src")" -le 3500 ] || { echo "FAIL: selection: the whole is not over the limit, or the selection is" >&2; fail=1; }
+    b=$(cat "$rc/bundle.1")
+    has "selection: the seed is shown in full" "$b" "pub fn double(x: int) -> [] int {
+    return x * 2;
+}"
+    has "selection: what refers to the seed is shown in full" "$b" "return mathx.double(side * side);"
+    has "selection: another function is its signature" "$b" "pub fn half(x: int) -> [] int {
+    // body not shown: 3 lines
+}"
+    hasnt "selection: and not its body" "$b" "return x / 2;"
+    hasnt "selection: a function nothing is about is not shown" "$b" "let b = a * 3;"
+    has "selection: a private function is still named" "$b" "fn noise_1(x: int) -> [] int {"
+    has "selection: comments and imports stay" "$b" "// The area of a square, twice."
+    has "selection: the tests of the seed's file are shown" "$b" "test.assert(mathx.half(9) == 4);"
+    has "selection: the tests of a near file are shown" "$b" "test.assert(shapes.area(3) == 18);"
+    has "selection: another test file is outlined" "$b" "=== FILE tests/other_test.cho
+// NOT SHOWN: only the first line of each function of this file is below."
+    hasnt "selection: and its bodies are not shown" "$b" "other.noise_0(1)"
+    expect "selection: the hidden functions are listed" "$(grep -c . "$w/bundle.hidden" | tr -d ' ')" 28
+    has "selection: the change is in the tree" "$(cat "$w/tree/src/mathx.cho")" "return x + x;"
+
+    # a change to a function whose body was not shown is refused, and the next attempt is shown it
+    rp=$(bigrepo); rc=$(newrc); w="$d/w-sel-blind"
+    printf '=== FILE src/mathx.cho\npub fn half(x: int) -> [] int { return (x - x %% 2) / 2; }\n' > "$rc/reply.1"; cp "$rc/reply.1" "$rc/reply.2"
+    out=$(run "$rp" "$rc" "$w" refactor --max-bundle 3500)
+    expect "selection blind: refused, then passed" "$(attempts "$out")" "1:refused:item-not-shown 2:passed"
+    has "selection blind: the feedback names the function" "$(cat "$rc/feedback.2")" "[CHANGE_ERROR]	item-not-shown	src/mathx.cho	half: the body of this function was not shown"
+    hasnt "selection blind: the first bundle did not show it" "$(cat "$rc/bundle.1")" "return x / 2;"
+    has "selection blind: the second one does" "$(cat "$rc/bundle.2")" "return x / 2;"
+    expect "selection blind: the run says both selections" "$(printf '%s\n' "$out" | grep -c '^\[CHANGE_SELECTION\]' | tr -d ' ')" 2
+
+    # --touch names what to show when the request names nothing
+    printf 'The lower bound wins when the bounds cross.\n' > "$d/change-vague.txt"; req="$d/change-vague.txt"
+    rp=$(bigrepo); rc=$(newrc); w="$d/w-sel-empty"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+    out=$(run "$rp" "$rc" "$w" refactor --max-bundle 3500); expect "selection empty: exit 2" "$?" 2
+    has "selection empty: the tag" "$out" "[CHANGE_ERROR]	selection-empty	-	"
+    expect "selection empty: the agent was not run" "$(wc -l < "$rc/log" | tr -d ' ')" 0
+    rp=$(bigrepo); rc=$(newrc); w="$d/w-sel-touch"
+    printf '=== FILE src/mathx.cho\npub fn clamp(x: int, lo: int, hi: int) -> [] int { if x < lo { return lo; } if x > hi { return hi; } return x + 0; }\n' > "$rc/reply.1"
+    out=$(run "$rp" "$rc" "$w" refactor --max-bundle 3500 --touch clamp); expect "selection touch: verdict" "$(verdict "$out")" done
+    has "selection touch: the named function is shown" "$(cat "$rc/bundle.1")" "    if x > hi {"
+    req="$d/change-double.txt"
+
+    # level 1: when the signatures of everything are still too much, a file nothing is about is its public signatures
+    rp=$(bigrepo); rc=$(newrc); w="$d/w-sel-l1"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+    out=$(run "$rp" "$rc" "$w" refactor --max-bundle 2500); expect "selection level 1: verdict" "$(verdict "$out")" done
+    has "selection level 1: said" "$out" "[CHANGE_SELECTION]	1	$(wc -c < "$w/bundle.src" | tr -d ' ')	1"
+    b=$(cat "$rc/bundle.1")
+    has "selection level 1: public signatures only" "$b" "// NOT SHOWN: only the signatures of the public declarations of this file are below.
+pub fn noise_0(x: int) -> [] int
+pub fn noise_2(x: int) -> [] int"
+    hasnt "selection level 1: no private one" "$b" "fn noise_1("
+    has "selection level 1: the seed's file is as at level 0" "$b" "    // body not shown: 9 lines"
+
+    # still too much: refused before the agent is run
+    rp=$(bigrepo); rc=$(newrc); w="$d/w-sel-big"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+    out=$(run "$rp" "$rc" "$w" refactor --max-bundle 600); expect "selection too big: exit 2" "$?" 2
+    has "selection too big: the tag" "$out" "[CHANGE_ERROR]	bundle-too-large	-	"
+    expect "selection too big: the agent was not run" "$(wc -l < "$rc/log" | tr -d ' ')" 0
+
+    # a repository that fits is shown whole, as before: no selection, nothing hidden
+    rp=$(bigrepo); rc=$(newrc); w="$d/w-sel-whole"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+    out=$(run "$rp" "$rc" "$w" refactor); expect "whole: verdict" "$(verdict "$out")" done
+    hasnt "whole: no selection" "$out" "[CHANGE_SELECTION]"
+    has "whole: every body is shown" "$(cat "$rc/bundle.1")" "let b = a * 3;"
+    [ -e "$w/bundle.hidden" ] && { echo "FAIL: whole: a list of hidden functions was written" >&2; fail=1; }
+else
+    # a checker with no `ids --edges` (the 0.1.0 release): a repository over the limit is refused, by its tag, before the agent is run
+    echo "note: this cancho has no \`ids --edges\`: the selection cases are not run, only its refusal" >&2
+    rp=$(bigrepo); rc=$(newrc); w="$d/w-sel-old"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+    out=$(run "$rp" "$rc" "$w" refactor --max-bundle 3500); expect "selection, old checker: exit 2" "$?" 2
+    has "selection, old checker: the tag" "$out" "[CHANGE_ERROR]	selection-failed	-	"
+    expect "selection, old checker: the agent was not run" "$(wc -l < "$rc/log" | tr -d ' ')" 0
+fi
+rp=$(bigrepo); rc=$(newrc); out=$(run "$rp" "$rc" "$d/w-u-touch" refactor --touch src/mathx.cho); expect "usage --touch with a path: exit 2" "$?" 2
+rp=$(bigrepo); rc=$(newrc); out=$(run "$rp" "$rc" "$d/w-u-maxb" refactor --max-bundle 0); expect "usage --max-bundle 0: exit 2" "$?" 2
+req=$keep_req
+
 # static: the driver never runs git
-code=$(grep -v '^[[:space:]]*//' "$SRC/repochange.cho" "$SRC/change.cho" | grep -E 'git (push|commit|add|checkout|clone|apply|fetch)|"git |/git ' | head -3)
+code=$(grep -v '^[[:space:]]*//' "$SRC/repochange.cho" "$SRC/selection.cho" "$SRC/change.cho" | grep -E 'git (push|commit|add|checkout|clone|apply|fetch)|"git |/git ' | head -3)
 expect "static: no git in the driver" "$code" ""
 
 [ $fail -eq 0 ] && echo "repo.patch gate: ok"

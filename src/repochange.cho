@@ -16,6 +16,7 @@ module repochange;
 // the others `plain`), run as `acceptance` runs a command. Exit codes: 0 done, 1 stuck, 2 usage or a repository that cannot be used, 4 provider_error.
 
 import change;
+import selection;
 import splice;
 import std.buffer;
 import std.bytes;
@@ -169,7 +170,8 @@ fn tags_of[&h, &r](heap: &!h Heap, rep: &r [byte]) -> [heap] buffer.Buffer {
     return out;
 }
 
-// The bundle the model is shown: every `.cho` file under `src/` and `tests/` of the base copy, each after a `=== FILE` line. 0, or the reason it cannot be made.
+// The bundle the model is shown: every `.cho` file under `src/` and `tests/` of the base copy, each after a `=== FILE` line. 0, or the reason it cannot be made
+// (1: the files cannot be read, 2: there is none) or shown whole (3: it is over `most` bytes, and a selection of it is shown instead, `select_bundle`).
 fn make_bundle[&h, &x, &c, &w](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, wd: &w [byte], most: int) -> [heap, exec(""), clock, poll] int {
     var s = cat3(heap, "cd ", wd, "/base && : > ../bundle.src && for f in $(find src tests -type f -name '*.cho' 2>/dev/null | grep -E '^[A-Za-z0-9_./-]+$' | LC_ALL=C sort); do printf '=== FILE %s\\n' \"$f\" >> ../bundle.src && cat \"$f\" >> ../bundle.src && printf '\\n' >> ../bundle.src; done");
     var r = 0 - 1;
@@ -182,11 +184,11 @@ fn make_bundle[&h, &x, &c, &w](heap: &!h Heap, exec: &x Exec(""), clock: &c Cloc
     if r != 0 {
         return 1;
     }
-    var t = cat3(heap, "[ $(wc -c < ", wd, "/bundle.src) -le ");
-    t = buffer.push_nat(heap, t, most);
-    t = buffer.append(heap, t, " ] && [ -s ");
+    var t = cat3(heap, "[ -s ", wd, "/bundle.src ] || exit 2; [ $(wc -c < ");
     t = buffer.append(heap, t, wd);
-    t = buffer.append(heap, t, "/bundle.src ]");
+    t = buffer.append(heap, t, "/bundle.src) -le ");
+    t = buffer.push_nat(heap, t, most);
+    t = buffer.append(heap, t, " ] || exit 3");
     var r2 = 0 - 1;
     borrow t as &tr in {
         let (code, said) = sh(heap, exec, clock, buffer.bytes(tr), 4096, 10000);
@@ -194,10 +196,109 @@ fn make_bundle[&h, &x, &c, &w](heap: &!h Heap, exec: &x Exec(""), clock: &c Cloc
         r2 = code;
     }
     buffer.drop(heap, t);
+    if r2 == 3 {
+        return 3;
+    }
     if r2 != 0 {
         return 2;
     }
     return 0;
+}
+
+// A file's bytes whatever its size (at most 64 MiB), or false: the whole bundle and what `cancho ids --edges` wrote are over what `slurp` reads.
+fn slurp_any[&h, &x, &c, &f, &p](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &f Fs(""), path: &p [byte]) -> [heap, exec(""), clock, poll, fs_read("")] (buffer.Buffer, bool) {
+    var size = 0 - 1;
+    var q = cat3(heap, "wc -c < ", path, " | tr -d ' \n'");
+    borrow q as &qr in {
+        let (code, said) = sh(heap, exec, clock, buffer.bytes(qr), 64, 10000);
+        borrow said as &sr in {
+            if code == 0 {
+                size = digits_of(buffer.bytes(sr));
+            }
+        }
+        buffer.drop(heap, said);
+    }
+    buffer.drop(heap, q);
+    var out = buffer.empty(heap, 16);
+    if size < 0 || size > 67108864 {
+        return (out, false);
+    }
+    let store = box_slice(heap, size + 1, byte_of(0));
+    var ok = false;
+    borrow mut store as &!sw in {
+        let n = fs_read(fs, path, contents(sw));
+        if n == size {
+            ok = true;
+            out = buffer.append(heap, out, contents(sw)[0..n]);
+        }
+    }
+    unbox_slice(heap, store);
+    return (out, ok);
+}
+
+// The selection (`selection.select`) of the whole bundle (`WORKDIR/bundle.all`) for the request, from what `cancho ids --edges` said (`WORKDIR/edges.json`):
+// written as `WORKDIR/bundle.src`, with the functions whose body is not shown in `WORKDIR/bundle.hidden`. Level 0 first, level 1 when that is over `most`
+// bytes. 0 and the line that says it (`[CHANGE_SELECTION]<TAB>seeds<TAB>bytes<TAB>level`); or 1: over `most` at level 1 too, 2: the request names nothing
+// of the repository, 3: the two files cannot be read or the second is not that JSON.
+fn select_bundle[&h, &x, &c, &z, &w, &q, &u](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &z Fs(""), wd: &w [byte], request: &q [byte], touch: &u [byte], most: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write("")] (int, buffer.Buffer) {
+    var line = buffer.empty(heap, 64);
+    var status = 3;
+    let all_path = cat3(heap, wd, "/bundle.all", "");
+    let edges_path = cat3(heap, wd, "/edges.json", "");
+    let src_path = cat3(heap, wd, "/bundle.src", "");
+    let hidden_path = cat3(heap, wd, "/bundle.hidden", "");
+    borrow all_path as &ap in {
+        borrow edges_path as &ep in {
+            let (all, aok) = slurp_any(heap, exec, clock, fs, buffer.bytes(ap));
+            let (edges, eok) = slurp_any(heap, exec, clock, fs, buffer.bytes(ep));
+            if aok && eok {
+                borrow all as &ar in {
+                    borrow edges as &er in {
+                        var level = 0;
+                        while level < 2 && status != 0 && status != 2 {
+                            let (shown, hidden, seeds) = selection.select(heap, buffer.bytes(er), buffer.bytes(ar), request, touch, level);
+                            borrow shown as &sr in {
+                                borrow hidden as &hr in {
+                                    if seeds < 0 {
+                                        status = 3;
+                                    } else if seeds == 0 {
+                                        status = 2;
+                                    } else if len(buffer.bytes(sr)) > most {
+                                        status = 1;
+                                    } else {
+                                        borrow src_path as &sp in {
+                                            fs_write(fs, buffer.bytes(sp), buffer.bytes(sr));
+                                        }
+                                        borrow hidden_path as &hp in {
+                                            fs_write(fs, buffer.bytes(hp), buffer.bytes(hr));
+                                        }
+                                        line = buffer.append(heap, line, "[CHANGE_SELECTION]\t");
+                                        line = buffer.push_nat(heap, line, seeds);
+                                        line = buffer.push(heap, line, byte_of(9));
+                                        line = buffer.push_nat(heap, line, len(buffer.bytes(sr)));
+                                        line = buffer.push(heap, line, byte_of(9));
+                                        line = buffer.push_nat(heap, line, level);
+                                        line = buffer.push(heap, line, byte_of(10));
+                                        status = 0;
+                                    }
+                                }
+                            }
+                            buffer.drop(heap, shown);
+                            buffer.drop(heap, hidden);
+                            level = level + 1;
+                        }
+                    }
+                }
+            }
+            buffer.drop(heap, all);
+            buffer.drop(heap, edges);
+        }
+    }
+    buffer.drop(heap, all_path);
+    buffer.drop(heap, edges_path);
+    buffer.drop(heap, src_path);
+    buffer.drop(heap, hidden_path);
+    return (status, line);
 }
 
 // The task the model is given: a fixed frame (the request is a report, not an instruction about the task or the output), the kind, then the request.
@@ -504,6 +605,40 @@ fn gate[&h, &x, &c, &z, &w, &k, &p, &q, &o](heap: &!h Heap, exec: &x Exec(""), c
         }
         buffer.drop(heap, fns);
     }
+    // a function whose body the selection did not show may not be replaced or removed (WORKDIR/bundle.hidden, when a selection was shown)
+    let hidden_path = cat3(heap, wd, "/bundle.hidden", "");
+    borrow hidden_path as &hpr in {
+        let (hid, hok) = slurp(heap, fs, buffer.bytes(hpr));
+        if hok {
+            var blind = buffer.empty(heap, 16);
+            borrow hid as &hdr in {
+                borrow records as &rcr0 in {
+                    buffer.drop(heap, blind);
+                    blind = selection.touched_hidden(heap, buffer.bytes(rcr0), buffer.bytes(hdr));
+                }
+            }
+            borrow blind as &blr in {
+                let lines = buffer.bytes(blr);
+                var q = 0;
+                while q < len(lines) {
+                    var e = q;
+                    while e < len(lines) && int_of(lines[e]) != 10 {
+                        e = e + 1;
+                    }
+                    var d = buffer.append(heap, buffer.empty(heap, 96), bytes.field(lines[q..e], 9, 2));
+                    d = buffer.append(heap, d, ": the body of this function was not shown to you, so it may not be replaced or removed; it is shown in the next attempt");
+                    borrow d as &dr in {
+                        rep = change.error_line(heap, rep, "item-not-shown", bytes.field(lines[q..e], 9, 1), buffer.bytes(dr));
+                    }
+                    buffer.drop(heap, d);
+                    q = e + 1;
+                }
+            }
+            buffer.drop(heap, blind);
+        }
+        buffer.drop(heap, hid);
+    }
+    buffer.drop(heap, hidden_path);
     if len(constraints) > 0 {
         var added_lines = 0;
         if change.wants_line_count(heap, constraints) {
@@ -686,7 +821,7 @@ fn judge[&h, &x, &c, &z, &w, &k, &p, &o](heap: &!h Heap, exec: &x Exec(""), cloc
 }
 
 // Run a change request. Everything is a path (absolute, `plain`), already checked by `go`. The answer is the exit code.
-pub fn run[&h, &x, &c, &i, &z, &a, &r, &w, &q, &k, &d, &p, &m, &g, &o](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), checker: &k [byte], repo: &r [byte], request: &q [byte], kind: &d [byte], constraints: &o [byte], wd: &w [byte], agent: &a [byte], provider: &p [byte], model: &m [byte], attempts: int, agent_ms: int, test_ms: int, max_files: int, max_bytes: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write, err_write] int {
+pub fn run[&h, &x, &c, &i, &z, &a, &r, &w, &q, &k, &d, &p, &m, &g, &o, &u](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), checker: &k [byte], repo: &r [byte], request: &q [byte], kind: &d [byte], constraints: &o [byte], wd: &w [byte], agent: &a [byte], provider: &p [byte], model: &m [byte], attempts: int, agent_ms: int, test_ms: int, max_files: int, max_bytes: int, touch: &u [byte], most: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write, err_write] int {
     // the repository: a src/ and no link in src/ or tests/
     var pre = cat3(heap, "[ -d ", repo, "/src ] && [ ! -L ");
     pre = buffer.append(heap, pre, repo);
@@ -717,7 +852,13 @@ pub fn run[&h, &x, &c, &i, &z, &a, &r, &w, &q, &k, &d, &p, &m, &g, &o](heap: &!h
     prep = buffer.append(heap, prep, wd);
     prep = buffer.append(heap, prep, "/change.patch ");
     prep = buffer.append(heap, prep, wd);
-    prep = buffer.append(heap, prep, "/run.log && mkdir ");
+    prep = buffer.append(heap, prep, "/run.log ");
+    prep = buffer.append(heap, prep, wd);
+    prep = buffer.append(heap, prep, "/bundle.all ");
+    prep = buffer.append(heap, prep, wd);
+    prep = buffer.append(heap, prep, "/bundle.hidden ");
+    prep = buffer.append(heap, prep, wd);
+    prep = buffer.append(heap, prep, "/edges.json && mkdir ");
     prep = buffer.append(heap, prep, wd);
     prep = buffer.append(heap, prep, "/base && tar -C ");
     prep = buffer.append(heap, prep, repo);
@@ -745,14 +886,69 @@ pub fn run[&h, &x, &c, &i, &z, &a, &r, &w, &q, &k, &d, &p, &m, &g, &o](heap: &!h
     let fb_path = cat3(heap, wd, "/bundle.txt.feedback", "");
     var status = 1;
     borrow log as &lg in {
-        let made = make_bundle(heap, exec, clock, wd, 400000);
+        var made = make_bundle(heap, exec, clock, wd, most);
+        var selected = false;
+        var names = buffer.append(heap, buffer.empty(heap, 64), touch);
+        var chosen = buffer.empty(heap, 16);
+        if made == 3 {
+            // too big to be shown whole: what the compiler says each declaration refers to, then a selection for this request
+            var eq = cat3(heap, "cd ", wd, "/base && mv ../bundle.src ../bundle.all && ");
+            eq = buffer.append(heap, eq, checker);
+            eq = buffer.append(heap, eq, " ids --std --edges src/*.cho > ../edges.json 2> ../edges.err || { head -c 600 ../edges.err; exit 1; }");
+            borrow eq as &eqr in {
+                let (code, said) = sh(heap, exec, clock, buffer.bytes(eqr), 4096, 600000);
+                if code != 0 {
+                    var m = buffer.empty(heap, 64);
+                    borrow said as &sdr in {
+                        m = change.error_line(heap, m, "selection-failed", "-", bytes.trim(buffer.bytes(sdr)));
+                    }
+                    borrow m as &mr in {
+                        io.error_all(io, buffer.bytes(mr));
+                    }
+                    buffer.drop(heap, m);
+                    io.error_all(io, "[CHANGE_ERROR]\tselection-failed\t-\tsrc/ and tests/ are too big to be shown whole, and `cancho ids --std --edges src/*.cho` did not answer for the repository: the checker must have `ids --edges` and the repository must pass its check\n");
+                    made = 4;
+                }
+                buffer.drop(heap, said);
+            }
+            buffer.drop(heap, eq);
+            if made == 3 {
+                borrow names as &nmr in {
+                    let (scode, sline) = select_bundle(heap, exec, clock, fs, wd, request, buffer.bytes(nmr), most);
+                    buffer.drop(heap, chosen);
+                    chosen = sline;
+                    if scode == 0 {
+                        selected = true;
+                        made = 0;
+                    } else if scode == 1 {
+                        made = 5;
+                    } else if scode == 2 {
+                        made = 6;
+                    } else {
+                        io.error_all(io, "[CHANGE_ERROR]\tselection-failed\t-\twhat `cancho ids --edges` wrote for the repository could not be read\n");
+                        made = 4;
+                    }
+                }
+            }
+        }
         if made == 1 {
             io.error_all(io, "[CHANGE_ERROR]\trepo-bundle\t-\tthe files of src/ and tests/ could not be read\n");
             status = 2;
         } else if made == 2 {
-            io.error_all(io, "[CHANGE_ERROR]\tbundle-too-large\t-\tsrc/ and tests/ hold no .cho file, or more than 400000 bytes: the model is shown all of them\n");
+            io.error_all(io, "[CHANGE_ERROR]\tbundle-too-large\t-\tsrc/ and tests/ hold no .cho file\n");
+            status = 2;
+        } else if made == 4 {
+            status = 2;
+        } else if made == 5 {
+            io.error_all(io, "[CHANGE_ERROR]\tbundle-too-large\t-\tsrc/ and tests/ are too big to be shown whole, and the selection for this request (what it names, what that refers to, what refers to it, and the signatures of the rest) is still over the limit of --max-bundle: name less in the request\n");
+            status = 2;
+        } else if made == 6 {
+            io.error_all(io, "[CHANGE_ERROR]\tselection-empty\t-\tsrc/ and tests/ are too big to be shown whole, and the request names no function, type or file of src/: name one in the request, or give --touch NAME,NAME\n");
             status = 2;
         } else {
+            borrow chosen as &chr in {
+                say(heap, io, fs, buffer.bytes(lg), buffer.bytes(chr));
+            }
             let task = task_text(heap, kind, request, constraints);
             borrow task as &tq in {
                 borrow task_path as &tp in {
@@ -867,6 +1063,19 @@ pub fn run[&h, &x, &c, &i, &z, &a, &r, &w, &q, &k, &d, &p, &m, &g, &o](heap: &!h
                                 say(heap, io, fs, buffer.bytes(lg), buffer.bytes(rq2));
                                 buffer.drop(heap, feedback);
                                 feedback = head_of(heap, buffer.empty(heap, 1400), buffer.bytes(rq2), 1400);
+                                if selected && bytes.find(buffer.bytes(rq2), "\titem-not-shown\t") >= 0 {
+                                    // the next attempt is shown what this one tried to change blind (when that still fits; else the selection stays as it was)
+                                    names = selection.widen(heap, names, buffer.bytes(rq2));
+                                    borrow names as &nmr2 in {
+                                        let (scode, sline) = select_bundle(heap, exec, clock, fs, wd, request, buffer.bytes(nmr2), most);
+                                        if scode == 0 {
+                                            borrow sline as &slr in {
+                                                say(heap, io, fs, buffer.bytes(lg), buffer.bytes(slr));
+                                            }
+                                        }
+                                        buffer.drop(heap, sline);
+                                    }
+                                }
                             }
                         }
                         buffer.drop(heap, rep);
@@ -903,6 +1112,8 @@ pub fn run[&h, &x, &c, &i, &z, &a, &r, &w, &q, &k, &d, &p, &m, &g, &o](heap: &!h
                 say(heap, io, fs, buffer.bytes(lg), "[CHANGE_VERDICT]\tstuck\n");
             }
         }
+        buffer.drop(heap, names);
+        buffer.drop(heap, chosen);
     }
     buffer.drop(heap, fb_path);
     buffer.drop(heap, task_path);
@@ -931,7 +1142,7 @@ fn digits_of[&a](text: &a [byte]) -> [] int {
 }
 
 fn known[&a](name: &a [byte]) -> [] bool {
-    return bytes.equal(name, "--repo") || bytes.equal(name, "--change") || bytes.equal(name, "--kind") || bytes.equal(name, "--checker") || bytes.equal(name, "--work") || bytes.equal(name, "--agent") || bytes.equal(name, "--provider") || bytes.equal(name, "--model") || bytes.equal(name, "--attempts") || bytes.equal(name, "--agent-seconds") || bytes.equal(name, "--test-seconds") || bytes.equal(name, "--max-files") || bytes.equal(name, "--max-bytes") || bytes.equal(name, "--constraints");
+    return bytes.equal(name, "--repo") || bytes.equal(name, "--change") || bytes.equal(name, "--kind") || bytes.equal(name, "--checker") || bytes.equal(name, "--work") || bytes.equal(name, "--agent") || bytes.equal(name, "--provider") || bytes.equal(name, "--model") || bytes.equal(name, "--attempts") || bytes.equal(name, "--agent-seconds") || bytes.equal(name, "--test-seconds") || bytes.equal(name, "--max-files") || bytes.equal(name, "--max-bytes") || bytes.equal(name, "--constraints") || bytes.equal(name, "--touch") || bytes.equal(name, "--max-bundle");
 }
 
 fn opt[&g](g: &g Args, name: &static [byte]) -> [args] &static [byte] {
@@ -1010,6 +1221,15 @@ pub fn go[&h, &x, &c, &i, &z, &g](heap: &!h Heap, exec: &x Exec(""), clock: &c C
         io.error_all(io, "cancho-build --repo: --attempts, --agent-seconds, --test-seconds, --max-files (1 to 64) and --max-bytes (1 to 1000000) are positive numbers\n");
         good = false;
     }
+    let touch = opt(g, "--touch");
+    var most = 400000;
+    if len(opt(g, "--max-bundle")) > 0 {
+        most = digits_of(opt(g, "--max-bundle"));
+    }
+    if good && (plain(touch) == false || bytes.find(touch, "/") >= 0 || most < 1 || most > 1000000) {
+        io.error_all(io, "cancho-build --repo: --touch is names of functions and types with commas between, and --max-bundle a number from 1 to 1000000\n");
+        good = false;
+    }
     if good && (bytes.starts_with(repo, wd) || bytes.starts_with(wd, repo)) {
         io.error_all(io, "cancho-build --repo: the work directory and the repository may not contain one another: the copy is made inside the work directory\n");
         good = false;
@@ -1071,7 +1291,7 @@ pub fn go[&h, &x, &c, &i, &z, &g](heap: &!h Heap, exec: &x Exec(""), clock: &c C
                 var text = head_of(heap, buffer.empty(heap, 64), bytes.trim(buffer.bytes(rq)), 16384);
                 borrow text as &tq in {
                     borrow ctext as &cq in {
-                        status = run(heap, exec, clock, io, fs, checker, repo, buffer.bytes(tq), kind, buffer.bytes(cq), wd, agent, provider, model, attempts, agent_s * 1000, test_s * 1000, max_files, max_bytes);
+                        status = run(heap, exec, clock, io, fs, checker, repo, buffer.bytes(tq), kind, buffer.bytes(cq), wd, agent, provider, model, attempts, agent_s * 1000, test_s * 1000, max_files, max_bytes, touch, most);
                     }
                 }
                 buffer.drop(heap, text);
