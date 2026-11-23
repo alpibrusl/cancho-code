@@ -57,9 +57,9 @@ expect "signature: exit code" "$rc" 1
 expect "signature: line" "$(verdict "$out")" "[ISSUE_VERDICT] failed signature"
 rm -rf "$d"
 
-# failed ceiling: the agent alternates two different unknown names on line 2
+# failed ceiling: the agent alternates an unknown name and a wrong type (two rules: the compiler's message no longer carries the name) on line 2
 d=$(fresh)
-out=$("$exe" "$CANCHO" "$d/project.cho" "f=$d/flip; p=$d/project.cho; if [ -f \$f ]; then rm \$f; sed -i.bak '2s/.*/fn broken() -> [] int { return yy; }/' \$p; else touch \$f; sed -i.bak '2s/.*/fn broken() -> [] int { return zz; }/' \$p; fi #" 4 2>&1); rc=$?
+out=$("$exe" "$CANCHO" "$d/project.cho" "f=$d/flip; p=$d/project.cho; if [ -f \$f ]; then rm \$f; sed -i.bak '2s/.*/fn broken() -> [] int { return yy; }/' \$p; else touch \$f; sed -i.bak '2s/.*/fn broken() -> [] int { return true; }/' \$p; fi #" 4 2>&1); rc=$?
 expect "ceiling: exit code" "$rc" 1
 expect "ceiling: line" "$(verdict "$out")" "[ISSUE_VERDICT] failed ceiling"
 rm -rf "$d"

@@ -17,7 +17,7 @@ cancho-code builds a program from a brief unit by unit. The compiler and each un
 
 ## 1. Install (once)
 
-Follow `docs/agent-prompt.md` in the cancho-code repository: clone `cancho-code` and `cancho` side by side, check out the compiler at the commit in `cancho-code/.cancho-rev`, build it with `cargo build --release -p cancho`, export `CANCHO` (the binary) and `CANCHO_PACKAGES` (the compiler's `packages` directory), then in `cancho-code` run `sh scripts/build-agent.sh && sh scripts/build-cancho-build.sh` and prove it with `sh scripts/test-build.sh` (it must end with `build gate: ok`; `Killed: 9` and `ld: warning` lines in it are expected). Then `"$CANCHO" agent-guidelines > guidelines.md`: the language's own page, which the model is given.
+Follow `docs/agent-prompt.md` in the cancho-code repository: clone `cancho-code` and `cancho` side by side, check out the compiler at the commit in `cancho-code/.cancho-rev`, install that release as that file says (the compiler's own install script; no Rust toolchain is needed), export `CANCHO` (the installed binary) and `CANCHO_PACKAGES` (the checkout's `packages` directory), then in `cancho-code` run `sh scripts/build-agent.sh && sh scripts/build-cancho-build.sh` and prove it with `sh scripts/test-build.sh` (it must end with `build gate: ok`; `Killed: 9` and `ld: warning` lines in it are expected). Then `"$CANCHO" agent-guidelines > guidelines.md`: the language's own page, which the model is given.
 
 ## 2. Build from a brief
 

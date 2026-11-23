@@ -233,7 +233,7 @@ sleep 0.3; mkdir -p "$1.call"; echo '{}' > "$1.call/meta.json"; sleep 3
 printf '\n%s\n' 'fn b_n(x: int) -> [] int { if m.equal("ab", "ab") { return x + 1; } return 0; }' >> "$1"
 EOF
 cat > "$rc/b.2.sh" <<'EOF'
-grep -q 'already bound' "$1.task" || exit 9
+grep -q 'A name is introduced once' "$1.task" || exit 9
 { head -1 "$1"; printf 'import std.bytes as bb;\n'; tail -n +2 "$1"; } > "$1.new" && mv "$1.new" "$1"
 printf '\n%s\n' 'fn b_n(x: int) -> [] int { if bb.equal("ab", "ab") { return x + 1; } return 0; }' >> "$1"
 EOF
@@ -398,7 +398,7 @@ rm -rf "$wd" "$rc"
 bexe="$d/build"
 "$CANCHO" build "$root/tests/programs/build.cho" "$SRC/build.cho" "$SRC/project.cho" "$SRC/plan.cho" "$SRC/driver.cho" \
     "$SRC/checker.cho" "$SRC/signature.cho" "$SRC/loop_check.cho" "$SRC/snapshot.cho" "$SRC/trail.cho" \
-    "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" "$SRC/library.cho" "$SRC/cases.cho" "$SRC/change.cho" "$SRC/repochange.cho" --std -o "$bexe" >/dev/null 2>"$d/bbuild.err" \
+    "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" "$SRC/library.cho" "$SRC/cases.cho" "$SRC/change.cho" "$SRC/repochange.cho" "$SRC/selection.cho" --std -o "$bexe" >/dev/null 2>"$d/bbuild.err" \
     || { cat "$d/bbuild.err" >&2; echo "build gate did not build" >&2; exit 2; }
 B="$root/tests/buildcmd"
 runb() { # wd recipes log [more options...]

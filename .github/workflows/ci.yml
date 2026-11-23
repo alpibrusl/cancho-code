@@ -21,7 +21,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/cancho-bin
-          key: cancho-${{ steps.pin.outputs.rev }}-ubuntu-24.04
+          key: cancho-release-${{ steps.pin.outputs.rev }}-ubuntu-24.04
 
       - name: Check out cancho
         if: steps.cache.outputs.cache-hit != 'true'
@@ -31,14 +31,16 @@ jobs:
           ref: ${{ steps.pin.outputs.rev }}
           path: cancho
 
-      - name: Build cancho
+      # The released compiler (cancho built by cancho), not a Rust build: the prebuilt binary of the pinned commit,
+      # checked against its published sha256 and the commit it reports (the pinned checkout's scripts/install.sh).
+      # The checkout is only for install.sh and packages/.
+      - name: Install the released cancho
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          cd cancho
-          cargo build --release -p cancho
+          sh cancho/scripts/install.sh "${{ steps.pin.outputs.rev }}" "$HOME/cancho-inst"
           mkdir -p ~/cancho-bin
-          cp target/release/cancho ~/cancho-bin/
-          cp -r packages ~/cancho-bin/packages
+          cp "$HOME/cancho-inst/bin/cancho" ~/cancho-bin/
+          cp -r cancho/packages ~/cancho-bin/packages
 
       # The authority report is pinned: what the assistant can do is a committed file, and a new capability or
       # foreign call is a red diff that only a commit of the new file turns green (scripts/check-authority.sh).

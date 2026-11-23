@@ -25,7 +25,7 @@ tmp=$(mktemp -d -t cc-profile-XXXXXX)
 exe="$tmp/cancho-build"
 "$CANCHO" build "$root/tests/programs/build.cho" "$SRC/build.cho" "$SRC/project.cho" "$SRC/plan.cho" "$SRC/driver.cho" \
     "$SRC/checker.cho" "$SRC/signature.cho" "$SRC/loop_check.cho" "$SRC/snapshot.cho" "$SRC/trail.cho" \
-    "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" "$SRC/library.cho" "$SRC/cases.cho" "$SRC/change.cho" "$SRC/repochange.cho" --std -o "$exe" || { echo "gate did not build" >&2; exit 2; }
+    "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" "$SRC/library.cho" "$SRC/cases.cho" "$SRC/change.cho" "$SRC/repochange.cho" "$SRC/selection.cho" --std -o "$exe" || { echo "gate did not build" >&2; exit 2; }
 
 fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }
@@ -123,7 +123,7 @@ out=$(run "$wrap" "$wd" "$rc" "$lg" --profile "$T/renamed.json"); r=$?
 expect "key in use: exit code" "$r" 0
 expect "key in use: verdict" "$(verdict "$out")" done
 expect "key in use: a took two attempts" "$(grep -c '^a$' "$lg")" 2
-expect "key in use: the trail of a" "$(grep -o '"outcome":"[a-z]*","sig":"[^"]*"' "$wd/trail-a.jsonl" | tr '\n' ' ')" '"outcome":"refused","sig":"type-mismatch:expected `int`, found `bool`" "outcome":"verified","sig":"" '
+expect "key in use: the trail of a" "$(grep -o '"outcome":"[a-z]*","sig":"[^"]*"' "$wd/trail-a.jsonl" | tr '\n' ' ')" '"outcome":"refused","sig":"type-mismatch:An expression'"'"'s type does not match what the context requires — a return type, an annotation, a parameter, or the mode of a reference." "outcome":"verified","sig":"" '
 # the mutant: the same profile reading `rule`
 sed 's/"key": "code"/"key": "rule"/' "$T/renamed.json" > "$tmp/renamed-rule.json"
 set -- $(mk); wd=$1; rc=$2; lg=$3
