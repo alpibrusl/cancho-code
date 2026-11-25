@@ -47,13 +47,13 @@ edition 7;
 
 A repository whose `src/` and `tests/` are over `--max-bundle` is not shown whole: the same sections are shown with most bodies left out (`src/selection.cho`). What is kept is decided by the compiler and by the words of the request, with no model call:
 
-1. `cancho ids --std --edges src/*.cho` is run on the copy (`WORKDIR/edges.json`): every declaration with its file, its lines, its signature and the types and functions it refers to (cancho#816). A checker without `ids --edges`, or a repository the checker refuses, is exit 2 `selection-failed`.
+1. `cancho ids --std --edges src/*.cho` is run on the copy (`WORKDIR/edges.json`): every declaration with its file, its lines, its signature and the types and functions it refers to (cancho#816). When the compiler does not answer (a checker without `ids --edges`, a repository the checker refuses, a project), the same is read [from the text](#when-the-compiler-does-not-answer). *Corrected 2026-11-25:* this was exit 2 `selection-failed`, which is now only a bundle or an answer that cannot be read.
 2. **Seeds**: a declaration whose name is a whole word of the request (names of four bytes or more), one named in `--touch`, and every declaration of a file the request names (`src/x.cho`, or `x.cho`). None at all is exit 2 `selection-empty`: the request has to name something, or `--touch` has to.
 3. **Near**: what a seed refers to and what refers to a seed, one step each way.
 4. **Shown**: seeds and near declarations in full; every type in full; of every other function its signature and a `// body not shown: N lines` line; the text between declarations (imports, comments) as it is. A test file is shown in full when it is `tests/X_test.cho` of a `src/X.cho` with a seed or a near declaration, or when it names a seed; of another one, and of a file the compiler did not describe (one in a directory under `src/`), the `import` lines and the first line of each function.
 5. **Level 1**, when that is still over the limit: a file of `src/` with no seed and nothing near is its `pub` signatures only. Still over the limit is exit 2 `bundle-too-large`.
 
-The run says `[CHANGE_SELECTION]<TAB>seeds<TAB>bytes<TAB>level`. `WORKDIR/bundle.all` is the whole, `bundle.src` the selection, `bundle.hidden` the functions whose body was not shown (`path<TAB>name`).
+The run says `[CHANGE_SELECTION]<TAB>seeds<TAB>bytes<TAB>level<TAB>by`, `by` being `compiler` or `text`. `WORKDIR/bundle.all` is the whole, `bundle.src` the selection, `bundle.hidden` the functions whose body was not shown (`path<TAB>name`).
 
 **A function that was not shown may not be changed blind.** A change that replaces or removes a function of `bundle.hidden` is refused as `item-not-shown`, before the repository's checks run; the function is added to the names to show and the next attempt gets a new selection with it in full (if that no longer fits, the selection stays as it was and the refusal repeats). Adding a function is never refused by this rule.
 
@@ -89,6 +89,25 @@ For kind `bug` or `feature` the change must **add or change at least one test fu
 **A feature: the tests must call the new code (`test-not-exercising`).** A feature cannot be run against the base (the new function does not compile there), so the check is the cheap deterministic part: among the text of the test functions the change adds or changes, some function the change added or replaced in `src/` and made `pub` must be *called* (its name as a whole word followed by `(`, so `mathx.quarter(9)` and `quarter (9)` count, `test_quarter(` and a mention in a comment of the item do not). If the change adds or replaces no public function (a private helper, a struct) there is nothing a test could be asked to call and the rule does not apply. `bug`, `refactor` and `rename` are not asked.
 
 Neither rule checks that the test is *good* (a mutation of the new code is a bigger piece); they close the two holes the real-model run showed: a test that cannot fail on the bug, and a test that never touches the new function.
+
+### When the compiler does not answer
+
+*Added 2026-11-25, after cancho-gateway with an error in it could be given to `--repo` only whole (836 KB), which a small model did not get through.*
+
+`cancho ids --edges` describes one program that passes its check. Three kinds of repository are not that: a [project](#a-project) (several programs, a `main` beside the probes, a package only `cancho.toml` names), a repository with an error in it (the one a `bug` or a broken build is about), and any repository under a checker that has no `ids --edges`. For those, what the compiler said is kept in `WORKDIR/edges.err` and `WORKDIR/edges.json` is written from the text of `src/` instead (`src/textedges.cho`), in the same form, so everything above holds as it is. The line says `text`.
+
+What the text says, and where it is less than the compiler:
+
+* **A declaration** is a line that starts in the first column with `fn`, `struct`, `enum` or `static` (after `pub`, `res`, `val`), up to the line that ends it: the same line when it ends with `;` or `}`, the next line that starts with `}` otherwise. That is the layout `cancho fmt` writes. A file that is not formatted is described badly (a body may be cut short, or run into the next declaration), and nothing checks that it is formatted before the selection.
+* **Refers** is a name of the declaration's own file used in it as a whole word, and `a.name` where an `import` line of the file calls a module of the repository `a` and that module declares `name`. Nothing is resolved by type: a local variable named like a function of its file is a reference to it, and so is the name in a string. A comment line refers to nothing.
+
+**Measured once, against the compiler** (a 27-module cut of cancho-gateway that passes its check, 478 declarations): the same declarations, the same lines and the same signatures; the text finds all 585 references between them, and adds 18 the compiler does not have (a local called `key`, `kind` or `code` in a file with a function of that name). For a request that names one function the selection is the same 112,740 bytes either way, byte for byte, and so is the list of functions not shown. A reference the text adds only shows more.
+
+**Measured once, on the repository that prompted it** (cancho-gateway at `d7ba5ff`, 837,629 bytes of `src/` and `tests/`, compiler release 0.1.1, which refuses it; the default `--max-bundle`):
+
+* the selection is 330,944 bytes at level 0, by the text: 9 seeds (the request names `src/gateway.cho` and one function), 922 functions with their body not shown;
+* with the stand-in agent and the known one-line fix: `done` in 61 seconds;
+* with `claude-haiku-5-5`: `done` in one attempt and 72 seconds, 150,182 input tokens. Shown whole, the same model was `stuck` after four attempts at about 420,000 input tokens each ([A project](#a-project)). It is one run, and its patch also drops the two comment lines above the function it rewrites, which nothing here refuses.
 
 ## A project
 
@@ -142,7 +161,7 @@ The last line is `[CHANGE_VERDICT]<TAB>done|stuck|provider_error`; with `done`, 
 * **The selection is not measured with a model.** A repository over the limit is shown as [a selection](#a-selection), which the gate tests with the stand-in agent only: whether a model does as well on signatures as on whole files (share accepted, attempts) has not been run. The agent itself reads at most 1 MiB, so `--max-bundle` stops there. And this repository still cannot be given to `--repo`: its `src/` is several programs, not one that `cancho test tests/X_test.cho src/*.cho` builds.
 * **The stale-base rule is Forge's.** The lifecycle doc has Forge apply the accepted patch to the *current* tip at publish and re-derive once (`patch-base-stale`). This command works on the working tree it is given and records no base revision.
 * **The gate is the one the task named**: `fmt --check`, the line guard, and either `test` of `tests/*_test.cho` against `src/*.cho` or, in [a project](#a-project), its `cancho build` and `cancho test`. *Corrected 2026-11-25:* this said a repository with a `main` gets that from its own CI, not here; a project's binaries are now built. Other checks (examples, scripts, a doc build) are still the repository's CI's; and `fmt --check` runs on all of `src/` and `tests/`, so a base that is not formatted is refused until it is.
-* **A project over the limit that does not compile cannot be shown.** [A selection](#a-selection) asks `cancho ids --std --edges src/*.cho`, which is not a project's program (a `main` beside the probes, a package only `cancho.toml` names) and answers nothing for sources the checker refuses. Such a repository is `selection-failed` unless `--max-bundle` (at most 1,000,000) lets it be shown whole, and cancho-forge does not pass `--max-bundle`.
+* **A selection from the text is the layout, not the program.** [When the compiler does not answer](#when-the-compiler-does-not-answer), declarations and references are read from formatted text: an unformatted file is described badly, a reference through a local of the same name is one too many, and a use the compiler would resolve by type is not seen. *Corrected 2026-11-25:* this said a project over the limit that does not compile cannot be shown and is `selection-failed`; it is now selected from the text.
 * **The required test is not shown to be good.** A bug fix's tests must fail on the base and a feature's must call the new code, but nothing mutates the new code to see that the tests would notice a wrong one.
 * **Renames of files, mode changes and binary files cannot be expressed**: the envelope names files to write, never to move or delete, so a whole file cannot be removed (an item can).
 * It has none of `build`'s other machinery (effort tiers, memory, the journal, parallel units, resuming a killed run): this is the smallest slice.
