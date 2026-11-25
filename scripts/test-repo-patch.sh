@@ -20,6 +20,9 @@
 #   selection  a repository over --max-bundle: what the request names and what is one step from it shown in full, the rest as signatures; a change to
 #              a function whose body was not shown refused (`item-not-shown`) and shown in the next attempt; --touch; level 1; still too big and a
 #              request that names nothing refused before the agent runs; a repository that fits shown whole as before (needs a cancho with `ids --edges`)
+#   project    a repository whose cancho.toml has a [[bin]] or a [[test]] (here with a `main` under src/): the gate is the project's own `cancho build`
+#              (`build-failed`) and `cancho test` (`tests-failed`), a project with no [[test]] is `no-tests`, the base probe of a bug runs the project's
+#              tests, and a cancho.toml with neither table changes nothing
 #   static     the driver never runs git (no `git` word in its code outside comments)
 #
 #   tests that prove something, the shape of a change: see docs/repo-patch.md (`test-passes-on-base` for a bug, `test-not-exercising` for a feature,
@@ -62,6 +65,11 @@ M = [
  ("tests-never-shown", "selection.cho", "} else if bytes.starts_with(path, \"tests/\") && test_wanted(edges, t, d, n, path, body) {", "} else if false {"),
  ("level-1-off", "selection.cho", "if level > 0 && wanted == false {", "if false {"),
  ("limit-not-held", "repochange.cho", "} else if len(buffer.bytes(sr)) > most {", "} else if false {"),
+ ("project-not-seen", "repochange.cho", "        if code >= 1 && code <= 3 {\n            tables = code;", "        if false {\n            tables = code;"),
+ ("project-build-not-run", "repochange.cho", "    if built && tables % 2 == 1 {\n        let (code, said) = project_run", "    if false {\n        let (code, said) = project_run"),
+ ("project-tests-not-run", "repochange.cho", "    if built {\n        let (code, said) = project_run", "    if false {\n        let (code, said) = project_run"),
+ ("project-without-tests-accepted", "repochange.cho", "    if tables < 2 {\n        return change.error_line", "    if false {\n        return change.error_line"),
+ ("project-probe-file-by-file", "repochange.cho", "                                if project {", "                                if false {"),
 ]
 for name, fn, old, new in M:
     d = os.path.join(work, name)
@@ -758,6 +766,78 @@ fi
 rp=$(bigrepo); rc=$(newrc); out=$(run "$rp" "$rc" "$d/w-u-touch" refactor --touch src/mathx.cho); expect "usage --touch with a path: exit 2" "$?" 2
 rp=$(bigrepo); rc=$(newrc); out=$(run "$rp" "$rc" "$d/w-u-maxb" refactor --max-bundle 0); expect "usage --max-bundle 0: exit 2" "$?" 2
 req=$keep_req
+
+# ---- a project: a repository with a cancho.toml that has [[bin]] or [[test]] (docs/repo-patch.md, "A project") ---------------------------------
+# src/ holds a `main` (which `cancho test tests/X_test.cho src/*.cho` refuses), so only the project's own `cancho build` and `cancho test` can check it.
+newproject() {
+    r=$(newrepo)
+cat > "$r/src/main.cho" <<'EOT'
+edition 7;
+
+import mathx;
+
+fn main(world: World) -> [] int {
+    release(world);
+    return mathx.triple(1) - 3;
+}
+EOT
+cat >> "$r/src/mathx.cho" <<'EOT'
+
+// Three times the number: only `main` calls it.
+pub fn triple(x: int) -> [] int {
+    return x * 3;
+}
+EOT
+cat > "$r/cancho.toml" <<'EOT'
+[package]
+name = "mathproj"
+
+[[bin]]
+name = "mathproj"
+sources = ["src/mathx.cho", "src/main.cho"]
+std = true
+out = "build/mathproj"
+
+[[test]]
+name = "mathx"
+sources = ["src/mathx.cho", "tests/mathx_test.cho"]
+std = true
+EOT
+    echo "$r"
+}
+PLUS='=== FILE src/mathx.cho
+pub fn double(x: int) -> [] int { return x + x; }'
+rp=$(newproject); rc=$(newrc); w="$d/w-proj-ok"; printf '%s\n' "$PLUS" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" refactor --attempts 1); expect "project: a main in src/ and the project's own tests: done" "$(attempts "$out")" "1:passed"
+[ -x "$w/check/build/mathproj" ] || { echo "FAIL: project: cancho build did not run on a copy of the tree" >&2; fail=1; }
+[ -e "$w/tree/build" ] && { echo "FAIL: project: the build wrote into the tree" >&2; fail=1; }
+hasnt "project: what the build wrote is not in the patch" "$(cat "$w/change.patch")" "build/mathproj"
+rp=$(newproject); rc=$(newrc); w="$d/w-proj-build"
+printf '=== FILE src/mathx.cho\nremove fn triple\n' > "$rc/reply.1"; printf '%s\n' "$PLUS" > "$rc/reply.2"
+out=$(run "$rp" "$rc" "$w" refactor); expect "project: a change the tests pass and the program does not build with is build-failed, the retry passes" "$(attempts "$out")" "1:refused:build-failed 2:passed"
+has "project: the feedback has the tag" "$(cat "$rc/feedback.2")" "build-failed"
+rp=$(newproject); rc=$(newrc); w="$d/w-proj-tests"
+printf '=== FILE src/mathx.cho\npub fn double(x: int) -> [] int { return x + 1; }\n' > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" refactor --attempts 1); expect "project: a failing [[test]] set is tests-failed" "$(attempts "$out")" "1:refused:tests-failed"
+has "project: the refusal is the project's, not a test file's" "$(grep CHANGE_ERROR "$w/run.log")" "tests-failed	cancho.toml"
+rp=$(newproject); rc=$(newrc); w="$d/w-proj-notests"; printf '%s\n' "$PLUS" > "$rc/reply.1"
+sed -i.bak '/^\[\[test\]\]/,$d' "$rp/cancho.toml"; rm -f "$rp/cancho.toml.bak"
+out=$(run "$rp" "$rc" "$w" refactor --attempts 1); expect "project: no [[test]] table is no-tests" "$(attempts "$out")" "1:refused:no-tests"
+# a bug in a project: the probe on the base runs the project's tests
+rp=$(newproject); rc=$(newrc); w="$d/w-proj-bug"
+sed -i.bak 's|return x / 2;|return x / 3;|' "$rp/src/mathx.cho"; rm -f "$rp/src/mathx.cho.bak"
+sed -i.bak 's|mathx.half(9) == 4|mathx.half(9) == 3|' "$rp/tests/mathx_test.cho"; rm -f "$rp/tests/mathx_test.cho.bak"
+HALF='=== FILE src/mathx.cho
+pub fn half(x: int) -> [] int { return x / 2; }
+=== FILE tests/mathx_test.cho
+pub fn test_half() -> [] int { test.assert(mathx.half(9) == 4); return 0; }'
+printf '%s\npub fn test_half_zero() -> [] int { test.assert(mathx.half(0) == 0); return 0; }\n' "$HALF" > "$rc/reply.1"
+printf '%s\npub fn test_half_ten() -> [] int { test.assert(mathx.half(10) == 5); return 0; }\n' "$HALF" > "$rc/reply.2"
+out=$(run "$rp" "$rc" "$w" bug); expect "project, bug: a test that passes on the base is refused by name, the retry passes" "$(attempts "$out")" "1:refused:test-passes-on-base 2:passed"
+has "project, bug: the refusal names the test" "$out" "test_half_zero"
+# a cancho.toml with neither table is not a project: the repository is checked file by file, as before
+rp=$(newrepo); rc=$(newrc); w="$d/w-proj-plain"; printf '%s\n' "$PLUS" > "$rc/reply.1"; printf '[package]\nname = "plain"\n' > "$rp/cancho.toml"
+out=$(run "$rp" "$rc" "$w" refactor --attempts 1); expect "a cancho.toml with no [[bin]] or [[test]]: checked file by file" "$(attempts "$out")" "1:passed"
 
 # static: the driver never runs git
 code=$(grep -v '^[[:space:]]*//' "$SRC/repochange.cho" "$SRC/selection.cho" "$SRC/change.cho" | grep -E 'git (push|commit|add|checkout|clone|apply|fetch)|"git |/git ' | head -3)

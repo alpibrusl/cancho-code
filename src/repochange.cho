@@ -435,10 +435,102 @@ fn apply_envelope[&h, &z, &e, &w, &x, &c](heap: &!h Heap, exec: &x Exec(""), clo
     return (written, rep, 0);
 }
 
+// What the project file of `wd`/`dir` declares: 0 for a repository with no `cancho.toml` or with one that has neither table (the gate then runs each
+// `tests/NAME_test.cho` against `src/*.cho`, as it always did), else 1 for a `[[bin]]`, 2 for a `[[test]]`, 3 for both: a **project**, whose own
+// `cancho build` and `cancho test` are the checks (docs/repo-patch.md, "A project").
+fn project_tables[&h, &x, &c, &w, &d](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, wd: &w [byte], dir: &d [byte]) -> [heap, exec(""), clock, poll] int {
+    var q = cat3(heap, "cd ", wd, dir);
+    q = buffer.append(heap, q, " || exit 0; [ -f cancho.toml ] || exit 0; b=0; grep -q '^\\[\\[bin\\]\\]' cancho.toml && b=1; grep -q '^\\[\\[test\\]\\]' cancho.toml && b=$((b + 2)); exit $b");
+    var tables = 0;
+    borrow q as &qq in {
+        let (code, said) = sh(heap, exec, clock, buffer.bytes(qq), 4096, 10000);
+        buffer.drop(heap, said);
+        if code >= 1 && code <= 3 {
+            tables = code;
+        }
+    }
+    buffer.drop(heap, q);
+    return tables;
+}
+
+// One of a project's own commands (`build` or `test`) in `wd`/`dir`: its exit code and what it said.
+fn project_run[&h, &x, &c, &w, &d, &k, &v](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, wd: &w [byte], dir: &d [byte], checker: &k [byte], verb: &v [byte], ms: int) -> [heap, exec(""), clock, poll] (int, buffer.Buffer) {
+    var t = cat3(heap, "exec 2>&1; cd ", wd, dir);
+    t = buffer.append(heap, t, " && ");
+    t = buffer.append(heap, t, checker);
+    t = buffer.append(heap, t, " ");
+    t = buffer.append(heap, t, verb);
+    var code = 0 - 1;
+    var out = buffer.empty(heap, 16);
+    borrow t as &tq in {
+        let (c2, said) = sh(heap, exec, clock, buffer.bytes(tq), 262144, ms);
+        code = c2;
+        buffer.drop(heap, out);
+        out = said;
+    }
+    buffer.drop(heap, t);
+    return (code, out);
+}
+
+// The checks of a project (`tables` from `project_tables`, not 0): `cancho build` when it has a `[[bin]]` (`build-failed`), then `cancho test` when it
+// has a `[[test]]` (`tests-failed`); a project with no `[[test]]` is `no-tests`. The tests are not run on a tree that does not build.
+fn project_gate[&h, &x, &c, &w, &k](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, wd: &w [byte], checker: &k [byte], tables: int, report: buffer.Buffer, test_ms: int) -> [heap, exec(""), clock, poll] buffer.Buffer {
+    var rep = report;
+    var built = true;
+    // In a copy (`WORKDIR/check`): what a build writes (`build/`, the dependencies it installs) must not reach the tree, which the patch is made from.
+    var cp = cat3(heap, "rm -rf ", wd, "/check && cp -a ");
+    cp = buffer.append(heap, cp, wd);
+    cp = buffer.append(heap, cp, "/tree ");
+    cp = buffer.append(heap, cp, wd);
+    cp = buffer.append(heap, cp, "/check");
+    borrow cp as &cq in {
+        let (code, said) = sh(heap, exec, clock, buffer.bytes(cq), 4096, 120000);
+        buffer.drop(heap, said);
+        if code != 0 {
+            built = false;
+            rep = change.error_line(heap, rep, "build-failed", "cancho.toml", "the tree could not be copied to be built");
+        }
+    }
+    buffer.drop(heap, cp);
+    if built && tables % 2 == 1 {
+        let (code, said) = project_run(heap, exec, clock, wd, "/check", checker, "build", test_ms);
+        if code != 0 {
+            built = false;
+            var d = buffer.empty(heap, 64);
+            borrow said as &sq in {
+                d = head_of(heap, d, bytes.trim(buffer.bytes(sq)), 1000);
+            }
+            borrow d as &dr in {
+                rep = change.error_line(heap, rep, "build-failed", "cancho.toml", buffer.bytes(dr));
+            }
+            buffer.drop(heap, d);
+        }
+        buffer.drop(heap, said);
+    }
+    if tables < 2 {
+        return change.error_line(heap, rep, "no-tests", "cancho.toml", "the project has no [[test]] table: there is nothing to check the change against");
+    }
+    if built {
+        let (code, said) = project_run(heap, exec, clock, wd, "/check", checker, "test", test_ms);
+        if code != 0 {
+            var d = buffer.empty(heap, 64);
+            borrow said as &sq in {
+                d = head_of(heap, d, bytes.trim(buffer.bytes(sq)), 1000);
+            }
+            borrow d as &dr in {
+                rep = change.error_line(heap, rep, "tests-failed", "cancho.toml", buffer.bytes(dr));
+            }
+            buffer.drop(heap, d);
+        }
+        buffer.drop(heap, said);
+    }
+    return rep;
+}
+
 // The tests of a bug fix against the code WITHOUT the fix: a copy of the base with the written test files (`files`, one path per line) put over it, run
 // as the gate runs them. Every test function the change adds or changes must fail there (`test-passes-on-base` names the ones that pass); a test that
 // does not fail on the buggy code proves nothing about the fix. A test file the gate does not run (not `tests/NAME_test.cho`) is not probed.
-fn base_probe[&h, &x, &c, &z, &w, &k, &q](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &z Fs(""), wd: &w [byte], checker: &k [byte], files: &q [byte], test_ms: int) -> [heap, exec(""), clock, poll, fs_read("")] buffer.Buffer {
+fn base_probe[&h, &x, &c, &z, &w, &k, &q](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &z Fs(""), wd: &w [byte], checker: &k [byte], files: &q [byte], project: bool, test_ms: int) -> [heap, exec(""), clock, poll, fs_read("")] buffer.Buffer {
     var rep = buffer.empty(heap, 64);
     var p = 0;
     while p < len(files) {
@@ -479,9 +571,14 @@ fn base_probe[&h, &x, &c, &z, &w, &k, &q](heap: &!h Heap, exec: &x Exec(""), clo
                             if copied == 0 {
                                 var t = cat3(heap, "exec 2>&1; cd ", wd, "/probe && ");
                                 t = buffer.append(heap, t, checker);
-                                t = buffer.append(heap, t, " test --std ");
-                                t = buffer.append(heap, t, tf);
-                                t = buffer.append(heap, t, " src/*.cho");
+                                if project {
+                                    // A project's tests are its `[[test]]` sets: the probe runs them all, and the names are looked for in what they say.
+                                    t = buffer.append(heap, t, " test");
+                                } else {
+                                    t = buffer.append(heap, t, " test --std ");
+                                    t = buffer.append(heap, t, tf);
+                                    t = buffer.append(heap, t, " src/*.cho");
+                                }
                                 borrow t as &tq in {
                                     let (code, said) = sh(heap, exec, clock, buffer.bytes(tq), 262144, test_ms);
                                     borrow said as &sq in {
@@ -672,7 +769,7 @@ fn gate[&h, &x, &c, &z, &w, &k, &p, &q, &o](heap: &!h Heap, exec: &x Exec(""), c
         buffer.drop(heap, test_files);
         return rep;
     }
-    // the repo's own checks: fmt --check, then the tests of tests/*_test.cho against src/*.cho
+    // the repo's own checks: fmt --check, then a project's `cancho build` and `cancho test`, or the tests of tests/*_test.cho against src/*.cho
     var f = cat3(heap, "exec 2>&1; cd ", wd, "/tree && ");
     f = buffer.append(heap, f, checker);
     f = buffer.append(heap, f, " fmt --check src tests");
@@ -691,53 +788,58 @@ fn gate[&h, &x, &c, &z, &w, &k, &p, &q, &o](heap: &!h Heap, exec: &x Exec(""), c
         buffer.drop(heap, said);
     }
     buffer.drop(heap, f);
-    var list = cat3(heap, "cd ", wd, "/tree && ls tests/*_test.cho 2>/dev/null");
-    var names = buffer.empty(heap, 16);
-    borrow list as &lq in {
-        let (code, said) = sh(heap, exec, clock, buffer.bytes(lq), 65536, 10000);
-        buffer.drop(heap, names);
-        names = said;
-    }
-    buffer.drop(heap, list);
-    var ran = 0;
-    borrow names as &nq in {
-        let all = buffer.bytes(nq);
-        var p = 0;
-        while p < len(all) {
-            var e = p;
-            while e < len(all) && int_of(all[e]) != 10 {
-                e = e + 1;
-            }
-            let tf = all[p..e];
-            if len(tf) > 0 && plain(tf) {
-                ran = ran + 1;
-                var t = cat3(heap, "exec 2>&1; cd ", wd, "/tree && ");
-                t = buffer.append(heap, t, checker);
-                t = buffer.append(heap, t, " test --std ");
-                t = buffer.append(heap, t, tf);
-                t = buffer.append(heap, t, " src/*.cho");
-                borrow t as &tq in {
-                    let (code, said) = sh(heap, exec, clock, buffer.bytes(tq), 262144, test_ms);
-                    if code != 0 {
-                        var d = buffer.empty(heap, 64);
-                        borrow said as &sq in {
-                            d = head_of(heap, d, bytes.trim(buffer.bytes(sq)), 1000);
-                        }
-                        borrow d as &dr in {
-                            rep = change.error_line(heap, rep, "tests-failed", tf, buffer.bytes(dr));
-                        }
-                        buffer.drop(heap, d);
-                    }
-                    buffer.drop(heap, said);
-                }
-                buffer.drop(heap, t);
-            }
-            p = e + 1;
+    let tables = project_tables(heap, exec, clock, wd, "/tree");
+    if tables != 0 {
+        rep = project_gate(heap, exec, clock, wd, checker, tables, rep, test_ms);
+    } else {
+        var list = cat3(heap, "cd ", wd, "/tree && ls tests/*_test.cho 2>/dev/null");
+        var names = buffer.empty(heap, 16);
+        borrow list as &lq in {
+            let (code, said) = sh(heap, exec, clock, buffer.bytes(lq), 65536, 10000);
+            buffer.drop(heap, names);
+            names = said;
         }
-    }
-    buffer.drop(heap, names);
-    if ran == 0 {
-        rep = change.error_line(heap, rep, "no-tests", "tests/", "the repository has no tests/*_test.cho: there is nothing to check the change against");
+        buffer.drop(heap, list);
+        var ran = 0;
+        borrow names as &nq in {
+            let all = buffer.bytes(nq);
+            var p = 0;
+            while p < len(all) {
+                var e = p;
+                while e < len(all) && int_of(all[e]) != 10 {
+                    e = e + 1;
+                }
+                let tf = all[p..e];
+                if len(tf) > 0 && plain(tf) {
+                    ran = ran + 1;
+                    var t = cat3(heap, "exec 2>&1; cd ", wd, "/tree && ");
+                    t = buffer.append(heap, t, checker);
+                    t = buffer.append(heap, t, " test --std ");
+                    t = buffer.append(heap, t, tf);
+                    t = buffer.append(heap, t, " src/*.cho");
+                    borrow t as &tq in {
+                        let (code, said) = sh(heap, exec, clock, buffer.bytes(tq), 262144, test_ms);
+                        if code != 0 {
+                            var d = buffer.empty(heap, 64);
+                            borrow said as &sq in {
+                                d = head_of(heap, d, bytes.trim(buffer.bytes(sq)), 1000);
+                            }
+                            borrow d as &dr in {
+                                rep = change.error_line(heap, rep, "tests-failed", tf, buffer.bytes(dr));
+                            }
+                            buffer.drop(heap, d);
+                        }
+                        buffer.drop(heap, said);
+                    }
+                    buffer.drop(heap, t);
+                }
+                p = e + 1;
+            }
+        }
+        buffer.drop(heap, names);
+        if ran == 0 {
+            rep = change.error_line(heap, rep, "no-tests", "tests/", "the repository has no tests/*_test.cho: there is nothing to check the change against");
+        }
     }
     var clean = false;
     borrow rep as &r1 in {
@@ -745,7 +847,7 @@ fn gate[&h, &x, &c, &z, &w, &k, &p, &q, &o](heap: &!h Heap, exec: &x Exec(""), c
     }
     if clean && bytes.equal(kind, "bug") {
         borrow test_files as &tfr in {
-            let pr = base_probe(heap, exec, clock, fs, wd, checker, buffer.bytes(tfr), test_ms);
+            let pr = base_probe(heap, exec, clock, fs, wd, checker, buffer.bytes(tfr), tables != 0, test_ms);
             borrow pr as &prr in {
                 rep = buffer.append(heap, rep, buffer.bytes(prr));
             }
