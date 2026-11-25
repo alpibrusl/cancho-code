@@ -1,0 +1,432 @@
+edition 7;
+
+module textedges;
+
+// `textedges` -- the declarations of a repository and what each refers to, read from the text alone (docs/repo-patch.md, "A selection": "When the
+// compiler does not answer").
+//
+// `cancho ids --edges src/*.cho` answers only for one program that passes its check. A project (`cancho.toml`: several programs, dependencies, files
+// outside `src/`) is not one program, and a repository with an error in it does not pass: for those the selection is made from this instead. The answer
+// has the form `cancho ids --edges` writes, so `selection.select` reads either.
+//
+// It is the text, not the compiler, and it says so by being less exact:
+//
+//   a declaration   a line that starts in the first column with `fn`, `struct`, `enum` or `static` (after `pub`, `res`, `val`), up to the line that
+//                   ends it: the same line when it ends with `;` or `}`, the next line that starts with `}` otherwise. This is the layout `cancho fmt`
+//                   writes; a file that is not formatted is described badly, and anything else in the first column is not a declaration.
+//   refers          a name of the declaration's own file used as a whole word in it; `a.name`, where `a` is what an `import` line of the file calls a
+//                   module of the repository, and that module has `name`. A name in a string counts, a name in a comment line does not. Nothing is
+//                   resolved by type: a local variable called as a function of the file is a reference.
+//
+// Only the files of `src/` are described, as with the compiler. Nothing here reads a file or runs a program.
+
+import std.buffer;
+import std.bytes;
+
+// One declaration is `width` numbers of the table: the path (0, 1), the module (2, 3), the name (4, 5), its bytes (6, 7), its lines (8, 9), where its
+// signature ends (10), its kind as `starts` says it plus 4 for `pub` (11), the text of its file (12, 13). Every pair is a range of the bundle.
+fn width() -> [] int {
+    return 14;
+}
+
+fn ident_byte(c: int) -> [] bool {
+    return c >= 48 && c <= 57 || c >= 65 && c <= 90 || c >= 97 && c <= 122 || c == 95;
+}
+
+// Where the line that starts at `p` ends: its line end, or `stop`.
+fn line_end[&b](t: &b [byte], p: int, stop: int) -> [] int {
+    var e = p;
+    while e < stop && int_of(t[e]) != 10 {
+        e = e + 1;
+    }
+    return e;
+}
+
+// What a line declares: where the name starts in it, 1 for a function, 2 for a type and 3 for a static (0: the line declares nothing), and whether it is `pub`.
+fn starts[&l](line: &l [byte]) -> [] (int, int, bool) {
+    var i = 0;
+    var public = false;
+    if bytes.starts_with(line, "pub ") {
+        i = 4;
+        public = true;
+    }
+    if bytes.starts_with(line[i..len(line)], "res ") || bytes.starts_with(line[i..len(line)], "val ") {
+        i = i + 4;
+    }
+    let rest = line[i..len(line)];
+    if bytes.starts_with(rest, "fn ") {
+        return (i + 3, 1, public);
+    }
+    if bytes.starts_with(rest, "struct ") {
+        return (i + 7, 2, public);
+    }
+    if bytes.starts_with(rest, "static ") {
+        return (i + 7, 3, public);
+    }
+    if bytes.starts_with(rest, "enum ") {
+        return (i + 5, 2, public);
+    }
+    return (0, 0, false);
+}
+
+// The declarations of one file (its path `pa..pb`, its text `ba..bb`), written into the table from declaration `n0` on. The answer is how many the
+// table holds then.
+fn scan_file[&b, &d](t: &b [byte], pa: int, pb: int, ba: int, bb: int, d: &!d [int], n0: int) -> [] int {
+    var n = n0;
+    var p = ba;
+    var line = 1;
+    var ma = 0;
+    var mb = 0;
+    while p < bb {
+        let e = line_end(t, p, bb);
+        let l = t[p..e];
+        if bytes.starts_with(l, "module ") {
+            ma = p + 7;
+            mb = ma;
+            while mb < e && int_of(t[mb]) != 59 {
+                mb = mb + 1;
+            }
+        }
+        let (off, kind, public) = starts(l);
+        if kind == 0 {
+            p = e + 1;
+            line = line + 1;
+        } else {
+            var ne = p + off;
+            while ne < e && ident_byte(int_of(t[ne])) {
+                ne = ne + 1;
+            }
+            // the line that ends the signature: it ends with `{`, or the whole declaration ends there with `;` or `}`
+            var qe = e;
+            var last = line;
+            var sig = e;
+            var open = false;
+            var done = false;
+            while done == false {
+                var c = 0;
+                if qe > p {
+                    c = int_of(t[qe - 1]);
+                }
+                if c == 123 {
+                    sig = qe - 1;
+                    open = true;
+                    done = true;
+                } else if c == 59 || c == 125 {
+                    let at = bytes.find(t[p..qe], " {");
+                    if at >= 0 {
+                        sig = p + at;
+                    } else {
+                        sig = qe;
+                    }
+                    done = true;
+                } else if qe >= bb {
+                    sig = qe;
+                    done = true;
+                } else {
+                    qe = line_end(t, qe + 1, bb);
+                    last = last + 1;
+                }
+            }
+            while sig > p && int_of(t[sig - 1]) == 32 {
+                sig = sig - 1;
+            }
+            // the body: up to the next line that starts with `}`
+            while open && qe < bb {
+                let q = qe + 1;
+                if q >= bb {
+                    qe = bb;
+                } else {
+                    qe = line_end(t, q, bb);
+                    last = last + 1;
+                    if int_of(t[q]) == 125 {
+                        open = false;
+                    }
+                }
+            }
+            var end = qe + 1;
+            if end > bb {
+                end = bb;
+            }
+            if kind == 2 {
+                // a type is its own signature
+                sig = qe;
+            }
+            let w = n * width();
+            d[w] = pa;
+            d[w + 1] = pb;
+            d[w + 2] = ma;
+            d[w + 3] = mb;
+            d[w + 4] = p + off;
+            d[w + 5] = ne;
+            d[w + 6] = p;
+            d[w + 7] = end;
+            d[w + 8] = line;
+            d[w + 9] = last;
+            d[w + 10] = sig;
+            var flags = kind;
+            if public {
+                flags = flags + 4;
+            }
+            d[w + 11] = flags;
+            d[w + 12] = ba;
+            d[w + 13] = bb;
+            n = n + 1;
+            p = end;
+            line = last + 1;
+        }
+    }
+    return n;
+}
+
+// The declarations of every file of `src/` in the bundle (`=== FILE <path>` and the text up to the next one). The answer is how many.
+fn scan[&b, &d](t: &b [byte], d: &!d [int]) -> [] int {
+    var n = 0;
+    var i = 0;
+    while i < len(t) {
+        let e = line_end(t, i, len(t));
+        var z = e + 1;
+        var more = true;
+        while more && z < len(t) {
+            if bytes.starts_with(t[z..len(t)], "=== FILE ") {
+                more = false;
+            } else {
+                z = line_end(t, z, len(t)) + 1;
+            }
+        }
+        if z > len(t) {
+            z = len(t);
+        }
+        if bytes.starts_with(t[i..e], "=== FILE src/") && e + 1 <= z {
+            n = scan_file(t, i + 9, e, e + 1, z, d, n);
+        }
+        i = z;
+    }
+    return n;
+}
+
+// The module an `import` line of the file (its text `ba..bb`) calls `alias`: `import a.b;` is called `b`, `import a.b as c;` is called `c`. An empty
+// range when no line does.
+fn imported[&b, &a](t: &b [byte], ba: int, bb: int, alias: &a [byte]) -> [] (int, int) {
+    var p = ba;
+    while p < bb {
+        let e = line_end(t, p, bb);
+        let l = t[p..e];
+        if bytes.starts_with(l, "import ") {
+            let ma = p + 7;
+            var mb = ma;
+            while mb < e && int_of(t[mb]) != 59 && int_of(t[mb]) != 32 {
+                mb = mb + 1;
+            }
+            var aa = mb;
+            var ab = mb;
+            if bytes.starts_with(t[mb..e], " as ") {
+                aa = mb + 4;
+                ab = aa;
+                while ab < e && ident_byte(int_of(t[ab])) {
+                    ab = ab + 1;
+                }
+            } else {
+                while aa > ma && int_of(t[aa - 1]) != 46 {
+                    aa = aa - 1;
+                }
+            }
+            if bytes.equal(t[aa..ab], alias) {
+                return (ma, mb);
+            }
+        } else {
+            let (off, kind, public) = starts(l);
+            if kind > 0 {
+                return (0, 0);
+            }
+        }
+        p = e + 1;
+    }
+    return (0, 0);
+}
+
+// The declaration called `name` in the module `home`, or -1.
+fn find[&b, &d, &m, &n](t: &b [byte], d: &d [int], n: int, home: &m [byte], name: &n [byte]) -> [] int {
+    var j = 0;
+    while j < n {
+        let w = j * width();
+        if d[w + 5] - d[w + 4] == len(name) && d[w + 3] - d[w + 2] == len(home) && bytes.equal(t[d[w + 4]..d[w + 5]], name) && bytes.equal(t[d[w + 2]..d[w + 3]], home) {
+            return j;
+        }
+        j = j + 1;
+    }
+    return 0 - 1;
+}
+
+// The declaration called `name` in the file of declaration `i` (the declarations of a file are next to each other in the table), or -1.
+fn find_near[&b, &d, &n](t: &b [byte], d: &d [int], n: int, i: int, name: &n [byte]) -> [] int {
+    let file = d[i * width() + 12];
+    var j = i;
+    while j > 0 && d[(j - 1) * width() + 12] == file {
+        j = j - 1;
+    }
+    while j < n && d[j * width() + 12] == file {
+        let w = j * width();
+        if d[w + 5] - d[w + 4] == len(name) && bytes.equal(t[d[w + 4]..d[w + 5]], name) {
+            return j;
+        }
+        j = j + 1;
+    }
+    return 0 - 1;
+}
+
+// `text` inside a JSON string.
+fn put_json[&h, &x](heap: &!h Heap, out: buffer.Buffer, text: &x [byte]) -> [heap] buffer.Buffer {
+    var b = out;
+    var i = 0;
+    while i < len(text) {
+        let c = int_of(text[i]);
+        if c == 34 {
+            b = buffer.append(heap, b, "\\\"");
+        } else if c == 92 {
+            b = buffer.append(heap, b, "\\\\");
+        } else if c == 10 {
+            b = buffer.append(heap, b, "\\n");
+        } else if c == 9 {
+            b = buffer.append(heap, b, "\\t");
+        } else if c >= 32 {
+            b = buffer.push(heap, b, text[i]);
+        }
+        i = i + 1;
+    }
+    return b;
+}
+
+fn kind_of(flags: int) -> [] &static [byte] {
+    if flags % 4 == 1 {
+        return "fn";
+    }
+    if flags % 4 == 3 {
+        return "static";
+    }
+    return "type";
+}
+
+// The `refers` of declaration `i`, as the members of a JSON array. `seen[j]` is `i + 1` once declaration `j` is written for it.
+fn put_refers[&h, &b, &d, &s](heap: &!h Heap, out: buffer.Buffer, t: &b [byte], d: &d [int], n: int, i: int, seen: &!s [int]) -> [heap] buffer.Buffer {
+    var b = out;
+    let first = d[i * width() + 6];
+    let end = d[i * width() + 7];
+    let ba = d[i * width() + 12];
+    let bb = d[i * width() + 13];
+    var wrote = false;
+    var bol = true;
+    var p = first;
+    while p < end {
+        let c = int_of(t[p]);
+        if bol {
+            // a comment line refers to nothing
+            var s = p;
+            while s < end && int_of(t[s]) == 32 {
+                s = s + 1;
+            }
+            if s + 1 < end && int_of(t[s]) == 47 && int_of(t[s + 1]) == 47 {
+                p = line_end(t, s, end) + 1;
+            } else {
+                bol = false;
+            }
+        } else if c == 10 {
+            bol = true;
+            p = p + 1;
+        } else if ident_byte(c) && (c < 48 || c > 57) && (p == first || ident_byte(int_of(t[p - 1])) == false) {
+            var e = p;
+            while e < end && ident_byte(int_of(t[e])) {
+                e = e + 1;
+            }
+            var j = 0 - 1;
+            var next = e;
+            if e + 1 < end && int_of(t[e]) == 46 && ident_byte(int_of(t[e + 1])) {
+                let (ma, mb) = imported(t, ba, bb, t[p..e]);
+                if mb > ma {
+                    var g = e + 1;
+                    while g < end && ident_byte(int_of(t[g])) {
+                        g = g + 1;
+                    }
+                    j = find(t, d, n, t[ma..mb], t[e + 1..g]);
+                    next = g;
+                }
+            } else if p == first || int_of(t[p - 1]) != 46 || p - 1 > first && int_of(t[p - 2]) == 46 {
+                // not the field of something: nothing before it, or a range (`a..name`)
+                j = find_near(t, d, n, i, t[p..e]);
+            }
+            if j >= 0 && j != i && seen[j] != i + 1 {
+                seen[j] = i + 1;
+                let w = j * width();
+                if wrote {
+                    b = buffer.push(heap, b, byte_of(44));
+                }
+                wrote = true;
+                b = buffer.append(heap, b, "{\"kind\":\"");
+                b = buffer.append(heap, b, kind_of(d[w + 11]));
+                b = buffer.append(heap, b, "\",\"module\":\"");
+                b = put_json(heap, b, t[d[w + 2]..d[w + 3]]);
+                b = buffer.append(heap, b, "\",\"name\":\"");
+                b = put_json(heap, b, t[d[w + 4]..d[w + 5]]);
+                b = buffer.append(heap, b, "\"}");
+            }
+            p = next;
+        } else {
+            p = p + 1;
+        }
+    }
+    return b;
+}
+
+// What `cancho ids --edges` would write for the files of `src/` in `bundle`, as far as the text says it.
+pub fn edges[&h, &b](heap: &!h Heap, bundle: &b [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.append(heap, buffer.empty(heap, len(bundle) / 4 + 64), "{\n  \"declarations\": [");
+    // no more declarations than lines
+    var lines = 1;
+    var k = 0;
+    while k < len(bundle) {
+        if int_of(bundle[k]) == 10 {
+            lines = lines + 1;
+        }
+        k = k + 1;
+    }
+    let table = box_slice(heap, lines * width() + 1, 0);
+    let marks = box_slice(heap, lines + 1, 0);
+    borrow mut table as &!tw in {
+        let d = contents(tw);
+        let n = scan(bundle, d);
+        borrow mut marks as &!mw in {
+            let seen = contents(mw);
+            var i = 0;
+            while i < n {
+                let w = i * width();
+                if i > 0 {
+                    out = buffer.push(heap, out, byte_of(44));
+                }
+                out = buffer.append(heap, out, "\n    {\"kind\":\"");
+                out = buffer.append(heap, out, kind_of(d[w + 11]));
+                out = buffer.append(heap, out, "\",\"module\":\"");
+                out = put_json(heap, out, bundle[d[w + 2]..d[w + 3]]);
+                out = buffer.append(heap, out, "\",\"name\":\"");
+                out = put_json(heap, out, bundle[d[w + 4]..d[w + 5]]);
+                if d[w + 11] >= 4 {
+                    out = buffer.append(heap, out, "\",\"pub\":true,\"file\":\"");
+                } else {
+                    out = buffer.append(heap, out, "\",\"pub\":false,\"file\":\"");
+                }
+                out = put_json(heap, out, bundle[d[w]..d[w + 1]]);
+                out = buffer.append(heap, out, "\",\"line\":");
+                out = buffer.push_nat(heap, out, d[w + 8]);
+                out = buffer.append(heap, out, ",\"end_line\":");
+                out = buffer.push_nat(heap, out, d[w + 9]);
+                out = buffer.append(heap, out, ",\"signature\":\"");
+                out = put_json(heap, out, bundle[d[w + 6]..d[w + 10]]);
+                out = buffer.append(heap, out, "\",\"refers\":[");
+                out = put_refers(heap, out, bundle, d, n, i, seen);
+                out = buffer.append(heap, out, "]}");
+                i = i + 1;
+            }
+        }
+    }
+    unbox_slice(heap, table);
+    unbox_slice(heap, marks);
+    return buffer.append(heap, out, "\n  ]\n}\n");
+}

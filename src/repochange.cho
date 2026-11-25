@@ -22,6 +22,7 @@ import std.buffer;
 import std.bytes;
 import std.io;
 import std.process;
+import textedges;
 
 // A word that goes into a shell command line: letters, digits and . _ / + : = @ % , - only.
 pub fn plain[&a](text: &a [byte]) -> [] bool {
@@ -240,7 +241,7 @@ fn slurp_any[&h, &x, &c, &f, &p](heap: &!h Heap, exec: &x Exec(""), clock: &c Cl
 // written as `WORKDIR/bundle.src`, with the functions whose body is not shown in `WORKDIR/bundle.hidden`. Level 0 first, level 1 when that is over `most`
 // bytes. 0 and the line that says it (`[CHANGE_SELECTION]<TAB>seeds<TAB>bytes<TAB>level`); or 1: over `most` at level 1 too, 2: the request names nothing
 // of the repository, 3: the two files cannot be read or the second is not that JSON.
-fn select_bundle[&h, &x, &c, &z, &w, &q, &u](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &z Fs(""), wd: &w [byte], request: &q [byte], touch: &u [byte], most: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write("")] (int, buffer.Buffer) {
+fn select_bundle[&h, &x, &c, &z, &w, &q, &u](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &z Fs(""), wd: &w [byte], request: &q [byte], touch: &u [byte], most: int, by: &static [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write("")] (int, buffer.Buffer) {
     var line = buffer.empty(heap, 64);
     var status = 3;
     let all_path = cat3(heap, wd, "/bundle.all", "");
@@ -278,6 +279,8 @@ fn select_bundle[&h, &x, &c, &z, &w, &q, &u](heap: &!h Heap, exec: &x Exec(""), 
                                         line = buffer.push_nat(heap, line, len(buffer.bytes(sr)));
                                         line = buffer.push(heap, line, byte_of(9));
                                         line = buffer.push_nat(heap, line, level);
+                                        line = buffer.push(heap, line, byte_of(9));
+                                        line = buffer.append(heap, line, by);
                                         line = buffer.push(heap, line, byte_of(10));
                                         status = 0;
                                     }
@@ -992,6 +995,7 @@ pub fn run[&h, &x, &c, &i, &z, &a, &r, &w, &q, &k, &d, &p, &m, &g, &o, &u](heap:
         var selected = false;
         var names = buffer.append(heap, buffer.empty(heap, 64), touch);
         var chosen = buffer.empty(heap, 16);
+        var by: &static [byte] = "compiler";
         if made == 3 {
             // too big to be shown whole: what the compiler says each declaration refers to, then a selection for this request
             var eq = cat3(heap, "cd ", wd, "/base && mv ../bundle.src ../bundle.all && ");
@@ -1000,23 +1004,37 @@ pub fn run[&h, &x, &c, &i, &z, &a, &r, &w, &q, &k, &d, &p, &m, &g, &o, &u](heap:
             borrow eq as &eqr in {
                 let (code, said) = sh(heap, exec, clock, buffer.bytes(eqr), 4096, 600000);
                 if code != 0 {
-                    var m = buffer.empty(heap, 64);
-                    borrow said as &sdr in {
-                        m = change.error_line(heap, m, "selection-failed", "-", bytes.trim(buffer.bytes(sdr)));
+                    // the compiler does not answer (a project, an error in the repository, a checker with no `ids --edges`): the text does
+                    by = "text";
+                    let all_path = cat3(heap, wd, "/bundle.all", "");
+                    let edges_path = cat3(heap, wd, "/edges.json", "");
+                    borrow all_path as &alp in {
+                        let (all, aok) = slurp_any(heap, exec, clock, fs, buffer.bytes(alp));
+                        if aok {
+                            borrow all as &alr in {
+                                let said2 = textedges.edges(heap, buffer.bytes(alr));
+                                borrow said2 as &s2r in {
+                                    borrow edges_path as &edp in {
+                                        fs_write(fs, buffer.bytes(edp), buffer.bytes(s2r));
+                                    }
+                                }
+                                buffer.drop(heap, said2);
+                            }
+                        } else {
+                            io.error_all(io, "[CHANGE_ERROR]\tselection-failed\t-\tsrc/ and tests/ are too big to be shown whole, and the whole could not be read to select from it\n");
+                            made = 4;
+                        }
+                        buffer.drop(heap, all);
                     }
-                    borrow m as &mr in {
-                        io.error_all(io, buffer.bytes(mr));
-                    }
-                    buffer.drop(heap, m);
-                    io.error_all(io, "[CHANGE_ERROR]\tselection-failed\t-\tsrc/ and tests/ are too big to be shown whole, and `cancho ids --std --edges src/*.cho` did not answer for the repository: the checker must have `ids --edges` and the repository must pass its check\n");
-                    made = 4;
+                    buffer.drop(heap, all_path);
+                    buffer.drop(heap, edges_path);
                 }
                 buffer.drop(heap, said);
             }
             buffer.drop(heap, eq);
             if made == 3 {
                 borrow names as &nmr in {
-                    let (scode, sline) = select_bundle(heap, exec, clock, fs, wd, request, buffer.bytes(nmr), most);
+                    let (scode, sline) = select_bundle(heap, exec, clock, fs, wd, request, buffer.bytes(nmr), most, by);
                     buffer.drop(heap, chosen);
                     chosen = sline;
                     if scode == 0 {
@@ -1169,7 +1187,7 @@ pub fn run[&h, &x, &c, &i, &z, &a, &r, &w, &q, &k, &d, &p, &m, &g, &o, &u](heap:
                                     // the next attempt is shown what this one tried to change blind (when that still fits; else the selection stays as it was)
                                     names = selection.widen(heap, names, buffer.bytes(rq2));
                                     borrow names as &nmr2 in {
-                                        let (scode, sline) = select_bundle(heap, exec, clock, fs, wd, request, buffer.bytes(nmr2), most);
+                                        let (scode, sline) = select_bundle(heap, exec, clock, fs, wd, request, buffer.bytes(nmr2), most, by);
                                         if scode == 0 {
                                             borrow sline as &slr in {
                                                 say(heap, io, fs, buffer.bytes(lg), buffer.bytes(slr));

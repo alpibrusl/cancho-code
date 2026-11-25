@@ -20,6 +20,8 @@
 #   selection  a repository over --max-bundle: what the request names and what is one step from it shown in full, the rest as signatures; a change to
 #              a function whose body was not shown refused (`item-not-shown`) and shown in the next attempt; --touch; level 1; still too big and a
 #              request that names nothing refused before the agent runs; a repository that fits shown whole as before (needs a cancho with `ids --edges`)
+#   text       the compiler does not answer `ids --edges` (a checker without it; a repository with an error in it): the selection is made from the
+#              text (src/textedges.cho), says so, and is the one the compiler's answer gives; the error is then fixed through the selection
 #   project    a repository whose cancho.toml has a [[bin]] or a [[test]] (here with a `main` under src/): the gate is the project's own `cancho build`
 #              (`build-failed`) and `cancho test` (`tests-failed`), a project with no [[test]] is `no-tests`, the base probe of a bug runs the project's
 #              tests, and a cancho.toml with neither table changes nothing
@@ -65,6 +67,11 @@ M = [
  ("tests-never-shown", "selection.cho", "} else if bytes.starts_with(path, \"tests/\") && test_wanted(edges, t, d, n, path, body) {", "} else if false {"),
  ("level-1-off", "selection.cho", "if level > 0 && wanted == false {", "if false {"),
  ("limit-not-held", "repochange.cho", "} else if len(buffer.bytes(sr)) > most {", "} else if false {"),
+ ("text-edges-not-made", "repochange.cho", "let said2 = textedges.edges(heap, buffer.bytes(alr));", "let said2 = buffer.empty(heap, 16);"),
+ ("text-said-to-be-the-compiler", "repochange.cho", 'by = "text";', 'by = "compiler";'),
+ ("text-refers-to-nothing", "textedges.cho", "if j >= 0 && j != i && seen[j] != i + 1 {", "if false {"),
+ ("text-body-not-followed", "textedges.cho", "while open && qe < bb {", "while false {"),
+ ("text-imports-not-read", "textedges.cho", "if bytes.equal(t[aa..ab], alias) {", "if false {"),
  ("project-not-seen", "repochange.cho", "        if code >= 1 && code <= 3 {\n            tables = code;", "        if false {\n            tables = code;"),
  ("project-build-not-run", "repochange.cho", "    if built && tables % 2 == 1 {\n        let (code, said) = project_run", "    if false {\n        let (code, said) = project_run"),
  ("project-tests-not-run", "repochange.cho", "    if built {\n        let (code, said) = project_run", "    if false {\n        let (code, said) = project_run"),
@@ -111,7 +118,7 @@ hasnt() { case "$2" in *"$3"*) echo "FAIL: $1: '$3' should not be in: $(printf '
     || { cat "$d/build.err" >&2; echo "pure gate did not build" >&2; exit 2; }
 "$CANCHO" build "$root/tests/programs/build.cho" "$SRC/build.cho" "$SRC/project.cho" "$SRC/plan.cho" "$SRC/driver.cho" \
     "$SRC/checker.cho" "$SRC/signature.cho" "$SRC/loop_check.cho" "$SRC/snapshot.cho" "$SRC/trail.cho" \
-    "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" "$SRC/library.cho" "$SRC/cases.cho" "$SRC/change.cho" "$SRC/repochange.cho" "$SRC/selection.cho" \
+    "$SRC/acceptance.cho" "$SRC/splice.cho" "$SRC/pool.cho" "$SRC/parallel.cho" "$SRC/library.cho" "$SRC/cases.cho" "$SRC/change.cho" "$SRC/repochange.cho" "$SRC/selection.cho" "$SRC/textedges.cho" \
     --std -o "$d/cb" >/dev/null 2>"$d/build2.err" || { cat "$d/build2.err" >&2; echo "gate did not build" >&2; exit 2; }
 G="$d/gate"
 F="$root/tests/fixtures/repochange"
@@ -688,7 +695,7 @@ if "$CANCHO" ids --std --edges "$R/repo/src/mathx.cho" >/dev/null 2>&1; then
     rp=$(bigrepo); rc=$(newrc); w="$d/w-sel"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
     out=$(run "$rp" "$rc" "$w" refactor --max-bundle 3500); expect "selection: exit" "$?" 0
     expect "selection: verdict" "$(verdict "$out")" done
-    has "selection: the run says what it selected (one seed, level 0)" "$out" "[CHANGE_SELECTION]	1	$(wc -c < "$w/bundle.src" | tr -d ' ')	0"
+    has "selection: the run says what it selected (one seed, level 0)" "$out" "[CHANGE_SELECTION]	1	$(wc -c < "$w/bundle.src" | tr -d ' ')	0	compiler"
     [ "$(wc -c < "$w/bundle.all")" -gt 3500 ] && [ "$(wc -c < "$w/bundle.src")" -le 3500 ] || { echo "FAIL: selection: the whole is not over the limit, or the selection is" >&2; fail=1; }
     b=$(cat "$rc/bundle.1")
     has "selection: the seed is shown in full" "$b" "pub fn double(x: int) -> [] int {
@@ -756,13 +763,44 @@ pub fn noise_2(x: int) -> [] int"
     has "whole: every body is shown" "$(cat "$rc/bundle.1")" "let b = a * 3;"
     [ -e "$w/bundle.hidden" ] && { echo "FAIL: whole: a list of hidden functions was written" >&2; fail=1; }
 else
-    # a checker with no `ids --edges` (the 0.1.0 release): a repository over the limit is refused, by its tag, before the agent is run
-    echo "note: this cancho has no \`ids --edges\`: the selection cases are not run, only its refusal" >&2
-    rp=$(bigrepo); rc=$(newrc); w="$d/w-sel-old"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
-    out=$(run "$rp" "$rc" "$w" refactor --max-bundle 3500); expect "selection, old checker: exit 2" "$?" 2
-    has "selection, old checker: the tag" "$out" "[CHANGE_ERROR]	selection-failed	-	"
-    expect "selection, old checker: the agent was not run" "$(wc -l < "$rc/log" | tr -d ' ')" 0
+    echo "note: this cancho has no \`ids --edges\`: the selection cases by the compiler are not run, only the ones by the text" >&2
 fi
+
+# ---- the compiler does not answer: the selection from the text (docs/repo-patch.md, "When the compiler does not answer"; src/textedges.cho) -------
+# a checker whose `ids` fails, and is the real one for everything else
+printf '#!/bin/sh\ncase "$1" in ids) echo "no ids here" >&2; exit 1 ;; esac\nexec "%s" "$@"\n' "$CANCHO" > "$d/noids.sh"; chmod +x "$d/noids.sh"
+rp=$(bigrepo); rc=$(newrc); w="$d/w-text"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+out=$(CANCHO="$d/noids.sh"; run "$rp" "$rc" "$w" refactor --max-bundle 3500); expect "text: exit" "$?" 0
+expect "text: verdict" "$(verdict "$out")" done
+has "text: the run says the selection is from the text" "$out" "[CHANGE_SELECTION]	1	$(wc -c < "$w/bundle.src" | tr -d ' ')	0	text"
+hasnt "text: no refusal" "$out" "selection-failed"
+b=$(cat "$rc/bundle.1")
+has "text: the seed is shown in full" "$b" "    return x * 2;"
+has "text: what refers to the seed through an import is shown in full" "$b" "return mathx.double(side * side);"
+hasnt "text: another function is not" "$b" "return x / 2;"
+has "text: and says how long it is" "$b" "    // body not shown: "
+hasnt "text: a function nothing is about is not shown" "$b" "let b = a * 3;"
+expect "text: the hidden functions are listed" "$(grep -c . "$w/bundle.hidden" | tr -d ' ')" 28
+if [ -f "$d/w-sel/bundle.src" ]; then
+    cmp -s "$d/w-sel/bundle.src" "$w/bundle.src" || { echo "FAIL: text: the selection is not the one the compiler's answer gives" >&2; fail=1; }
+    [ "$(sort "$d/w-sel/bundle.hidden")" = "$(sort "$w/bundle.hidden")" ] || { echo "FAIL: text: the hidden functions are not the compiler's" >&2; fail=1; }
+fi
+# a function that was not shown is still refused, and shown next
+rp=$(bigrepo); rc=$(newrc); w="$d/w-text-blind"
+printf '%s\n' '=== FILE src/mathx.cho' 'pub fn half(x: int) -> [] int { return x / 2 + 0; }' > "$rc/reply.1"; printf '%s\n' "$DOUBLE" > "$rc/reply.2"
+out=$(CANCHO="$d/noids.sh"; run "$rp" "$rc" "$w" refactor --max-bundle 3500)
+expect "text blind: refused, then passed" "$(attempts "$out")" "1:refused:item-not-shown 2:passed"
+# a repository with an error in it: the real compiler does not answer for it, the text does, and the change that mends it passes
+rp=$(bigrepo); rc=$(newrc); w="$d/w-text-broken"
+printf '\npub fn broken(x: int) -> [] int {\n    return nothing_here(x);\n}\n' >> "$rp/src/other.cho"
+printf 'Make double add the number to itself, and make broken return its argument.\n' > "$d/change-broken.txt"
+printf '%s\n' "$DOUBLE" '=== FILE src/other.cho' 'pub fn broken(x: int) -> [] int { return x; }' > "$rc/reply.1"
+out=$(req="$d/change-broken.txt"; run "$rp" "$rc" "$w" refactor --max-bundle 3500); expect "text, broken repository: exit" "$?" 0
+expect "text, broken repository: verdict" "$(verdict "$out")" done
+has "text, broken repository: two seeds, from the text" "$out" "[CHANGE_SELECTION]	2	$(wc -c < "$w/bundle.src" | tr -d ' ')	0	text"
+has "text, broken repository: the function with the error is shown" "$(cat "$rc/bundle.1")" "    return nothing_here(x);"
+has "text, broken repository: what the compiler said is kept" "$(cat "$w/edges.err")" "error"
+has "text, broken repository: mended in the tree" "$(cat "$w/tree/src/other.cho")" "    return x;"
 rp=$(bigrepo); rc=$(newrc); out=$(run "$rp" "$rc" "$d/w-u-touch" refactor --touch src/mathx.cho); expect "usage --touch with a path: exit 2" "$?" 2
 rp=$(bigrepo); rc=$(newrc); out=$(run "$rp" "$rc" "$d/w-u-maxb" refactor --max-bundle 0); expect "usage --max-bundle 0: exit 2" "$?" 2
 req=$keep_req
@@ -840,7 +878,7 @@ rp=$(newrepo); rc=$(newrc); w="$d/w-proj-plain"; printf '%s\n' "$PLUS" > "$rc/re
 out=$(run "$rp" "$rc" "$w" refactor --attempts 1); expect "a cancho.toml with no [[bin]] or [[test]]: checked file by file" "$(attempts "$out")" "1:passed"
 
 # static: the driver never runs git
-code=$(grep -v '^[[:space:]]*//' "$SRC/repochange.cho" "$SRC/selection.cho" "$SRC/change.cho" | grep -E 'git (push|commit|add|checkout|clone|apply|fetch)|"git |/git ' | head -3)
+code=$(grep -v '^[[:space:]]*//' "$SRC/repochange.cho" "$SRC/selection.cho" "$SRC/textedges.cho" "$SRC/change.cho" | grep -E 'git (push|commit|add|checkout|clone|apply|fetch)|"git |/git ' | head -3)
 expect "static: no git in the driver" "$code" ""
 
 [ $fail -eq 0 ] && echo "repo.patch gate: ok"
