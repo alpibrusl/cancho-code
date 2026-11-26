@@ -32,6 +32,8 @@ why() {
     for f in "$4"/*.feedback "$4"/*.acceptance "$4"/trail-*.jsonl "$4"/*.agent.err "$4"/state.txt; do
         [ -s "$f" ] && { echo "---- $1: $(basename "$f"):" >&2; tail -40 "$f" >&2; }
     done
+    echo "---- $1: the busiest processes ($(uptime 2>/dev/null | sed 's/.*load/load/')):" >&2
+    ps -Ao pid,ppid,pcpu,etime,args 2>/dev/null | sort -k3 -nr | head -12 | cut -c1-200 >&2
     return 0
 }
 
