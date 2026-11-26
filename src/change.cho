@@ -47,10 +47,50 @@ fn path_byte(c: int) -> [] bool {
     return c >= 48 && c <= 57 || c >= 65 && c <= 90 || c >= 97 && c <= 122 || c == 95 || c == 45 || c == 46 || c == 47;
 }
 
-// Why a path may not be written, as a tag, or "" when it may. A path is relative to the checkout, made of letters, digits and `_ - . /`, has no
-// empty, `.`, `..` or hidden (`.git`) component, lies under `src/` or `tests/` and names a `.cho` file. Whether a link is in the way is for the
-// file system to say (`repochange`).
+// Is `path` one of the sources of the repository (and not a test of it)? Everything the change may read or write is a source or lies under
+// `tests/`, so a source is what is not under `tests/`.
+pub fn is_source[&p](path: &p [byte]) -> [] bool {
+    return bytes.starts_with(path, "tests/") == false;
+}
+
+// Does `path` lie in the area `srcs` names? `srcs` is the sources of the repository, separated by white space: each a directory (the path is
+// under it) or a `.cho` file (the path is it). `tests/` is always in the area.
+pub fn in_area[&p, &s](path: &p [byte], srcs: &s [byte]) -> [] bool {
+    if bytes.starts_with(path, "tests/") {
+        return true;
+    }
+    var i = 0;
+    var hit = false;
+    while i < len(srcs) {
+        var e = i;
+        while e < len(srcs) && int_of(srcs[e]) != 32 && int_of(srcs[e]) != 10 && int_of(srcs[e]) != 9 {
+            e = e + 1;
+        }
+        let one = srcs[i..e];
+        if len(one) > 0 {
+            if bytes.equal(one, path) {
+                hit = true;
+            }
+            // under it, when it is a directory: a source that is a `.cho` file is only itself
+            let file = len(one) > 4 && bytes.equal(one[len(one) - 4..len(one)], ".cho");
+            if file == false && len(path) > len(one) && bytes.equal(path[0..len(one)], one) && int_of(path[len(one)]) == 47 {
+                hit = true;
+            }
+        }
+        i = e + 1;
+    }
+    return hit;
+}
+
+// `path_tag_in` for a repository whose sources are `src/`.
 pub fn path_tag[&p](path: &p [byte]) -> [] &static [byte] {
+    return path_tag_in(path, "src");
+}
+
+// Why a path may not be written, as a tag, or "" when it may. A path is relative to the checkout, made of letters, digits and `_ - . /`, has no
+// empty, `.`, `..` or hidden (`.git`) component, lies in the area (`in_area`: the sources `srcs` names, or `tests/`) and names a `.cho` file.
+// Whether a link is in the way is for the file system to say (`repochange`).
+pub fn path_tag_in[&p, &s](path: &p [byte], srcs: &s [byte]) -> [] &static [byte] {
     if len(path) == 0 || len(path) > 200 {
         return "path-length";
     }
@@ -85,7 +125,7 @@ pub fn path_tag[&p](path: &p [byte]) -> [] &static [byte] {
         }
         k = k + 1;
     }
-    if bytes.starts_with(path, "src/") == false && bytes.starts_with(path, "tests/") == false {
+    if in_area(path, srcs) == false {
         return "path-outside";
     }
     if len(path) < 5 || bytes.equal(path[len(path) - 4..len(path)], ".cho") == false {
@@ -378,7 +418,7 @@ fn field_of[&l](line: &l [byte], k: int) -> [] (int, int) {
     return (0, 0);
 }
 
-// The public functions a change added or replaced in `src/`, from `splice.item_delta` lines, one name per line.
+// The public functions a change added or replaced in the sources (`is_source`), from `splice.item_delta` lines, one name per line.
 pub fn public_fns[&h, &r](heap: &!h Heap, records: &r [byte]) -> [heap] buffer.Buffer {
     var out = buffer.empty(heap, 32);
     var p = 0;
@@ -390,7 +430,7 @@ pub fn public_fns[&h, &r](heap: &!h Heap, records: &r [byte]) -> [heap] buffer.B
         let (c0, c1) = field_of(ln, 2);
         let (d0, d1) = field_of(ln, 3);
         let (f0, f1) = field_of(ln, 4);
-        if bytes.starts_with(ln[a0..a1], "src/") && (bytes.equal(ln[b0..b1], "A") || bytes.equal(ln[b0..b1], "C")) && bytes.equal(ln[c0..c1], "fn") && bytes.equal(ln[f0..f1], "1") {
+        if is_source(ln[a0..a1]) && (bytes.equal(ln[b0..b1], "A") || bytes.equal(ln[b0..b1], "C")) && bytes.equal(ln[c0..c1], "fn") && bytes.equal(ln[f0..f1], "1") {
             out = buffer.append(heap, out, ln[d0..d1]);
             out = buffer.push(heap, out, byte_of(10));
         }
@@ -461,7 +501,7 @@ fn digits_value[&a](t: &a [byte]) -> [] int {
 }
 
 fn glob_ok[&a](g: &a [byte]) -> [] bool {
-    if bytes.starts_with(g, "src/") == false && bytes.starts_with(g, "tests/") == false {
+    if len(g) == 0 || int_of(g[0]) == 47 || int_of(g[0]) == 46 || int_of(g[0]) == 42 {
         return false;
     }
     var i = 0;
@@ -511,6 +551,57 @@ fn constraint_parts[&l](ln: &l [byte]) -> [] (int, int, int, int) {
         v = v + 1;
     }
     return (0, s, v, len(ln));
+}
+
+// Is the keep-names path `g` (a `*` allowed at its end) about the area `srcs` names (`in_area`)? Under `tests/`, in or under a source, or a
+// directory above one (`lib/*` when a source is `lib/plot`).
+fn glob_in_area[&g, &s](g: &g [byte], srcs: &s [byte]) -> [] bool {
+    var n = len(g);
+    if n > 0 && int_of(g[n - 1]) == 42 {
+        n = n - 1;
+    }
+    let stem = g[0..n];
+    if bytes.starts_with(stem, "tests/") || in_area(stem, srcs) {
+        return true;
+    }
+    var i = 0;
+    var hit = false;
+    while i < len(srcs) {
+        var e = i;
+        while e < len(srcs) && int_of(srcs[e]) != 32 && int_of(srcs[e]) != 10 && int_of(srcs[e]) != 9 {
+            e = e + 1;
+        }
+        let one = srcs[i..e];
+        if len(one) > 0 && len(stem) > 0 {
+            // the stem is the source, the source with its `/`, or a directory above the source
+            if bytes.equal(stem[0..n - 1], one) && int_of(stem[n - 1]) == 47 {
+                hit = true;
+            }
+            if int_of(stem[n - 1]) == 47 && bytes.starts_with(one, stem) {
+                hit = true;
+            }
+        }
+        i = e + 1;
+    }
+    return hit;
+}
+
+// The first keep-names line of the constraints whose path is not about the area `srcs` names, or 0. The constraints are good ones
+// (`constraint_problem`); which paths the repository has is known only once its sources are.
+pub fn glob_outside[&c, &s](text: &c [byte], srcs: &s [byte]) -> [] int {
+    var lineno = 0;
+    var p = 0;
+    while p < len(text) {
+        let e = line_end(text, p);
+        lineno = lineno + 1;
+        let ln = bytes.trim(text[p..e]);
+        let (k0, k1, v0, v1) = constraint_parts(ln);
+        if k1 > 0 && bytes.equal(ln[k0..k1], "keep-names") && glob_in_area(ln[v0..v1], srcs) == false {
+            return lineno;
+        }
+        p = e + 1;
+    }
+    return 0;
 }
 
 // The first line of the constraints that is not one: (its number, why), or (0, "") when all are good.
@@ -687,7 +778,7 @@ pub fn violations[&h, &c, &r](heap: &!h Heap, ctext: &c [byte], records: &r [byt
                         n_gone = n_gone + 1;
                     }
                 }
-                if bytes.starts_with(path, "src/") {
+                if is_source(path) {
                     if bytes.equal(status, "A") {
                         added = note(heap, added, n_added, name);
                         n_added = n_added + 1;
@@ -715,7 +806,7 @@ pub fn violations[&h, &c, &r](heap: &!h Heap, ctext: &c [byte], records: &r [byt
     if max_items >= 0 && n_added > max_items {
         var d = buffer.append(heap, buffer.empty(heap, 64), "the change adds ");
         d = buffer.push_nat(heap, d, n_added);
-        d = buffer.append(heap, d, " items to src/ (");
+        d = buffer.append(heap, d, " items to the sources (");
         borrow added as &addedr in {
             d = buffer.append(heap, d, buffer.bytes(addedr));
         }
@@ -730,7 +821,7 @@ pub fn violations[&h, &c, &r](heap: &!h Heap, ctext: &c [byte], records: &r [byt
     if max_lines >= 0 && added_lines > max_lines {
         var d = buffer.append(heap, buffer.empty(heap, 64), "the change adds ");
         d = buffer.push_nat(heap, d, added_lines);
-        d = buffer.append(heap, d, " lines to src/; at most ");
+        d = buffer.append(heap, d, " lines to the sources; at most ");
         d = buffer.push_nat(heap, d, max_lines);
         borrow d as &dr in {
             rep = error_line(heap, rep, "constraint-max-added-lines", "-", buffer.bytes(dr));
@@ -738,7 +829,7 @@ pub fn violations[&h, &c, &r](heap: &!h Heap, ctext: &c [byte], records: &r [byt
         buffer.drop(heap, d);
     }
     if n_off > 0 {
-        var d = buffer.append(heap, buffer.empty(heap, 64), "the change touches items of src/ the request does not allow: ");
+        var d = buffer.append(heap, buffer.empty(heap, 64), "the change touches items of the sources the request does not allow: ");
         borrow off as &offr in {
             d = buffer.append(heap, d, buffer.bytes(offr));
         }

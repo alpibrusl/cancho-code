@@ -16,6 +16,8 @@ edition 7;
 //   passed OUTPUT NAMES          `change.passed_in`: the NAMES the `cancho test` OUTPUT shows as passed
 //   notpassed OUTPUT NAMES       `change.not_passed_in`: the NAMES the OUTPUT does not show as passed
 //   helpers FILE SEED            `splice.with_helpers`: SEED and the text of the functions of FILE it calls, and of those they call
+//   patharea PATH SRCS           the same for a repository whose sources are SRCS (`change.path_tag_in`)
+//   globarea LINE SRCS           `change.glob_outside` of one constraints line: 0, or 1 when its keep-names path is about nothing of SRCS
 //   constraint FILE              `change.constraint_problem` on a constraints file: `ok`, or `LINE<TAB>why`
 //   violate CFILE RECORDS LINES  `change.violations` of a constraints file against delta lines and LINES lines added to src/: the [CHANGE_ERROR] lines
 //
@@ -47,7 +49,26 @@ fn main(world: World) -> [] int {
                         borrow mut room2 as &!r2 in {
                             let n = arg_count(g);
                             let mode = arg(g, 1);
-                            if n == 3 && bytes.equal(mode, "path") {
+                            if n == 4 && bytes.equal(mode, "patharea") {
+                                // patharea PATH SRCS: `change.path_tag_in` for a repository whose sources are SRCS
+                                let tag = change.path_tag_in(arg(g, 2), arg(g, 3));
+                                if len(tag) == 0 {
+                                    io.write_all(i, "ok\n");
+                                } else {
+                                    io.write_all(i, tag);
+                                    io.write_all(i, "\n");
+                                }
+                                status = 0;
+                            } else if n == 4 && bytes.equal(mode, "globarea") {
+                                // globarea LINE SRCS: `change.glob_outside` of one constraints line, as `0` or the line's number
+                                var line = buffer.push_nat(hh, buffer.empty(hh, 16), change.glob_outside(arg(g, 2), arg(g, 3)));
+                                line = buffer.push(hh, line, byte_of(10));
+                                borrow line as &lr in {
+                                    buffer.write(i, lr);
+                                }
+                                buffer.drop(hh, line);
+                                status = 0;
+                            } else if n == 3 && bytes.equal(mode, "path") {
                                 let tag = change.path_tag(arg(g, 2));
                                 if len(tag) == 0 {
                                     io.write_all(i, "ok\n");
