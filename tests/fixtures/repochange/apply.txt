@@ -10,3 +10,4 @@ newnoedition	1	new-file-no-edition
 removenew	1	remove-in-new-file
 badremove	1	remove-syntax
 twice	1	defines fn a twice
+comment	0	
