@@ -1253,6 +1253,68 @@ pub fn changed_test_items[&h, &b, &n](heap: &!h Heap, base: &b [byte], new: &n [
     return out;
 }
 
+// Is the function `name` called in `text`: the name as a whole word (no identifier byte before it) with a `(` or a `[` after it, spaces aside?
+fn calls_fn[&t, &n](text: &t [byte], name: &n [byte]) -> [] bool {
+    if len(name) == 0 {
+        return false;
+    }
+    var i = 0;
+    while i + len(name) <= len(text) {
+        if match_at(text, i, name) && (i == 0 || is_ident(int_of(text[i - 1])) == false) {
+            var j = i + len(name);
+            while j < len(text) && int_of(text[j]) == 32 {
+                j = j + 1;
+            }
+            if j < len(text) && (int_of(text[j]) == 40 || int_of(text[j]) == 91) {
+                return true;
+            }
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+// `seed` (the text of the tests a change adds or changes in `file`) and, after it, the text of every function of `file` that it calls, and of those
+// they call, and so on: a test that reaches the new code through a helper of its own file (`key_is(...)`, which calls the function under test) does
+// call it. Only the file's own functions are followed, by name; a file that does not parse gives `seed` alone.
+pub fn with_helpers[&h, &f, &s](heap: &!h Heap, file: &f [byte], seed: &s [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.append(heap, buffer.empty(heap, len(seed) + 64), seed);
+    let fb = box_slice(heap, 6 * (len(file) / 4 + 16), 0);
+    let tb = box_slice(heap, len(file) / 4 + 16, 0);
+    borrow mut fb as &!fw in {
+        borrow mut tb as &!tw in {
+            let tf = contents(fw);
+            let taken = contents(tw);
+            let (cn, sn, pn, ln) = parse_items(file, tf);
+            if sn == 0 {
+                var grew = true;
+                while grew {
+                    grew = false;
+                    var k = 0;
+                    while k < cn {
+                        if tf[6 * k] == 2 && taken[k] == 0 {
+                            var hit = false;
+                            borrow out as &or in {
+                                hit = calls_fn(buffer.bytes(or), file[tf[6 * k + 3]..tf[6 * k + 4]]);
+                            }
+                            if hit {
+                                taken[k] = 1;
+                                grew = true;
+                                out = buffer.push(heap, out, byte_of(10));
+                                out = buffer.append(heap, out, file[tf[6 * k + 5]..tf[6 * k + 2]]);
+                            }
+                        }
+                        k = k + 1;
+                    }
+                }
+            }
+        }
+    }
+    unbox_slice(heap, tb);
+    unbox_slice(heap, fb);
+    return out;
+}
+
 fn delta_line[&h, &p, &t, &x](heap: &!h Heap, out: buffer.Buffer, path: &p [byte], status: &static [byte], text: &t [byte], tab: &x [int], k: int) -> [heap] buffer.Buffer {
     var b = buffer.append(heap, out, path);
     b = buffer.push(heap, b, byte_of(9));

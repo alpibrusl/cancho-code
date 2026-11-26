@@ -14,6 +14,8 @@ edition 7;
 //   publicfns RECORDS            `change.public_fns`: the public functions added or replaced in src/, from delta lines
 //   exercise TEXT NAMES          prints `yes` when TEXT calls one of NAMES (one per line) or NAMES is empty, else `no`
 //   passed OUTPUT NAMES          `change.passed_in`: the NAMES the `cancho test` OUTPUT shows as passed
+//   notpassed OUTPUT NAMES       `change.not_passed_in`: the NAMES the OUTPUT does not show as passed
+//   helpers FILE SEED            `splice.with_helpers`: SEED and the text of the functions of FILE it calls, and of those they call
 //   constraint FILE              `change.constraint_problem` on a constraints file: `ok`, or `LINE<TAB>why`
 //   violate CFILE RECORDS LINES  `change.violations` of a constraints file against delta lines and LINES lines added to src/: the [CHANGE_ERROR] lines
 //
@@ -178,6 +180,20 @@ fn main(world: World) -> [] int {
                                     status = 0;
                                 } else if n == 4 && bytes.equal(mode, "passed") {
                                     let d = change.passed_in(hh, t1[0..n1], t2[0..n2]);
+                                    borrow d as &dr in {
+                                        buffer.write(i, dr);
+                                    }
+                                    buffer.drop(hh, d);
+                                    status = 0;
+                                } else if n == 4 && bytes.equal(mode, "notpassed") {
+                                    let d = change.not_passed_in(hh, t1[0..n1], t2[0..n2]);
+                                    borrow d as &dr in {
+                                        buffer.write(i, dr);
+                                    }
+                                    buffer.drop(hh, d);
+                                    status = 0;
+                                } else if n == 4 && bytes.equal(mode, "helpers") {
+                                    let d = splice.with_helpers(hh, t1[0..n1], t2[0..n2]);
                                     borrow d as &dr in {
                                         buffer.write(i, dr);
                                     }

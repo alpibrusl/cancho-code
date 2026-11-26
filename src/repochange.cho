@@ -475,9 +475,31 @@ fn project_run[&h, &x, &c, &w, &d, &k, &v](heap: &!h Heap, exec: &x Exec(""), cl
     return (code, out);
 }
 
+// After the tests passed: the test functions the change added or changed (`names`, one per line) that what the tests said (`output`) does not show
+// as passed never ran. Their file is one the repository does not run (in no `[[test]]` of a project, or not a `tests/NAME_test.cho`), so they prove
+// nothing, whatever they assert: `test-not-run`. Measured on the real gateway: asked for a change it could not make (a file under `generated/`), a model
+// added a test file that asserted the change had been made, the project ran none of it, and the gate said `done`.
+fn not_run[&h, &o, &n](heap: &!h Heap, report: buffer.Buffer, output: &o [byte], names: &n [byte]) -> [heap] buffer.Buffer {
+    var rep = report;
+    let missing = change.not_passed_in(heap, output, names);
+    borrow missing as &mr in {
+        if len(buffer.bytes(mr)) > 0 {
+            var d = buffer.append(heap, buffer.empty(heap, 96), "these tests of the change were not run by the repository's tests: ");
+            d = buffer.append(heap, d, bytes.trim(buffer.bytes(mr)));
+            d = buffer.append(heap, d, ". A test must be in a file the repository already runs (a file of a [[test]] in cancho.toml, or tests/NAME_test.cho when there is none); cancho.toml cannot be changed here");
+            borrow d as &dr in {
+                rep = change.error_line(heap, rep, "test-not-run", "tests/", buffer.bytes(dr));
+            }
+            buffer.drop(heap, d);
+        }
+    }
+    buffer.drop(heap, missing);
+    return rep;
+}
+
 // The checks of a project (`tables` from `project_tables`, not 0): `cancho build` when it has a `[[bin]]` (`build-failed`), then `cancho test` when it
 // has a `[[test]]` (`tests-failed`); a project with no `[[test]]` is `no-tests`. The tests are not run on a tree that does not build.
-fn project_gate[&h, &x, &c, &w, &k](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, wd: &w [byte], checker: &k [byte], tables: int, report: buffer.Buffer, test_ms: int) -> [heap, exec(""), clock, poll] buffer.Buffer {
+fn project_gate[&h, &x, &c, &w, &k, &n](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, wd: &w [byte], checker: &k [byte], tables: int, report: buffer.Buffer, test_ms: int, names: &n [byte]) -> [heap, exec(""), clock, poll] buffer.Buffer {
     var rep = report;
     var built = true;
     // In a copy (`WORKDIR/check`): what a build writes (`build/`, the dependencies it installs) must not reach the tree, which the patch is made from.
@@ -524,6 +546,10 @@ fn project_gate[&h, &x, &c, &w, &k](heap: &!h Heap, exec: &x Exec(""), clock: &c
                 rep = change.error_line(heap, rep, "tests-failed", "cancho.toml", buffer.bytes(dr));
             }
             buffer.drop(heap, d);
+        } else {
+            borrow said as &sq2 in {
+                rep = not_run(heap, rep, buffer.bytes(sq2), names);
+            }
         }
         buffer.drop(heap, said);
     }
@@ -627,6 +653,7 @@ fn gate[&h, &x, &c, &z, &w, &k, &p, &q, &o](heap: &!h Heap, exec: &x Exec(""), c
     var records = buffer.empty(heap, 64);
     var tests_text = buffer.empty(heap, 64);
     var test_files = buffer.empty(heap, 32);
+    var test_names = buffer.empty(heap, 32);
     var i = 0;
     while i < len(written) {
         var e = i;
@@ -664,9 +691,19 @@ fn gate[&h, &x, &c, &z, &w, &k, &p, &q, &o](heap: &!h Heap, exec: &x Exec(""), c
                             if here > 0 {
                                 let tt = splice.changed_test_items(heap, buffer.bytes(btr), buffer.bytes(ntr), true);
                                 borrow tt as &ttr2 in {
-                                    tests_text = buffer.append(heap, tests_text, buffer.bytes(ttr2));
+                                    // with the functions of the test file they call: a test may reach the new code through a helper of its own file
+                                    let th = splice.with_helpers(heap, buffer.bytes(ntr), buffer.bytes(ttr2));
+                                    borrow th as &thr in {
+                                        tests_text = buffer.append(heap, tests_text, buffer.bytes(thr));
+                                    }
+                                    buffer.drop(heap, th);
                                 }
                                 buffer.drop(heap, tt);
+                                let tn = splice.changed_test_items(heap, buffer.bytes(btr), buffer.bytes(ntr), false);
+                                borrow tn as &tnr in {
+                                    test_names = buffer.append(heap, test_names, buffer.bytes(tnr));
+                                }
+                                buffer.drop(heap, tn);
                                 test_files = buffer.append(heap, test_files, path);
                                 test_files = buffer.push(heap, test_files, byte_of(10));
                             }
@@ -770,6 +807,7 @@ fn gate[&h, &x, &c, &z, &w, &k, &p, &q, &o](heap: &!h Heap, exec: &x Exec(""), c
         buffer.drop(heap, records);
         buffer.drop(heap, tests_text);
         buffer.drop(heap, test_files);
+        buffer.drop(heap, test_names);
         return rep;
     }
     // the repo's own checks: fmt --check, then a project's `cancho build` and `cancho test`, or the tests of tests/*_test.cho against src/*.cho
@@ -793,7 +831,9 @@ fn gate[&h, &x, &c, &z, &w, &k, &p, &q, &o](heap: &!h Heap, exec: &x Exec(""), c
     buffer.drop(heap, f);
     let tables = project_tables(heap, exec, clock, wd, "/tree");
     if tables != 0 {
-        rep = project_gate(heap, exec, clock, wd, checker, tables, rep, test_ms);
+        borrow test_names as &tnq in {
+            rep = project_gate(heap, exec, clock, wd, checker, tables, rep, test_ms, buffer.bytes(tnq));
+        }
     } else {
         var list = cat3(heap, "cd ", wd, "/tree && ls tests/*_test.cho 2>/dev/null");
         var names = buffer.empty(heap, 16);
@@ -804,6 +844,8 @@ fn gate[&h, &x, &c, &z, &w, &k, &p, &q, &o](heap: &!h Heap, exec: &x Exec(""), c
         }
         buffer.drop(heap, list);
         var ran = 0;
+        var failed = false;
+        var all_said = buffer.empty(heap, 64);
         borrow names as &nq in {
             let all = buffer.bytes(nq);
             var p = 0;
@@ -831,6 +873,11 @@ fn gate[&h, &x, &c, &z, &w, &k, &p, &q, &o](heap: &!h Heap, exec: &x Exec(""), c
                                 rep = change.error_line(heap, rep, "tests-failed", tf, buffer.bytes(dr));
                             }
                             buffer.drop(heap, d);
+                            failed = true;
+                        } else {
+                            borrow said as &sq3 in {
+                                all_said = buffer.append(heap, all_said, buffer.bytes(sq3));
+                            }
                         }
                         buffer.drop(heap, said);
                     }
@@ -842,7 +889,14 @@ fn gate[&h, &x, &c, &z, &w, &k, &p, &q, &o](heap: &!h Heap, exec: &x Exec(""), c
         buffer.drop(heap, names);
         if ran == 0 {
             rep = change.error_line(heap, rep, "no-tests", "tests/", "the repository has no tests/*_test.cho: there is nothing to check the change against");
+        } else if failed == false {
+            borrow all_said as &asq in {
+                borrow test_names as &tnq2 in {
+                    rep = not_run(heap, rep, buffer.bytes(asq), buffer.bytes(tnq2));
+                }
+            }
         }
+        buffer.drop(heap, all_said);
     }
     var clean = false;
     borrow rep as &r1 in {
@@ -860,6 +914,7 @@ fn gate[&h, &x, &c, &z, &w, &k, &p, &q, &o](heap: &!h Heap, exec: &x Exec(""), c
     buffer.drop(heap, records);
     buffer.drop(heap, tests_text);
     buffer.drop(heap, test_files);
+    buffer.drop(heap, test_names);
     return rep;
 }
 
