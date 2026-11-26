@@ -282,7 +282,7 @@ pub fn apply[&h, &e, &b, &p](heap: &!h Heap, existing: &e [byte], exists: bool, 
                     }
                     if code == 0 && pa >= 0 {
                         borrow cur as &cr in {
-                            let (g, r2, c2) = splice.splice(heap, buffer.bytes(cr), buffer.bytes(rq)[pa..pz]);
+                            let (g, r2, c2) = splice.splice_kept(heap, buffer.bytes(cr), buffer.bytes(rq)[pa..pz]);
                             if c2 != 0 {
                                 borrow r2 as &rr2 in {
                                     rep = buffer.append(heap, rep, buffer.bytes(rr2));

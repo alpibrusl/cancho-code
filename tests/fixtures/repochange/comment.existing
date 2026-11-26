@@ -1,0 +1,22 @@
+edition 7;
+
+// Twice the number: the first line of two,
+// and the second.
+fn twice(x: int) -> [] int {
+    return x + x;
+}
+
+// A pair, as it was.
+struct Pair {
+    a: int,
+}
+
+fn bare() -> [] int {
+    return 3;
+}
+
+// A free comment, of no item.
+
+fn last() -> [] int {
+    return 4;
+}

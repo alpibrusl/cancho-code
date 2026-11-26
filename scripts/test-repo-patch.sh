@@ -4,7 +4,7 @@
 #
 #   pure       src/change.cho and the parts of src/splice.cho it uses, one function at a time (tests/programs/change_gate.cho): the paths that may not be
 #              written (absolute, `..`, `.git`, outside src/ and tests/, odd bytes), the kinds, the envelope in a reply, its sections, a section into a file
-#              (items added or replaced, items removed, a removal of an item that is not there, a new file), the test functions a file adds or changes
+#              (items added or replaced, a replaced item keeping the comment above it unless the reply brings one, items removed, a removal of an item that is not there, a new file), the test functions a file adds or changes
 #   happy      a feature over two files (src/ and tests/), written unformatted: `cancho fmt` runs on both, the gate passes, change.patch is the diff of the
 #              copy against the base and applies to a fresh copy of the repository, the original is byte for byte what it was (also when it is read-only)
 #   remove     a rename (kind rename, remove + add, the tests changed to the new name): the old function is gone from the tree; a removal of an item that
@@ -72,6 +72,8 @@ M = [
  ("text-refers-to-nothing", "textedges.cho", "if j >= 0 && j != i && seen[j] != i + 1 {", "if false {"),
  ("text-body-not-followed", "textedges.cho", "while open && qe < bb {", "while false {"),
  ("text-imports-not-read", "textedges.cho", "if bytes.equal(t[aa..ab], alias) {", "if false {"),
+ ("comment-not-kept", "splice.cho", "if keep && tp[6 * pk + 5] == tp[6 * pk + 1] {", "if false {"),
+ ("comment-kept-beside-a-new-one", "splice.cho", "if keep && tp[6 * pk + 5] == tp[6 * pk + 1] {", "if keep {"),
  ("project-not-seen", "repochange.cho", "        if code >= 1 && code <= 3 {\n            tables = code;", "        if false {\n            tables = code;"),
  ("project-build-not-run", "repochange.cho", "    if built && tables % 2 == 1 {\n        let (code, said) = project_run", "    if false {\n        let (code, said) = project_run"),
  ("project-tests-not-run", "repochange.cho", "    if built {\n        let (code, said) = project_run", "    if false {\n        let (code, said) = project_run"),

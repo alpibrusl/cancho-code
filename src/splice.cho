@@ -587,6 +587,18 @@ fn put_note[&h, &t, &p](heap: &!h Heap, rep: buffer.Buffer, verb: &static [byte]
 // Put the patch into the file. The answer: the new file, the report, 0 (done; `[SPLICE_NOTE]` lines say what changed) or 1 (nothing
 // changed; `[SPLICE_ERROR]<TAB>-<TAB>LINE:MESSAGE` lines say why).
 pub fn splice[&h, &s, &p](heap: &!h Heap, existing: &s [byte], patch: &p [byte]) -> [heap] (buffer.Buffer, buffer.Buffer, int) {
+    return splice_as(heap, existing, patch, false);
+}
+
+// `splice` for a change to a file somebody else wrote (docs/repo-patch.md): a patch item that comes with no comment of its own leaves the
+// comment above the item it replaces where it is. A model asked for a small change answers with the function and not with the lines above
+// it, and the plain rule (the item's text, leading comment included, is replaced) then deletes a comment nobody asked to delete. A patch item
+// with a comment replaces the old one, as before, so a comment can still be rewritten, and `remove` still takes the comment with the item.
+pub fn splice_kept[&h, &s, &p](heap: &!h Heap, existing: &s [byte], patch: &p [byte]) -> [heap] (buffer.Buffer, buffer.Buffer, int) {
+    return splice_as(heap, existing, patch, true);
+}
+
+fn splice_as[&h, &s, &p](heap: &!h Heap, existing: &s [byte], patch: &p [byte], keep: bool) -> [heap] (buffer.Buffer, buffer.Buffer, int) {
     var rep = buffer.empty(heap, 256);
     var out = buffer.empty(heap, len(existing) + len(patch) + 64);
     var code = 0;
@@ -734,6 +746,10 @@ pub fn splice[&h, &s, &p](heap: &!h Heap, existing: &s [byte], patch: &p [byte])
                             if repl[e] >= 0 {
                                 let pk = repl[e];
                                 first_out = buffer.append(heap, first_out, existing[pos..te[6 * e + 1]]);
+                                if keep && tp[6 * pk + 5] == tp[6 * pk + 1] {
+                                    // the comment above the old item, up to its keyword (nothing when it has none)
+                                    first_out = buffer.append(heap, first_out, existing[te[6 * e + 1]..te[6 * e + 5]]);
+                                }
                                 first_out = buffer.append(heap, first_out, patch[tp[6 * pk + 1]..tp[6 * pk + 2]]);
                             } else {
                                 first_out = buffer.append(heap, first_out, existing[pos..te[6 * e + 2]]);
