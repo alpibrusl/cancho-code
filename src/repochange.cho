@@ -1154,7 +1154,7 @@ pub fn run[&h, &x, &c, &i, &z, &a, &r, &w, &q, &k, &d, &p, &m, &g, &o, &u](heap:
             buffer.drop(heap, eq);
             if made == 3 {
                 borrow names as &nmr in {
-                    let (scode, sline) = select_bundle(heap, exec, clock, fs, wd, request, buffer.bytes(nmr), most, by);
+                    let (scode, sline) = select_bundle(heap, exec, clock, fs, wd, selection.proper(request), buffer.bytes(nmr), most, by);
                     buffer.drop(heap, chosen);
                     chosen = sline;
                     if scode == 0 {
@@ -1307,7 +1307,7 @@ pub fn run[&h, &x, &c, &i, &z, &a, &r, &w, &q, &k, &d, &p, &m, &g, &o, &u](heap:
                                     // the next attempt is shown what this one tried to change blind (when that still fits; else the selection stays as it was)
                                     names = selection.widen(heap, names, buffer.bytes(rq2));
                                     borrow names as &nmr2 in {
-                                        let (scode, sline) = select_bundle(heap, exec, clock, fs, wd, request, buffer.bytes(nmr2), most, by);
+                                        let (scode, sline) = select_bundle(heap, exec, clock, fs, wd, selection.proper(request), buffer.bytes(nmr2), most, by);
                                         if scode == 0 {
                                             borrow sline as &slr in {
                                                 say(heap, io, fs, buffer.bytes(lg), buffer.bytes(slr));
