@@ -10,7 +10,7 @@ It works on a **copy** of `DIR`. It never writes `DIR`, never runs `git` (there 
 
 | option | |
 |---|---|
-| `--repo DIR` | the checkout: absolute; it needs a `src/` and has no link in `src/` or `tests/` (`repo-invalid`, exit 2). A `.git` inside it is not copied |
+| `--repo DIR` | the checkout: absolute; it needs its sources (`src/`, or in a project [what `cancho.toml` names](#the-sources-of-a-project)) and has no link in them or in `tests/` (`repo-invalid`, exit 2). A `.git` inside it is not copied |
 | `--change FILE` | the request, plain text, at most 16 KiB (longer is cut with a marker). Reaches the model inside a fixed frame that says it is a report and never an instruction about the task, the answer or the files (the lifecycle doc, 4.4: a mitigation, not a control) |
 | `--kind` | `bug`, `feature` (default), `refactor` or `rename`. The first two must add a test ([below](#a-test-is-required)) |
 | `--checker`, `--work` | the compiler (absolute) and the work directory (created; it may not contain `DIR` nor be inside it) |
@@ -123,7 +123,29 @@ A repository whose `cancho.toml` (at its root) has a line `[[bin]]` or a line `[
 * for kind `bug`, the probe on the base runs `cancho test` in `WORKDIR/probe` and looks for the added or changed test names in what every set says;
 * `--test-seconds` is the cap on each of the two commands, not on one test file.
 
-Everything else is as for any repository: the model is shown and may write `src/` and `tests/` only (so not `cancho.toml`, and not a directory like `generated/`), `cancho fmt --check src tests` runs first, and a `cancho.toml` with neither table changes nothing.
+Everything else is as for any repository: the model is shown and may write the project's sources and `tests/` only (so not `cancho.toml`), `cancho fmt --check` runs on them first, and a `cancho.toml` with neither table changes nothing. *Corrected 2026-11-26: this said `src/` and `tests/` only; see the next section.*
+
+### The sources of a project
+
+*Added 2026-11-26, after cancho-tools (code in `contract/` and `tools/`) and cancho-plot (`lib/`) could not be given to `--repo` at all: neither has a `src/`.*
+
+A project says where its code is: every `[[bin]]` and `[[test]]` of `cancho.toml` has a `sources` line. The **area** of a project is what those lines name outside `tests/`, plus `tests/`; for any other repository it is `src/` and `tests/`, as before. The run works it out once, before anything is made, and writes it to `WORKDIR/area.src`.
+
+* **What a source is**: a directory or a `.cho` file, a plain relative path (letters, digits, `_ - . /`; not absolute, no `..`, no hidden part) that is in the checkout, with no link in it, above it or under it. Anything else, or a project whose `sources` name nothing outside `tests/`, is `repo-invalid` (exit 2), and the agent is not run.
+* **Shown**: every `.cho` file of the area. A directory the project does not name is not shown.
+* **Written**: a `.cho` file under a source directory, a source file itself, or a file under `tests/`. Everything else is `path-outside`, and the refusal names the sources. `cancho.toml` still cannot be written, so a change cannot add a source.
+* **Told apart from tests**: a source is what is not under `tests/`. The checks that said `src/` (the public functions a feature's test must call, the items and lines the constraints count, what the text selection reads) mean the sources.
+* **`keep-names`**: its path must be about the area (under `tests/`, in or under a source, or a directory above one); otherwise exit 2, said once the sources are known and before the work directory is made.
+
+**What it does not do.**
+
+* **It reads `sources` lines only when the array is on one line** (`sources = ["a", "b"]`, the form every sibling repository writes). An array over several lines is not read, and a project with no source read this way is `repo-invalid`.
+* **A generated directory that `cancho.toml` names is in the area** (cancho-tools names `generated/tally`): it is shown and may be written. Whoever runs the tool bounds that from outside (Forge's `publish_deny`); the tool has no such list.
+* **The selection's two conveniences are for `src/` only**: a request that names a file as `x.cho` without its directory, and showing `tests/X_test.cho` because `src/X.cho` has a seed. In a project with other sources the request names functions, or the file by its whole path.
+* **Tests are under `tests/`.** A project that keeps its test files elsewhere has them treated as sources: the test checks then find no test in the change.
+* **A project with no `[[test]]` is still `no-tests`** (cancho-chain, cancho-opt and cancho-solve are checked by scripts, not by `cancho test`): this change does not reach them.
+
+**Not measured:** no model has been run on a project of this shape, and neither cancho-tools nor cancho-plot has been given to it; the gate's cases are a small project with `lib/` and `tools/` and the stand-in agent.
 
 What follows from running the project's own commands: the checker must be the compiler the project pins (`cancho build` refuses another; that refusal is the `build-failed` text), and a dependency named by a git address is fetched by the compiler into its cache, so **a project with dependencies needs the network** on the first run.
 
@@ -138,10 +160,10 @@ What follows from running the project's own commands: the checker must be the co
 
 | line | meaning | refusal |
 |---|---|---|
-| `keep-names GLOB` | no `fn` of a file matching GLOB (a `src/` or `tests/` path, with a `*` only at its end: `tests/*`, `src/diff.cho`) may be removed or renamed. A changed body is fine; a rename is a removal and an addition, so it is caught by the removal. May be given more than once | `constraint-keep-names` |
-| `max-added-items N` | at most N items (fns, structs, enums) are *added* to `src/` (a replaced item is not an addition; items of `tests/` do not count) | `constraint-max-added-items` |
-| `max-added-lines N` | at most N lines are added to `src/` (the `+` lines of `diff -ruN base/src tree/src`; the new tests are not counted) | `constraint-max-added-lines` |
-| `only-items a,b,c` | the only items of `src/` that may be added, replaced or removed (tests may change freely) | `constraint-only-items` |
+| `keep-names GLOB` | no `fn` of a file matching GLOB (a path of the sources or of `tests/`, with a `*` only at its end: `tests/*`, `src/diff.cho`) may be removed or renamed. A changed body is fine; a rename is a removal and an addition, so it is caught by the removal. May be given more than once | `constraint-keep-names` |
+| `max-added-items N` | at most N items (fns, structs, enums) are *added* to the sources (`src/`, or a project's) (a replaced item is not an addition; items of `tests/` do not count) | `constraint-max-added-items` |
+| `max-added-lines N` | at most N lines are added to the sources (the `+` lines of `diff -ruN` of each of them, base against tree; the new tests are not counted) | `constraint-max-added-lines` |
+| `only-items a,b,c` | the only items of the sources that may be added, replaced or removed (tests may change freely) | `constraint-only-items` |
 
 Item names are those of `splice.item_delta` (functions, structs, enums, one namespace). A violation is one `[CHANGE_ERROR]` line per constraint broken, with the names and counts in its words, reported together with the other refusals of the gate, and it is the retry feedback like any other. A line that is not one of these four, a number that is not a number, a second `max-added-items`, `max-added-lines` or `only-items`, a glob outside `src/` and `tests/` or with a `*` elsewhere than at its end, a file that cannot be read (or is over 16 KiB) or a relative path is a usage error: exit 2, nothing run, the line number in the message.
 
@@ -173,7 +195,7 @@ The last line is `[CHANGE_VERDICT]<TAB>done|stuck|provider_error`; with `done`, 
 `company-lifecycle.md` section 4.2 describes `repo.change` with a throw-away *git checkout* of `base` in `ev/base/`, an `ev/change.txt` and an `ev/scope.txt` (the allowed paths from `publish_allow` minus `publish_deny`), an output `ev/change.patch` bounded by Forge (`max_patch_files`, `max_patch_lines`, no rename/mode/binary), and a check program that applies it to a second copy and prints `TOTAL a/b`. Here:
 
 * the copy is made with `tar` from a directory, not a git checkout, and carries no revision;
-* the allowed set is fixed in the tool (`src/**.cho`, `tests/**.cho`), not read from `scope.txt`;
+* the allowed set is fixed in the tool (`tests/**.cho`, and `src/**.cho` or [the sources of a project](#the-sources-of-a-project)), not read from `scope.txt`;
 * the bounds are on the number of files and the bytes of the model's reply (`--max-files`, `--max-bytes`), enforced on the envelope **before** a patch exists, not on added lines of a patch;
 * the gate is run by this command, not by a check program, and prints tags, not `TOTAL a/b`;
 * the patch is `diff -ruN base tree`, with those prefixes.
@@ -182,4 +204,4 @@ The doc's refusal tags `patch-path-denied`, `patch-too-large` and `patch-kind-in
 
 ## Gate
 
-`scripts/test-repo-patch.sh` (the real compiler, a stand-in agent `tests/repochange/agent.sh` that answers from recipe files, a small repository `tests/repochange/repo/`): the pure functions one at a time (paths, kinds, envelopes, sections, removals, test counting), a feature over `src/` and `tests/` written on one line and made `fmt`-clean, `change.patch` applying to a fresh copy, the original untouched byte for byte (also read-only), a rename (the old function gone), a removal of a missing item and of an item the tests still call (both refused, the retry told), `no-test-added` for a feature and a bug and not for a refactor or a rename, a changed test counting, a bug fix whose tests pass on the buggy base (refused, named, the retry told), fail on it (accepted), or are one of each, a feature whose tests do not call the new function, the constraints one by one (a renamed test, too many items or lines, an item that was not allowed) and their usage errors, every bound and path refusal with nothing written outside, the 2000-line guard, `fmt-failed`, an agent that gives up and one that is away, and the usage errors. A project (a `cancho.toml` with a `[[bin]]` and a `[[test]]`, a `main` under `src/`): accepted, built on a copy with nothing of the build in the tree or the patch, `build-failed` for a change the tests pass and the program does not build with, `tests-failed` from a `[[test]]` set, `no-tests` without one, the base probe of a bug, and a `cancho.toml` with neither table checked file by file. No case has a dependency (the gate has no network). `sh scripts/test-repo-patch.sh --mutants` breaks one rule at a time in a copy of `src/` (the test probe on the base, the probe on the fix instead of the base, the call check, each of the four constraints, the usage check of the constraints, and others) and requires the gate to go red for each. `scripts/test-agent-native-ollama.sh` holds `--output change` against a stub model.
+`scripts/test-repo-patch.sh` (the real compiler, a stand-in agent `tests/repochange/agent.sh` that answers from recipe files, a small repository `tests/repochange/repo/`): the pure functions one at a time (paths, kinds, envelopes, sections, removals, test counting), a feature over `src/` and `tests/` written on one line and made `fmt`-clean, `change.patch` applying to a fresh copy, the original untouched byte for byte (also read-only), a rename (the old function gone), a removal of a missing item and of an item the tests still call (both refused, the retry told), `no-test-added` for a feature and a bug and not for a refactor or a rename, a changed test counting, a bug fix whose tests pass on the buggy base (refused, named, the retry told), fail on it (accepted), or are one of each, a feature whose tests do not call the new function, the constraints one by one (a renamed test, too many items or lines, an item that was not allowed) and their usage errors, every bound and path refusal with nothing written outside, the 2000-line guard, `fmt-failed`, an agent that gives up and one that is away, and the usage errors. A project (a `cancho.toml` with a `[[bin]]` and a `[[test]]`, a `main` under `src/`): accepted, built on a copy with nothing of the build in the tree or the patch, `build-failed` for a change the tests pass and the program does not build with, `tests-failed` from a `[[test]]` set, `no-tests` without one, the base probe of a bug, and a `cancho.toml` with neither table checked file by file. A project whose sources are `lib/` and `tools/` with no `src/`: accepted, the area and the bundle, a write outside the area, the base probe, the call check and the line count on `lib/`, a `keep-names` path about nothing of the project, eight project files that are `repo-invalid`, and the text selection of a large one. No case has a dependency (the gate has no network). `sh scripts/test-repo-patch.sh --mutants` breaks one rule at a time in a copy of `src/` (the test probe on the base, the probe on the fix instead of the base, the call check, each of the four constraints, the usage check of the constraints, and others) and requires the gate to go red for each. `scripts/test-agent-native-ollama.sh` holds `--output change` against a stub model.

@@ -196,7 +196,7 @@ fn scan[&b, &d](t: &b [byte], d: &!d [int]) -> [] int {
         if z > len(t) {
             z = len(t);
         }
-        if bytes.starts_with(t[i..e], "=== FILE src/") && e + 1 <= z {
+        if bytes.starts_with(t[i..e], "=== FILE ") && bytes.starts_with(t[i..e], "=== FILE tests/") == false && e + 1 <= z {
             n = scan_file(t, i + 9, e, e + 1, z, d, n);
         }
         i = z;

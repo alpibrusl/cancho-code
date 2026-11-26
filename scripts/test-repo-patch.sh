@@ -88,6 +88,21 @@ M = [
  ("project-tests-not-run", "repochange.cho", "    if built {\n        let (code, said) = project_run", "    if false {\n        let (code, said) = project_run"),
  ("project-without-tests-accepted", "repochange.cho", "    if tables < 2 {\n        return change.error_line", "    if false {\n        return change.error_line"),
  ("project-probe-file-by-file", "repochange.cho", "                                if project {", "                                if false {"),
+ ("area-not-checked", "change.cho", "    if in_area(path, srcs) == false {\n        return \"path-outside\";", "    if false {\n        return \"path-outside\";"),
+ ("file-source-is-a-directory", "change.cho", "if file == false && len(path) > len(one) && bytes.equal(path[0..len(one)], one)", "if len(path) > len(one) && bytes.equal(path[0..len(one)], one)"),
+ ("source-prefix-without-slash", "change.cho", "bytes.equal(path[0..len(one)], one) && int_of(path[len(one)]) == 47 {", "bytes.equal(path[0..len(one)], one) {"),
+ ("sources-are-src-only", "change.cho", 'return bytes.starts_with(path, "tests/") == false;', 'return bytes.starts_with(path, "src/");'),
+ ("stray-glob-taken", "change.cho", "&& glob_in_area(ln[v0..v1], srcs) == false {", "&& false {"),
+ ("glob-above-a-source-refused", "change.cho", "if int_of(stem[n - 1]) == 47 && bytes.starts_with(one, stem) {", "if false {"),
+ ("bundle-of-src-only", "repochange.cho", "find $(cat ../area.src) tests -type f -name", "find src tests -type f -name"),
+ ("lines-of-src-only", "repochange.cho", "for p in $(cat area.src); do diff -ruN base/$p tree/$p; done", "diff -ruN base/src tree/src"),
+ ("area-always-src", "repochange.cho", "a=src; if [ -f cancho.toml ] && grep -qE", "a=src; if false && grep -qE"),
+ ("tests-in-the-sources", "repochange.cho", " | grep -v -E '^tests(/|$)' | LC_ALL=C sort -u", " | LC_ALL=C sort -u"),
+ ("source-words-not-checked", "repochange.cho", 'case \\"$p\\" in /*|.*|*..*|*/.*|*[!A-Za-z0-9_./-]*) exit 1 ;; esac; ', ''),
+ ("link-above-not-seen", "repochange.cho", 'q=$p; while [ \\"$q\\" != . ]; do [ ! -L \\"$q\\" ] || exit 1; q=$(dirname \\"$q\\"); done; ', ''),
+ ("link-inside-not-seen", "repochange.cho", '[ -z \\"$(find $a tests -type l 2>/dev/null)\\" ] || exit 1; ', ''),
+ ("source-not-cancho", "repochange.cho", 'case \\"$p\\" in *.cho) : ;; *) exit 1 ;; esac; ', ''),
+ ("text-edges-of-src-only", "textedges.cho", 'bytes.starts_with(t[i..e], "=== FILE ") && bytes.starts_with(t[i..e], "=== FILE tests/") == false', 'bytes.starts_with(t[i..e], "=== FILE src/")'),
 ]
 for name, fn, old, new in M:
     d = os.path.join(work, name)
@@ -273,7 +288,23 @@ expect "constraints: a number, twice" "$(printf 'max-added-lines 3\nmax-added-li
 expect "constraints: only-items twice" "$(printf 'only-items a\nonly-items b\n' > "$d/c.txt"; "$G" constraint "$d/c.txt" | tr '\t' ' ')" "2 only-items is given twice"
 expect "constraints: only-items with an empty name" "$(cons 'only-items a,,b')" "1 only-items takes item names separated by commas"
 expect "constraints: only-items with a bad name" "$(cons 'only-items a;b')" "1 only-items takes item names separated by commas"
-expect "constraints: a glob outside src/ and tests/" "$(cons 'keep-names lib/*')" "1 keep-names takes a path under src/ or tests/, with a * only at its end"
+expect "constraints: a glob that is not a relative path" "$(cons 'keep-names /lib/*')" "1 keep-names takes a path under src/ or tests/, with a * only at its end"
+# which paths a repository has is known once its sources are: a keep-names path about nothing of them is refused then (change.glob_outside)
+expect "constraints: a glob outside src/ and tests/" "$("$G" globarea 'keep-names lib/*' 'src')" "1"
+expect "constraints: a glob under src/" "$("$G" globarea 'keep-names src/api/*' 'src')" "0"
+expect "constraints: a glob under tests/" "$("$G" globarea 'keep-names tests/*' 'src')" "0"
+expect "constraints: a glob under a source of a project" "$("$G" globarea 'keep-names lib/plot/*' 'lib/plot tools/plot')" "0"
+expect "constraints: a glob above a source of a project" "$("$G" globarea 'keep-names lib/*' 'lib/plot tools/plot')" "0"
+expect "constraints: a glob that only starts like a source" "$("$G" globarea 'keep-names lib/plotter/*' 'lib/plot tools/plot')" "1"
+expect "constraints: a glob that names a source file" "$("$G" globarea 'keep-names lib/a.cho' 'lib/a.cho')" "0"
+expect "constraints: src/ is no source of a project that has none" "$("$G" globarea 'keep-names src/*' 'lib/plot')" "1"
+# the area of a project: what its sources name, and tests/ (change.path_tag_in)
+for spec in 'lib/plot/a.cho:ok' 'lib/plot/sub/a.cho:ok' 'tools/plot/main.cho:ok' 'tests/a_test.cho:ok' 'one/file.cho:ok' 'src/a.cho:path-outside' \
+            'lib/a.cho:path-outside' 'lib/plotter/a.cho:path-outside' 'lib/plot.cho:path-outside' 'one/file.cho/x.cho:path-outside' 'one/other.cho:path-outside' \
+            'generated/x.cho:path-outside' 'lib/plot/../a.cho:path-dotdot' 'lib/plot/a.txt:path-outside' 'lib/plot:path-outside'; do
+    p=${spec%%:*}; want=${spec#*:}
+    expect "area path $p" "$("$G" patharea "$p" "lib/plot tools/plot one/file.cho")" "$want"
+done
 expect "constraints: a * in the middle" "$(cons 'keep-names tests/*_test.cho')" "1 keep-names takes a path under src/ or tests/, with a * only at its end"
 expect "constraints: a .. in a glob" "$(cons 'keep-names tests/../x')" "1 keep-names takes a path under src/ or tests/, with a * only at its end"
 
@@ -284,12 +315,12 @@ expect "violations: keep-names tests/* names the removed tests and helpers" "$(v
 expect "violations: keep-names of a src file: its removed function" "$(viol 'keep-names src/d.cho')" "constraint-keep-names these functions were removed or renamed, and the request keeps their names: edit_count"
 expect "violations: keep-names of another file: nothing" "$(viol 'keep-names src/other.cho')" ""
 expect "violations: changing a test is not removing it" "$(viol 'keep-names tests/d_test.cho' | grep -c test_other)" 0
-expect "violations: max-added-items counts the additions in src/ only" "$(viol 'max-added-items 1')" "constraint-max-added-items the change adds 2 items to src/ (edit_distance, diff_lcs); at most 1"
+expect "violations: max-added-items counts the additions in src/ only" "$(viol 'max-added-items 1')" "constraint-max-added-items the change adds 2 items to the sources (edit_distance, diff_lcs); at most 1"
 expect "violations: max-added-items met" "$(viol 'max-added-items 2')" ""
 expect "violations: max-added-items 0" "$(viol 'max-added-items 0' | cut -d' ' -f1)" "constraint-max-added-items"
-expect "violations: max-added-lines" "$(viol 'max-added-lines 10' 41)" "constraint-max-added-lines the change adds 41 lines to src/; at most 10"
+expect "violations: max-added-lines" "$(viol 'max-added-lines 10' 41)" "constraint-max-added-lines the change adds 41 lines to the sources; at most 10"
 expect "violations: max-added-lines met exactly" "$(viol 'max-added-lines 41' 41)" ""
-expect "violations: only-items names what is outside the list, in src/ only" "$(viol 'only-items edit_distance,diff_stat')" "constraint-only-items the change touches items of src/ the request does not allow: edit_count, diff_lcs"
+expect "violations: only-items names what is outside the list, in src/ only" "$(viol 'only-items edit_distance,diff_stat')" "constraint-only-items the change touches items of the sources the request does not allow: edit_count, diff_lcs"
 expect "violations: only-items met" "$(viol 'only-items edit_count,edit_distance,diff_lcs,diff_stat')" ""
 expect "violations: several at once, in a fixed order" "$(printf 'keep-names src/d.cho\nmax-added-items 1\nmax-added-lines 3\nonly-items diff_stat\n' > "$d/c.txt"; "$G" violate "$d/c.txt" "$d/vi.rec" 41 | cut -f2 | tr '\n' ' ')" "constraint-keep-names constraint-max-added-items constraint-max-added-lines constraint-only-items "
 
@@ -549,7 +580,7 @@ pub fn quarter(x: int) -> [] int {
 EOT
 printf '=== FILE src/mathx.cho\npub fn quarter(x: int) -> [] int { return x / 4; }\n' > "$rc/reply.2"
 out=$(run "$rp" "$rc" "$w" refactor --constraints "$CF"); expect "max-added-lines: seven added lines against four is refused, a short one passes" "$(attempts "$out")" "1:refused:constraint-max-added-lines 2:passed"
-has "max-added-lines: the feedback has the counts" "$(cat "$rc/feedback.2")" "adds 7 lines to src/; at most 4"
+has "max-added-lines: the feedback has the counts" "$(cat "$rc/feedback.2")" "adds 7 lines to the sources; at most 4"
 # only-items
 rp=$(newrepo); rc=$(newrc); w="$d/w-only"
 printf 'only-items half\n' > "$CF"
@@ -922,6 +953,102 @@ out=$(run "$rp" "$rc" "$w" bug); expect "project, bug, no module line: a test th
 # a cancho.toml with neither table is not a project: the repository is checked file by file, as before
 rp=$(newrepo); rc=$(newrc); w="$d/w-proj-plain"; printf '%s\n' "$PLUS" > "$rc/reply.1"; printf '[package]\nname = "plain"\n' > "$rp/cancho.toml"
 out=$(run "$rp" "$rc" "$w" refactor --attempts 1); expect "a cancho.toml with no [[bin]] or [[test]]: checked file by file" "$(attempts "$out")" "1:passed"
+
+# ---- a project whose sources are not in src/ (docs/repo-patch.md, "The sources of a project") -------------------------------------------------
+# lib/mathx and tools/mathproj hold the code, cancho.toml names them, there is no src/ at all; extra/ is a directory the project does not name
+newlibproject() {
+    r=$(newproject)
+    mkdir -p "$r/lib/mathx" "$r/tools/mathproj" "$r/extra"
+    mv "$r/src/mathx.cho" "$r/lib/mathx/mathx.cho"; mv "$r/src/main.cho" "$r/tools/mathproj/main.cho"; rmdir "$r/src"
+    printf 'edition 7;\n\nmodule notes;\n\npub fn unnamed_by_the_project() -> [] int {\n    return 0;\n}\n' > "$r/extra/notes.cho"
+    sed -i.bak -e 's|sources = \["src/mathx.cho", "src/main.cho"\]|sources = ["lib/mathx", "tools/mathproj"]|' \
+        -e 's|sources = \["src/mathx.cho", "tests/mathx_test.cho"\]|sources = ["lib/mathx", "tests/mathx_test.cho"]|' "$r/cancho.toml"; rm -f "$r/cancho.toml.bak"
+    echo "$r"
+}
+LPLUS='=== FILE lib/mathx/mathx.cho
+pub fn double(x: int) -> [] int { return x + x; }'
+rp=$(newlibproject); rc=$(newrc); w="$d/w-lib-ok"; printf '%s\n' "$LPLUS" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" refactor --attempts 1); expect "sources: a project with lib/ and tools/ and no src/: done" "$(attempts "$out")" "1:passed"
+expect "sources: the area is what cancho.toml names outside tests/" "$(cat "$w/area.src" | tr -s ' ' | sed 's/ $//')" "lib/mathx tools/mathproj"
+has "sources: the library is shown" "$(cat "$rc/bundle.1")" "=== FILE lib/mathx/mathx.cho"
+has "sources: the program is shown" "$(cat "$rc/bundle.1")" "=== FILE tools/mathproj/main.cho"
+has "sources: the tests are shown" "$(cat "$rc/bundle.1")" "=== FILE tests/mathx_test.cho"
+hasnt "sources: a directory the project does not name is not shown" "$(cat "$rc/bundle.1")" "extra/notes.cho"
+has "sources: the patch is of the library" "$(cat "$w/change.patch")" "tree/lib/mathx/mathx.cho"
+# what the project does not name may not be written: extra/, and src/ (which this project does not have)
+for outside in extra/notes.cho src/new.cho cancho.toml; do
+    rp=$(newlibproject); rc=$(newrc); w="$d/w-lib-out-$(echo "$outside" | tr '/.' '__')"
+    printf '%s\n=== FILE %s\nedition 7;\n\nmodule notes;\n\npub fn written() -> [] int {\n    return 1;\n}\n' "$LPLUS" "$outside" > "$rc/reply.1"
+    out=$(run "$rp" "$rc" "$w" refactor --attempts 1); expect "sources: $outside is outside the area" "$(attempts "$out")" "1:refused:path-outside"
+    has "sources: the refusal of $outside names the sources" "$(grep CHANGE_ERROR "$w/run.log")" "lib/mathx tools/mathproj"
+    [ -e "$w/tree/src" ] && { echo "FAIL: sources: a refused path was written ($outside)" >&2; fail=1; }
+done
+# the checks that told src/ from tests/ now tell the sources from tests/: a bug's probe, a feature's exercising test, the added lines
+rp=$(newlibproject); rc=$(newrc); w="$d/w-lib-bug"
+sed -i.bak 's|return x / 2;|return x / 3;|' "$rp/lib/mathx/mathx.cho"; rm -f "$rp/lib/mathx/mathx.cho.bak"
+sed -i.bak 's|mathx.half(9) == 4|mathx.half(9) == 3|' "$rp/tests/mathx_test.cho"; rm -f "$rp/tests/mathx_test.cho.bak"
+LHALF='=== FILE lib/mathx/mathx.cho
+pub fn half(x: int) -> [] int { return x / 2; }
+=== FILE tests/mathx_test.cho
+pub fn test_half() -> [] int { test.assert(mathx.half(9) == 4); return 0; }'
+printf '%s\npub fn test_half_zero() -> [] int { test.assert(mathx.half(0) == 0); return 0; }\n' "$LHALF" > "$rc/reply.1"
+printf '%s\npub fn test_half_ten() -> [] int { test.assert(mathx.half(10) == 5); return 0; }\n' "$LHALF" > "$rc/reply.2"
+out=$(run "$rp" "$rc" "$w" bug); expect "sources, bug: a test that passes on the base is refused, the retry passes" "$(attempts "$out")" "1:refused:test-passes-on-base 2:passed"
+rp=$(newlibproject); rc=$(newrc); w="$d/w-lib-feature"
+LSIX='=== FILE lib/mathx/mathx.cho
+pub fn sextuple(x: int) -> [] int { return x * 6; }'
+printf '%s\n=== FILE tests/mathx_test.cho\npub fn test_half_again() -> [] int { test.assert(mathx.half(8) == 4); return 0; }\n' "$LSIX" > "$rc/reply.1"
+printf '%s\n=== FILE tests/mathx_test.cho\npub fn test_sextuple() -> [] int { test.assert(mathx.sextuple(2) == 12); return 0; }\n' "$LSIX" > "$rc/reply.2"
+out=$(run "$rp" "$rc" "$w" feature); expect "sources, feature: a test that does not call the new function of lib/ is refused, one that does passes" "$(attempts "$out")" "1:refused:test-not-exercising 2:passed"
+rp=$(newlibproject); rc=$(newrc); w="$d/w-lib-lines"
+printf 'max-added-lines 4\n' > "$CF"
+printf '=== FILE lib/mathx/mathx.cho\npub fn sextuple(x: int) -> [] int {\n    let a = x;\n    let b = x;\n    let c = a + b;\n    return c * 3;\n}\n' > "$rc/reply.1"
+printf '=== FILE lib/mathx/mathx.cho\npub fn sextuple(x: int) -> [] int { return x * 6; }\n' > "$rc/reply.2"
+out=$(run "$rp" "$rc" "$w" refactor --constraints "$CF"); expect "sources: the added lines are counted in lib/" "$(attempts "$out")" "1:refused:constraint-max-added-lines 2:passed"
+has "sources: the count is of the library's lines" "$(cat "$rc/feedback.2")" "adds 7 lines to the sources; at most 4"
+rp=$(newlibproject); rc=$(newrc); w="$d/w-lib-glob"; printf '%s\n' "$LPLUS" > "$rc/reply.1"
+printf 'keep-names src/*\n' > "$CF"
+out=$(run "$rp" "$rc" "$w" refactor --attempts 1 --constraints "$CF"); rcode=$?
+expect "sources: a keep-names path about nothing of the project is a usage error" "$rcode" 2
+has "sources: the usage error names the line and the sources" "$out" "--constraints line 1"
+[ -e "$w" ] && { echo "FAIL: sources: a work directory was made for a usage error" >&2; fail=1; }
+printf 'keep-names lib/*\n' > "$CF"; w="$d/w-lib-glob2"
+out=$(run "$rp" "$rc" "$w" refactor --attempts 1 --constraints "$CF"); expect "sources: a keep-names path above a source is taken" "$(attempts "$out")" "1:passed"
+# a project file that names what is not there, what is outside the repository, or a link: the repository is refused before anything is made
+badsources() { # name, the sources line of the [[bin]], a command to run in the repository first
+    rp=$(newlibproject); rc=$(newrc); w="$d/w-lib-bad-$1"; printf '%s\n' "$LPLUS" > "$rc/reply.1"
+    ( cd "$rp" && eval "$3" )
+    sed -i.bak "s|sources = \[\"lib/mathx\", \"tools/mathproj\"\]|sources = $2|" "$rp/cancho.toml"; rm -f "$rp/cancho.toml.bak"
+    out=$(run "$rp" "$rc" "$w" refactor --attempts 1); rcode=$?
+    expect "sources: $1 is repo-invalid (exit)" "$rcode" 2
+    has "sources: $1 is repo-invalid" "$out" "repo-invalid"
+    [ -s "$rc/log" ] && { echo "FAIL: sources: the agent was run for $1" >&2; fail=1; }
+}
+badsources missing '["lib/mathx", "tools/gone"]' ':'
+badsources dotdot '["lib/mathx", "../elsewhere"]' ':'
+badsources absolute '["lib/mathx", "/etc"]' ':'
+badsources hidden '["lib/mathx", ".secret"]' 'mkdir .secret'
+badsources link '["lib/mathx", "tools/mathproj", "linked"]' 'ln -s extra linked'
+badsources link-above '["lib/mathx", "tools/mathproj", "up/extra"]' 'mkdir real && cp -r extra real/extra && ln -s real up'
+badsources link-inside '["lib/mathx", "tools/mathproj"]' 'ln -s ../../extra/notes.cho lib/mathx/notes.cho'
+badsources not-cancho '["lib/mathx", "tools/mathproj", "README.txt"]' 'echo x > README.txt'
+# a project too big to be shown whole: the compiler is not asked about a project, the text of its sources is, and the selection is of lib/
+biglib() {
+    r=$(bigrepo)
+    mkdir -p "$r/lib/all" "$r/tools/mathproj"; mv "$r"/src/*.cho "$r/lib/all/"; rmdir "$r/src"
+    printf 'edition 7;\n\nimport mathx;\n\nfn main(world: World) -> [] int {\n    release(world);\n    return mathx.half(2) - 1;\n}\n' > "$r/tools/mathproj/main.cho"
+    printf '[package]\nname = "big"\n\n[[bin]]\nname = "big"\nsources = ["lib/all", "tools/mathproj"]\nstd = true\nout = "build/big"\n\n[[test]]\nname = "mathx"\nsources = ["lib/all", "tests/mathx_test.cho"]\nstd = true\n' > "$r/cancho.toml"
+    echo "$r"
+}
+rp=$(biglib); rc=$(newrc); w="$d/w-lib-big"
+printf '=== FILE lib/all/mathx.cho\npub fn double(x: int) -> [] int { return x + x; }\n' > "$rc/reply.1"
+out=$(req="$d/change-double.txt"; run "$rp" "$rc" "$w" refactor --attempts 1 --max-bundle 3500); expect "sources, selection: verdict" "$(verdict "$out")" done
+has "sources, selection: from the text" "$(printf '%s\n' "$out" | grep CHANGE_SELECTION)" "text"
+b=$(cat "$rc/bundle.1")
+has "sources, selection: the seed, in lib/, is shown in full" "$b" "    return x * 2;"
+has "sources, selection: what refers to the seed is shown in full" "$b" "return mathx.double(side * side);"
+hasnt "sources, selection: another function of lib/ is not" "$b" "return x / 2;"
+has "sources, selection: the file is named by its path in lib/" "$b" "=== FILE lib/all/mathx.cho"
 
 # static: the driver never runs git
 code=$(grep -v '^[[:space:]]*//' "$SRC/repochange.cho" "$SRC/selection.cho" "$SRC/textedges.cho" "$SRC/change.cho" | grep -E 'git (push|commit|add|checkout|clone|apply|fetch)|"git |/git ' | head -3)

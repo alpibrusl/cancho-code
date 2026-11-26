@@ -171,10 +171,10 @@ fn tags_of[&h, &r](heap: &!h Heap, rep: &r [byte]) -> [heap] buffer.Buffer {
     return out;
 }
 
-// The bundle the model is shown: every `.cho` file under `src/` and `tests/` of the base copy, each after a `=== FILE` line. 0, or the reason it cannot be made
+// The bundle the model is shown: every `.cho` file of the sources (`WORKDIR/area.src`) and of `tests/` of the base copy, each after a `=== FILE` line. 0, or the reason it cannot be made
 // (1: the files cannot be read, 2: there is none) or shown whole (3: it is over `most` bytes, and a selection of it is shown instead, `select_bundle`).
 fn make_bundle[&h, &x, &c, &w](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, wd: &w [byte], most: int) -> [heap, exec(""), clock, poll] int {
-    var s = cat3(heap, "cd ", wd, "/base && : > ../bundle.src && for f in $(find src tests -type f -name '*.cho' 2>/dev/null | grep -E '^[A-Za-z0-9_./-]+$' | LC_ALL=C sort); do printf '=== FILE %s\\n' \"$f\" >> ../bundle.src && cat \"$f\" >> ../bundle.src && printf '\\n' >> ../bundle.src; done");
+    var s = cat3(heap, "cd ", wd, "/base && : > ../bundle.src && for f in $(find $(cat ../area.src) tests -type f -name '*.cho' 2>/dev/null | grep -E '^[A-Za-z0-9_./-]+$' | LC_ALL=C sort -u); do printf '=== FILE %s\\n' \"$f\" >> ../bundle.src && cat \"$f\" >> ../bundle.src && printf '\\n' >> ../bundle.src; done");
     var r = 0 - 1;
     borrow s as &sr in {
         let (code, said) = sh(heap, exec, clock, buffer.bytes(sr), 4096, 60000);
@@ -330,8 +330,38 @@ fn task_text[&h, &k, &r, &o](heap: &!h Heap, kind: &k [byte], request: &r [byte]
     return b;
 }
 
-// One attempt's tree: put the envelope into it. The answer: the files written (`path` per line), the report, 0 or 1.
+// `apply_envelope_in` with the sources the run wrote to `WORKDIR/area.src` (`src` when the file cannot be read).
 fn apply_envelope[&h, &z, &e, &w, &x, &c](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &z Fs(""), env: &e [byte], wd: &w [byte], max_files: int, max_bytes: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write("")] (buffer.Buffer, buffer.Buffer, int) {
+    let area_path = cat3(heap, wd, "/area.src", "");
+    var written = buffer.empty(heap, 16);
+    var rep = buffer.empty(heap, 16);
+    var code = 0;
+    borrow area_path as &ap in {
+        let (area, ok) = slurp(heap, fs, buffer.bytes(ap));
+        borrow area as &ar in {
+            buffer.drop(heap, written);
+            buffer.drop(heap, rep);
+            if ok == false || len(bytes.trim(buffer.bytes(ar))) == 0 {
+                let (w2, r2, c2) = apply_envelope_in(heap, exec, clock, fs, env, wd, max_files, max_bytes, "src");
+                written = w2;
+                rep = r2;
+                code = c2;
+            } else {
+                let (w2, r2, c2) = apply_envelope_in(heap, exec, clock, fs, env, wd, max_files, max_bytes, buffer.bytes(ar));
+                written = w2;
+                rep = r2;
+                code = c2;
+            }
+        }
+        buffer.drop(heap, area);
+    }
+    buffer.drop(heap, area_path);
+    return (written, rep, code);
+}
+
+// One attempt's tree: put the envelope into it. The answer: the files written (`path` per line), the report, 0 or 1. `srcs` is the sources of the
+// repository (`change.in_area`): a path outside them and outside `tests/` is not written.
+fn apply_envelope_in[&h, &z, &e, &w, &x, &c, &sr](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, fs: &z Fs(""), env: &e [byte], wd: &w [byte], max_files: int, max_bytes: int, srcs: &sr [byte]) -> [heap, exec(""), clock, poll, fs_read(""), fs_write("")] (buffer.Buffer, buffer.Buffer, int) {
     var written = buffer.empty(heap, 64);
     var rep = buffer.empty(heap, 128);
     var bad = false;
@@ -367,9 +397,15 @@ fn apply_envelope[&h, &z, &e, &w, &x, &c](heap: &!h Heap, exec: &x Exec(""), clo
     while k < n && bad == false {
         let (ps, pz, bs, bz) = change.section_at(env, k);
         let path = env[ps..pz];
-        let tag = change.path_tag(path);
+        let tag = change.path_tag_in(path, srcs);
         if len(tag) > 0 {
-            rep = change.error_line(heap, rep, tag, path, "this path may not be written: it must be a relative .cho file under src/ or tests/ with no .. or hidden part");
+            var why = buffer.append(heap, buffer.empty(heap, 96), "this path may not be written: it must be a relative .cho file with no .. or hidden part, under tests/ or in the sources of the repository (");
+            why = buffer.append(heap, why, srcs);
+            why = buffer.append(heap, why, ")");
+            borrow why as &wy in {
+                rep = change.error_line(heap, rep, tag, path, buffer.bytes(wy));
+            }
+            buffer.drop(heap, why);
         }
         var j = 0;
         while j < k {
@@ -779,7 +815,7 @@ fn gate[&h, &x, &c, &z, &w, &k, &p, &q, &o](heap: &!h Heap, exec: &x Exec(""), c
     if len(constraints) > 0 {
         var added_lines = 0;
         if change.wants_line_count(heap, constraints) {
-            var cl = cat3(heap, "cd ", wd, " && diff -ruN base/src tree/src | grep '^+' | grep -v '^+++ ' | wc -l");
+            var cl = cat3(heap, "cd ", wd, " && for p in $(cat area.src); do diff -ruN base/$p tree/$p; done | grep '^+' | grep -v '^+++ ' | wc -l");
             borrow cl as &clr in {
                 let (code, said) = sh(heap, exec, clock, buffer.bytes(clr), 4096, 30000);
                 borrow said as &sdr in {
@@ -813,7 +849,7 @@ fn gate[&h, &x, &c, &z, &w, &k, &p, &q, &o](heap: &!h Heap, exec: &x Exec(""), c
     // the repo's own checks: fmt --check, then a project's `cancho build` and `cancho test`, or the tests of tests/*_test.cho against src/*.cho
     var f = cat3(heap, "exec 2>&1; cd ", wd, "/tree && ");
     f = buffer.append(heap, f, checker);
-    f = buffer.append(heap, f, " fmt --check src tests");
+    f = buffer.append(heap, f, " fmt --check $(cat ../area.src) tests");
     borrow f as &fq in {
         let (code, said) = sh(heap, exec, clock, buffer.bytes(fq), 65536, 120000);
         if code != 0 {
@@ -982,25 +1018,44 @@ fn judge[&h, &x, &c, &z, &w, &k, &p, &o](heap: &!h Heap, exec: &x Exec(""), cloc
 
 // Run a change request. Everything is a path (absolute, `plain`), already checked by `go`. The answer is the exit code.
 pub fn run[&h, &x, &c, &i, &z, &a, &r, &w, &q, &k, &d, &p, &m, &g, &o, &u](heap: &!h Heap, exec: &x Exec(""), clock: &c Clock, io: &!i Io, fs: &z Fs(""), checker: &k [byte], repo: &r [byte], request: &q [byte], kind: &d [byte], constraints: &o [byte], wd: &w [byte], agent: &a [byte], provider: &p [byte], model: &m [byte], attempts: int, agent_ms: int, test_ms: int, max_files: int, max_bytes: int, touch: &u [byte], most: int) -> [heap, exec(""), clock, poll, fs_read(""), fs_write(""), io_write, err_write] int {
-    // the repository: a src/ and no link in src/ or tests/
-    var pre = cat3(heap, "[ -d ", repo, "/src ] && [ ! -L ");
-    pre = buffer.append(heap, pre, repo);
-    pre = buffer.append(heap, pre, "/src ] && [ ! -L ");
-    pre = buffer.append(heap, pre, repo);
-    pre = buffer.append(heap, pre, "/tests ] && [ -z \"$(find ");
-    pre = buffer.append(heap, pre, repo);
-    pre = buffer.append(heap, pre, "/src ");
-    pre = buffer.append(heap, pre, repo);
-    pre = buffer.append(heap, pre, "/tests -type l 2>/dev/null)\" ]");
+    // the repository's sources: `src`, or for a project (a cancho.toml with a [[bin]] or a [[test]]) what its `sources` name outside tests/, each a
+    // directory or a .cho file of plain words that is there; and no link in them or in tests/
+    var pre = cat3(heap, "cd ", repo, " || exit 1; a=src; if [ -f cancho.toml ] && grep -qE '^\\[\\[(bin|test)\\]\\]' cancho.toml; then a=$(grep -E '^sources[ ]*=' cancho.toml | tr ',[]' '\\n\\n\\n' | sed -n 's/^[^\"]*\"\\([^\"]*\\)\".*$/\\1/p' | grep -v -E '^tests(/|$)' | LC_ALL=C sort -u | tr '\\n' ' '); fi; [ -n \"$a\" ] || exit 1; ");
+    pre = buffer.append(heap, pre, "for p in $a; do case \"$p\" in /*|.*|*..*|*/.*|*[!A-Za-z0-9_./-]*) exit 1 ;; esac; q=$p; while [ \"$q\" != . ]; do [ ! -L \"$q\" ] || exit 1; q=$(dirname \"$q\"); done; ");
+    pre = buffer.append(heap, pre, "if [ ! -d \"$p\" ]; then [ -f \"$p\" ] || exit 1; case \"$p\" in *.cho) : ;; *) exit 1 ;; esac; fi; done; ");
+    pre = buffer.append(heap, pre, "[ ! -L tests ] || exit 1; [ -z \"$(find $a tests -type l 2>/dev/null)\" ] || exit 1; printf '%s' \"$a\"");
     var okrepo = 0 - 1;
+    var area = buffer.empty(heap, 16);
     borrow pre as &pr in {
         let (code, said) = sh(heap, exec, clock, buffer.bytes(pr), 4096, 30000);
-        buffer.drop(heap, said);
+        buffer.drop(heap, area);
+        area = said;
         okrepo = code;
     }
     buffer.drop(heap, pre);
     if okrepo != 0 {
-        io.error_all(io, "[CHANGE_ERROR]\trepo-invalid\t-\tthe repository needs a src/ directory and has no link in src/ or tests/\n");
+        buffer.drop(heap, area);
+        io.error_all(io, "[CHANGE_ERROR]\trepo-invalid\t-\tthe repository needs its sources (src/, or what the sources of a project's cancho.toml name: directories or .cho files, plain relative paths) and has no link in them or in tests/\n");
+        return 2;
+    }
+    // a keep-names path that is about nothing of this repository is a mistake in the request, said before anything is made
+    var stray = 0;
+    borrow area as &gar in {
+        stray = change.glob_outside(constraints, buffer.bytes(gar));
+    }
+    if stray > 0 {
+        var m = buffer.append(heap, buffer.empty(heap, 96), "cancho-build --repo: --constraints line ");
+        m = buffer.push_nat(heap, m, stray);
+        m = buffer.append(heap, m, ": keep-names takes a path under src/ or tests/, with a * only at its end (the sources of this repository: ");
+        borrow area as &gar2 in {
+            m = buffer.append(heap, m, bytes.trim(buffer.bytes(gar2)));
+        }
+        m = buffer.append(heap, m, ")\n");
+        borrow m as &mr in {
+            io.error_all(io, buffer.bytes(mr));
+        }
+        buffer.drop(heap, m);
+        buffer.drop(heap, area);
         return 2;
     }
     // the work directory and the copy of the repository
@@ -1028,7 +1083,7 @@ pub fn run[&h, &x, &c, &i, &z, &a, &r, &w, &q, &k, &d, &p, &m, &g, &o, &u](heap:
     prep = buffer.append(heap, prep, wd);
     prep = buffer.append(heap, prep, "/base && [ -d ");
     prep = buffer.append(heap, prep, wd);
-    prep = buffer.append(heap, prep, "/base/src ]");
+    prep = buffer.append(heap, prep, "/base ]");
     var copied = 0 - 1;
     borrow prep as &pq in {
         let (code, said) = sh(heap, exec, clock, buffer.bytes(pq), 4096, 600000);
@@ -1037,9 +1092,19 @@ pub fn run[&h, &x, &c, &i, &z, &a, &r, &w, &q, &k, &d, &p, &m, &g, &o, &u](heap:
     }
     buffer.drop(heap, prep);
     if copied != 0 {
+        buffer.drop(heap, area);
         io.error_all(io, "[CHANGE_ERROR]\trepo-copy\t-\tthe repository could not be copied into the work directory\n");
         return 2;
     }
+    // the sources, for every later step of the run (`WORKDIR/area.src`)
+    let area_path = cat3(heap, wd, "/area.src", "");
+    borrow area_path as &arp in {
+        borrow area as &arr in {
+            fs_write(fs, buffer.bytes(arp), buffer.bytes(arr));
+        }
+    }
+    buffer.drop(heap, area_path);
+    buffer.drop(heap, area);
     let log = cat3(heap, wd, "/run.log", "");
     let bundle = cat3(heap, wd, "/bundle.txt", "");
     let task_path = cat3(heap, wd, "/bundle.txt.task", "");
