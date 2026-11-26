@@ -22,6 +22,8 @@
 #              request that names nothing refused before the agent runs; a repository that fits shown whole as before (needs a cancho with `ids --edges`)
 #   text       the compiler does not answer `ids --edges` (a checker without it; a repository with an error in it): the selection is made from the
 #              text (src/textedges.cho), says so, and is the one the compiler's answer gives; the error is then fixed through the selection
+#   helpers    a feature's test that reaches the new function through a helper of its own file exercises it
+#   not run    a test the change adds in a file the repository does not run (not tests/NAME_test.cho; in a project, of no [[test]]): `test-not-run`
 #   project    a repository whose cancho.toml has a [[bin]] or a [[test]] (here with a `main` under src/): the gate is the project's own `cancho build`
 #              (`build-failed`) and `cancho test` (`tests-failed`), a project with no [[test]] is `no-tests`, the base probe of a bug runs the project's
 #              tests, and a cancho.toml with neither table changes nothing
@@ -74,6 +76,13 @@ M = [
  ("text-imports-not-read", "textedges.cho", "if bytes.equal(t[aa..ab], alias) {", "if false {"),
  ("comment-not-kept", "splice.cho", "if keep && tp[6 * pk + 5] == tp[6 * pk + 1] {", "if false {"),
  ("comment-kept-beside-a-new-one", "splice.cho", "if keep && tp[6 * pk + 5] == tp[6 * pk + 1] {", "if keep {"),
+ ("helpers-not-followed", "repochange.cho", "tests_text = buffer.append(heap, tests_text, buffer.bytes(thr));", "tests_text = buffer.append(heap, tests_text, buffer.bytes(ttr2));"),
+ ("helper-of-a-helper-not-followed", "splice.cho", "                                grew = true;\n                                out = buffer.push(heap, out, byte_of(10));", "                                out = buffer.push(heap, out, byte_of(10));"),
+ ("every-function-a-helper", "splice.cho", "hit = calls_fn(buffer.bytes(or), file[tf[6 * k + 3]..tf[6 * k + 4]]);", "hit = true;"),
+ ("test-not-run-off", "repochange.cho", "    borrow missing as &mr in {\n        if len(buffer.bytes(mr)) > 0 {", "    borrow missing as &mr in {\n        if false {"),
+ ("not-run-plain-off", "repochange.cho", "} else if failed == false {", "} else if false {"),
+ ("not-run-project-off", "repochange.cho", "rep = not_run(heap, rep, buffer.bytes(sq2), names);", 'rep = not_run(heap, rep, buffer.bytes(sq2), "");'),
+ ("bare-name-not-seen", "change.cho", '|| int_of(output[i]) == 32 && i >= 4 && bytes.equal(output[i - 4..i], "test")', '|| false'),
  ("project-not-seen", "repochange.cho", "        if code >= 1 && code <= 3 {\n            tables = code;", "        if false {\n            tables = code;"),
  ("project-build-not-run", "repochange.cho", "    if built && tables % 2 == 1 {\n        let (code, said) = project_run", "    if false {\n        let (code, said) = project_run"),
  ("project-tests-not-run", "repochange.cho", "    if built {\n        let (code, said) = project_run", "    if false {\n        let (code, said) = project_run"),
@@ -239,6 +248,18 @@ expect "exercise: nothing to call is a pass" "$("$G" exercise "$d/ex.nocall" "$d
 printf 'running 4 tests\ntest m_test.test_a ... ok\ntest m_test.test_ab ... FAILED\ntest m_test.test_b ... ok\ntest m_test.test_d ... FAILED\n' > "$d/ps.out"
 printf 'test_a\ntest_ab\ntest_c\ntest_d\n' > "$d/ps.names"
 expect "passed: only the names with an ok line, not a longer name" "$("$G" passed "$d/ps.out" "$d/ps.names" | tr '\n' ' ')" "test_a "
+# a test file with no `module` line prints the bare name, after `test ` (and not after another word)
+printf 'running 4 tests\ntest test_a ... ok\ntest test_ab ... FAILED\nnot test_c ... ok\ntest test_d ... FAILED\n' > "$d/ps.bare"
+expect "passed: a file with no module line prints the bare name" "$("$G" passed "$d/ps.bare" "$d/ps.names" | tr '\n' ' ')" "test_a "
+expect "notpassed: the names with no ok line" "$("$G" notpassed "$d/ps.out" "$d/ps.names" | tr '\n' ' ')" "test_ab test_c test_d "
+# a test that reaches the new code through a helper of its own file, or through two; a helper that is not called is not followed (the second helper stands before the first in the file: one pass over the file does not find it)
+printf 'edition 7;\n\nfn deep(x: int) -> [] int {\n    return m.fresh(x);\n}\n\nfn key_is(x: int) -> [] bool {\n    return deep(x) == 1;\n}\n\nfn other() -> [] int {\n    return m.change();\n}\n\nfn test_one() -> [] int {\n    test.assert(key_is(1));\n    return 0;\n}\n' > "$d/hp.file"
+printf 'fn test_one() -> [] int {\n    test.assert(key_is(1));\n    return 0;\n}\n' > "$d/hp.seed"
+"$G" helpers "$d/hp.file" "$d/hp.seed" > "$d/hp.out"
+printf 'fresh\n' > "$d/hp.fresh"; printf 'change\n' > "$d/hp.change"
+expect "helpers: the test alone does not call the new function" "$("$G" exercise "$d/hp.seed" "$d/hp.fresh")" no
+expect "helpers: through two helpers of its file it does" "$("$G" exercise "$d/hp.out" "$d/hp.fresh")" yes
+expect "helpers: a helper the test does not call is not followed" "$("$G" exercise "$d/hp.out" "$d/hp.change")" no
 printf 'tests/m_test.cho:3:1: error: `x` is not a function\n' > "$d/ps.err"; expect "passed: a compile error passes none" "$("$G" passed "$d/ps.err" "$d/ps.names")" ""
 
 cons() { printf '%s\n' "$1" > "$d/c.txt"; "$G" constraint "$d/c.txt" | tr '\t' ' '; }
@@ -453,6 +474,17 @@ printf '%s\n' "$QUARTER" > "$rc/reply.2"
 out=$(run "$rp" "$rc" "$w" feature); expect "exercising: a test that does not call the new function is refused by name, the retry passes" "$(attempts "$out")" "1:refused:test-not-exercising 2:passed"
 has "exercising: the feedback names the tag and the function" "$(cat "$rc/feedback.2")" "test-not-exercising"
 has "exercising: and the function" "$(cat "$rc/feedback.2")" "quarter"
+# a test that calls the new function through a helper of its own file does call it
+rp=$(newrepo); rc=$(newrc); w="$d/w-exercising-helper"
+printf '=== FILE src/mathx.cho\npub fn quarter(x: int) -> [] int { return x / 4; }\n=== FILE tests/mathx_test.cho\nfn quarter_is(x: int, want: int) -> [] bool { return mathx.quarter(x) == want; }\npub fn test_quarter_by_helper() -> [] int { test.assert(quarter_is(9, 2)); return 0; }\n' > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" feature --attempts 1); expect "exercising: a test that calls the new function through a helper of its file passes" "$(attempts "$out")" "1:passed"
+# a test in a file the repository does not run proves nothing: refused by name, the retry (in a file that is run) passes
+rp=$(newrepo); rc=$(newrc); w="$d/w-notrun"
+printf '=== FILE src/mathx.cho\npub fn quarter(x: int) -> [] int { return x / 4; }\n=== FILE tests/extra.cho\nedition 7;\n\nmodule extra;\n\nimport mathx;\nimport std.test;\n\npub fn test_quarter_wrong() -> [] int { test.assert(mathx.quarter(9) == 99); return 0; }\n' > "$rc/reply.1"
+printf '%s\n' "$QUARTER" > "$rc/reply.2"
+out=$(run "$rp" "$rc" "$w" feature); expect "not run: a test in a file the gate does not run is refused, the retry passes" "$(attempts "$out")" "1:refused:test-not-run 2:passed"
+has "not run: the feedback names the tag" "$(cat "$rc/feedback.2")" "test-not-run"
+has "not run: and the test" "$(cat "$rc/feedback.2")" "test_quarter_wrong"
 rp=$(newrepo); rc=$(newrc); w="$d/w-exercising-replaced"
 printf '=== FILE src/mathx.cho\npub fn double(x: int) -> [] int { return x + x; }\n=== FILE tests/mathx_test.cho\npub fn test_double_seven() -> [] int { test.assert(mathx.double(7) == 14); return 0; }\n' > "$rc/reply.1"
 out=$(run "$rp" "$rc" "$w" feature --attempts 1); expect "exercising: a replaced public function counts as the thing to call" "$(attempts "$out")" "1:passed"
@@ -875,6 +907,18 @@ printf '%s\npub fn test_half_zero() -> [] int { test.assert(mathx.half(0) == 0);
 printf '%s\npub fn test_half_ten() -> [] int { test.assert(mathx.half(10) == 5); return 0; }\n' "$HALF" > "$rc/reply.2"
 out=$(run "$rp" "$rc" "$w" bug); expect "project, bug: a test that passes on the base is refused by name, the retry passes" "$(attempts "$out")" "1:refused:test-passes-on-base 2:passed"
 has "project, bug: the refusal names the test" "$out" "test_half_zero"
+# a project: a new test file that is in no [[test]] never runs: refused, whatever it asserts
+rp=$(newproject); rc=$(newrc); w="$d/w-proj-notrun"
+printf '%s\n=== FILE tests/other_test.cho\nedition 7;\n\nmodule other_test;\n\nimport mathx;\nimport std.test;\n\npub fn test_double_is_wrong() -> [] int { test.assert(mathx.double(2) == 99); return 0; }\n' "$PLUS" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" refactor --attempts 1); expect "project: a test in a file of no [[test]] is test-not-run" "$(attempts "$out")" "1:refused:test-not-run"
+has "project: the refusal names the test" "$out" "test_double_is_wrong"
+# a project whose test file has no `module` line prints bare test names: the base probe still sees a test that passes on the base
+rp=$(newproject); rc=$(newrc); w="$d/w-proj-bug-bare"
+sed -i.bak 's|return x / 2;|return x / 3;|' "$rp/src/mathx.cho"; rm -f "$rp/src/mathx.cho.bak"
+sed -i.bak -e 's|mathx.half(9) == 4|mathx.half(9) == 3|' -e '/^module mathx_test;$/d' "$rp/tests/mathx_test.cho"; rm -f "$rp/tests/mathx_test.cho.bak"
+printf '%s\npub fn test_half_zero() -> [] int { test.assert(mathx.half(0) == 0); return 0; }\n' "$HALF" > "$rc/reply.1"
+printf '%s\npub fn test_half_ten() -> [] int { test.assert(mathx.half(10) == 5); return 0; }\n' "$HALF" > "$rc/reply.2"
+out=$(run "$rp" "$rc" "$w" bug); expect "project, bug, no module line: a test that passes on the base is refused, the retry passes" "$(attempts "$out")" "1:refused:test-passes-on-base 2:passed"
 # a cancho.toml with neither table is not a project: the repository is checked file by file, as before
 rp=$(newrepo); rc=$(newrc); w="$d/w-proj-plain"; printf '%s\n' "$PLUS" > "$rc/reply.1"; printf '[package]\nname = "plain"\n' > "$rp/cancho.toml"
 out=$(run "$rp" "$rc" "$w" refactor --attempts 1); expect "a cancho.toml with no [[bin]] or [[test]]: checked file by file" "$(attempts "$out")" "1:passed"
