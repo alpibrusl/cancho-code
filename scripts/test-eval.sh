@@ -25,11 +25,11 @@ fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }
 d=$(mktemp -d -t cc-eval-XXXXXX)
 # why <case> <rc> <driver output> <work dir>: when a run that must pass did not, say what the driver said and what each unit was last told (the checker's
-# and the tests' feedback, the agent's own errors), so a failure seen only on a runner can be read from its log and need not be reproduced
+# feedback, what its tests printed, its trail, the agent's own errors), so a failure seen only on a runner can be read from its log and need not be reproduced
 why() {
     [ "$2" = 0 ] && return 0
     echo "---- $1: the driver said (exit $2):" >&2; printf '%s\n' "$3" | tail -80 >&2
-    for f in "$4"/*.feedback "$4"/*.agent.err "$4"/state.txt; do
+    for f in "$4"/*.feedback "$4"/*.acceptance "$4"/trail-*.jsonl "$4"/*.agent.err "$4"/state.txt; do
         [ -s "$f" ] && { echo "---- $1: $(basename "$f"):" >&2; tail -40 "$f" >&2; }
     done
     return 0
