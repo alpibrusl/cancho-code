@@ -11,6 +11,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The gates run hundreds of programs that are meant to trap (a refused mutant, a bounds check that fires). The runner pipes every such
+      # death to systemd-coredump and apport, whatever the core limit says, and the backlog took the machine to a load average near 185: a
+      # unit's tests then missed their 60 seconds and the eval gate's multi plan case ended stuck, 8 runs in 12. A plain core pattern obeys
+      # the limit of 0 the runner already sets, so nothing is collected; measured on six runners: load 1.5, 0 failures.
+      - name: A program that traps leaves no core dump
+        run: sudo sysctl -w kernel.core_pattern=core
+
       # The compiler these sources were written for: the commit in .cancho-rev, the one place to change it.
       - name: Read the compiler pin
         id: pin

@@ -24,6 +24,18 @@ audit="python3 $root/eval/audit_tokenbucket.py"
 fail=0
 expect() { [ "$2" = "$3" ] || { echo "FAIL: $1: wanted '$3', got '$2'" >&2; fail=1; }; }
 d=$(mktemp -d -t cc-eval-XXXXXX)
+# why <case> <rc> <driver output> <work dir>: when a run that must pass did not, say what the driver said and what each unit was last told (the checker's
+# feedback, what its tests printed, its trail, the agent's own errors), so a failure seen only on a runner can be read from its log and need not be reproduced
+why() {
+    [ "$2" = 0 ] && return 0
+    echo "---- $1: the driver said (exit $2):" >&2; printf '%s\n' "$3" | tail -80 >&2
+    for f in "$4"/*.feedback "$4"/*.acceptance "$4"/trail-*.jsonl "$4"/*.agent.err "$4"/state.txt; do
+        [ -s "$f" ] && { echo "---- $1: $(basename "$f"):" >&2; tail -40 "$f" >&2; }
+    done
+    echo "---- $1: the busiest processes ($(uptime 2>/dev/null | sed 's/.*load/load/')):" >&2
+    ps -Ao pid,ppid,pcpu,etime,args 2>/dev/null | sort -k3 -nr | head -12 | cut -c1-200 >&2
+    return 0
+}
 
 out=$($audit "$root/eval/tokenbucket/reference.cho" 2>&1); rc=$?
 expect "reference: exit code" "$rc" 0
@@ -86,6 +98,7 @@ for which in reference mutated; do
     if [ "$which" = reference ]; then
         expect "duration plan: the reference passes its own tests (exit)" "$rc" 0
         expect "duration plan: the reference passes its own tests (verdict)" "$(printf '%s\n' "$out" | grep PROJECT_VERDICT | cut -f2)" done
+        why "duration plan" "$rc" "$out" "$wd"
     else
         [ "$rc" != 0 ] || { echo "FAIL: duration plan: the mutated implementation passed the plan's tests" >&2; fail=1; }
     fi
@@ -110,6 +123,7 @@ for which in reference mutated; do
     if [ "$which" = reference ]; then
         expect "csv plan: the reference passes its own tests (exit)" "$rc" 0
         expect "csv plan: the reference passes its own tests (verdict)" "$(printf '%s\n' "$out" | grep PROJECT_VERDICT | cut -f2)" done
+        why "csv plan" "$rc" "$out" "$wd"
     else
         [ "$rc" != 0 ] || { echo "FAIL: csv plan: the mutated implementation passed the plan's tests" >&2; fail=1; }
     fi
@@ -159,6 +173,7 @@ PYEOF
     out=$("$pexe" "$CANCHO" "$root/eval/multi/plan.json" "$wd" "sh $root/tests/multifile/agent.sh $rcp $wd/agent.log" 2 60 --jobs "$j" 2>&1); rc=$?
     expect "multi plan (--jobs $j): the reference passes its own tests (exit)" "$rc" 0
     expect "multi plan (--jobs $j): verdict" "$(printf '%s\n' "$out" | grep PROJECT_VERDICT | cut -f2)" done
+    why "multi plan (--jobs $j)" "$rc" "$out" "$wd"
     expect "multi plan (--jobs $j): the built project scores" "$($mul "$wd/project.cho" 2>&1 | grep TOTAL)" "  TOTAL 102/102"
     rm -rf "$wd" "$rcp"
 done
