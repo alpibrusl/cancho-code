@@ -134,6 +134,87 @@ pub fn path_tag_in[&p, &s](path: &p [byte], srcs: &s [byte]) -> [] &static [byte
     return "";
 }
 
+// ---- script tests ----------------------------------------------------------------------------------------------------------------------
+//
+// A repository may prove things with tests that are not cancho: scripts that run its built programs (docs/repo-patch.md, "Script tests"). The
+// caller says so with three lines (`--script-tests FILE`): the directory under `tests/` the scripts live in, the command that runs one of
+// them, and the scripts the model is always shown. Nothing of this is read from the repository.
+
+// Line `k` (0-based) of `text`, without its line end; "" when there is none.
+pub fn line_of[&t](text: &t [byte], k: int) -> [] &t [byte] {
+    var start = 0;
+    var n = 0;
+    var i = 0;
+    while i <= len(text) {
+        if i == len(text) || int_of(text[i]) == 10 {
+            if n == k {
+                var e = i;
+                if e > start && int_of(text[e - 1]) == 13 {
+                    e = e - 1;
+                }
+                return text[start..e];
+            }
+            n = n + 1;
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    return text[0..0];
+}
+
+// Is `path` a script of the script directory `dir`: under it, and not a `.cho` file (those are the compiler's, whatever directory they are in)?
+pub fn is_script[&p, &d](path: &p [byte], dir: &d [byte]) -> [] bool {
+    if len(dir) == 0 || len(path) < len(dir) + 2 {
+        return false;
+    }
+    if bytes.equal(path[0..len(dir)], dir) == false || int_of(path[len(dir)]) != 47 {
+        return false;
+    }
+    return len(path) < 4 || bytes.equal(path[len(path) - 4..len(path)], ".cho") == false;
+}
+
+// `path_tag_in` where scripts may be written too: a script of `dir` has to have the form of a path (the first checks of `path_tag_in`) and
+// nothing else; every other path is judged as before.
+pub fn path_tag_for[&p, &s, &d](path: &p [byte], srcs: &s [byte], dir: &d [byte]) -> [] &static [byte] {
+    if is_script(path, dir) == false {
+        return path_tag_in(path, srcs);
+    }
+    let tag = path_tag_in(path, srcs);
+    if bytes.equal(tag, "path-outside") {
+        return "";
+    }
+    return tag;
+}
+
+// What is wrong with the three lines of `--script-tests`, or "": the directory is a plain path under `tests/` with no `..` or hidden part, the
+// command is not empty, and what is always shown is paths of that directory with spaces between.
+pub fn scripts_problem[&t](text: &t [byte]) -> [] &static [byte] {
+    let dir = line_of(text, 0);
+    if bytes.starts_with(dir, "tests/") == false || len(dir) < 7 || int_of(dir[len(dir) - 1]) == 47 {
+        return "the first line is the directory of the scripts, under tests/ (tests/NAME, no / at its end)";
+    }
+    // a path under it has the form of a path exactly when the directory has
+    if len(path_tag_for(dir, "src", "tests")) > 0 {
+        return "the first line is a plain relative path: letters, digits and _ - . /, no .. and no hidden part";
+    }
+    if len(bytes.trim(line_of(text, 1))) == 0 {
+        return "the second line is the command that runs one script ($SCRIPT_PATH is its path, $SCRIPT_NAME its file name)";
+    }
+    let show = line_of(text, 2);
+    var i = 0;
+    while i < len(show) {
+        var e = i;
+        while e < len(show) && int_of(show[e]) != 32 {
+            e = e + 1;
+        }
+        if e > i && (is_script(show[i..e], dir) == false || len(path_tag_for(show[i..e], "src", dir)) > 0) {
+            return "the third line is scripts of that directory, plain paths with one space between";
+        }
+        i = e + 1;
+    }
+    return "";
+}
+
 // ---- the envelope --------------------------------------------------------------------------------------------------------------------
 
 // Section `k` (0-based) of the envelope `env`: the offsets of its path and of its body, or (-1, -1, -1, -1) when there is no such section. The path is
