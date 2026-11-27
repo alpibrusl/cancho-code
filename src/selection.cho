@@ -9,7 +9,8 @@ module selection;
 // functions it refers to) and from the words of the request. Nothing here reads a file or runs a program: the driver (`repochange`) hands in the texts.
 //
 //   seeds      a declaration whose name is a whole word of the request (names of four bytes or more), or is listed in `--touch`, or whose file is
-//              named in the request (`src/x.cho` or `x.cho`)
+//              named in the request (`src/x.cho` or `x.cho`); when the request writes names between backticks and one of them names something,
+//              only what is between backticks names (`quoted`)
 //   near       what a seed refers to, and what refers to a seed (one step each way)
 //   shown      a seed and a near declaration in full; every type in full (a type is its own signature); of every other function its signature and a
 //              `// body not shown` line; the text between declarations (imports, comments) as it is
@@ -70,6 +71,33 @@ pub fn has_word[&t, &w](text: &t [byte], word: &w [byte]) -> [] bool {
         i = i + 1;
     }
     return false;
+}
+
+// What the request writes between backticks (`like this`, on one line), one span per line. A requester who marks names this way has said which
+// words are names: when any of them names something of the repository, the plain words of the request name nothing, and when one of them is
+// a declaration, a file named beside it ("in `src/x.cho`, `f` ...") says where and does not make a seed of the whole file (`select`). Measured on
+// the gateway, 2026-11-27: "fails on the current code" made a seed of every declaration called `code`, and `value`, `body` and `close` did the
+// same, so two of three requests that each named one function were over the limit before any model ran.
+pub fn quoted[&h, &r](heap: &!h Heap, request: &r [byte]) -> [heap] buffer.Buffer {
+    var out = buffer.empty(heap, 16);
+    var open = 0 - 1;
+    var i = 0;
+    while i < len(request) {
+        let c = int_of(request[i]);
+        if c == 10 {
+            open = 0 - 1;
+        } else if c == 96 {
+            if open < 0 {
+                open = i + 1;
+            } else {
+                out = buffer.append(heap, out, request[open..i]);
+                out = buffer.push(heap, out, byte_of(10));
+                open = 0 - 1;
+            }
+        }
+        i = i + 1;
+    }
+    return out;
 }
 
 // Is `name` one of the names of `list` (separated by commas)?
@@ -143,7 +171,7 @@ fn names_file[&q, &f](request: &q [byte], file: &f [byte]) -> [] bool {
 
 // Fill `d` for the `n` declarations of the array `arr`: `d[2 * i]` the node of declaration `i`, `d[2 * i + 1]` 1 for a seed, 2 for a near one, 0 for
 // the rest. The answer is how many seeds there are.
-fn mark[&e, &t, &d, &q, &u](edges: &e [byte], t: &t [int], arr: int, n: int, d: &!d [int], request: &q [byte], touch: &u [byte]) -> [] int {
+fn mark[&e, &t, &d, &q, &u](edges: &e [byte], t: &t [int], arr: int, n: int, d: &!d [int], request: &q [byte], touch: &u [byte], files: bool) -> [] int {
     var node = arr + 1;
     var seeds = 0;
     var i = 0;
@@ -152,7 +180,7 @@ fn mark[&e, &t, &d, &q, &u](edges: &e [byte], t: &t [int], arr: int, n: int, d: 
         d[2 * i + 1] = 0;
         let name = text_of(edges, t, node, "name");
         let file = text_of(edges, t, node, "file");
-        if listed(touch, name) || len(name) >= 4 && has_word(request, name) || names_file(request, file) {
+        if listed(touch, name) || len(name) >= 4 && has_word(request, name) || files && names_file(request, file) {
             d[2 * i + 1] = 1;
             seeds = seeds + 1;
         }
@@ -390,7 +418,19 @@ pub fn select[&h, &e, &b, &q, &u](heap: &!h Heap, edges: &e [byte], bundle: &b [
             let info = box_slice(heap, 2 * n + 2, 0);
             borrow mut info as &!iw in {
                 let d = contents(iw);
-                seeds = mark(edges, t, arr, n, d, request, touch);
+                // three readings of the request, the first that names something: the declarations named between backticks; those and the
+                // files named between backticks; every word of the request
+                let names = quoted(heap, request);
+                borrow names as &nr in {
+                    if mark(edges, t, arr, n, d, buffer.bytes(nr), "", false) > 0 {
+                        seeds = mark(edges, t, arr, n, d, buffer.bytes(nr), touch, false);
+                    } else if mark(edges, t, arr, n, d, buffer.bytes(nr), "", true) > 0 {
+                        seeds = mark(edges, t, arr, n, d, buffer.bytes(nr), touch, true);
+                    } else {
+                        seeds = mark(edges, t, arr, n, d, request, touch, true);
+                    }
+                }
+                buffer.drop(heap, names);
                 if seeds > 0 {
                     let (s2, h2) = sections(heap, edges, t, d, n, bundle, level);
                     buffer.drop(heap, shown);

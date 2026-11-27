@@ -89,6 +89,10 @@ M = [
  ("project-without-tests-accepted", "repochange.cho", "    if tables < 2 {\n        return change.error_line", "    if false {\n        return change.error_line"),
  ("project-probe-file-by-file", "repochange.cho", "                                if project {", "                                if false {"),
  ("names-from-the-preamble", "selection.cho", "            if bytes.equal(request[start..e], mark) {", "            if false {"),
+ ("backticks-ignored", "selection.cho", '                    if mark(edges, t, arr, n, d, buffer.bytes(nr), "", false) > 0 {', "                    if false {"),
+ ("plain-words-never-name", "selection.cho", '                    } else if mark(edges, t, arr, n, d, buffer.bytes(nr), "", true) > 0 {', "                    } else if true {"),
+ ("file-beside-a-name-is-a-seed", "selection.cho", "seeds = mark(edges, t, arr, n, d, buffer.bytes(nr), touch, false);", "seeds = mark(edges, t, arr, n, d, buffer.bytes(nr), touch, true);"),
+ ("open-backtick-runs-on", "selection.cho", "        if c == 10 {\n            open = 0 - 1;\n        } else if c == 96 {", "        if c == 96 {"),
  ("first-mark-not-the-last", "selection.cho", "                from = i + 1;\n                if from > len(request) {", "                if from == 0 {\n                    from = i + 1;\n                }\n                if from > len(request) {"),
  ("area-not-checked", "change.cho", "    if in_area(path, srcs) == false {\n        return \"path-outside\";", "    if false {\n        return \"path-outside\";"),
  ("file-source-is-a-directory", "change.cho", "if file == false && len(path) > len(one) && bytes.equal(path[0..len(one)], one)", "if len(path) > len(one) && bytes.equal(path[0..len(one)], one)"),
@@ -1069,6 +1073,39 @@ printf '=== REQUEST ===\nabout half\n=== REQUEST ===\nMake double add the number
 rp=$(bigrepo); rc=$(newrc); w="$d/w-twice"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
 out=$(req="$d/change-twice.txt"; run "$rp" "$rc" "$w" refactor --attempts 1 --max-bundle 3500); expect "framed: the last mark is the one: verdict" "$(verdict "$out")" done
 hasnt "framed: the last mark is the one" "$(cat "$rc/bundle.1")" "return x / 2;"
+
+# ---- names between backticks are the names (src/selection.cho, `quoted`) ----------------------------------------------------------------------
+# the request says `double` between backticks and uses the words half and perimeter in passing: only double is a seed
+printf 'Make `double` add the number to itself instead of multiplying. It is not half of the perimeter.\n' > "$d/change-ticks.txt"
+rp=$(bigrepo); rc=$(newrc); w="$d/w-ticks"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+out=$(req="$d/change-ticks.txt"; run "$rp" "$rc" "$w" refactor --attempts 1 --max-bundle 3500); expect "backticks: verdict" "$(verdict "$out")" done
+b=$(cat "$rc/bundle.1")
+has "backticks: the name between backticks is shown in full" "$b" "    return x * 2;"
+hasnt "backticks: a plain word of the same request names nothing" "$b" "return x / 2;"
+# backticks around something the repository does not have decide nothing: the plain words name, as before
+printf 'Make double add the number to itself (`x + x`) instead of multiplying. It is not half of the perimeter.\n' > "$d/change-ticks-none.txt"
+rp=$(bigrepo); rc=$(newrc); w="$d/w-ticks-none"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+out=$(req="$d/change-ticks-none.txt"; run "$rp" "$rc" "$w" refactor --attempts 1 --max-bundle 6000); expect "backticks that name nothing: verdict" "$(verdict "$out")" done
+b=$(cat "$rc/bundle.1")
+has "backticks that name nothing: a plain word still names" "$b" "    return x * 2;"
+has "backticks that name nothing: every plain word, as before" "$b" "return x / 2;"
+# a file named beside a declaration says where: it does not make a seed of everything in the file
+printf 'In `src/mathx.cho`, make `double` add the number to itself instead of multiplying.\n' > "$d/change-ticks-file.txt"
+rp=$(bigrepo); rc=$(newrc); w="$d/w-ticks-file"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+out=$(req="$d/change-ticks-file.txt"; run "$rp" "$rc" "$w" refactor --attempts 1 --max-bundle 3500); expect "a file beside a name: verdict" "$(verdict "$out")" done
+b=$(cat "$rc/bundle.1")
+has "a file beside a name: the name is shown in full" "$b" "    return x * 2;"
+hasnt "a file beside a name: the rest of the file is not" "$b" "return x / 2;"
+# a file between backticks with no declaration beside it names all of the file, as before
+printf 'In `src/mathx.cho`, doubling is to add the number to itself instead of multiplying.\n' > "$d/change-ticks-fileonly.txt"
+rp=$(bigrepo); rc=$(newrc); w="$d/w-ticks-fileonly"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+out=$(req="$d/change-ticks-fileonly.txt"; run "$rp" "$rc" "$w" refactor --attempts 1 --max-bundle 6000); expect "a file alone: verdict" "$(verdict "$out")" done
+has "a file alone between backticks: all of it is shown" "$(cat "$rc/bundle.1")" "return x / 2;"
+# a backtick left open ends with its line
+printf 'See `double of the number.\nMake `half` exact.\n' > "$d/change-ticks-open.txt"
+rp=$(bigrepo); rc=$(newrc); w="$d/w-ticks-open"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+out=$(req="$d/change-ticks-open.txt"; run "$rp" "$rc" "$w" refactor --attempts 1 --max-bundle 3500)
+has "an open backtick ends with its line: the span of the next line is whole" "$(cat "$rc/bundle.1")" "return x / 2;"
 
 # static: the driver never runs git
 code=$(grep -v '^[[:space:]]*//' "$SRC/repochange.cho" "$SRC/selection.cho" "$SRC/textedges.cho" "$SRC/change.cho" | grep -E 'git (push|commit|add|checkout|clone|apply|fetch)|"git |/git ' | head -3)
