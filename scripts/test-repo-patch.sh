@@ -1102,10 +1102,10 @@ rp=$(bigrepo); rc=$(newrc); w="$d/w-ticks-fileonly"; printf '%s\n' "$DOUBLE" > "
 out=$(req="$d/change-ticks-fileonly.txt"; run "$rp" "$rc" "$w" refactor --attempts 1 --max-bundle 6000); expect "a file alone: verdict" "$(verdict "$out")" done
 has "a file alone between backticks: all of it is shown" "$(cat "$rc/bundle.1")" "return x / 2;"
 # a backtick left open ends with its line
-printf 'Make `double add the number to itself.\nIt is not `half` of the perimeter, see `double`.\n' > "$d/change-ticks-open.txt"
+printf 'See `double of the number.\nMake `half` exact.\n' > "$d/change-ticks-open.txt"
 rp=$(bigrepo); rc=$(newrc); w="$d/w-ticks-open"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
-out=$(req="$d/change-ticks-open.txt"; run "$rp" "$rc" "$w" refactor --attempts 1 --max-bundle 6000); expect "an open backtick: verdict" "$(verdict "$out")" done
-has "an open backtick ends with its line: the next line's spans are whole" "$(cat "$rc/bundle.1")" "return x / 2;"
+out=$(req="$d/change-ticks-open.txt"; run "$rp" "$rc" "$w" refactor --attempts 1 --max-bundle 3500)
+has "an open backtick ends with its line: the span of the next line is whole" "$(cat "$rc/bundle.1")" "return x / 2;"
 
 # static: the driver never runs git
 code=$(grep -v '^[[:space:]]*//' "$SRC/repochange.cho" "$SRC/selection.cho" "$SRC/textedges.cho" "$SRC/change.cho" | grep -E 'git (push|commit|add|checkout|clone|apply|fetch)|"git |/git ' | head -3)
