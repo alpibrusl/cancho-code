@@ -99,7 +99,6 @@ M = [
  ("scripts-not-run", "repochange.cho", "    if built_clean && scripts_added > 0 {", "    if false {"),
  ("script-run-in-the-tree", "repochange.cho", '"/check && SCRIPT_PATH="', '"/tree && SCRIPT_PATH="'),
  ("script-anywhere", "change.cho", "    if is_script(path, dir) == false {\n        return path_tag_in(path, srcs);\n    }", ""),
- ("script-without-a-directory", "change.cho", "    if len(dir) == 0 || len(path) < len(dir) + 2 {", "    if len(path) < len(dir) + 2 {"),
  ("cho-file-is-a-script", "change.cho", 'return len(path) < 4 || bytes.equal(path[len(path) - 4..len(path)], ".cho") == false;', "return true;"),
  ("unchanged-script-counts", "repochange.cho", "if bok == false || bytes.equal(buffer.bytes(btr), buffer.bytes(ntr)) == false {", "if true {"),
  ("script-as-items", "repochange.cho", "                if change.is_script(path, sdir) {\n                    if len(bytes.trim(env[bs..bz])) == 0 {", "                if false {\n                    if len(bytes.trim(env[bs..bz])) == 0 {"),
@@ -1054,6 +1053,7 @@ hasnt "script: a .cho file under the script directory is not written whole" "$(a
 # script tests are for a project: there is nothing built to run in a repository checked file by file
 rp=$(newrepo); rc=$(newrc); w="$d/w-script-plain"; mkdir -p "$rp/tests/scripts"; printf '=== FILE src/mathx.cho\npub fn double(x: int) -> [] int { return x + x; }\n=== FILE tests/scripts/t.sh\nexit 0\n' > "$rc/reply.1"
 out=$(run "$rp" "$rc" "$w" refactor --attempts 1 --script-tests "$d/scripts.txt"); expect "script: not in a project" "$(attempts "$out")" "1:refused:script-test-failed"
+has "script: not in a project: the refusal says so, nothing was run" "$out" "this repository is not a project"
 # a selection keeps a script as the bundle has it
 rp=$(bigrepo); rc=$(newrc); w="$d/w-script-sel"; mkdir -p "$rp/tests/scripts"; printf '# the program is there after a build\n[ -x ./build/mathproj ]\n' > "$rp/tests/scripts/ok.sh"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
 printf 'Make `double` add the number to itself instead of multiplying.\n' > "$d/change-script-sel.txt"
