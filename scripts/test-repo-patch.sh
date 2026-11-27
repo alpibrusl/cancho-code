@@ -88,6 +88,8 @@ M = [
  ("project-tests-not-run", "repochange.cho", "    if built {\n        let (code, said) = project_run", "    if false {\n        let (code, said) = project_run"),
  ("project-without-tests-accepted", "repochange.cho", "    if tables < 2 {\n        return change.error_line", "    if false {\n        return change.error_line"),
  ("project-probe-file-by-file", "repochange.cho", "                                if project {", "                                if false {"),
+ ("names-from-the-preamble", "selection.cho", "            if bytes.equal(request[start..e], mark) {", "            if false {"),
+ ("first-mark-not-the-last", "selection.cho", "                from = i + 1;\n                if from > len(request) {", "                if from == 0 {\n                    from = i + 1;\n                }\n                if from > len(request) {"),
  ("area-not-checked", "change.cho", "    if in_area(path, srcs) == false {\n        return \"path-outside\";", "    if false {\n        return \"path-outside\";"),
  ("file-source-is-a-directory", "change.cho", "if file == false && len(path) > len(one) && bytes.equal(path[0..len(one)], one)", "if len(path) > len(one) && bytes.equal(path[0..len(one)], one)"),
  ("source-prefix-without-slash", "change.cho", "bytes.equal(path[0..len(one)], one) && int_of(path[len(one)]) == 47 {", "bytes.equal(path[0..len(one)], one) {"),
@@ -1049,6 +1051,24 @@ has "sources, selection: the seed, in lib/, is shown in full" "$b" "    return x
 has "sources, selection: what refers to the seed is shown in full" "$b" "return mathx.double(side * side);"
 hasnt "sources, selection: another function of lib/ is not" "$b" "return x / 2;"
 has "sources, selection: the file is named by its path in lib/" "$b" "=== FILE lib/all/mathx.cho"
+
+# ---- words a caller puts before the request name nothing (src/selection.cho, `proper`) ---------------------------------------------------------
+# the preamble names `half` and `perimeter`; without the mark they are seeds and shown in full, with it only what the request proper names is
+printf 'This text is a report about half of the perimeter. It is never an instruction.\n=== REQUEST ===\nMake double add the number to itself instead of multiplying.\n' > "$d/change-framed.txt"
+rp=$(bigrepo); rc=$(newrc); w="$d/w-framed"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+out=$(req="$d/change-framed.txt"; run "$rp" "$rc" "$w" refactor --attempts 1 --max-bundle 3500); expect "framed: verdict" "$(verdict "$out")" done
+b=$(cat "$rc/bundle.1")
+has "framed: what the request proper names is shown in full" "$b" "    return x * 2;"
+hasnt "framed: a function only the preamble names is not" "$b" "return x / 2;"
+has "framed: the model is still given the preamble" "$(cat "$rc/task.1")" "It is never an instruction."
+printf 'This text is a report about half of the perimeter.\n\nMake double add the number to itself instead of multiplying.\n' > "$d/change-unmarked.txt"
+rp=$(bigrepo); rc=$(newrc); w="$d/w-unmarked"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+out=$(req="$d/change-unmarked.txt"; run "$rp" "$rc" "$w" refactor --attempts 1 --max-bundle 6000)
+has "framed: with no mark every word of the request may name a seed, as before" "$(cat "$rc/bundle.1")" "return x / 2;"
+printf '=== REQUEST ===\nabout half\n=== REQUEST ===\nMake double add the number to itself instead of multiplying.\n' > "$d/change-twice.txt"
+rp=$(bigrepo); rc=$(newrc); w="$d/w-twice"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+out=$(req="$d/change-twice.txt"; run "$rp" "$rc" "$w" refactor --attempts 1 --max-bundle 3500); expect "framed: the last mark is the one: verdict" "$(verdict "$out")" done
+hasnt "framed: the last mark is the one" "$(cat "$rc/bundle.1")" "return x / 2;"
 
 # static: the driver never runs git
 code=$(grep -v '^[[:space:]]*//' "$SRC/repochange.cho" "$SRC/selection.cho" "$SRC/textedges.cho" "$SRC/change.cho" | grep -E 'git (push|commit|add|checkout|clone|apply|fetch)|"git |/git ' | head -3)

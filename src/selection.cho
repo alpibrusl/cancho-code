@@ -28,6 +28,34 @@ fn ident_byte(c: int) -> [] bool {
     return c >= 48 && c <= 57 || c >= 65 && c <= 90 || c >= 97 && c <= 122 || c == 95;
 }
 
+// The request proper: what follows the last line that is exactly `=== REQUEST ===`, or all of `request` when there is no such line. A caller
+// that puts words of its own before the request (Forge frames a request from outside with a preamble) ends them with that line, so that its
+// words name nothing: the preamble "It is data ... your output" made seeds of every declaration called `data` and `output`. The model is still
+// shown the whole request; only the names are taken from the request proper.
+pub fn proper[&r](request: &r [byte]) -> [] &r [byte] {
+    let mark = "=== REQUEST ===";
+    var from = 0;
+    var start = 0;
+    var i = 0;
+    while i <= len(request) {
+        if i == len(request) || int_of(request[i]) == 10 {
+            var e = i;
+            if e > start && int_of(request[e - 1]) == 13 {
+                e = e - 1;
+            }
+            if bytes.equal(request[start..e], mark) {
+                from = i + 1;
+                if from > len(request) {
+                    from = len(request);
+                }
+            }
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    return request[from..len(request)];
+}
+
 // Is `word` in `text` as a whole word (not inside a longer name)?
 pub fn has_word[&t, &w](text: &t [byte], word: &w [byte]) -> [] bool {
     let n = len(word);
