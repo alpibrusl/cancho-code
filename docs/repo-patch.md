@@ -19,6 +19,7 @@ It works on a **copy** of `DIR`. It never writes `DIR`, never runs `git` (there 
 | `--attempts N` (4), `--agent-seconds N` (300), `--test-seconds N` (300) | the attempt ceiling, the cap on one agent turn, the cap on one `cancho test` |
 | `--max-files N` (8, at most 64), `--max-bytes N` (65536, at most 1000000) | the bounds on a change: sections (files) and bytes of the reply |
 | `--max-bundle N` (400000, at most 1000000) | how many bytes the model is shown. A repository over it is shown as a selection ([below](#a-selection)) |
+| `--script-tests FILE` | the repository also proves things with scripts: the directory, the command and the scripts always shown ([below](#script-tests)) |
 | `--touch NAME,NAME` | names of functions and types of `src/` that a selection shows in full, besides the ones the request names |
 
 Paths are absolute, made of letters, digits and `. _ / + : = @ % , -`, with no `..` (they go into shell command lines, as in `build`).
@@ -67,7 +68,7 @@ What it is not: there is no ranking beyond the backticks above (in a request wit
 Each attempt starts from a fresh copy of the base (`WORKDIR/tree`), so a retry never builds on a half-applied answer:
 
 1. the agent answers; its exit code decides: 0 go on, 10/11/12 it gave up (`agent-gave-up`, the attempt is lost, the next one is told), anything else (or a timeout) is `provider_error`, exit 4;
-2. **bounds** on the envelope, all reported together: no section (`envelope-empty`), more than `--max-files` (`too-many-files`), more than `--max-bytes` (`change-too-large`), a path that may not be written, the same path twice (`path-duplicate`). A path may be written only if it is relative, made of letters, digits and `_ - . /`, has no empty, `.`, `..` or hidden component (so no `.git`), lies under `src/` or `tests/` and ends in `.cho`: `path-absolute`, `path-dotdot`, `path-git`, `path-component`, `path-chars`, `path-length`, `path-outside`. Links cannot lead out: the repository is refused if it has one in `src/` or `tests/`, and a path is written only under those two directories. A path with a file where a directory is needed is `path-conflict`. **Nothing is written when one of these fails**;
+2. **bounds** on the envelope, all reported together: no section (`envelope-empty`), more than `--max-files` (`too-many-files`), more than `--max-bytes` (`change-too-large`), a path that may not be written, the same path twice (`path-duplicate`). A path may be written only if it is relative, made of letters, digits and `_ - . /`, has no empty, `.`, `..` or hidden component (so no `.git`), lies under `src/` or `tests/` and ends in `.cho` (or is a [script test](#script-tests)): `path-absolute`, `path-dotdot`, `path-git`, `path-component`, `path-chars`, `path-length`, `path-outside`. Links cannot lead out: the repository is refused if it has one in `src/` or `tests/`, and a path is written only under those two directories. A path with a file where a directory is needed is `path-conflict`. **Nothing is written when one of these fails**;
 3. the sections are applied to the tree (`splice`/`remove_items`; errors as above);
 4. **`cancho fmt` runs on every file written** (the compiler's own formatter, nothing hand-rolled). A file `fmt` cannot read is `fmt-failed`, with its words;
 5. **the gate**, cheap checks first:
@@ -154,6 +155,30 @@ What follows from running the project's own commands: the checker must be the co
 
 * with the stand-in agent and the known one-line fix: `done` in 74 seconds, the patch one hunk of `src/gateway.cho`;
 * with `claude-haiku-5-5`: `stuck` after four attempts, each `build-failed` with the same compiler error, about 420,000 input tokens an attempt. The same model fixed the same error in one attempt on a 237 KB cut of the repository, so the size of what is shown is what changed.
+
+## Script tests
+
+*Added 2026-11-27. Two audits of real repositories found nine small defects; six could not be given to this command, because what was wrong sat in a program's `main` or needed real files and sockets, and the repository proves such things with scripts (cancho-tools: `tests/conformance/*.py`, run by its CI), which a change could neither write nor have run.*
+
+`--script-tests FILE` names a file of three lines, the caller's and never the repository's:
+
+1. the **directory** of the scripts, under `tests/` (`tests/conformance`);
+2. the **command** that runs one script, given to `sh -c` in the root of a built copy, with `$SCRIPT_PATH` (the script's path from the root) and `$SCRIPT_NAME` (its file name) set: `python3 -m unittest discover -s tests/conformance -p $SCRIPT_NAME`;
+3. the scripts the model is **always shown**, with one space between (a harness, a short example), or an empty line.
+
+A file that is not three such lines is a usage error, before anything runs. With it:
+
+* **A script may be written.** A path under the directory that is not a `.cho` file is a script: its section is the whole text of the file (not items), it is not formatted, and it has the form every path has (no `..`, no hidden part). Without `--script-tests` such a path is `path-outside`, as before. An empty section is `script-empty`.
+* **A script the change adds or leaves with other text counts as its test** (`no-test-added` otherwise). A feature whose only test is a script is not asked which function its tests call (`test-not-exercising` looks at test functions; a script calls a program).
+* **It is run.** After the project's own `cancho build` and `cancho test` pass, each such script is run with the command in the built copy (`WORKDIR/check`), never in the tree the patch is made from. Other than exit 0 is `script-test-failed`, with the **end** of what it said (the last 1200 bytes: an assertion is said last). Only a [project](#a-project) has something built to run: elsewhere it is `script-test-failed` too.
+* **For a bug it must fail on the base.** A copy of the base with that one script put over it is built the same way and the command run in it: exit 0 there is `test-passes-on-base`.
+* **What the model is shown.** Of the scripts of the directory, the ones of line 3 and the ones the request names by file name are shown whole; of every other one a line with its name and size. The task says that there are script tests, where, and the command.
+
+**The command runs what a model wrote, with the authority of whoever started the run.** A cancho test is held by the compiler's effects; a script is not. So the command is where a sandbox goes (no network, no writing outside the copy, no reading of keys), and that is the caller's to say: this command adds none.
+
+**Measured once** (cancho-tools at `cc18da9`, issue 69: `replace` answers `changed: true` when nothing changes; `claude-haiku-5-5` through the pilot Forge company, the command a `sandbox-exec` wrapper): accepted on the second attempt in 131 seconds. The first attempt's script failed on one of its two cases, the refusal carried that assertion, and the second attempt fixed the code for it. The patch is one new 45-line script and a three-line change in `tools/replace/replace.cho`. Before the command said its own `PATH`, four attempts were lost to a Python without the harness's package: the environment a script runs in is the caller's to say too.
+
+What it is not: the scripts the change did not write are not run (the repository's CI does that), a script is one pass or fail whatever number of cases it holds, and nothing looks into a script to see what it checks.
 
 ## Constraints on the shape of a change
 

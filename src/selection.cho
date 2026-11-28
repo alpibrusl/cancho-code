@@ -386,7 +386,10 @@ fn sections[&h, &e, &t, &d, &b](heap: &!h Heap, edges: &e [byte], t: &t [int], d
                 described = bytes.equal(text_of(edges, t, d[2 * k], "file"), path);
                 k = k + 1;
             }
-            if described {
+            if bytes.ends_with(path, ".cho") == false {
+                // a script test: the bundle already holds what is to be shown of it (`repochange.make_bundle`)
+                shown = buffer.append(heap, shown, body);
+            } else if described {
                 let (s2, h2) = source_section(heap, shown, hidden, edges, t, d, n, path, body, level);
                 shown = s2;
                 hidden = h2;

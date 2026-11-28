@@ -48,7 +48,7 @@ M = [
  ("probe-off", "repochange.cho", 'if clean && bytes.equal(kind, "bug") {', 'if false && bytes.equal(kind, "bug") {'),
  ("probe-on-the-fix", "repochange.cho", 'cp = buffer.append(heap, cp, "/base ");', 'cp = buffer.append(heap, cp, "/tree ");'),
  ("passed-never-seen", "change.cho", 'bytes.equal(output[i + 1 + len(name)..i + 8 + len(name)], " ... ok")', 'bytes.equal(output[i + 1 + len(name)..i + 8 + len(name)], " ... xx")'),
- ("exercising-off", "repochange.cho", 'if bytes.equal(kind, "feature") && tests_added > 0 {', 'if false && tests_added > 0 {'),
+ ("exercising-off", "repochange.cho", 'if bytes.equal(kind, "feature") && tests_added > scripts_added {', 'if false && tests_added > scripts_added {'),
  ("call-without-paren", "change.cho", "if j < len(text) && int_of(text[j]) == 40 {", "if j < len(text) {"),
  ("call-inside-a-word", "change.cho", "(i == 0 || ident_byte(int_of(text[i - 1])) == false)", "true"),
  ("public-or-not", "change.cho", '&& bytes.equal(ln[f0..f1], "1") {', '&& true {'),
@@ -93,6 +93,24 @@ M = [
  ("plain-words-never-name", "selection.cho", '                    } else if mark(edges, t, arr, n, d, buffer.bytes(nr), "", true) > 0 {', "                    } else if true {"),
  ("file-beside-a-name-is-a-seed", "selection.cho", "seeds = mark(edges, t, arr, n, d, buffer.bytes(nr), touch, false);", "seeds = mark(edges, t, arr, n, d, buffer.bytes(nr), touch, true);"),
  ("open-backtick-runs-on", "selection.cho", "        if c == 10 {\n            open = 0 - 1;\n        } else if c == 96 {", "        if c == 96 {"),
+ ("script-output-from-the-start", "repochange.cho", "tail_of(heap, d, bytes.trim(buffer.bytes(sq)), 1200)", "head_of(heap, d, bytes.trim(buffer.bytes(sq)), 1200)"),
+ ("script-probe-off", "repochange.cho", "            if passed && bug {", "            if false {"),
+ ("script-probe-on-the-fix", "repochange.cho", 'b = buffer.append(heap, b, "/base ");', 'b = buffer.append(heap, b, "/tree ");'),
+ ("scripts-not-run", "repochange.cho", "    if built_clean && scripts_added > 0 {", "    if false {"),
+ ("script-run-in-the-tree", "repochange.cho", '"/check && SCRIPT_PATH="', '"/tree && SCRIPT_PATH="'),
+ ("script-anywhere", "change.cho", "    if is_script(path, dir) == false {\n        return path_tag_in(path, srcs);\n    }", ""),
+ ("cho-file-is-a-script", "change.cho", 'return len(path) < 4 || bytes.equal(path[len(path) - 4..len(path)], ".cho") == false;', "return true;"),
+ ("unchanged-script-counts", "repochange.cho", "if bok == false || bytes.equal(buffer.bytes(btr), buffer.bytes(ntr)) == false {", "if true {"),
+ ("script-as-items", "repochange.cho", "                if change.is_script(path, sdir) {\n                    if len(bytes.trim(env[bs..bz])) == 0 {", "                if false {\n                    if len(bytes.trim(env[bs..bz])) == 0 {"),
+ ("empty-script-written", "repochange.cho", "                    if len(bytes.trim(env[bs..bz])) == 0 {", "                    if false {"),
+ ("scripts-formatted", "repochange.cho", '                        if bytes.ends_with(all[q..e], ".cho") {', "                        if true {"),
+ ("script-feature-asked-for-calls", "repochange.cho", 'if bytes.equal(kind, "feature") && tests_added > scripts_added {', 'if bytes.equal(kind, "feature") && tests_added > 0 {'),
+ ("shown-scripts-not-shown", "repochange.cho", 'case \\"$show\\" in *\\" $f \\"*) w=1 ;; esac; ', ''),
+ ("named-script-not-shown", "repochange.cho", '../request.txt 2>/dev/null && w=1; }', '../request.txt 2>/dev/null && w=0; }'),
+ ("every-script-shown", "repochange.cho", "w=0; case", "w=1; case"),
+ ("selection-outlines-scripts", "selection.cho", '            if bytes.ends_with(path, ".cho") == false {', "            if false {"),
+ ("script-plain-repo-run", "repochange.cho", "    if tables == 0 {\n        return change.error_line(heap, rep, \"script-test-failed\"", "    if false {\n        return change.error_line(heap, rep, \"script-test-failed\""),
+ ("scripts-file-not-checked", "repochange.cho", "why = change.scripts_problem(buffer.bytes(ssr));", 'why = "";'),
  ("first-mark-not-the-last", "selection.cho", "                from = i + 1;\n                if from > len(request) {", "                if from == 0 {\n                    from = i + 1;\n                }\n                if from > len(request) {"),
  ("area-not-checked", "change.cho", "    if in_area(path, srcs) == false {\n        return \"path-outside\";", "    if false {\n        return \"path-outside\";"),
  ("file-source-is-a-directory", "change.cho", "if file == false && len(path) > len(one) && bytes.equal(path[0..len(one)], one)", "if len(path) > len(one) && bytes.equal(path[0..len(one)], one)"),
@@ -118,7 +136,9 @@ for name, fn, old, new in M:
     if t.count(old) != 1:
         sys.exit("mutant %s: the text to break is in %s %d times, not once" % (name, fn, t.count(old)))
     open(p, "w").write(t.replace(old, new))
-open(os.path.join(work, "names"), "w").write("\n".join(m[0] for m in M) + "\n")
+# REPOPATCH_MUTANTS=a,b runs only the mutants whose name has one of those words in it (to try new ones; the gate runs them all)
+only = [w for w in os.environ.get("REPOPATCH_MUTANTS", "").split(",") if w]
+open(os.path.join(work, "names"), "w").write("\n".join(m[0] for m in M if not only or any(w in m[0] for w in only)) + "\n")
 PY
     fail=0
     while read -r name; do
@@ -956,6 +976,98 @@ sed -i.bak -e 's|mathx.half(9) == 4|mathx.half(9) == 3|' -e '/^module mathx_test
 printf '%s\npub fn test_half_zero() -> [] int { test.assert(mathx.half(0) == 0); return 0; }\n' "$HALF" > "$rc/reply.1"
 printf '%s\npub fn test_half_ten() -> [] int { test.assert(mathx.half(10) == 5); return 0; }\n' "$HALF" > "$rc/reply.2"
 out=$(run "$rp" "$rc" "$w" bug); expect "project, bug, no module line: a test that passes on the base is refused, the retry passes" "$(attempts "$out")" "1:refused:test-passes-on-base 2:passed"
+# ---- script tests: what is wrong in a program's main is proven by a script that runs the built program (docs/repo-patch.md, "Script tests") ----
+# the project's program exits 1 instead of 0 (the bug is in `main`, which no test function can call); tests/scripts/ holds scripts run with sh
+scriptproject() {
+    r=$(newproject)
+    sed -i.bak 's|return mathx.triple(1) - 3;|return mathx.triple(1) - 2;|' "$r/src/main.cho"; rm -f "$r/src/main.cho.bak"
+    mkdir -p "$r/tests/scripts"
+    printf '# the program is there after a build\n[ -x ./build/mathproj ]\n' > "$r/tests/scripts/ok.sh"
+    printf '# a long script nobody asked about\necho a-line-only-long-has\n' > "$r/tests/scripts/long.sh"
+    echo "$r"
+}
+printf 'tests/scripts\nsh "$SCRIPT_PATH"\ntests/scripts/ok.sh\n' > "$d/scripts.txt"
+MAIN='=== FILE src/main.cho
+fn main(world: World) -> [] int { release(world); return mathx.triple(1) - 3; }'
+EXITS='=== FILE tests/scripts/exit.sh
+# the program says 0
+: > tests/scripts/junk.out
+./build/mathproj'
+rp=$(scriptproject); rc=$(newrc); w="$d/w-script-ok"; printf '%s\n%s\n' "$MAIN" "$EXITS" > "$rc/reply.1"
+before=$(tree_hash "$rp")
+out=$(run "$rp" "$rc" "$w" bug --attempts 1 --script-tests "$d/scripts.txt"); expect "script: a bug in main, proven by a script that fails on the base: done" "$(attempts "$out")" "1:passed"
+expect "script: the repository is untouched" "$(tree_hash "$rp")" "$before"
+has "script: the script is in the patch" "$(cat "$w/change.patch")" "+./build/mathproj"
+hasnt "script: what the script wrote when it ran is not in the patch" "$(cat "$w/change.patch")" "tree/tests/scripts/junk.out"
+[ -e "$w/tree/tests/scripts/junk.out" ] && { echo "FAIL: script: the script ran in the tree the patch is made from" >&2; fail=1; }
+has "script: the task says there are script tests and how one is run" "$(cat "$rc/task.1")" 'sh "$SCRIPT_PATH"'
+has "script: a script that is always shown is shown whole" "$(cat "$rc/bundle.1")" "[ -x ./build/mathproj ]"
+has "script: another script is named, not shown" "$(cat "$rc/bundle.1")" "=== FILE tests/scripts/long.sh
+# a script test, not shown"
+hasnt "script: another script is not shown" "$(cat "$rc/bundle.1")" "a-line-only-long-has"
+# the request names a script: it is shown
+printf 'The program exits 1. See tests/scripts/long.sh for how it is run.\n' > "$d/change-names-script.txt"
+rp=$(scriptproject); rc=$(newrc); w="$d/w-script-named"; printf '%s\n%s\n' "$MAIN" "$EXITS" > "$rc/reply.1"
+out=$(req="$d/change-names-script.txt"; run "$rp" "$rc" "$w" bug --attempts 1 --script-tests "$d/scripts.txt")
+has "script: a script the request names is shown" "$(cat "$rc/bundle.1")" "a-line-only-long-has"
+# a script that passes on the base proves nothing; one that fails on the fixed tree is a failed test
+rp=$(scriptproject); rc=$(newrc); w="$d/w-script-base"
+printf '%s\n=== FILE tests/scripts/exit.sh\n[ -x ./build/mathproj ]\n' "$MAIN" > "$rc/reply.1"; printf '%s\n%s\n' "$MAIN" "$EXITS" > "$rc/reply.2"
+out=$(run "$rp" "$rc" "$w" bug --script-tests "$d/scripts.txt"); expect "script, bug: a script that passes on the base is refused, the retry passes" "$(attempts "$out")" "1:refused:test-passes-on-base 2:passed"
+has "script, bug: the refusal names the script" "$(grep CHANGE_ERROR "$w/run.log")" "test-passes-on-base	tests/scripts/exit.sh"
+rp=$(scriptproject); rc=$(newrc); w="$d/w-script-fails"
+printf '%s\n=== FILE tests/scripts/exit.sh\necho the-script-said-this\nexit 3\n' "$MAIN" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" bug --attempts 1 --script-tests "$d/scripts.txt"); expect "script: a script that fails on the changed tree is script-test-failed" "$(attempts "$out")" "1:refused:script-test-failed"
+has "script: the refusal has what the script said" "$out" "the-script-said-this"
+# a script that says a lot: the refusal has the end of it, which is where what went wrong is
+rp=$(scriptproject); rc=$(newrc); w="$d/w-script-long"
+printf '%s\n=== FILE tests/scripts/exit.sh\ni=0; while [ $i -lt 200 ]; do echo line-$i-of-a-long-output; i=$((i + 1)); done\necho the-last-thing-said\nexit 3\n' "$MAIN" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" bug --attempts 1 --script-tests "$d/scripts.txt")
+has "script: a long output is cut at its start, not its end" "$out" "the-last-thing-said"
+hasnt "script: a long output is cut at its start" "$out" "line-0-of-a-long-output"
+# a script the change leaves as it was is not a test of the change
+rp=$(scriptproject); rc=$(newrc); w="$d/w-script-same"
+printf '%s\n=== FILE tests/scripts/ok.sh\n# the program is there after a build\n[ -x ./build/mathproj ]\n' "$MAIN" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" bug --attempts 1 --script-tests "$d/scripts.txt"); expect "script: a script written back as it was is no test" "$(attempts "$out")" "1:refused:no-test-added"
+# a feature whose only test is a script is not asked which function its tests call
+rp=$(scriptproject); rc=$(newrc); w="$d/w-script-feature"
+printf '=== FILE src/mathx.cho\npub fn quad(x: int) -> [] int { return x * 4; }\n%s\n%s\n' "$MAIN" "$EXITS" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" feature --attempts 1 --script-tests "$d/scripts.txt"); expect "script: a feature with a script for its test" "$(attempts "$out")" "1:passed"
+# where a script may be written: under the script directory only, and only when the caller named one
+rp=$(scriptproject); rc=$(newrc); w="$d/w-script-off"; printf '%s\n%s\n' "$MAIN" "$EXITS" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" bug --attempts 1); expect "script: without --script-tests a script is a path that may not be written" "$(attempts "$out")" "1:refused:path-outside"
+rp=$(scriptproject); rc=$(newrc); w="$d/w-script-else"; printf '%s\n=== FILE tests/other/exit.sh\n./build/mathproj\n' "$MAIN" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" bug --attempts 1 --script-tests "$d/scripts.txt"); expect "script: a script outside the script directory" "$(attempts "$out")" "1:refused:path-outside"
+rp=$(scriptproject); rc=$(newrc); w="$d/w-script-dots"; printf '%s\n=== FILE tests/scripts/../../x.sh\n./build/mathproj\n' "$MAIN" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" bug --attempts 1 --script-tests "$d/scripts.txt"); expect "script: .. in the path of a script" "$(attempts "$out")" "1:refused:path-dotdot"
+[ -e "$w/x.sh" ] && { echo "FAIL: script: a path with .. was written" >&2; fail=1; }
+rp=$(scriptproject); rc=$(newrc); w="$d/w-script-hidden"; printf '%s\n=== FILE tests/scripts/.hidden.sh\n./build/mathproj\n' "$MAIN" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" bug --attempts 1 --script-tests "$d/scripts.txt"); expect "script: a hidden script" "$(attempts "$out")" "1:refused:path-component"
+rp=$(scriptproject); rc=$(newrc); w="$d/w-script-empty"; printf '%s\n=== FILE tests/scripts/exit.sh\n\n' "$MAIN" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" bug --attempts 1 --script-tests "$d/scripts.txt"); expect "script: an empty script" "$(attempts "$out")" "1:refused:script-empty"
+# a .cho file of the script directory is still the compiler's: items, not a whole file
+rp=$(scriptproject); rc=$(newrc); w="$d/w-script-cho"; printf '%s\n=== FILE tests/scripts/x.cho\nthis is not cancho\n' "$MAIN" > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" bug --attempts 1 --script-tests "$d/scripts.txt")
+hasnt "script: a .cho file under the script directory is not written whole" "$(attempts "$out")" "passed"
+[ -e "$w/tree/tests/scripts/x.cho" ] && grep -q 'this is not cancho' "$w/tree/tests/scripts/x.cho" && { echo "FAIL: script: a .cho file was written whole" >&2; fail=1; }
+# script tests are for a project: there is nothing built to run in a repository checked file by file
+rp=$(newrepo); rc=$(newrc); w="$d/w-script-plain"; mkdir -p "$rp/tests/scripts"; printf '=== FILE src/mathx.cho\npub fn double(x: int) -> [] int { return x + x; }\n=== FILE tests/scripts/t.sh\nexit 0\n' > "$rc/reply.1"
+out=$(run "$rp" "$rc" "$w" refactor --attempts 1 --script-tests "$d/scripts.txt"); expect "script: not in a project" "$(attempts "$out")" "1:refused:script-test-failed"
+has "script: not in a project: the refusal says so, nothing was run" "$out" "this repository is not a project"
+# a selection keeps a script as the bundle has it
+rp=$(bigrepo); rc=$(newrc); w="$d/w-script-sel"; mkdir -p "$rp/tests/scripts"; printf '# the program is there after a build\n[ -x ./build/mathproj ]\n' > "$rp/tests/scripts/ok.sh"; printf '%s\n' "$DOUBLE" > "$rc/reply.1"
+printf 'Make `double` add the number to itself instead of multiplying.\n' > "$d/change-script-sel.txt"
+out=$(req="$d/change-script-sel.txt"; run "$rp" "$rc" "$w" refactor --attempts 1 --max-bundle 3500 --script-tests "$d/scripts.txt"); expect "script, selection: verdict" "$(verdict "$out")" done
+has "script, selection: it is a selection" "$out" "[CHANGE_SELECTION]"
+has "script, selection: the script that is always shown is whole" "$(cat "$rc/bundle.1")" "[ -x ./build/mathproj ]"
+# --script-tests is three lines, checked before anything runs
+sbad() { printf "$2" > "$d/sbad.txt"; rp=$(scriptproject); rc=$(newrc); o=$(run "$rp" "$rc" "$d/w-sbad" bug --attempts 1 --script-tests "$d/sbad.txt"); has "script usage: $1" "$o" "--script-tests: "; [ -e "$rc/bundle.1" ] && { echo "FAIL: script usage: $1: the agent was called" >&2; fail=1; }; }
+sbad "a directory that is not under tests/" 'src/scripts\nsh "$SCRIPT_PATH"\n\n'
+sbad "tests itself" 'tests/\nsh "$SCRIPT_PATH"\n\n'
+sbad ".. in the directory" 'tests/../x\nsh "$SCRIPT_PATH"\n\n'
+sbad "no command" 'tests/scripts\n\n\n'
+sbad "a shown script of another directory" 'tests/scripts\nsh "$SCRIPT_PATH"\ntests/other/ok.sh\n'
+
 # a cancho.toml with neither table is not a project: the repository is checked file by file, as before
 rp=$(newrepo); rc=$(newrc); w="$d/w-proj-plain"; printf '%s\n' "$PLUS" > "$rc/reply.1"; printf '[package]\nname = "plain"\n' > "$rp/cancho.toml"
 out=$(run "$rp" "$rc" "$w" refactor --attempts 1); expect "a cancho.toml with no [[bin]] or [[test]]: checked file by file" "$(attempts "$out")" "1:passed"
